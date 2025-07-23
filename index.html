@@ -126,12 +126,21 @@
             height: 100px;
             background-color: #444;
             display: flex;
+            flex-direction: column; /* To stack text and icon */
             justify-content: center;
             align-items: center;
+            position: relative; /* For play icon positioning */
         }
         .thumbnailText {
             color: #FFF;
             font-size: 12px;
+            margin-bottom: 5px; /* Space between text and icon */
+        }
+        .playIcon {
+            width: 30px;
+            height: 30px;
+            fill: #FFD700; /* Gold color for play icon */
+            opacity: 0.8;
         }
         .contentTitle {
             font-size: 14px;
@@ -310,6 +319,61 @@
             text-align: center;
             font-size: 14px;
         }
+        /* Video Modal Styles */
+        .videoModalOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .videoModalContent {
+            background-color: #1A1A1A;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 400px; /* Keep it within mobile-like constraints */
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+            position: relative;
+        }
+        .videoIframeContainer {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+            height: 0;
+            overflow: hidden;
+        }
+        .videoIframeContainer iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .closeButton {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.2);
+            color: #FFF;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            font-size: 18px;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            z-index: 10; /* Ensure it's above the iframe */
+        }
     </style>
 </head>
 <body>
@@ -321,36 +385,88 @@
         // --- Placeholder Data ---
         // In a real app, this data would come from a backend API (e.g., Firestore, your own CMS)
         const featuredContent = [
-            { id: '1', title: 'New This Week: Guyanese Comedy Special', type: 'skit', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }, // Example YouTube URL
-            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: 'https://www.youtube.com/watch?v=oHg5SJYRHA0' }, // Example YouTube URL
-            { id: '3', title: 'Indie Film Spotlight: "Georgetown Dreams"', type: 'short-film', url: 'https://www.youtube.com/watch?v=34Na4j8AVgA' }, // Example YouTube URL
+            { id: '1', title: 'New This Week: Guyanese Comedy Special', type: 'skit', url: 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1' }, // Example YouTube URL (embed format)
+            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: 'https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1' }, // Example YouTube URL (embed format)
+            { id: '3', title: 'Indie Film Spotlight: "Georgetown Dreams"', type: 'short-film', url: 'https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1' }, // Example YouTube URL (embed format)
+            { id: '4', title: 'Live Concert Replay: Mashramani Vibes', type: 'live-premiere', url: 'https://www.youtube.com/embed/example4?autoplay=1' },
+            { id: '5', title: 'Creator Interview: The Rise of Guyanese Talent', type: 'interview', url: 'https://www.youtube.com/embed/example5?autoplay=1' },
+            { id: '6', title: 'Short Film: "The Golden Arrowhead"', type: 'short-film', url: 'https://www.youtube.com/embed/example6?autoplay=1' },
         ];
 
         const categories = {
             Skits: [
-                { id: 's1', title: 'Laugh Out Loud: Best Skits Vol. 1', url: 'https://www.youtube.com/watch?v=skit1' },
-                { id: 's2', title: 'Daily Dose of Guyanese Humor', url: 'https://www.youtube.com/watch?v=skit2' },
-                { id: 's3', title: 'Guyana Vibes: Street Comedy', url: 'https://www.youtube.com/watch?v=skit3' },
-                { id: 's4', title: 'Caribbean Laughs: Episode 1', url: 'https://www.youtube.com/watch?v=skit4' },
+                { id: 's1', title: 'Laugh Out Loud: Best Skits Vol. 1', url: 'https://www.youtube.com/embed/skit1?autoplay=1' },
+                { id: 's2', title: 'Daily Dose of Guyanese Humor', url: 'https://www.youtube.com/embed/skit2?autoplay=1' },
+                { id: 's3', title: 'Guyana Vibes: Street Comedy', url: 'https://www.youtube.com/embed/skit3?autoplay=1' },
+                { id: 's4', title: 'Caribbean Laughs: Episode 1', url: 'https://www.youtube.com/embed/skit4?autoplay=1' },
+                { id: 's5', title: 'Funny Moments: Local Edition', url: 'https://www.youtube.com/embed/skit5?autoplay=1' },
+                { id: 's6', title: 'The Best of Guyanese Skits', url: 'https://www.youtube.com/embed/skit6?autoplay=1' },
+                { id: 's7', title: 'New Skit Series: "Life in GT"', url: 'https://www.youtube.com/embed/skit7?autoplay=1' },
+                { id: 's8', title: 'Weekend Comedy Mashup', url: 'https://www.youtube.com/embed/skit8?autoplay=1' },
             ],
             'Short Films': [
-                { id: 'sf1', title: 'The Golden Arrowhead: A Short Film', url: 'https://www.youtube.com/watch?v=shortfilm1' },
-                { id: 'sf2', title: 'Tales from the Coast: Episode 1', url: 'https://www.youtube.com/watch?v=shortfilm2' },
-                { id: 'sf3', title: 'Lost in the Jungle: A Drama', url: 'https://www.youtube.com/watch?v=shortfilm3' },
-                { id: 'sf4', title: 'The Cane Field Mystery', url: 'https://www.youtube.com/watch?v=shortfilm4' },
+                { id: 'sf1', title: 'The Golden Arrowhead: A Short Film', url: 'https://www.youtube.com/embed/shortfilm1?autoplay=1' },
+                { id: 'sf2', title: 'Tales from the Coast: Episode 1', url: 'https://www.youtube.com/embed/shortfilm2?autoplay=1' },
+                { id: 'sf3', title: 'Lost in the Jungle: A Drama', url: 'https://www.youtube.com/embed/shortfilm3?autoplay=1' },
+                { id: 'sf4', title: 'The Cane Field Mystery', url: 'https://www.youtube.com/embed/shortfilm4?autoplay=1' },
+                { id: 'sf5', title: 'A Day in the Market', url: 'https://www.youtube.com/embed/shortfilm5?autoplay=1' },
+                { id: 'sf6', title: 'The Hidden Falls', url: 'https://www.youtube.com/embed/shortfilm6?autoplay=1' },
+                { id: 'sf7', title: 'City Lights, Country Dreams', url: 'https://www.youtube.com/embed/shortfilm7?autoplay=1' },
+                { id: 'sf8', title: 'Echoes of the Past', url: 'https://www.youtube.com/embed/shortfilm8?autoplay=1' },
             ],
             Interviews: [
-                { id: 'i1', title: 'Creator Spotlight: Interview with Mark X', url: 'https://www.youtube.com/watch?v=interview1' },
-                { id: 'i2', title: 'Behind the Scenes: NVA Network', url: 'https://www.youtube.com/watch?v=interview2' },
-                { id: 'i3', title: 'Guyanese Icons: A Conversation', url: 'https://www.youtube.com/watch?v=interview3' },
-                { id: 'i4', title: 'The Future of Guyanese Art', url: 'https://www.youtube.com/watch?v=interview4' },
+                { id: 'i1', title: 'Creator Spotlight: Interview with Mark X', url: 'https://www.youtube.com/embed/interview1?autoplay=1' },
+                { id: 'i2', title: 'Behind the Scenes: NVA Network', url: 'https://www.youtube.com/embed/interview2?autoplay=1' },
+                { id: 'i3', title: 'Guyanese Icons: A Conversation', url: 'https://www.youtube.com/embed/interview3?autoplay=1' },
+                { id: 'i4', title: 'The Future of Guyanese Art', url: 'https://www.youtube.com/embed/interview4?autoplay=1' },
+                { id: 'i5', title: 'In-Depth with Local Artists', url: 'https://www.youtube.com/embed/interview5?autoplay=1' },
+                { id: 'i6', title: 'Entrepreneurial Journeys in Guyana', url: 'https://www.youtube.com/embed/interview6?autoplay=1' },
+                { id: 'i7', title: 'Community Leaders Speak Out', url: 'https://www.youtube.com/embed/interview7?autoplay=1' },
+                { id: 'i8', title: 'The Making of a Guyanese Star', url: 'https://www.youtube.com/embed/interview8?autoplay=1' },
             ],
             'Live Premieres': [
-                { id: 'lp1', title: 'Upcoming: Guyanese Music Festival Live', url: 'https://www.youtube.com/watch?v=live1' },
-                { id: 'lp2', title: 'Replay: NVA Network Launch Event', url: 'https://www.youtube.com/watch?v=live2' },
-                { id: 'lp3', title: 'Live Comedy Night: Best of Guyana', url: 'https://www.youtube.com/watch?v=live3' },
-                { id: 'lp4', title: 'Red Carpet Gala: NVA Awards', url: 'https://www.youtube.com/watch?v=live4' },
+                { id: 'lp1', title: 'Upcoming: Guyanese Music Festival Live', url: 'https://www.youtube.com/embed/live1?autoplay=1' },
+                { id: 'lp2', title: 'Replay: NVA Network Launch Event', url: 'https://www.youtube.com/embed/live2?autoplay=1' },
+                { id: 'lp3', title: 'Live Comedy Night: Best of Guyana', url: 'https://www.youtube.com/embed/live3?autoplay=1' },
+                { id: 'lp4', title: 'Red Carpet Gala: NVA Awards', url: 'https://www.youtube.com/embed/live4?autoplay=1' },
+                { id: 'lp5', title: 'Exclusive: Talk Show Live', url: 'https://www.youtube.com/embed/live5?autoplay=1' },
+                { id: 'lp6', title: 'Poetry Slam Live: Guyana Edition', url: 'https://www.youtube.com/embed/live6?autoplay=1' },
+                { id: 'lp7', title: 'Cultural Dance Showcase', url: 'https://www.youtube.com/embed/live7?autoplay=1' },
+                { id: 'lp8', title: 'Q&A with Your Favorite Creators', url: 'https://www.youtube.com/embed/live8?autoplay=1' },
             ],
+        };
+
+        // Helper function to extract YouTube video ID and format for embed URL
+        const getYouTubeEmbedUrl = (youtubeUrl) => {
+            const videoIdMatch = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^&?#]+)/);
+            if (videoIdMatch && videoIdMatch[1]) {
+                return `https://www.youtube.com/embed/${videoIdMatch[1]}?autoplay=1&rel=0`; // autoplay and no related videos
+            }
+            return youtubeUrl; // Return original if not a standard YouTube URL
+        };
+
+        // --- Video Player Modal Component ---
+        const VideoPlayerModal = ({ videoUrl, onClose }) => {
+            if (!videoUrl) return null;
+
+            // Ensure the URL is in embed format
+            const embedUrl = getYouTubeEmbedUrl(videoUrl);
+
+            return (
+                <div className="videoModalOverlay">
+                    <div className="videoModalContent">
+                        <button className="closeButton" onClick={onClose}>&times;</button>
+                        <div className="videoIframeContainer">
+                            <iframe
+                                src={embedUrl}
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                                allowFullScreen
+                                title="Embedded YouTube video"
+                            ></iframe>
+                        </div>
+                    </div>
+                </div>
+            );
         };
 
         // --- Main App Component ---
@@ -358,6 +474,8 @@
             const [activeScreen, setActiveScreen] = useState('Home'); // State to manage current screen
             const [activeCategory, setActiveCategory] = useState('Skits'); // State to manage active category
             const [message, setMessage] = useState(''); // State for temporary messages
+            const [showVideoModal, setShowVideoModal] = useState(false); // State to control video modal visibility
+            const [currentVideoUrl, setCurrentVideoUrl] = useState(''); // State to store the URL of the video to play
 
             // Function to display temporary messages
             const showMessage = (msg) => {
@@ -367,11 +485,15 @@
 
             // Function to handle opening video links
             const handleVideoPress = (url) => {
-                // In a real app, you would use a dedicated video player library
-                // or embed a YouTube/Facebook player directly.
-                // For this web demonstration, we'll open the URL in a new tab.
-                window.open(url, '_blank');
-                showMessage('Simulating video playback: Opening video in a new tab.');
+                setCurrentVideoUrl(url);
+                setShowVideoModal(true);
+                // showMessage('Simulating video playback: Video will play in modal.'); // Not needed now that it actually plays
+            };
+
+            // Function to close the video modal
+            const closeVideoModal = () => {
+                setShowVideoModal(false);
+                setCurrentVideoUrl('');
             };
 
             // --- Screens ---
@@ -384,6 +506,10 @@
                             <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
                                 <div className="thumbnailPlaceholder">
                                     <p className="thumbnailText">Video Thumbnail</p>
+                                    {/* SVG Play Icon */}
+                                    <svg className="playIcon" viewBox="0 0 24 24">
+                                        <path d="M8 5v14l11-7z"/>
+                                    </svg>
                                 </div>
                                 <p className="contentTitle">{item.title}</p>
                             </button>
@@ -392,10 +518,14 @@
 
                     <p className="sectionTitle">Top Guyanese Skits</p>
                     <div className="contentGrid">
-                        {categories.Skits.slice(0, 2).map((item) => ( // Show first 2 skits as top
+                        {categories.Skits.slice(0, 4).map((item) => ( // Show first 4 skits as top
                             <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
                                 <div className="thumbnailPlaceholder">
                                     <p className="thumbnailText">Video Thumbnail</p>
+                                    {/* SVG Play Icon */}
+                                    <svg className="playIcon" viewBox="0 0 24 24">
+                                        <path d="M8 5v14l11-7z"/>
+                                    </svg>
                                 </div>
                                 <p className="contentTitle">{item.title}</p>
                             </button>
@@ -427,6 +557,10 @@
                                 <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
                                     <div className="thumbnailPlaceholder">
                                         <p className="thumbnailText">Video Thumbnail</p>
+                                        {/* SVG Play Icon */}
+                                        <svg className="playIcon" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
                                     </div>
                                     <p className="contentTitle">{item.title}</p>
                                 </button>
@@ -496,7 +630,7 @@
                         <p className="premiumFeatureDescription">
                             Receive a "VIP badge," vote on featured content, and join private chat rooms with creators.
                         </p>
-                    </div>
+                    </div >
 
                     <div className="premiumFeatureCard">
                         <p className="premiumFeatureTitle">5. Downloadable/Offline Viewing (Future)</p>
@@ -610,6 +744,11 @@
                         <div className="messageBox">
                             <p className="messageText">{message}</p>
                         </div>
+                    )}
+
+                    {/* Video Player Modal */}
+                    {showVideoModal && (
+                        <VideoPlayerModal videoUrl={currentVideoUrl} onClose={closeVideoModal} />
                     )}
                 </div>
             );
