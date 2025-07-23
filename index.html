@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVA Network</title>
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX transformation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- PWA Enhancements START -->
+    <!-- Link to your web app manifest file -->
+    <link rel="manifest" href="/manifest.json">
+    <!-- Apple Touch Icon for iOS home screen -->
+    <link rel="apple-touch-icon" href="/icon-192x192.png">
+    <!-- Theme color for browser UI (e.g., status bar on Android) -->
+    <meta name="theme-color" content="#0A0A0A">
+    <!-- PWA Enhancements END -->
+
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif; /* Using Inter font as per instructions */
+            background-color: #0A0A0A;
+            color: #FFF;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden; /* Prevent body scroll */
+        }
+        #root {
+            width: 100%;
+            max-width: 450px; /* Typical mobile width constraint */
+            height: 100vh;
+            background-color: #0A0A0A;
+            display: flex;
+            flex-direction: column;
+            border-radius: 15px; /* Rounded corners for the main app container */
+            overflow: hidden; /* Ensure content stays within rounded corners */
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+        .container {
+            flex: 1;
+            background-color: #0A0A0A; /* Dark background */
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            padding: 15px;
+            background-color: #1A1A1A; /* Slightly lighter dark for header */
+            align-items: center;
+            border-bottom: 1px solid #333;
+            padding-top: 30px; /* Adjust for status bar area */
+            border-radius: 15px 15px 0 0; /* Rounded top corners */
+        }
+        .headerTitle {
+            font-size: 28px;
+            font-weight: bold;
+            color: #FFD700; /* Gold color for branding */
+        }
+        .tagline {
+            font-size: 14px;
+            color: #AAA;
+            margin-top: 5px;
+        }
+        .navigationBar {
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0;
+            background-color: #1A1A1A;
+            border-top: 1px solid #333;
+            border-radius: 0 0 15px 15px; /* Rounded bottom corners */
+        }
+        .navButton {
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .navButton:hover {
+            background-color: #2A2A2A;
+        }
+        .navButtonText {
+            color: #FFF;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .activeNavButtonText {
+            color: #FFD700; /* Highlight active button */
+        }
+        .screenContainer {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto; /* Enable scrolling for content */
+        }
+        .sectionTitle {
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFF;
+            margin-bottom: 15px;
+            margin-top: 20px;
+        }
+        .contentGrid {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+        .contentCard {
+            width: calc(50% - 7.5px); /* Roughly half width for two columns with spacing */
+            margin-bottom: 15px;
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .contentCard:hover {
+            transform: translateY(-3px);
+        }
+        .thumbnailPlaceholder {
+            width: 100%;
+            height: 100px;
+            background-color: #444;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .thumbnailText {
+            color: #FFF;
+            font-size: 12px;
+        }
+        .contentTitle {
+            font-size: 14px;
+            font-weight: bold;
+            color: #FFF;
+            padding: 10px;
+        }
+        .categoryTabs {
+            margin-bottom: 15px;
+            height: 40px;
+            display: flex;
+            overflow-x: auto; /* Enable horizontal scrolling for tabs */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            padding-bottom: 5px; /* Space for scrollbar */
+        }
+        .categoryTab {
+            padding: 8px 15px;
+            border-radius: 20px;
+            background-color: #3A3A3A;
+            margin-right: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-shrink: 0; /* Prevent tabs from shrinking */
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .categoryTab:hover {
+            background-color: #4A4A4A;
+        }
+        .activeCategoryTab {
+            background-color: #FFD700; /* Gold highlight for active category */
+        }
+        .categoryTabText {
+            color: #FFF;
+            font-weight: 600;
+            white-space: nowrap; /* Prevent text wrapping */
+        }
+        .activeCategoryTabText {
+            color: #0A0A0A; /* Dark text on gold background */
+        }
+        .categoryContent {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .heading {
+            font-size: 24px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .subHeading {
+            font-size: 16px;
+            color: #FFF;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .paragraph {
+            font-size: 14px;
+            color: #CCC;
+            margin-bottom: 10px;
+            line-height: 20px;
+        }
+        .button {
+            background-color: #FFD700;
+            padding: 12px 25px;
+            border-radius: 25px;
+            align-self: center;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 5px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+        }
+        .button:hover {
+            background-color: #FFC400;
+        }
+        .buttonText {
+            color: #0A0A0A;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .smallText {
+            font-size: 12px;
+            color: #888;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .listItem {
+            font-size: 14px;
+            color: #CCC;
+            margin-left: 15px;
+            margin-bottom: 5px;
+        }
+        .premiumFeatureCard {
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+        }
+        .premiumFeatureTitle {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 5px;
+        }
+        .premiumFeatureDescription {
+            font-size: 14px;
+            color: #CCC;
+            line-height: 20px;
+        }
+        .pricingTable {
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .pricingRow {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #333;
+        }
+        .pricingRow:last-child {
+            border-bottom: none; /* No border for the last row */
+        }
+        .pricingTier {
+            font-size: 16px;
+            font-weight: bold;
+            color: #FFD700;
+            flex: 1;
+        }
+        .pricingFeatures {
+            font-size: 14px;
+            color: #CCC;
+            flex: 2;
+            text-align: left;
+            margin-left: 10px;
+        }
+        .pricingPrice {
+            font-size: 16px;
+            font-weight: bold;
+            color: #FFF;
+            flex: 1;
+            text-align: right;
+        }
+        .contactInfo {
+            font-size: 14px;
+            color: #CCC;
+            margin-bottom: 5px;
+        }
+        .messageBox {
+            position: fixed; /* Use fixed for overlay */
+            bottom: 100px; /* Above navigation bar */
+            left: 50%;
+            transform: translateX(-50%); /* Center horizontally */
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 12px 20px;
+            border-radius: 8px;
+            z-index: 1000;
+            opacity: 1;
+            transition: opacity 0.3s ease-in-out;
+            pointer-events: none; /* Allow clicks to pass through */
+            max-width: 90%;
+        }
+        .messageBox.hidden {
+            opacity: 0;
+        }
+        .messageText {
+            color: #FFF;
+            text-align: center;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- Placeholder Data ---
+        // In a real app, this data would come from a backend API (e.g., Firestore, your own CMS)
+        const featuredContent = [
+            { id: '1', title: 'New This Week: Guyanese Comedy Special', type: 'skit', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }, // Example YouTube URL
+            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: 'https://www.youtube.com/watch?v=oHg5SJYRHA0' }, // Example YouTube URL
+            { id: '3', title: 'Indie Film Spotlight: "Georgetown Dreams"', type: 'short-film', url: 'https://www.youtube.com/watch?v=34Na4j8AVgA' }, // Example YouTube URL
+        ];
+
+        const categories = {
+            Skits: [
+                { id: 's1', title: 'Laugh Out Loud: Best Skits Vol. 1', url: 'https://www.youtube.com/watch?v=skit1' },
+                { id: 's2', title: 'Daily Dose of Guyanese Humor', url: 'https://www.youtube.com/watch?v=skit2' },
+                { id: 's3', title: 'Guyana Vibes: Street Comedy', url: 'https://www.youtube.com/watch?v=skit3' },
+                { id: 's4', title: 'Caribbean Laughs: Episode 1', url: 'https://www.youtube.com/watch?v=skit4' },
+            ],
+            'Short Films': [
+                { id: 'sf1', title: 'The Golden Arrowhead: A Short Film', url: 'https://www.youtube.com/watch?v=shortfilm1' },
+                { id: 'sf2', title: 'Tales from the Coast: Episode 1', url: 'https://www.youtube.com/watch?v=shortfilm2' },
+                { id: 'sf3', title: 'Lost in the Jungle: A Drama', url: 'https://www.youtube.com/watch?v=shortfilm3' },
+                { id: 'sf4', title: 'The Cane Field Mystery', url: 'https://www.youtube.com/watch?v=shortfilm4' },
+            ],
+            Interviews: [
+                { id: 'i1', title: 'Creator Spotlight: Interview with Mark X', url: 'https://www.youtube.com/watch?v=interview1' },
+                { id: 'i2', title: 'Behind the Scenes: NVA Network', url: 'https://www.youtube.com/watch?v=interview2' },
+                { id: 'i3', title: 'Guyanese Icons: A Conversation', url: 'https://www.youtube.com/watch?v=interview3' },
+                { id: 'i4', title: 'The Future of Guyanese Art', url: 'https://www.youtube.com/watch?v=interview4' },
+            ],
+            'Live Premieres': [
+                { id: 'lp1', title: 'Upcoming: Guyanese Music Festival Live', url: 'https://www.youtube.com/watch?v=live1' },
+                { id: 'lp2', title: 'Replay: NVA Network Launch Event', url: 'https://www.youtube.com/watch?v=live2' },
+                { id: 'lp3', title: 'Live Comedy Night: Best of Guyana', url: 'https://www.youtube.com/watch?v=live3' },
+                { id: 'lp4', title: 'Red Carpet Gala: NVA Awards', url: 'https://www.youtube.com/watch?v=live4' },
+            ],
+        };
+
+        // --- Main App Component ---
+        function App() {
+            const [activeScreen, setActiveScreen] = useState('Home'); // State to manage current screen
+            const [activeCategory, setActiveCategory] = useState('Skits'); // State to manage active category
+            const [message, setMessage] = useState(''); // State for temporary messages
+
+            // Function to display temporary messages
+            const showMessage = (msg) => {
+                setMessage(msg);
+                setTimeout(() => setMessage(''), 3000); // Clear message after 3 seconds
+            };
+
+            // Function to handle opening video links
+            const handleVideoPress = (url) => {
+                // In a real app, you would use a dedicated video player library
+                // or embed a YouTube/Facebook player directly.
+                // For this web demonstration, we'll open the URL in a new tab.
+                window.open(url, '_blank');
+                showMessage('Simulating video playback: Opening video in a new tab.');
+            };
+
+            // --- Screens ---
+
+            const HomeScreen = () => (
+                <div className="screenContainer">
+                    <p className="sectionTitle">New This Week</p>
+                    <div className="contentGrid">
+                        {featuredContent.map((item) => (
+                            <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
+                                <div className="thumbnailPlaceholder">
+                                    <p className="thumbnailText">Video Thumbnail</p>
+                                </div>
+                                <p className="contentTitle">{item.title}</p>
+                            </button>
+                        ))}
+                    </div>
+
+                    <p className="sectionTitle">Top Guyanese Skits</p>
+                    <div className="contentGrid">
+                        {categories.Skits.slice(0, 2).map((item) => ( // Show first 2 skits as top
+                            <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
+                                <div className="thumbnailPlaceholder">
+                                    <p className="thumbnailText">Video Thumbnail</p>
+                                </div>
+                                <p className="contentTitle">{item.title}</p>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+
+            const CategoriesScreen = () => (
+                <div className="screenContainer">
+                    <div className="categoryTabs">
+                        {Object.keys(categories).map((categoryName) => (
+                            <button
+                                key={categoryName}
+                                className={`categoryTab ${activeCategory === categoryName ? 'activeCategoryTab' : ''}`}
+                                onClick={() => setActiveCategory(categoryName)}
+                            >
+                                <span className={`categoryTabText ${activeCategory === categoryName ? 'activeCategoryTabText' : ''}`}>
+                                    {categoryName}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="categoryContent">
+                        <p className="sectionTitle">{activeCategory} Content</p>
+                        <div className="contentGrid">
+                            {categories[activeCategory].map((item) => (
+                                <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
+                                    <div className="thumbnailPlaceholder">
+                                        <p className="thumbnailText">Video Thumbnail</p>
+                                    </div>
+                                    <p className="contentTitle">{item.title}</p>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+
+            const CreatorSubmissionScreen = () => (
+                <div className="screenContainer">
+                    <p className="heading">Become a Creator on NVA Network!</p>
+                    <p className="paragraph">
+                        "We’ll give your content a platform, promotion, and help you secure brand deals,
+                        while you keep ownership and split future revenue once monetized."
+                    </p>
+                    <p className="paragraph">
+                        Ready to share your talent with the world? Submit your content and join the Caribbean's first mobile-first entertainment network.
+                    </p>
+                    <button
+                        className="button"
+                        onClick={() => window.open('https://forms.gle/yourGoogleFormLinkHere', '_blank')} // Replace with your actual Google Form or Typeform link
+                    >
+                        <span className="buttonText">Submit Your Content</span>
+                    </button>
+                    <p className="smallText">
+                        (This will open an external form in your browser.)
+                    </p>
+                    <p className="sectionTitle">Creator Agreement Highlights:</p>
+                    <p className="listItem">• Non-exclusive streaming rights</p>
+                    <p className="listItem">• You retain ownership</p>
+                    <p className="listItem">• We promote you to brands and viewers</p>
+                    <p className="listItem">• Future ad revenue/sponsorship split</p>
+                </div>
+            );
+
+            const PremiumScreen = () => (
+                <div className="screenContainer">
+                    <p className="heading">Unlock NVA Network Premium!</p>
+                    <p className="subHeading">Experience Guyanese content like never before.</p>
+
+                    <div className="premiumFeatureCard">
+                        <p className="premiumFeatureTitle">1. Exclusive Content Access</p>
+                        <p className="premiumFeatureDescription">
+                            Get early access to new shows, premium-only series, uncensored versions,
+                            and exclusive live events. Example: "Watch the full uncut version of Vibes Unfiltered before anyone else!"
+                        </p>
+                    </div>
+
+                    <div className="premiumFeatureCard">
+                        <p className="premiumFeatureTitle">2. Ad-Free Viewing</p>
+                        <p className="premiumFeatureDescription">
+                            Enjoy a seamless, uninterrupted viewing experience without in-app banner ads or pre-roll ads.
+                        </p>
+                    </div>
+
+                    <div className="premiumFeatureCard">
+                        <p className="premiumFeatureTitle">3. Special Perks & Giveaways</p>
+                        <p className="premiumFeatureDescription">
+                            Participate in monthly giveaways, exclusive merch drops, coupon codes for local businesses,
+                            and priority access to virtual meet & greets.
+                        </p>
+                    </div>
+
+                    <div className="premiumFeatureCard">
+                        <p className="premiumFeatureTitle">4. Community & Recognition</p>
+                        <p className="premiumFeatureDescription">
+                            Receive a "VIP badge," vote on featured content, and join private chat rooms with creators.
+                        </p>
+                    </div>
+
+                    <div className="premiumFeatureCard">
+                        <p className="premiumFeatureTitle">5. Downloadable/Offline Viewing (Future)</p>
+                        <p className="premiumFeatureDescription">
+                            (Coming Soon) Download original content to watch offline, perfect for inconsistent internet.
+                        </p>
+                    </div>
+
+                    <p className="sectionTitle">Pricing:</p>
+                    <div className="pricingTable">
+                        <div className="pricingRow">
+                            <p className="pricingTier">Free</p>
+                            <p className="pricingFeatures">Public videos, live shows, ads</p>
+                            <p className="pricingPrice">$0</p>
+                        </div>
+                        <div className="pricingRow">
+                            <p className="pricingTier">Premium Monthly</p>
+                            <p className="pricingFeatures">All perks above</p>
+                            <p className="pricingPrice">$1.99 USD / ~$400 GYD</p>
+                        </div>
+                        <div className="pricingRow">
+                            <p className="pricingTier">Premium Yearly</p>
+                            <p className="pricingFeatures">Discounted + bonus perks</p>
+                            <p className="pricingPrice">$20 USD / ~$4,000 GYD</p>
+                        </div>
+                    </div>
+                    <p className="smallText">
+                        (Note: Actual payment integration would be done here using services like Stripe/PayPal.)
+                    </p>
+                    <button
+                        className="button"
+                        onClick={() => showMessage('Simulating subscription purchase. In a real app, this would initiate payment.')}
+                    >
+                        <span className="buttonText">Subscribe Now!</span>
+                    </button>
+                </div>
+            );
+
+            const AboutContactScreen = () => (
+                <div className="screenContainer">
+                    <p className="heading">About NVA Network</p>
+                    <p className="paragraph">
+                        NVA Network is the Caribbean’s first mobile-first entertainment network,
+                        dedicated to bringing the best of Guyanese content to a global stage.
+                        We believe in empowering local creators and connecting audiences worldwide
+                        with unique and vibrant stories from Guyana.
+                    </p>
+                    <p className="paragraph">
+                        Our mission is to provide a platform for Guyanese comedians, filmmakers,
+                        interviewers, and live event organizers to showcase their talent,
+                        reach new audiences, and build sustainable careers.
+                    </p>
+
+                    <p className="sectionTitle">Contact Us</p>
+                    <p className="paragraph">
+                        Have questions, feedback, or want to partner with us? Reach out!
+                    </p>
+                    <p className="contactInfo">Email: contact@nvanetwork.gy</p>
+                    <p className="contactInfo">Phone: +592-555-NVA (Placeholder)</p>
+                    <p className="contactInfo">Follow us on social media!</p>
+                    {/* Add social media links here if desired */}
+                </div>
+            );
+
+            // --- Render Current Screen ---
+            const renderScreen = () => {
+                switch (activeScreen) {
+                    case 'Home':
+                        return <HomeScreen />;
+                    case 'Categories':
+                        return <CategoriesScreen />;
+                    case 'Submit':
+                        return <CreatorSubmissionScreen />;
+                    case 'Premium':
+                        return <PremiumScreen />;
+                    case 'About':
+                        return <AboutContactScreen />;
+                    default:
+                        return <HomeScreen />;
+                }
+            };
+
+            return (
+                <div className="container">
+                    <div className="header">
+                        <p className="headerTitle">NVA Network</p>
+                        <p className="tagline">Guyanese Content. Global Stage.</p>
+                    </div>
+
+                    {renderScreen()}
+
+                    <div className="navigationBar">
+                        <button className="navButton" onClick={() => setActiveScreen('Home')}>
+                            <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
+                        </button>
+                        <button className="navButton" onClick={() => setActiveScreen('Categories')}>
+                            <span className={`navButtonText ${activeScreen === 'Categories' ? 'activeNavButtonText' : ''}`}>Categories</span>
+                        </button>
+                        <button className="navButton" onClick={() => setActiveScreen('Submit')}>
+                            <span className={`navButtonText ${activeScreen === 'Submit' ? 'activeNavButtonText' : ''}`}>Submit</span>
+                        </button>
+                        <button className="navButton" onClick={() => setActiveScreen('Premium')}>
+                            <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
+                        </button>
+                        <button className="navButton" onClick={() => setActiveScreen('About')}>
+                            <span className={`navButtonText ${activeScreen === 'About' ? 'activeNavButtonText' : ''}`}>About</span>
+                        </button>
+                    </div>
+
+                    {message && (
+                        <div className="messageBox">
+                            <p className="messageText">{message}</p>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // Render the App component into the root div
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
