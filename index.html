@@ -19,6 +19,7 @@
 
         // Global Firebase variables (provided by Canvas environment)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // Corrected the initialization of initialAuthToken to avoid ReferenceError
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // Your web app's Firebase configuration
@@ -42,7 +43,7 @@
         window.firebaseApp = app;
         window.firebaseAuth = auth;
         window.firebaseDb = db;
-        window.initialAuthToken = initialAuthToken;
+        window.initialAuthToken = initialAuthToken; // Export corrected initialAuthToken
 
         // Removed signInAnonymously. Users will now need to explicitly sign up or log in.
         // If you later want a login screen for existing users, you would add signInWithEmailAndPassword here.
@@ -755,6 +756,7 @@
             justify-content: center;
             align-items: center;
             margin-bottom: 10px;
+            cursor: pointer; /* Indicate clickable */
         }
         .videoThumbnail {
             width: 100%;
@@ -814,7 +816,6 @@
         // Get Firebase instances from window (exported from the module script)
         const auth = window.firebaseAuth;
         const db = window.firebaseDb;
-        const initialAuthToken = window.initialAuthToken;
 
         // --- Placeholder Data ---
         // In a real app, this data would come from a backend API (e.g., Firestore, your own CMS)
@@ -1255,15 +1256,12 @@
             const AboutContactScreen = () => (
                 <div className="screenContainer">
                     <p className="heading">About NVA Network</p>
+                    <p className="subHeading">The Caribbean’s first mobile-first entertainment network, dedicated to bringing the best of Guyanese content to a global stage.</p>
+
                     <p className="paragraph">
-                        NVA Network is the Caribbean’s first mobile-first entertainment network,
-                        dedicated to bringing the best of Guyanese content to a global stage.
-                        We believe in empowering local creators and connecting audiences worldwide
-                        with unique and vibrant stories from Guyana.
-                    </p>
-                    <p className="paragraph">
-                        Our mission is to provide a platform for Guyanese comedians, filmmakers,
-                        interviewers, and live event organizers to showcase their talent,
+                        NVA Network is committed to empowering local creators and connecting audiences worldwide
+                        with unique and vibrant stories from Guyana. Our mission is to provide a platform for Guyanese
+                        comedians, filmmakers, interviewers, and live event organizers to showcase their talent,
                         reach new audiences, and build sustainable careers.
                     </p>
 
@@ -1401,6 +1399,21 @@
                         return;
                     }
 
+                    // --- Password Validation ---
+                    if (password.length < 8) {
+                        showMessage('Password must be at least 8 characters long.');
+                        return;
+                    }
+                    if (!/\d/.test(password)) {
+                        showMessage('Password must include at least one number.');
+                        return;
+                    }
+                    if (!/[A-Z]/.test(password)) {
+                        showMessage('Password must include at least one capital letter.');
+                        return;
+                    }
+                    // --- End Password Validation ---
+
                     try {
                         // Create user with Firebase Authentication
                         const userCredential = await firebaseAuth.createUserWithEmailAndPassword(auth, email, password);
@@ -1463,7 +1476,7 @@
                                     required
                                 />
                                 <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
-                                    Password must be at least 6 characters long.
+                                    Password must be at least 8 characters long, include at least one number and one capital letter.
                                 </p>
                             </div>
 
@@ -1567,18 +1580,17 @@
 
                 const [profilePictureUrl, setProfilePictureUrl] = useState('https://placehold.co/100x100/555/FFF?text=Profile');
 
-                // States for video links and their thumbnails/embed URLs
-                const [youtubeLink, setYoutubeLink] = useState('');
-                const [youtubeThumbnail, setYoutubeThumbnail] = useState('');
-                const [youtubeEmbedUrl, setYoutubeEmbedUrl] = useState('');
+                // State to manage uploaded videos for each platform
+                const [uploadedVideos, setUploadedVideos] = useState({
+                    youtube: null,
+                    facebook: null,
+                    tiktok: null
+                });
 
-                const [facebookLink, setFacebookLink] = useState('');
-                const [facebookThumbnail, setFacebookThumbnail] = useState('');
-                const [facebookEmbedUrl, setFacebookEmbedUrl] = useState('');
-
-                const [tiktokLink, setTiktokLink] = useState('');
-                const [tiktokThumbnail, setTiktokThumbnail] = useState('');
-                const [tiktokEmbedUrl, setTiktokEmbedUrl] = useState('');
+                // Temporary states for input fields (cleared after adding)
+                const [youtubeInputLink, setYoutubeInputLink] = useState('');
+                const [facebookInputLink, setFacebookInputLink] = useState('');
+                const [tiktokInputLink, setTiktokInputLink] = useState('');
 
                 // --- Helper functions for video platforms ---
                 const extractYouTubeId = (url) => {
@@ -1586,19 +1598,26 @@
                     return match ? match[1] : null;
                 };
 
-                // Simplified Facebook ID extraction (might need Graph API for robust solution)
+                // Improved Facebook ID extraction for various URL formats
                 const extractFacebookId = (url) => {
-                    // This is a very basic regex and might not catch all Facebook video URLs.
-                    // A more robust solution often requires Facebook's Graph API.
-                    const match = url.match(/(?:facebook\.com\/(?:video.php\?v=|watch\/\?v=)|fb\.watch\/)([0-9]+)/);
-                    return match ? match[1] : null;
+                    let videoId = null;
+                    // Common Facebook video URL patterns
+                    let match = url.match(/(?:facebook\.com\/(?:video.php\?v=|watch\/\?v=)|fb\.watch\/|facebook\.com\/[^\/]+\/videos\/)([0-9]+)/);
+                    if (match && match[1]) {
+                        videoId = match[1];
+                    } else {
+                        // Try matching for video ID in share links like facebook.com/pagename/videos/12345/
+                        match = url.match(/facebook\.com\/[a-zA-Z0-9\._-]+\/videos\/(\d+)/);
+                        if(match && match[1]) {
+                            videoId = match[1];
+                        }
+                    }
+                    return videoId;
                 };
 
-                // Simplified TikTok ID extraction (might need TikTok API for robust solution)
+                // Improved TikTok ID extraction for various URL formats
                 const extractTikTokId = (url) => {
-                    // This is a very basic regex and might not catch all TikTok video URLs.
-                    // A more robust solution often requires TikTok's API.
-                    const match = url.match(/(?:tiktok\.com\/@(?:[a-zA-Z0-9._]+)\/video\/|vm\.tiktok\.com\/)([0-9]+)/);
+                    const match = url.match(/(?:tiktok\.com\/@(?:[a-zA-Z0-9._]+)\/video\/|vm\.tiktok\.com\/|tiktok\.com\/embed\/)([0-9]+)/);
                     return match ? match[1] : null;
                 };
 
@@ -1614,25 +1633,23 @@
                             if (videoId) {
                                 thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
                                 embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
-                                title = 'YouTube Video'; // Placeholder title
+                                title = 'YouTube Video';
                             }
                             break;
                         case 'facebook':
                             videoId = extractFacebookId(url);
                             if (videoId) {
-                                // Facebook thumbnails are tricky without API, using placeholder
-                                thumbnailUrl = `https://placehold.co/150x100/4682B4/FFF?text=FB+Video`;
-                                embedUrl = `https://www.facebook.com/video/embed/?video_id=${videoId}`; // Simplified embed
-                                title = 'Facebook Video'; // Placeholder title
+                                thumbnailUrl = `https://placehold.co/150x100/4682B4/FFF?text=FB+Video`; // Generic placeholder
+                                embedUrl = `https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Fvideo.php%3Fv%3D${videoId}%2F&show_text=0&width=560&autoplay=1`;
+                                title = 'Facebook Video (Public videos should play in-app; others may open new tab)';
                             }
                             break;
                         case 'tiktok':
                             videoId = extractTikTokId(url);
                             if (videoId) {
-                                // TikTok thumbnails are tricky without API, using placeholder
-                                thumbnailUrl = `https://placehold.co/150x100/6A5ACD/FFF?text=TikTok+Video`;
-                                embedUrl = `https://www.tiktok.com/embed/v2/${videoId}`; // Simplified embed
-                                title = 'TikTok Video'; // Placeholder title
+                                thumbnailUrl = `https://placehold.co/150x100/6A5ACD/FFF?text=TikTok+Video`; // Generic placeholder
+                                embedUrl = `https://www.tiktok.com/embed/${videoId}`; // Simplified embed path
+                                title = 'TikTok Video (Plays in-app if embeddable, else may open new tab)';
                             }
                             break;
                         default:
@@ -1641,44 +1658,36 @@
                     return { videoId, thumbnailUrl, embedUrl, title };
                 };
 
-                const handleVideoLinkChange = (platform, e) => {
-                    const url = e.target.value;
-                    const { thumbnailUrl, embedUrl } = getThumbnailAndEmbed(platform, url);
+                // Handles adding/updating a video link
+                const handleAddOrUpdateVideo = (platform, inputUrl) => {
+                    if (!inputUrl) {
+                        showMessage(`Please enter a URL for the ${platform} video.`);
+                        return;
+                    }
+                    const { videoId, thumbnailUrl, embedUrl, title } = getThumbnailAndEmbed(platform, inputUrl);
 
-                    if (platform === 'youtube') {
-                        setYoutubeLink(url);
-                        setYoutubeThumbnail(thumbnailUrl);
-                        setYoutubeEmbedUrl(embedUrl);
-                    } else if (platform === 'facebook') {
-                        setFacebookLink(url);
-                        setFacebookThumbnail(thumbnailUrl);
-                        setFacebookEmbedUrl(embedUrl);
-                    } else if (platform === 'tiktok') {
-                        setTiktokLink(url);
-                        setTiktokThumbnail(thumbnailUrl);
-                        setTiktokEmbedUrl(embedUrl);
+                    if (videoId && embedUrl) {
+                        setUploadedVideos(prev => ({
+                            ...prev,
+                            [platform]: { url: inputUrl, thumbnailUrl, embedUrl, title }
+                        }));
+                        showMessage(`${platform} video added successfully!`);
+                        // Clear the temporary input field after successful addition
+                        if (platform === 'youtube') setYoutubeInputLink('');
+                        else if (platform === 'facebook') setFacebookInputLink('');
+                        else if (platform === 'tiktok') setTiktokInputLink('');
+                    } else {
+                        showMessage(`Invalid ${platform} video URL provided. Please check the link.`);
                     }
                 };
 
+                // Handles removing a video
                 const handleRemoveVideo = (platform) => {
-                    if (platform === 'youtube') {
-                        setYoutubeLink('');
-                        setYoutubeThumbnail('');
-                        setYoutubeEmbedUrl('');
-                    } else if (platform === 'facebook') {
-                        setFacebookLink('');
-                        setFacebookThumbnail('');
-                        setFacebookEmbedUrl('');
-                    } else if (platform === 'tiktok') {
-                        setTiktokLink('');
-                        setTiktokThumbnail('');
-                        setTiktokEmbedUrl('');
-                    }
+                    setUploadedVideos(prev => ({
+                        ...prev,
+                        [platform]: null
+                    }));
                     showMessage(`${platform} video removed successfully.`);
-                };
-
-                const handleAddVideo = (platform) => {
-                    showMessage(`Paste your ${platform} video link into the text box and click outside.`);
                 };
 
                 return (
@@ -1710,10 +1719,10 @@
                             {/* YouTube Video Section */}
                             <div className="videoLinkSection">
                                 <label htmlFor="youtubeLink" className="formLabel">YouTube Video Link:</label>
-                                {youtubeThumbnail ? (
+                                {uploadedVideos.youtube ? (
                                     <>
-                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(youtubeEmbedUrl)}>
-                                            <img src={youtubeThumbnail} alt="YouTube Thumbnail" className="videoThumbnail" />
+                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.youtube.embedUrl)}>
+                                            <img src={uploadedVideos.youtube.thumbnailUrl} alt="YouTube Thumbnail" className="videoThumbnail" />
                                             <div className="videoThumbnailOverlay">
                                                 <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
                                                     <path d="M8 5v14l11-7z"/>
@@ -1725,31 +1734,28 @@
                                         </div>
                                     </>
                                 ) : (
-                                    <>
+                                    <div className="videoInputContainer">
                                         <input
                                             type="url"
                                             id="youtubeLink"
                                             className="formInput"
-                                            value={youtubeLink}
-                                            onChange={(e) => setYoutubeLink(e.target.value)}
-                                            onBlur={(e) => handleVideoLinkChange('youtube', e)}
-                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleVideoLinkChange('youtube', e); } }}
+                                            value={youtubeInputLink}
+                                            onChange={(e) => setYoutubeInputLink(e.target.value)}
+                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOrUpdateVideo('youtube', youtubeInputLink); } }}
                                             placeholder="Paste YouTube video URL here"
                                         />
-                                        <div className="videoActions">
-                                            <button className="actionButton" onClick={() => handleAddVideo('youtube')}>Add YouTube Video</button>
-                                        </div>
-                                    </>
+                                        <button className="actionButton" onClick={() => handleAddOrUpdateVideo('youtube', youtubeInputLink)}>Add</button>
+                                    </div>
                                 )}
                             </div>
 
                             {/* Facebook Video Section */}
                             <div className="videoLinkSection">
                                 <label htmlFor="facebookLink" className="formLabel">Facebook Video Link:</label>
-                                {facebookThumbnail ? (
+                                {uploadedVideos.facebook ? (
                                     <>
-                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(facebookEmbedUrl)}>
-                                            <img src={facebookThumbnail} alt="Facebook Thumbnail" className="videoThumbnail" />
+                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.facebook.embedUrl)}>
+                                            <img src={uploadedVideos.facebook.thumbnailUrl} alt="Facebook Thumbnail" className="videoThumbnail" />
                                             <div className="videoThumbnailOverlay">
                                                 <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
                                                     <path d="M8 5v14l11-7z"/>
@@ -1761,31 +1767,28 @@
                                         </div>
                                     </>
                                 ) : (
-                                    <>
+                                    <div className="videoInputContainer">
                                         <input
                                             type="url"
                                             id="facebookLink"
                                             className="formInput"
-                                            value={facebookLink}
-                                            onChange={(e) => setFacebookLink(e.target.value)}
-                                            onBlur={(e) => handleVideoLinkChange('facebook', e)}
-                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleVideoLinkChange('facebook', e); } }}
+                                            value={facebookInputLink}
+                                            onChange={(e) => setFacebookInputLink(e.target.value)}
+                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOrUpdateVideo('facebook', facebookInputLink); } }}
                                             placeholder="Paste Facebook video URL here"
                                         />
-                                        <div className="videoActions">
-                                            <button className="actionButton" onClick={() => handleAddVideo('facebook')}>Add Facebook Video</button>
-                                        </div>
-                                    </>
+                                        <button className="actionButton" onClick={() => handleAddOrUpdateVideo('facebook', facebookInputLink)}>Add</button>
+                                    </div>
                                 )}
                             </div>
 
                             {/* TikTok Video Section */}
                             <div className="videoLinkSection">
                                 <label htmlFor="tiktokLink" className="formLabel">TikTok Video Link:</label>
-                                {tiktokThumbnail ? (
+                                {uploadedVideos.tiktok ? (
                                     <>
-                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(tiktokEmbedUrl)}>
-                                            <img src={tiktokThumbnail} alt="TikTok Thumbnail" className="videoThumbnail" />
+                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.tiktok.embedUrl)}>
+                                            <img src={uploadedVideos.tiktok.thumbnailUrl} alt="TikTok Thumbnail" className="videoThumbnail" />
                                             <div className="videoThumbnailOverlay">
                                                 <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
                                                     <path d="M8 5v14l11-7z"/>
@@ -1797,21 +1800,18 @@
                                         </div>
                                     </>
                                 ) : (
-                                    <>
+                                    <div className="videoInputContainer">
                                         <input
                                             type="url"
                                             id="tiktokLink"
                                             className="formInput"
-                                            value={tiktokLink}
-                                            onChange={(e) => setTiktokLink(e.target.value)}
-                                            onBlur={(e) => handleVideoLinkChange('tiktok', e)}
-                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleVideoLinkChange('tiktok', e); } }}
+                                            value={tiktokInputLink}
+                                            onChange={(e) => setTiktokInputLink(e.target.value)}
+                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOrUpdateVideo('tiktok', tiktokInputLink); } }}
                                             placeholder="Paste TikTok video URL here"
                                         />
-                                        <div className="videoActions">
-                                            <button className="actionButton" onClick={() => handleAddVideo('tiktok')}>Add TikTok Video</button>
-                                        </div>
-                                    </>
+                                        <button className="actionButton" onClick={() => handleAddOrUpdateVideo('tiktok', tiktokInputLink)}>Add</button>
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -1880,7 +1880,7 @@
                     case 'CreatorCampaigns':
                         return <CreatorCampaignsScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'CreatorDashboard': // New case for Creator Dashboard
-                        return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'About':
                         return <AboutContactScreen />;
                     default:
