@@ -43,7 +43,10 @@
         window.firebaseApp = app;
         window.firebaseAuth = auth;
         window.firebaseDb = db;
-        window.initialAuthToken = initialAuthToken; // Export corrected initialAuthToken
+        window.initialAuthToken = initialAuthToken;
+        // --- ADDED THIS LINE ---
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword; // Expose the function itself
+        // ---------------------
 
         // Removed signInAnonymously. Users will now need to explicitly sign up or log in.
         // If you later want a login screen for existing users, you would add signInWithEmailAndPassword here.
@@ -874,6 +877,9 @@
         // Get Firebase instances from window (exported from the module script)
         const auth = window.firebaseAuth;
         const db = window.firebaseDb;
+        // --- ADDED THIS LINE ---
+        const createUserWithEmailAndPassword = window.createUserWithEmailAndPassword; // Get the exposed function
+        // ---------------------
 
         // --- Placeholder Data ---
         // In a real app, this data would come from a backend API (e.g., Firestore, your own CMS)
@@ -1558,12 +1564,12 @@
 
                     try {
                         // Create user with Firebase Authentication
-                        const userCredential = await firebaseAuth.createUserWithEmailAndPassword(auth, email, password);
+                        const userCredential = await createUserWithEmailAndPassword(auth, email, password); // Corrected this line
                         const user = userCredential.user;
 
                         // In a real app, you would also save creator-specific profile data to Firestore here
                         // For example:
-                        // await setDoc(doc(firebaseDb, "creators", user.uid), {
+                        // await setDoc(doc(db, "creators", user.uid), { // Use 'db' here
                         //     email: email,
                         //     creatorName: creatorName,
                         //     bio: bio,
@@ -1584,6 +1590,10 @@
                             errorMessage = "Invalid email address.";
                         } else if (error.code === 'auth/weak-password') {
                             errorMessage = "Password is too weak. Please choose a stronger password.";
+                        } else if (error.code === 'auth/network-request-failed') {
+                            errorMessage = "Network error. Please check your internet connection.";
+                        } else if (error.code === 'auth/operation-not-allowed') {
+                            errorMessage = "Email/Password sign-in is not enabled. Please enable it in Firebase Console.";
                         }
                         showMessage(errorMessage);
                     }
@@ -1857,6 +1867,10 @@
 
                         <div className="dashboardSection">
                             <p className="dashboardSectionTitle">My Uploaded Content</p>
+                            <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginBottom: '15px' }}>
+                                (Note: Video links added here are temporary and will reset if you navigate away or refresh the app,
+                                until Firebase Firestore integration for persistence is complete.)
+                            </p>
 
                             {/* YouTube Video Section */}
                             <div className="videoLinkSection">
