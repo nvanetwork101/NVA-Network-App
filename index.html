@@ -10,6 +10,9 @@
     <!-- Babel for JSX transformation in browser -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Google Fonts - Bebas Neue for title, Inter for body -->
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
     <!-- PWA Enhancements START -->
     <!-- Link to your web app manifest file -->
     <link rel="manifest" href="/manifest.json">
@@ -49,27 +52,36 @@
             flex-direction: column;
         }
         .header {
-            position: relative; /* Needed for absolute positioning of logo and tagline */
-            height: 180px; /* Fixed height for the header to accommodate the cover image */
-            padding: 0; /* Remove padding as logo will cover */
-            background-color: transparent; /* Background will be the logo */
+            position: relative; /* For absolute positioning of children */
+            height: 150px; /* Header height */
+            padding: 0; /* No padding */
+            background-color: #1A1A1A; /* Dark background color for header (will be covered by logo) */
             border-bottom: 1px solid #333;
             border-radius: 15px 15px 0 0; /* Rounded top corners */
-            overflow: hidden; /* Ensure logo stays within bounds */
-            display: flex; /* Use flexbox to center tagline if needed */
-            justify-content: center; /* Center horizontally */
-            align-items: center; /* Center vertically - will be overridden by absolute positioning for tagline */
+            overflow: hidden; /* Ensure content stays within bounds */
+        }
+        .headerTitle {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            font-size: 28px;
+            font-weight: bold;
+            color: #FFD700; /* Gold color for branding */
+            z-index: 2; /* Ensure it's above other elements */
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.7); /* Add subtle shadow for readability */
+            font-family: 'Bebas Neue', sans-serif; /* Applied new font */
+            font-size: 38px; /* Slightly larger for impact */
         }
         .headerLogo {
-            position: absolute;
+            position: absolute; /* Position absolutely to cover the header */
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
+            width: 100%; /* Make it cover the full width */
+            height: 100%; /* Make it cover the full height */
             object-fit: cover; /* Ensures the image covers the entire area, cropping if necessary */
-            z-index: 1; /* Place behind the tagline */
+            z-index: 1; /* Place behind title and tagline */
             /* Fallback styles for placeholder/error */
-            background-color: #333
+            background-color: #333;
             color: #FFF;
             display: flex;
             justify-content: center;
@@ -78,17 +90,15 @@
             text-align: center;
         }
         .tagline {
-            position: absolute; /* Position over the logo */
-            bottom: 20px; /* Drift lower */
-            left: 0;
-            right: 0;
-            text-align: center;
-            z-index: 2; /* Place above the logo */
-            font-size: 18px;
-            color: #FFF; /* White text */
-            font-weight: normal; /* Removed bold */
-            padding: 0 15px; /* Add some horizontal padding */
-            text-shadow: 1px 1px 3px rgba(0,0,0,0.7); /* Add subtle shadow for readability over image */
+            position: absolute;
+            bottom: 15px; /* Position at the bottom left */
+            left: 15px; /* Position at the bottom left */
+            font-size: 14px;
+            color: #AAA; /* Original color */
+            font-weight: normal; /* Original font weight */
+            text-align: left; /* Align text to the left */
+            z-index: 2; /* Ensure it's above other elements */
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.7); /* Add subtle shadow for readability */
         }
         .navigationBar {
             display: flex;
@@ -97,6 +107,7 @@
             background-color: #1A1A1A;
             border-top: 1px solid #333;
             border-radius: 0 0 15px 15px; /* Rounded bottom corners */
+            /* Removed flex-wrap and gap as Support Us is moved */
         }
         .navButton {
             padding: 8px 15px;
@@ -119,6 +130,7 @@
             flex: 1;
             padding: 15px;
             overflow-y: auto; /* Enable scrolling for content */
+            position: relative; /* Added for positioning the new support button */
         }
         .sectionTitle {
             font-size: 20px;
@@ -210,6 +222,43 @@
             flex: 1;
             overflow-y: auto;
         }
+        /* Carousel Styles */
+        .carousel-container {
+            width: 100%;
+            overflow-x: hidden; /* Hide scrollbar, manage scrolling with JS */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            scroll-snap-type: x mandatory; /* Snap to items */
+            scroll-behavior: smooth; /* Smooth scrolling animation */
+            display: flex; /* Arrange items in a row */
+            padding-bottom: 10px; /* Space for scrollbar */
+            margin-bottom: 20px; /* Space below carousel */
+        }
+
+        .carousel-item {
+            flex: 0 0 calc(33.33% - 10px); /* Show 3 items, account for margin */
+            margin-right: 15px; /* Spacing between items */
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+            scroll-snap-align: start; /* Snap to the start of each item */
+            background-color: #2A2A2A; /* Placeholder background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #FFF;
+            font-size: 12px;
+            height: 100px; /* Fixed height for carousel images */
+        }
+        .carousel-item:last-child {
+            margin-right: 0; /* No margin on the last item */
+        }
+        .carousel-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Cover the item area */
+            border-radius: 10px; /* Inherit border-radius */
+        }
+
         .heading {
             font-size: 24px;
             font-weight: bold;
@@ -398,13 +447,167 @@
             cursor: pointer;
             z-index: 10; /* Ensure it's above the iframe */
         }
+
+        /* Styles for buttons at the top of the Home screen */
+        .topRightButtonContainer {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            gap: 10px; /* Space between buttons */
+            z-index: 10;
+        }
+
+        .topButton {
+            background-color: #FFD700; /* Gold color */
+            color: #0A0A0A; /* Dark text */
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 12px; /* Smaller font for a compact button */
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+            border: none;
+            transition: background-color 0.3s ease;
+        }
+        .topButton:hover {
+            background-color: #FFC400;
+        }
+
+
+        /* Styles for Creator Campaign Cards */
+        .campaignCard {
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+        .campaignTitle {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 5px;
+        }
+        .campaignCreator {
+            font-size: 14px;
+            color: #CCC;
+            margin-bottom: 10px;
+        }
+        .campaignDescription {
+            font-size: 14px;
+            color: #AAA;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+        .campaignProgressContainer {
+            width: 100%;
+            background-color: #444;
+            border-radius: 5px;
+            height: 10px;
+            margin-bottom: 5px;
+            overflow: hidden; /* Ensure progress bar stays within bounds */
+        }
+        .campaignProgressBar {
+            height: 100%;
+            background-color: #FFD700;
+            border-radius: 5px;
+            transition: width 0.5s ease-in-out;
+        }
+        .campaignStats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #CCC;
+            margin-bottom: 15px;
+        }
+        .campaignGoal, .campaignRaised {
+            font-weight: bold;
+            color: #FFF;
+        }
+        .campaignButton {
+            background-color: #FFD700;
+            padding: 10px 15px;
+            border-radius: 20px;
+            color: #0A0A0A;
+            font-weight: bold;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+        }
+        .campaignButton:hover {
+            background-color: #FFC400;
+        }
+
+        /* Styles for Creator Sign Up Form */
+        .formGroup {
+            margin-bottom: 15px;
+        }
+        .formLabel {
+            display: block;
+            font-size: 14px;
+            color: #FFF;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .formInput, .formTextarea {
+            width: calc(100% - 20px); /* Account for padding */
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #555;
+            background-color: #333;
+            color: #FFF;
+            font-size: 14px;
+        }
+        .formTextarea {
+            resize: vertical; /* Allow vertical resizing */
+            min-height: 80px;
+        }
+        .checkboxGroup {
+            margin-bottom: 15px;
+        }
+        .checkboxLabel {
+            display: block;
+            font-size: 14px;
+            color: #FFF;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        .checkboxItem {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .checkboxItem input[type="checkbox"] {
+            margin-right: 8px;
+            width: 18px; /* Larger checkbox for touch */
+            height: 18px;
+            accent-color: #FFD700; /* Highlight checkbox */
+        }
+        .termsText {
+            font-size: 12px;
+            color: #AAA;
+            margin-top: 10px;
+            line-height: 1.4;
+        }
+        .termsLink {
+            color: #FFD700;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .termsLink:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React; // Import useRef
 
         // --- Placeholder Data ---
         // In a real app, this data would come from a backend API (e.g., Firestore, your own CMS)
@@ -460,9 +663,50 @@
             ],
         };
 
+        // --- Placeholder Creator Campaign Data ---
+        const creatorCampaigns = [
+            {
+                id: 'cc1',
+                title: 'Fund "The Golden Mango" Short Film',
+                creator: 'Guyana Film Collective',
+                description: 'Help us produce a heartwarming short film about Guyanese traditions and family values.',
+                goal: 5000,
+                raised: 3200,
+                imageUrl: 'https://placehold.co/150x100/FFD700/0A0A0A?text=Film+Project'
+            },
+            {
+                id: 'cc2',
+                title: 'New Comedy Series: "Life in GT"',
+                creator: 'Laugh Out Loud Crew',
+                description: 'Support our new web series bringing everyday Guyanese humor to your screens!',
+                goal: 3000,
+                raised: 1800,
+                imageUrl: 'https://placehold.co/150x100/FF6347/FFF?text=Comedy+Series'
+            },
+            {
+                id: 'cc3',
+                title: 'Music Video Production for Local Artist',
+                creator: 'Vibes Music Studio',
+                description: 'Help us create a high-quality music video for an emerging Guyanese artist.',
+                goal: 2500,
+                raised: 250,
+                imageUrl: 'https://placehold.co/150x100/4682B4/FFF?text=Music+Video'
+            },
+            {
+                id: 'cc4',
+                title: 'Documentary: "Faces of the Interior"',
+                creator: 'Guyana Stories Docu',
+                description: 'Support our journey to capture the untold stories of communities in Guyana\'s interior.',
+                goal: 8000,
+                raised: 6000,
+                imageUrl: 'https://placehold.co/150x100/6A5ACD/FFF?text=Documentary'
+            },
+        ];
+
+
         // Helper function to extract YouTube video ID and format for embed URL
         const getYouTubeEmbedUrl = (youtubeUrl) => {
-            const videoIdMatch = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^&?#]+)/);
+            const videoIdMatch = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/||shorts\/))([^&?#]+)/);
             if (videoIdMatch && videoIdMatch[1]) {
                 return `https://www.youtube.com/embed/${videoIdMatch[1]}?autoplay=1&rel=0`; // autoplay and no related videos
             }
@@ -501,6 +745,18 @@
             const [showVideoModal, setShowVideoModal] = useState(false); // State to control video modal visibility
             const [currentVideoUrl, setCurrentVideoUrl] = useState(''); // State to store the URL of the video to play
 
+            // Placeholder images for the carousel - Duplicated for continuous loop
+            const originalCarouselImages = [
+                'https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night',
+                'https://placehold.co/140x100/808080/FFF?text=New+Series',
+                'https://placehold.co/140x100/606060/EEE?text=Exclusive',
+                'https://placehold.co/140x100/404040/DDD?text=Behind+Scenes',
+                'https://placehold.co/140x100/202020/CCC?text=Live+Event',
+            ];
+            // Duplicate the array to create a seamless loop effect (at least twice the original for smooth looping)
+            const carouselImages = [...originalCarouselImages, ...originalCarouselImages, ...originalCarouselImages];
+
+
             // Function to display temporary messages
             const showMessage = (msg) => {
                 setMessage(msg);
@@ -521,41 +777,166 @@
 
             // --- Screens ---
 
-            const HomeScreen = () => (
-                <div className="screenContainer">
-                    <p className="sectionTitle">New This Week</p>
-                    <div className="contentGrid">
-                        {featuredContent.map((item) => (
-                            <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
-                                <div className="thumbnailPlaceholder">
-                                    <p className="thumbnailText">Video Thumbnail</p>
-                                    {/* SVG Play Icon */}
-                                    <svg className="playIcon" viewBox="0 0 24 24">
-                                        <path d="M8 5v14l11-7z"/>
-                                    </svg>
-                                </div>
-                                <p className="contentTitle">{item.title}</p>
-                            </button>
-                        ))}
-                    </div>
+            const HomeScreen = () => {
+                const carouselRef = useRef(null); // Create a ref for the carousel container
+                const scrollIntervalRef = useRef(null); // Ref to store the interval ID
+                const [isDragging, setIsDragging] = useState(false);
+                const [startX, setStartX] = useState(0);
+                const [scrollLeft, setScrollLeft] = useState(0);
 
-                    <p className="sectionTitle">Top Guyanese Skits</p>
-                    <div className="contentGrid">
-                        {categories.Skits.slice(0, 4).map((item) => ( // Show first 4 skits as top
-                            <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
-                                <div className="thumbnailPlaceholder">
-                                    <p className="thumbnailText">Video Thumbnail</p>
-                                    {/* SVG Play Icon */}
-                                    <svg className="playIcon" viewBox="0 0 24 24">
-                                        <path d="M8 5v14l11-7z"/>
-                                    </svg>
-                                </div>
-                                <p className="contentTitle">{item.title}</p>
+                // Function to start auto-scrolling
+                const startAutoScroll = () => {
+                    // Clear any existing interval to prevent duplicates
+                    if (scrollIntervalRef.current) {
+                        clearInterval(scrollIntervalRef.current);
+                    }
+
+                    const carousel = carouselRef.current;
+                    if (!carousel) return;
+
+                    let scrollAmountPerItem = 0;
+                    const firstItem = carousel.querySelector('.carousel-item');
+                    if (firstItem) {
+                        const itemWidth = firstItem.offsetWidth;
+                        const itemMarginRight = parseFloat(window.getComputedStyle(firstItem).marginRight);
+                        scrollAmountPerItem = itemWidth + itemMarginRight;
+                    } else {
+                        scrollAmountPerItem = (carousel.offsetWidth / 3) + 15;
+                    }
+
+                    const originalContentWidth = originalCarouselImages.length * scrollAmountPerItem;
+
+                    scrollIntervalRef.current = setInterval(() => {
+                        if (isDragging) return; // Do not auto-scroll if user is dragging
+
+                        // If we are at or near the end of the *first* set of original images, jump back
+                        // We use a small buffer (e.g., scrollAmountPerItem / 2) to ensure a smooth transition
+                        // before the actual end of the duplicated content.
+                        if (carousel.scrollLeft >= originalContentWidth - (scrollAmountPerItem / 2)) {
+                            carousel.scrollLeft = 0; // Instantly jump to the start of the first original set
+                        }
+                        // Then, smoothly scroll forward by one item
+                        carousel.scrollBy({ left: scrollAmountPerItem, behavior: 'smooth' });
+                    }, 3000); // Scroll every 3 seconds
+                };
+
+                // Function to stop auto-scrolling
+                const stopAutoScroll = () => {
+                    if (scrollIntervalRef.current) {
+                        clearInterval(scrollIntervalRef.current);
+                        scrollIntervalRef.current = null;
+                    }
+                };
+
+                useEffect(() => {
+                    startAutoScroll(); // Start auto-scrolling when component mounts
+
+                    const carousel = carouselRef.current;
+                    if (!carousel) return;
+
+                    // Mouse events for desktop hover (to pause/resume)
+                    carousel.addEventListener('mouseenter', stopAutoScroll);
+                    carousel.addEventListener('mouseleave', startAutoScroll);
+
+                    // Cleanup on component unmount
+                    return () => {
+                        stopAutoScroll();
+                        carousel.removeEventListener('mouseenter', stopAutoScroll);
+                        carousel.removeEventListener('mouseleave', stopAutoScroll);
+                    };
+                }, [isDragging]); // Re-run effect if isDragging changes to manage auto-scroll state
+
+                // --- Touch Event Handlers ---
+                const handleTouchStart = (e) => {
+                    stopAutoScroll(); // Stop auto-scroll immediately on touch start
+                    setIsDragging(true);
+                    setStartX(e.touches[0].pageX - carouselRef.current.offsetLeft);
+                    setScrollLeft(carouselRef.current.scrollLeft);
+                };
+
+                const handleTouchMove = (e) => {
+                    if (!isDragging) return;
+                    e.preventDefault(); // Prevent vertical scrolling while dragging horizontally
+                    const x = e.touches[0].pageX - carouselRef.current.offsetLeft;
+                    const walk = (x - startX) * 1.5; // Multiplier for faster scroll
+                    carouselRef.current.scrollLeft = scrollLeft - walk;
+                };
+
+                const handleTouchEnd = () => {
+                    setIsDragging(false);
+                    // Resume auto-scroll after a short delay to allow user to settle on an image
+                    setTimeout(startAutoScroll, 1500); // Resume after 1.5 seconds
+                };
+
+
+                return (
+                    <div className="screenContainer">
+                        {/* Container for top-right buttons */}
+                        <div className="topRightButtonContainer">
+                            <button
+                                className="topButton"
+                                onClick={() => setActiveScreen('CreatorSignUp')}
+                            >
+                                Creator Sign Up
                             </button>
-                        ))}
+                            <button
+                                className="topButton"
+                                onClick={() => setActiveScreen('Support')}
+                            >
+                                Support Us
+                            </button>
+                        </div>
+
+                        {/* Image Carousel Section */}
+                        <p className="sectionTitle">Featured Highlights</p>
+                        <div
+                            className="carousel-container"
+                            ref={carouselRef}
+                            onTouchStart={handleTouchStart}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
+                        >
+                            {carouselImages.map((imageUrl, index) => (
+                                <div key={index} className="carousel-item">
+                                    <img src={imageUrl} alt={`Carousel Image ${index + 1}`} className="carousel-image" />
+                                </div>
+                            ))}
+                        </div>
+
+                        <p className="sectionTitle">New This Week</p>
+                        <div className="contentGrid">
+                            {featuredContent.map((item) => (
+                                <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
+                                    <div className="thumbnailPlaceholder">
+                                        <p className="thumbnailText">Video Thumbnail</p>
+                                        {/* SVG Play Icon */}
+                                        <svg className="playIcon" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                    </div>
+                                    <p className="contentTitle">{item.title}</p>
+                                </button>
+                            ))}
+                        </div>
+
+                        <p className="sectionTitle">Top Guyanese Skits</p>
+                        <div className="contentGrid">
+                            {categories.Skits.slice(0, 4).map((item) => ( // Show first 4 skits as top
+                                <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
+                                    <div className="thumbnailPlaceholder">
+                                        <p className="thumbnailText">Video Thumbnail</p>
+                                        {/* SVG Play Icon */}
+                                        <svg className="playIcon" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                    </div>
+                                    <p className="contentTitle">{item.title}</p>
+                                </button>
+                            ))}
+                        </div>
                     </div>
-                </div>
-            );
+                );
+            };
 
             const CategoriesScreen = () => (
                 <div className="screenContainer">
@@ -593,32 +974,8 @@
                 </div>
             );
 
-            const CreatorSubmissionScreen = () => (
-                <div className="screenContainer">
-                    <p className="heading">Become a Creator on NVA Network!</p>
-                    <p className="paragraph">
-                        "We’ll give your content a platform, promotion, and help you secure brand deals,
-                        while you keep ownership and split future revenue once monetized."
-                    </p>
-                    <p className="paragraph">
-                        Ready to share your talent with the world? Submit your content and join the Caribbean's first mobile-first entertainment network.
-                    </p>
-                    <button
-                        className="button"
-                        onClick={() => window.open('https://forms.gle/yourGoogleFormLinkHere', '_blank')} // Replace with your actual Google Form or Typeform link
-                    >
-                        <span className="buttonText">Submit Your Content</span>
-                    </button>
-                    <p className="smallText">
-                        (This will open an external form in your browser.)
-                    </p>
-                    <p className="sectionTitle">Creator Agreement Highlights:</p>
-                    <p className="listItem">• Non-exclusive streaming rights</p>
-                    <p className="listItem">• You retain ownership</p>
-                    <p className="listItem">• We promote you to brands and viewers</p>
-                    <p className="listItem">• Future ad revenue/sponsorship split</p>
-                </div>
-            );
+            // Removed CreatorSubmissionScreen as it's being replaced by CreatorSignUpScreen
+            // const CreatorSubmissionScreen = () => (...)
 
             const PremiumScreen = () => (
                 <div className="screenContainer">
@@ -718,6 +1075,254 @@
                 </div>
             );
 
+            const CrowdfundingScreen = ({ showMessage, setActiveScreen }) => ( // Added setActiveScreen prop
+                <div className="screenContainer">
+                    <p className="heading">Support Guyanese Creators!</p>
+                    <p className="subHeading">Help bring more authentic Guyanese content to life.</p>
+
+                    <p className="paragraph">
+                        International crowdfunding platforms often don't support direct bank accounts in Guyana,
+                        making it difficult for our talented creators to receive global support.
+                        At NVA Network, we're committed to finding direct ways for you to contribute!
+                    </p>
+
+                    <div className="premiumFeatureCard">
+                        <p className="premiumFeatureTitle">Why Your Support Matters:</p>
+                        <p className="premiumFeatureDescription">
+                            Your contributions directly fund new skits, short films, interviews, and live event coverage.
+                            Every dollar helps cover production costs, equipment, and fair compensation for our artists.
+                        </p>
+                    </div>
+
+                    <p className="sectionTitle">How You Can Contribute Directly:</p>
+                    <p className="paragraph">
+                        We are setting up direct support channels that are accessible within Guyana and for our diaspora.
+                        Please contact us for details on how to send your support via:
+                    </p>
+                    <p className="listItem">• Direct Bank Transfer (Local & International options)</p>
+                    <p className="listItem">• Mobile Money Services (e.g., MMG - Mobile Money Guyana)</p>
+                    <p className="listItem">• Other Local Payment Methods</p>
+
+                    <button
+                        className="button"
+                        onClick={() => setActiveScreen('CreatorCampaigns')} // Changed to navigate to CreatorCampaignsScreen
+                    >
+                        <span className="buttonText">Browse Creator Campaigns</span> {/* Changed button text */}
+                    </button>
+                    <p className="smallText">
+                        (Discover campaigns and support your favorite creators!)
+                    </p>
+
+                    <p className="paragraph" style={{ marginTop: '20px' }}>
+                        Your generosity empowers Guyanese voices and helps us build a stronger, more vibrant content ecosystem.
+                        Thank you for being a part of the NVA Network family!
+                    </p>
+
+                    {/* Added a small note about the platform fee for transparency with donors */}
+                    <p className="smallText" style={{ marginTop: '20px', color: '#888' }}>
+                        *A small platform fee (e.g., 5%) helps NVA Network cover operational costs and continue supporting our creators.
+                    </p>
+                </div>
+            );
+
+            // --- New Creator Campaigns Screen ---
+            const CreatorCampaignsScreen = ({ showMessage, setActiveScreen }) => (
+                <div className="screenContainer">
+                    <p className="heading">Creator Campaigns</p>
+                    <p className="subHeading">Discover and support projects by Guyanese talent!</p>
+
+                    {creatorCampaigns.map((campaign) => (
+                        <div key={campaign.id} className="campaignCard">
+                            <h3 className="campaignTitle">{campaign.title}</h3>
+                            <p className="campaignCreator">By: {campaign.creator}</p>
+                            <p className="campaignDescription">{campaign.description}</p>
+                            <div className="campaignProgressContainer">
+                                <div
+                                    className="campaignProgressBar"
+                                    style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}
+                                ></div>
+                            </div>
+                            <div className="campaignStats">
+                                <span>Raised: <span className="campaignRaised">${campaign.raised}</span></span>
+                                <span>Goal: <span className="campaignGoal">${campaign.goal}</span></span>
+                            </div>
+                            <button
+                                className="campaignButton"
+                                onClick={() => showMessage(`Simulating support for "${campaign.title}". In a real app, this would lead to payment options.`)}
+                            >
+                                Support This Campaign
+                            </button>
+                        </div>
+                    ))}
+
+                    <p className="smallText" style={{ marginTop: '20px' }}>
+                        Don't see your favorite creator? Encourage them to submit their content and campaigns!
+                    </p>
+
+                    {/* Back to Support Us button */}
+                    <button
+                        className="button"
+                        onClick={() => setActiveScreen('Support')}
+                        style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                    >
+                        <span className="buttonText">Back to Support Options</span>
+                    </button>
+                </div>
+            );
+
+            // --- New Creator Sign Up Screen ---
+            const CreatorSignUpScreen = ({ showMessage, setActiveScreen }) => {
+                const [email, setEmail] = useState('');
+                const [password, setPassword] = useState('');
+                const [creatorName, setCreatorName] = useState('');
+                const [bio, setBio] = useState('');
+                const [selectedCategories, setSelectedCategories] = useState([]);
+                const [existingWorkLink, setExistingWorkLink] = useState('');
+                const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+                const availableCategories = ['Skits', 'Short Films', 'Interviews', 'Live Premieres', 'Music', 'Documentary', 'Other'];
+
+                const handleCategoryChange = (e) => {
+                    const { value, checked } = e.target;
+                    if (checked) {
+                        setSelectedCategories((prev) => [...prev, value]);
+                    } else {
+                        setSelectedCategories((prev) => prev.filter((cat) => cat !== value));
+                    }
+                };
+
+                const handleSubmit = (e) => {
+                    e.preventDefault();
+                    if (!agreedToTerms) {
+                        showMessage('Please agree to the Creator Terms & Conditions to sign up.');
+                        return;
+                    }
+                    // In a real app, this is where you'd send data to your backend for user registration
+                    console.log({ email, password, creatorName, bio, selectedCategories, existingWorkLink });
+                    showMessage(`Creator "${creatorName}" signed up successfully! (Simulated)`);
+                    // Optionally navigate back to home or a creator dashboard
+                    setActiveScreen('Home');
+                };
+
+                return (
+                    <div className="screenContainer">
+                        <p className="heading">Join NVA Network as a Creator!</p>
+                        <p className="subHeading">Create your profile to share your talent and connect with your audience.</p>
+
+                        <form onSubmit={handleSubmit}>
+                            <div className="formGroup">
+                                <label htmlFor="email" className="formLabel">Email:</label>
+                                <input
+                                    type="email"
+                                    id="email"
+                                    className="formInput"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="formGroup">
+                                <label htmlFor="password" className="formLabel">Password:</label>
+                                <input
+                                    type="password"
+                                    id="password"
+                                    className="formInput"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="formGroup">
+                                <label htmlFor="creatorName" className="formLabel">Creator Name (Public):</label>
+                                <input
+                                    type="text"
+                                    id="creatorName"
+                                    className="formInput"
+                                    value={creatorName}
+                                    onChange={(e) => setCreatorName(e.target.value)}
+                                    required
+                                />
+                            </div>
+
+                            <div className="formGroup">
+                                <label htmlFor="bio" className="formLabel">Brief Bio/Description:</label>
+                                <textarea
+                                    id="bio"
+                                    className="formTextarea"
+                                    value={bio}
+                                    onChange={(e) => setBio(e.target.value)}
+                                    placeholder="Tell us about yourself and your content!"
+                                    required
+                                ></textarea>
+                            </div>
+
+                            <div className="checkboxGroup">
+                                <p className="checkboxLabel">Content Categories:</p>
+                                {availableCategories.map((cat) => (
+                                    <div key={cat} className="checkboxItem">
+                                        <input
+                                            type="checkbox"
+                                            id={`cat-${cat}`}
+                                            value={cat}
+                                            checked={selectedCategories.includes(cat)}
+                                            onChange={handleCategoryChange}
+                                        />
+                                        <label htmlFor={`cat-${cat}`}>{cat}</label>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="formGroup">
+                                <label htmlFor="existingWork" className="formLabel">Link to Existing Work (Optional):</label>
+                                <input
+                                    type="url"
+                                    id="existingWork"
+                                    className="formInput"
+                                    value={existingWorkLink}
+                                    onChange={(e) => setExistingWorkLink(e.target.value)}
+                                    placeholder="e.g., YouTube channel, Instagram profile"
+                                />
+                            </div>
+
+                            <div className="formGroup">
+                                <div className="checkboxItem">
+                                    <input
+                                        type="checkbox"
+                                        id="agreeTerms"
+                                        checked={agreedToTerms}
+                                        onChange={(e) => setAgreedToTerms(e.target.checked)}
+                                        required
+                                    />
+                                    <label htmlFor="agreeTerms">
+                                        I agree to the <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); showMessage('Simulating opening Creator Terms & Conditions...'); }}>Creator Terms & Conditions</a>.
+                                    </label>
+                                </div>
+                                <p className="termsText">
+                                    NVA Network retains a **5-10% platform fee** from all crowdfunding and monetization activities
+                                    to support platform operations, development, and continued promotion of Guyanese content.
+                                    Detailed terms are in the full agreement.
+                                </p>
+                            </div>
+
+                            <button type="submit" className="button">
+                                <span className="buttonText">Sign Up as Creator</span>
+                            </button>
+                        </form>
+
+                        <button
+                            className="button"
+                            onClick={() => setActiveScreen('Home')}
+                            style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                        >
+                            <span className="buttonText">Back to Home</span>
+                        </button>
+                    </div>
+                );
+            };
+
+
             // --- Render Current Screen ---
             const renderScreen = () => {
                 switch (activeScreen) {
@@ -725,10 +1330,14 @@
                         return <HomeScreen />;
                     case 'Categories':
                         return <CategoriesScreen />;
-                    case 'Submit':
-                        return <CreatorSubmissionScreen />;
+                    case 'CreatorSignUp': // New case for Creator Sign Up screen
+                        return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'Premium':
                         return <PremiumScreen />;
+                    case 'Support':
+                        return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                    case 'CreatorCampaigns':
+                        return <CreatorCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'About':
                         return <AboutContactScreen />;
                     default:
@@ -739,14 +1348,17 @@
             return (
                 <div className="container">
                     <div className="header">
-                        {/* Logo Image - Placeholder for your actual logo URL */}
+                        {/* Logo Image as background cover */}
                         <img
-                            src="https://placehold.co/450x180/1A1A1A/FFD700?text=Your+Logo+Here"
+                            src="https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png"
                             alt="NVA Network Logo"
                             className="headerLogo"
-                            onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x180/1A1A1A/FFD700?text=Logo+Error'; }} /* Fallback image */
+                            onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }} /* Fallback image */
                         />
-                        <p className="tagline">Guyanese Content. Global Stage.</p>
+                        {/* App Name */}
+                        <p className="headerTitle">NVA Network</p>
+                        {/* Joined Tagline */}
+                        <p className="tagline">Guyanese Content to a Global Stage.</p>
                     </div>
 
                     {renderScreen()}
@@ -758,9 +1370,7 @@
                         <button className="navButton" onClick={() => setActiveScreen('Categories')}>
                             <span className={`navButtonText ${activeScreen === 'Categories' ? 'activeNavButtonText' : ''}`}>Categories</span>
                         </button>
-                        <button className="navButton" onClick={() => setActiveScreen('Submit')}>
-                            <span className={`navButtonText ${activeScreen === 'Submit' ? 'activeNavButtonText' : ''}`}>Submit</span>
-                        </button>
+                        {/* Removed Creator Sign Up from here */}
                         <button className="navButton" onClick={() => setActiveScreen('Premium')}>
                             <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
                         </button>
