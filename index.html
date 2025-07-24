@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NVA Network</title>
-    <!-- React and ReactDOM CDNs -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- React and ReactDOM CDNs - Added 'defer' attribute -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js" defer></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" defer></script>
     <!-- Babel for JSX transformation in browser -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
@@ -273,8 +273,8 @@
             flex: 1;
             /* Removed overflow-y: auto; here as body will handle overall scrolling */
         }
-        /* Carousel Styles */
-        .carousel-container {
+        /* Horizontal Carousel Styles (Featured Highlights) */
+        .horizontal-carousel-container {
             width: 100%;
             overflow-x: hidden; /* Hide scrollbar, manage scrolling with JS */
             -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
@@ -285,7 +285,7 @@
             margin-bottom: 20px; /* Space below carousel */
         }
 
-        .carousel-item {
+        .horizontal-carousel-item {
             flex: 0 0 calc(33.33% - 10px); /* Show 3 items, account for margin */
             margin-right: 15px; /* Spacing between items */
             border-radius: 10px;
@@ -300,7 +300,7 @@
             font-size: 12px;
             height: 100px; /* Fixed height for carousel images */
         }
-        .carousel-item:last-child {
+        .horizontal-carousel-item:last-child {
             margin-right: 0; /* No margin on the last item */
         }
         .carousel-image {
@@ -308,6 +308,64 @@
             height: 100%;
             object-fit: cover; /* Cover the item area */
             border-radius: 10px; /* Inherit border-radius */
+        }
+
+        /* Vertical Carousel Styles (Live Feed) */
+        .vertical-carousel-container {
+            width: 100%;
+            height: 250px; /* Fixed height for vertical carousel to show ~2 items */
+            overflow-y: hidden; /* Hide scrollbar, manage scrolling with JS */
+            -webkit-overflow-scrolling: touch; /* Enable touch scrolling */
+            scroll-snap-type: y mandatory; /* Snap to items */
+            scroll-behavior: smooth; /* Smooth scrolling animation */
+            display: flex;
+            flex-direction: column; /* Arrange items in a column */
+            margin-bottom: 20px;
+            background-color: #1A1A1A; /* Background for the carousel area */
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+        }
+
+        .vertical-carousel-item {
+            flex: 0 0 calc(50% - 10px); /* Show 2 items per view, with a gap */
+            margin-bottom: 15px; /* Space between items */
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+            scroll-snap-align: start; /* Snap to the start of each item */
+            display: flex;
+            align-items: center;
+            padding: 10px;
+        }
+
+        .vertical-carousel-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .liveFeedThumbnail {
+            width: 80px; /* Fixed width for live feed thumbnails */
+            height: 60px; /* Fixed height for live feed thumbnails (16:9 aspect ratio) */
+            object-fit: cover;
+            border-radius: 8px;
+            margin-right: 10px;
+        }
+
+        .liveFeedContent {
+            flex-grow: 1;
+        }
+
+        .liveFeedTitle {
+            font-size: 14px;
+            font-weight: bold;
+            color: #FFF;
+            margin-bottom: 5px;
+        }
+
+        .liveFeedCreator {
+            font-size: 12px;
+            color: #AAA;
         }
 
         .heading {
@@ -820,13 +878,20 @@
         // --- Placeholder Data ---
         // In a real app, this data would come from a backend API (e.g., Firestore, your own CMS)
         const featuredContent = [
-            { id: '1', title: 'New This Week: Guyanese Comedy Special', type: 'skit', url: 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1' }, // Example YouTube URL (embed format)
-            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: 'https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1' }, // Example YouTube URL (embed format)
-            { id: '3', title: 'Indie Film Spotlight: "Georgetown Dreams"', type: 'short-film', url: 'https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1' }, // Example YouTube URL (embed format)
-            { id: '4', title: 'Live Concert Replay: Mashramani Vibes', type: 'live-premiere', url: 'https://www.youtube.com/embed/example4?autoplay=1' },
-            { id: '5', title: 'Creator Interview: The Rise of Guyanese Talent', type: 'interview', url: 'https://www.youtube.com/embed/example5?autoplay=1' },
-            { id: '6', title: 'Short Film: "The Golden Arrowhead"', type: 'short-film', url: 'https://www.youtube.com/embed/example6?autoplay=1' },
+            { id: '1', title: 'Guyanese Comedy Special', type: 'skit', url: 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1', creator: 'Comedy Crew' }, // Example YouTube URL (embed format)
+            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: 'https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1', creator: 'Laugh Central' }, // Example YouTube URL (embed format)
+            { id: '3', title: 'Indie Film: "Georgetown Dreams"', type: 'short-film', url: 'https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1', creator: 'Indie Films GY' }, // Example YouTube URL (embed format)
+            { id: '4', title: 'Live Concert Replay: Mashramani', type: 'live-premiere', url: 'https://www.youtube.com/embed/example4?autoplay=1', creator: 'Vibes Ent.' },
+            { id: '5', title: 'Creator Interview: Rise of Talent', type: 'interview', url: 'https://www.youtube.com/embed/example5?autoplay=1', creator: 'NVA Insights' },
+            { id: '6', title: 'Short Film: "The Golden Arrowhead"', type: 'short-film', url: 'https://www.youtube.com/embed/example6?autoplay=1', creator: 'Heritage Films' },
+            { id: '7', title: 'New Skit Series: "Life in GT"', type: 'skit', url: 'https://www.youtube.com/embed/skit7?autoplay=1', creator: 'GT Daily' },
+            { id: '8', title: 'Cooking Show: Guyanese Delights', type: 'skit', url: 'https://www.youtube.com/embed/skit8?autoplay=1', creator: 'Chef Roti' },
+            { id: '9', title: 'Poetry Slam Live: Best of Season', type: 'live-premiere', url: 'https://www.youtube.com/embed/live9?autoplay=1', creator: 'Wordsmiths GY' },
+            { id: '10', title: 'Wildlife Doc: Amazonian Secrets', type: 'documentary', url: 'https://www.youtube.com/embed/doc1?autoplay=1', creator: 'Nature Watch' },
+            { id: '11', title: 'Guyanese Music Spotlight', type: 'music', url: 'https://www.youtube.com/embed/music1?autoplay=1', creator: 'Riddim Connect' },
+            { id: '12', title: 'Interview: Young Entrepreneurs', type: 'interview', url: 'https://www.youtube.com/embed/int1?autoplay=1', creator: 'Business Buzz GY' },
         ];
+
 
         const categories = {
             Skits: [
@@ -963,6 +1028,18 @@
             // Duplicate the array to create a seamless loop effect (at least twice the original for smooth looping)
             const carouselImages = [...originalCarouselImages, ...originalCarouselImages, ...originalCarouselImages];
 
+            // Placeholder data for the Live Feed Vertical Carousel
+            const originalLiveFeedContent = [
+                { id: 'lf1', title: 'New Comedy Skit: Dem Boys', creator: 'Street Jokes GY', thumbnail: 'https://placehold.co/80x60/808080/FFF?text=Skit1', url: 'https://www.youtube.com/embed/SKIT_LIVE_1?autoplay=1' },
+                { id: 'lf2', title: 'Interview: Rising Star', creator: 'NVA Insights', thumbnail: 'https://placehold.co/80x60/A0A0A0/000?text=Int1', url: 'https://www.youtube.com/embed/INTERVIEW_LIVE_2?autoplay=1' },
+                { id: 'lf3', title: 'Short Film Trailer: Lost Gold', creator: 'Guyana Films', thumbnail: 'https://placehold.co/80x60/606060/EEE?text=Film1', url: 'https://www.youtube.com/embed/FILM_LIVE_3?autoplay=1' },
+                { id: 'lf4', title: 'Live Music Session: Reggae Vibes', creator: 'Riddim Makers', thumbnail: 'https://placehold.co/80x60/404040/DDD?text=Music1', url: 'https://www.youtube.com/embed/MUSIC_LIVE_4?autoplay=1' },
+                { id: 'lf5', title: 'Behind The Scenes: Drama Shoot', creator: 'Creative Minds', thumbnail: 'https://placehold.co/80x60/202020/CCC?text=BTS1', url: 'https://www.youtube.com/embed/BTS_LIVE_5?autoplay=1' },
+                { id: 'lf6', title: 'Daily Vlog: Life in Georgetown', creator: 'GT Vlogger', thumbnail: 'https://placehold.co/80x60/909090/111?text=Vlog1', url: 'https://www.youtube.com/embed/VLOG_LIVE_6?autoplay=1' },
+            ];
+            // Duplicate the array for seamless vertical looping
+            const liveFeedItems = [...originalLiveFeedContent, ...originalLiveFeedContent, ...originalLiveFeedContent];
+
 
             // Function to display temporary messages
             const showMessage = (msg) => {
@@ -985,24 +1062,26 @@
             // --- Screens ---
 
             const HomeScreen = () => {
-                const carouselRef = useRef(null); // Create a ref for the carousel container
-                const scrollIntervalRef = useRef(null); // Ref to store the interval ID
-                const [isDragging, setIsDragging] = useState(false);
-                const [startX, setStartX] = useState(0);
-                const [scrollLeft, setScrollLeft] = useState(0);
+                const horizontalCarouselRef = useRef(null); // Ref for horizontal carousel
+                const horizontalScrollIntervalRef = useRef(null);
+                const [isHorizontalDragging, setIsHorizontalDragging] = useState(false);
+                const [horizontalStartX, setHorizontalStartX] = useState(0);
+                const [horizontalScrollLeft, setHorizontalScrollLeft] = useState(0);
 
-                // Function to start auto-scrolling
-                const startAutoScroll = () => {
-                    // Clear any existing interval to prevent duplicates
-                    if (scrollIntervalRef.current) {
-                        clearInterval(scrollIntervalRef.current);
-                    }
+                const verticalCarouselRef = useRef(null); // Ref for vertical carousel
+                const verticalScrollIntervalRef = useRef(null);
+                const [isVerticalDragging, setIsVerticalDragging] = useState(false);
+                const [verticalStartY, setVerticalStartY] = useState(0);
+                const [verticalScrollTop, setVerticalScrollTop] = useState(0);
 
-                    const carousel = carouselRef.current;
+                // --- Horizontal Carousel Auto-Scroll & Touch Handlers ---
+                const startHorizontalAutoScroll = () => {
+                    if (horizontalScrollIntervalRef.current) clearInterval(horizontalScrollIntervalRef.current);
+                    const carousel = horizontalCarouselRef.current;
                     if (!carousel) return;
 
                     let scrollAmountPerItem = 0;
-                    const firstItem = carousel.querySelector('.carousel-item');
+                    const firstItem = carousel.querySelector('.horizontal-carousel-item');
                     if (firstItem) {
                         const itemWidth = firstItem.offsetWidth;
                         const itemMarginRight = parseFloat(window.getComputedStyle(firstItem).marginRight);
@@ -1010,69 +1089,127 @@
                     } else {
                         scrollAmountPerItem = (carousel.offsetWidth / 3) + 15;
                     }
-
                     const originalContentWidth = originalCarouselImages.length * scrollAmountPerItem;
 
-                    scrollIntervalRef.current = setInterval(() => {
-                        if (isDragging) return; // Do not auto-scroll if user is dragging
-
-                        // If we are at or near the end of the *first* set of original images, jump back
-                        // We use a small buffer (e.g., scrollAmountPerItem / 2) to ensure a smooth transition
-                        // before the actual end of the duplicated content.
+                    horizontalScrollIntervalRef.current = setInterval(() => {
+                        if (isHorizontalDragging) return;
                         if (carousel.scrollLeft >= originalContentWidth - (scrollAmountPerItem / 2)) {
-                            carousel.scrollLeft = 0; // Instantly jump to the start of the first original set
+                            carousel.scrollLeft = 0;
                         }
-                        // Then, smoothly scroll forward by one item
                         carousel.scrollBy({ left: scrollAmountPerItem, behavior: 'smooth' });
-                    }, 3000); // Scroll every 3 seconds
+                    }, 3000);
                 };
 
-                // Function to stop auto-scrolling
-                const stopAutoScroll = () => {
-                    if (scrollIntervalRef.current) {
-                        clearInterval(scrollIntervalRef.current);
-                        scrollIntervalRef.current = null;
-                    }
+                const stopHorizontalAutoScroll = () => {
+                    if (horizontalScrollIntervalRef.current) clearInterval(horizontalScrollIntervalRef.current);
+                    horizontalScrollIntervalRef.current = null;
                 };
 
                 useEffect(() => {
-                    startAutoScroll(); // Start auto-scrolling when component mounts
+                    startHorizontalAutoScroll();
+                    const carousel = horizontalCarouselRef.current;
+                    if (!carousel) return;
+                    carousel.addEventListener('mouseenter', stopHorizontalAutoScroll);
+                    carousel.addEventListener('mouseleave', startHorizontalAutoScroll);
+                    return () => {
+                        stopHorizontalAutoScroll();
+                        carousel.removeEventListener('mouseenter', stopHorizontalAutoScroll);
+                        carousel.removeEventListener('mouseleave', startHorizontalAutoScroll);
+                    };
+                }, [isHorizontalDragging]);
 
-                    const carousel = carouselRef.current;
+                const handleHorizontalTouchStart = (e) => {
+                    stopHorizontalAutoScroll();
+                    setIsHorizontalDragging(true);
+                    setHorizontalStartX(e.touches[0].pageX - horizontalCarouselRef.current.offsetLeft);
+                    setHorizontalScrollLeft(horizontalCarouselRef.current.scrollLeft);
+                };
+
+                const handleHorizontalTouchMove = (e) => {
+                    if (!isHorizontalDragging) return;
+                    e.preventDefault();
+                    const x = e.touches[0].pageX - horizontalCarouselRef.current.offsetLeft;
+                    const walk = (x - horizontalStartX) * 1.5;
+                    horizontalCarouselRef.current.scrollLeft = horizontalScrollLeft - walk;
+                };
+
+                const handleHorizontalTouchEnd = () => {
+                    setIsHorizontalDragging(false);
+                    setTimeout(startHorizontalAutoScroll, 1500);
+                };
+
+                // --- Vertical Carousel Auto-Scroll & Touch Handlers ---
+                const startVerticalAutoScroll = () => {
+                    if (verticalScrollIntervalRef.current) clearInterval(verticalScrollIntervalRef.current);
+                    const carousel = verticalCarouselRef.current;
+                    if (!carousel) return;
+
+                    let scrollAmountPerItem = 0;
+                    const firstItem = carousel.querySelector('.vertical-carousel-item');
+                    if (firstItem) {
+                        const itemHeight = firstItem.offsetHeight;
+                        const itemMarginBottom = parseFloat(window.getComputedStyle(firstItem).marginBottom);
+                        scrollAmountPerItem = itemHeight + itemMarginBottom;
+                    } else {
+                        // Fallback if item not found, estimate scroll amount for 2 items
+                        scrollAmountPerItem = (carousel.offsetHeight / 2);
+                    }
+
+                    const originalContentHeight = originalLiveFeedContent.length * scrollAmountPerItem;
+
+                    verticalScrollIntervalRef.current = setInterval(() => {
+                        if (isVerticalDragging) return;
+
+                        // Check if current scroll position is past the first set of duplicated content
+                        if (carousel.scrollTop >= originalContentHeight - (scrollAmountPerItem / 2)) {
+                             carousel.scrollTop = 0; // Instantly jump back to the start of the first set
+                        }
+                        carousel.scrollBy({ top: scrollAmountPerItem, behavior: 'smooth' });
+                    }, 3000); // Adjust scroll speed as needed
+                };
+
+                const stopVerticalAutoScroll = () => {
+                    if (verticalScrollIntervalRef.current) clearInterval(verticalScrollIntervalRef.current);
+                    verticalScrollIntervalRef.current = null;
+                };
+
+                 useEffect(() => {
+                    startVerticalAutoScroll(); // Start auto-scrolling when component mounts
+
+                    const carousel = verticalCarouselRef.current;
                     if (!carousel) return;
 
                     // Mouse events for desktop hover (to pause/resume)
-                    carousel.addEventListener('mouseenter', stopAutoScroll);
-                    carousel.addEventListener('mouseleave', startAutoScroll);
+                    carousel.addEventListener('mouseenter', stopVerticalAutoScroll);
+                    carousel.addEventListener('mouseleave', startVerticalAutoScroll);
 
                     // Cleanup on component unmount
                     return () => {
-                        stopAutoScroll();
-                        carousel.removeEventListener('mouseenter', stopAutoScroll);
-                        carousel.removeEventListener('mouseleave', stopAutoScroll);
+                        stopVerticalAutoScroll();
+                        carousel.removeEventListener('mouseenter', stopVerticalAutoScroll);
+                        carousel.removeEventListener('mouseleave', startVerticalAutoScroll);
                     };
-                }, [isDragging]); // Re-run effect if isDragging changes to manage auto-scroll state
+                }, [isVerticalDragging]); // Re-run effect if isVerticalDragging changes
 
-                // --- Touch Event Handlers ---
-                const handleTouchStart = (e) => {
-                    stopAutoScroll(); // Stop auto-scroll immediately on touch start
-                    setIsDragging(true);
-                    setStartX(e.touches[0].pageX - carouselRef.current.offsetLeft);
-                    setScrollLeft(carouselRef.current.scrollLeft);
+                const handleVerticalTouchStart = (e) => {
+                    stopVerticalAutoScroll(); // Stop auto-scroll immediately on touch start
+                    setIsVerticalDragging(true);
+                    setVerticalStartY(e.touches[0].pageY - verticalCarouselRef.current.offsetTop);
+                    setVerticalScrollTop(verticalCarouselRef.current.scrollTop);
                 };
 
-                const handleTouchMove = (e) => {
-                    if (!isDragging) return;
-                    e.preventDefault(); // Prevent vertical scrolling while dragging horizontally
-                    const x = e.touches[0].pageX - carouselRef.current.offsetLeft;
-                    const walk = (x - startX) * 1.5; // Multiplier for faster scroll
-                    carouselRef.current.scrollLeft = scrollLeft - walk;
+                const handleVerticalTouchMove = (e) => {
+                    if (!isVerticalDragging) return;
+                    e.preventDefault(); // Prevent default vertical scrolling
+                    const y = e.touches[0].pageY - verticalCarouselRef.current.offsetTop;
+                    const walk = (y - verticalStartY) * 1.5; // Multiplier for faster scroll
+                    verticalCarouselRef.current.scrollTop = verticalScrollTop - walk;
                 };
 
-                const handleTouchEnd = () => {
-                    setIsDragging(false);
-                    // Resume auto-scroll after a short delay to allow user to settle on an image
-                    setTimeout(startAutoScroll, 1500); // Resume after 1.5 seconds
+                const handleVerticalTouchEnd = () => {
+                    setIsVerticalDragging(false);
+                    // Resume auto-scroll after a short delay
+                    setTimeout(startVerticalAutoScroll, 1500);
                 };
 
 
@@ -1094,25 +1231,26 @@
                             </button>
                         </div>
 
-                        {/* Image Carousel Section */}
+                        {/* Horizontal Image Carousel Section - Featured Highlights */}
                         <p className="sectionTitle">Featured Highlights</p>
                         <div
-                            className="carousel-container"
-                            ref={carouselRef}
-                            onTouchStart={handleTouchStart}
-                            onTouchMove={handleTouchMove}
-                            onTouchEnd={handleTouchEnd}
+                            className="horizontal-carousel-container"
+                            ref={horizontalCarouselRef}
+                            onTouchStart={handleHorizontalTouchStart}
+                            onTouchMove={handleHorizontalTouchMove}
+                            onTouchEnd={handleHorizontalTouchEnd}
                         >
                             {carouselImages.map((imageUrl, index) => (
-                                <div key={index} className="carousel-item">
+                                <div key={index} className="horizontal-carousel-item">
                                     <img src={imageUrl} alt={`Carousel Image ${index + 1}`} className="carousel-image" />
                                 </div>
                             ))}
                         </div>
 
-                        <p className="sectionTitle">New This Week</p>
+                        {/* "Trending" Section */}
+                        <p className="sectionTitle">Trending</p> {/* Changed from New This Week */}
                         <div className="contentGrid">
-                            {featuredContent.map((item) => (
+                            {featuredContent.slice(0, 6).map((item) => ( /* Limited to 6 items */
                                 <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
                                     <div className="thumbnailPlaceholder">
                                         <p className="thumbnailText">Video Thumbnail</p>
@@ -1126,18 +1264,22 @@
                             ))}
                         </div>
 
-                        <p className="sectionTitle">Top Guyanese Skits</p>
-                        <div className="contentGrid">
-                            {categories.Skits.slice(0, 4).map((item) => ( // Show first 4 skits as top
-                                <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
-                                    <div className="thumbnailPlaceholder">
-                                        <p className="thumbnailText">Video Thumbnail</p>
-                                        {/* SVG Play Icon */}
-                                        <svg className="playIcon" viewBox="0 0 24 24">
-                                            <path d="M8 5v14l11-7z"/>
-                                        </svg>
+                        {/* "Live Feed" Vertical Carousel Section */}
+                        <p className="sectionTitle">Live Feed</p> {/* Changed from Top Guyanese Skits */}
+                        <div
+                            className="vertical-carousel-container"
+                            ref={verticalCarouselRef}
+                            onTouchStart={handleVerticalTouchStart}
+                            onTouchMove={handleVerticalTouchMove}
+                            onTouchEnd={handleVerticalTouchEnd}
+                        >
+                            {liveFeedItems.map((item, index) => (
+                                <button key={index} className="vertical-carousel-item" onClick={() => handleVideoPress(item.url)}>
+                                    <img src={item.thumbnail} alt={item.title} className="liveFeedThumbnail" />
+                                    <div className="liveFeedContent">
+                                        <p className="liveFeedTitle">{item.title}</p>
+                                        <p className="liveFeedCreator">by {item.creator}</p>
                                     </div>
-                                    <p className="contentTitle">{item.title}</p>
                                 </button>
                             ))}
                         </div>
@@ -1880,7 +2022,7 @@
                     case 'CreatorCampaigns':
                         return <CreatorCampaignsScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'CreatorDashboard': // New case for Creator Dashboard
-                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={currentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'About':
                         return <AboutContactScreen />;
                     default:
@@ -1939,9 +2081,11 @@
             );
         }
 
-        // Render the App component into the root div
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // Render the App component into the root div after all resources are loaded
+        window.onload = function() {
+            const root = ReactDOM.createRoot(document.getElementById('root'));
+            root.render(<App />);
+        };
     </script>
 </body>
 </html>
