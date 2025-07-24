@@ -13,39 +13,39 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"; // Removed signInAnonymously
         import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // Removed getAnalytics import as it was part of the previous update
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 
         // Global Firebase variables (provided by Canvas environment)
-        // These will be populated by the Canvas runtime. Do not modify these lines.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {}; // Reverted to dynamic config
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUGp5pjqrushhUDPa9RLLp2xmttnKqU9Q",
+            authDomain: "nvanetworkapp.firebaseapp.com",
+            projectId: "nvanetworkapp",
+            storageBucket: "nvanetworkapp.firebasestorage.app",
+            messagingSenderId: "122220543439",
+            appId: "1:122220543439:web:e36cced435463b7939a6ba",
+            measurementId: "G-6RNS6DH3G0"
+        };
 
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        // const analytics = getAnalytics(app); // Removed analytics initialization
+        const analytics = getAnalytics(app);
 
-        // Export for use in React component (if needed for direct Firebase operations)
+        // Export for use in React component
         window.firebaseApp = app;
         window.firebaseAuth = auth;
         window.firebaseDb = db;
         window.initialAuthToken = initialAuthToken;
 
-        // Sign in anonymously if no custom token is provided (for development/testing)
-        // In a real app, you'd handle user authentication flows more robustly
-        if (initialAuthToken) {
-            signInWithCustomToken(auth, initialAuthToken)
-                .then(() => console.log("Signed in with custom token"))
-                .catch(error => console.error("Error signing in with custom token:", error));
-        } else {
-            signInAnonymously(auth)
-                .then(() => console.log("Signed in anonymously"))
-                .catch(error => console.error("Error signing in anonymously:", error));
-        }
+        // Removed signInAnonymously. Users will now need to explicitly sign up or log in.
+        // If you later want a login screen for existing users, you would add signInWithEmailAndPassword here.
     </script>
 
     <!-- Google Fonts - Bebas Neue for title, Inter for body -->
@@ -61,27 +61,33 @@
     <!-- PWA Enhancements END -->
 
     <style>
-        body {
+        html, body {
+            height: 100%; /* Ensure html and body take full height */
             margin: 0;
+            padding: 0;
+        }
+        body {
             font-family: 'Inter', sans-serif; /* Using Inter font as per instructions */
             background-color: #0A0A0A;
             color: #FFF;
             display: flex;
             justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            overflow: hidden; /* Prevent body scroll */
+            align-items: flex-start; /* Align to top to allow scrolling from the top */
+            min-height: 100vh; /* Ensure body is at least viewport height */
+            overflow-y: auto; /* Allow vertical scrolling for the entire body */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
         }
         #root {
             width: 100%;
             max-width: 450px; /* Typical mobile width constraint */
-            height: 100vh;
+            /* Removed height: 100vh; to allow it to expand with content */
             background-color: #0A0A0A;
             display: flex;
             flex-direction: column;
             border-radius: 15px; /* Rounded corners for the main app container */
-            overflow: hidden; /* Ensure content stays within rounded corners */
+            /* Removed overflow: hidden; to allow content to push height */
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            min-height: 100vh; /* Ensure #root is at least viewport height */
         }
         .container {
             flex: 1;
@@ -170,7 +176,7 @@
         .screenContainer {
             flex: 1;
             padding: 15px;
-            overflow-y: auto; /* Enable scrolling for content */
+            /* Removed overflow-y: auto; here as body will handle overall scrolling */
             position: relative; /* Added for positioning the new support button */
         }
         .sectionTitle {
@@ -261,7 +267,7 @@
         }
         .categoryContent {
             flex: 1;
-            overflow-y: auto;
+            /* Removed overflow-y: auto; here as body will handle overall scrolling */
         }
         /* Carousel Styles */
         .carousel-container {
@@ -903,7 +909,7 @@
 
         // Helper function to extract YouTube video ID and format for embed URL
         const getYouTubeEmbedUrl = (youtubeUrl) => {
-            const videoIdMatch = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/||shorts\/))([^&?#]+)/);
+            const videoIdMatch = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/||shorts\/))([^&?#]+)/);
             if (videoIdMatch && videoIdMatch[1]) {
                 return `https://www.youtube.com/embed/${videoIdMatch[1]}?autoplay=1&rel=0`; // autoplay and no related videos
             }
