@@ -11,7 +11,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <!-- Firebase SDKs -->
-    <script type="module" defer>  <!-- ADDED defer HERE -->
+    <script type="module" defer>
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -55,8 +55,8 @@
         window.getDoc = getDoc; // Expose Firestore getDoc
         window.updateDoc = updateDoc; // Expose Firestore updateDoc
         window.ref = ref; // Expose Storage ref
-        window.uploadBytes = uploadBytes; // Expose Storage uploadBytes
-        window.getDownloadURL = getDownloadURL; // Expose Storage getDownloadURL
+        window.uploadBytes = uploadBytes; // Storage uploadBytes function
+        window.getDownloadURL = getDownloadURL; // Storage getDownloadURL function
     </script>
 
     <!-- Google Fonts - Bebas Neue for title, Inter for body -->
@@ -2810,6 +2810,96 @@
                                 >
                                     Create New Campaign
                                 </button>
+                            </div>
+
+                            <div className="dashboardSection">
+                                <p className="dashboardSectionTitle">My Uploaded Videos</p>
+                                <div className="videoLinkSection">
+                                    <label htmlFor="youtubeLink" className="formLabel">YouTube Video Link:</label>
+                                    <div className="videoInputContainer">
+                                        <input
+                                            type="url"
+                                            id="youtubeLink"
+                                            className="formInput"
+                                            value={youtubeInputLink}
+                                            onChange={(e) => setYoutubeInputLink(e.target.value)}
+                                            placeholder="e.g., https://www.youtube.com/watch?v=VIDEO_ID"
+                                        />
+                                        {uploadedVideos.youtube ? (
+                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('youtube')}>Remove</button>
+                                        ) : (
+                                            <button className="actionButton" onClick={() => handleAddOrUpdateVideo('youtube', youtubeInputLink)}>Add</button>
+                                        )}
+                                    </div>
+                                    {uploadedVideos.youtube && (
+                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.youtube.embedUrl)}>
+                                            <img src={uploadedVideos.youtube.thumbnailUrl} alt="YouTube Thumbnail" className="videoThumbnail" />
+                                            <div className="videoThumbnailOverlay">
+                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="videoLinkSection">
+                                    <label htmlFor="facebookLink" className="formLabel">Facebook Video Link:</label>
+                                    <div className="videoInputContainer">
+                                        <input
+                                            type="url"
+                                            id="facebookLink"
+                                            className="formInput"
+                                            value={facebookInputLink}
+                                            onChange={(e) => setFacebookInputLink(e.target.value)}
+                                            placeholder="e.g., https://www.facebook.com/video.php?v=VIDEO_ID"
+                                        />
+                                        {uploadedVideos.facebook ? (
+                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('facebook')}>Remove</button>
+                                        ) : (
+                                            <button className="actionButton" onClick={() => handleAddOrUpdateVideo('facebook', facebookInputLink)}>Add</button>
+                                        )}
+                                    </div>
+                                    {uploadedVideos.facebook && (
+                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.facebook.embedUrl)}>
+                                            <img src={uploadedVideos.facebook.thumbnailUrl} alt="Facebook Thumbnail" className="videoThumbnail" />
+                                            <div className="videoThumbnailOverlay">
+                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="videoLinkSection">
+                                    <label htmlFor="tiktokLink" className="formLabel">TikTok Video Link:</label>
+                                    <div className="videoInputContainer">
+                                        <input
+                                            type="url"
+                                            id="tiktokLink"
+                                            className="formInput"
+                                            value={tiktokInputLink}
+                                            onChange={(e) => setTiktokInputInputLink(e.target.value)}
+                                            placeholder="e.g., https://www.tiktok.com/@user/video/VIDEO_ID"
+                                        />
+                                        {uploadedVideos.tiktok ? (
+                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('tiktok')}>Remove</button>
+                                        ) : (
+                                            <button className="actionButton" onClick={() => handleAddOrUpdateVideo('tiktok', tiktokInputLink)}>Add</button>
+                                        )}
+                                    </div>
+                                    {uploadedVideos.tiktok && (
+                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.tiktok.embedUrl)}>
+                                            <img src={uploadedVideos.tiktok.thumbnailUrl} alt="TikTok Thumbnail" className="videoThumbnail" />
+                                            <div className="videoThumbnailOverlay">
+                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
                             <div className="dashboardSection">
