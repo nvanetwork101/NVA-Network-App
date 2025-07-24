@@ -13,7 +13,7 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"; // Removed signInAnonymously
+        import { getAuth, createUserWithEmailAndPassword, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 
@@ -158,20 +158,23 @@
         }
         .navButton {
             padding: 8px 15px;
-            border-radius: 20px;
+            border-radius: 25px; /* Adjusted for consistency with other buttons */
             cursor: pointer;
             transition: background-color 0.3s ease;
+            background-color: #FFD700; /* Changed to gold for visibility */
+            box-shadow: 0 4px 5px rgba(0, 0, 0, 0.3); /* Added shadow for consistency */
+            border: none; /* Removed border */
         }
         .navButton:hover {
-            background-color: #2A2A2A;
+            background-color: #FFC400; /* Darker gold on hover */
         }
         .navButtonText {
-            color: #FFF;
+            color: #0A0A0A; /* Changed to black for visibility */
             font-size: 14px;
             font-weight: 600;
         }
         .activeNavButtonText {
-            color: #FFD700; /* Highlight active button */
+            color: #0A0A0A; /* Changed to black for visibility on gold background */
         }
         .screenContainer {
             flex: 1;
@@ -1459,6 +1462,9 @@
                                     onChange={(e) => setPassword(e.target.value)}
                                     required
                                 />
+                                <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
+                                    Password must be at least 6 characters long.
+                                </p>
                             </div>
 
                             <div className="formGroup">
@@ -1668,12 +1674,10 @@
                         setTiktokThumbnail('');
                         setTiktokEmbedUrl('');
                     }
-                    showMessage(`${platform} video removed.`);
+                    showMessage(`${platform} video removed successfully.`);
                 };
 
                 const handleAddVideo = (platform) => {
-                    // This button primarily makes the input visible if it was hidden or cleared.
-                    // The actual "add" logic happens when the user pastes a URL into the input field.
                     showMessage(`Paste your ${platform} video link into the text box and click outside.`);
                 };
 
@@ -1688,13 +1692,13 @@
                             <p className="dashboardItem">**Categories:** {currentCreator.categories.join(', ')}</p>
                             <button
                                 className="dashboardButton"
-                                onClick={() => showMessage('Simulating profile edit...')}
+                                onClick={() => showMessage('Profile editing functionality coming soon!')}
                             >
                                 Edit Profile
                             </button>
                             <button
                                 className="dashboardButton"
-                                onClick={() => showMessage('Simulating profile picture upload...')}
+                                onClick={() => showMessage('Profile picture upload functionality coming soon!')}
                             >
                                 Upload Profile Picture
                             </button>
@@ -1829,7 +1833,7 @@
                             )}
                             <button
                                 className="dashboardButton"
-                                onClick={() => showMessage('Simulating new campaign creation form...')}
+                                onClick={() => showMessage('New campaign creation form functionality coming soon!')}
                             >
                                 Create New Campaign
                             </button>
@@ -1842,7 +1846,7 @@
                             <p className="dashboardItem">**Audience Engagement:** High</p>
                             <button
                                 className="dashboardButton"
-                                onClick={() => showMessage('Simulating detailed analytics report...')}
+                                onClick={() => showMessage('Detailed analytics report functionality coming soon!')}
                             >
                                 View Full Analytics
                             </button>
@@ -1874,7 +1878,7 @@
                     case 'Support':
                         return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'CreatorCampaigns':
-                        return <CreatorCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        return <CreatorCampaignsScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'CreatorDashboard': // New case for Creator Dashboard
                         return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'About':
