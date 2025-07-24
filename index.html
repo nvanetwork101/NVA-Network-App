@@ -10,6 +10,44 @@
     <!-- Babel for JSX transformation in browser -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // Removed getAnalytics import as it was part of the previous update
+
+        // Global Firebase variables (provided by Canvas environment)
+        // These will be populated by the Canvas runtime. Do not modify these lines.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {}; // Reverted to dynamic config
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        // const analytics = getAnalytics(app); // Removed analytics initialization
+
+        // Export for use in React component (if needed for direct Firebase operations)
+        window.firebaseApp = app;
+        window.firebaseAuth = auth;
+        window.firebaseDb = db;
+        window.initialAuthToken = initialAuthToken;
+
+        // Sign in anonymously if no custom token is provided (for development/testing)
+        // In a real app, you'd handle user authentication flows more robustly
+        if (initialAuthToken) {
+            signInWithCustomToken(auth, initialAuthToken)
+                .then(() => console.log("Signed in with custom token"))
+                .catch(error => console.error("Error signing in with custom token:", error));
+        } else {
+            signInAnonymously(auth)
+                .then(() => console.log("Signed in anonymously"))
+                .catch(error => console.error("Error signing in anonymously:", error));
+        }
+    </script>
+
     <!-- Google Fonts - Bebas Neue for title, Inter for body -->
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 
@@ -52,14 +90,17 @@
             flex-direction: column;
         }
         .header {
-            position: relative; /* For absolute positioning of children */
+            position: relative; /* For absolute positioning of children and pseudo-element */
             height: 150px; /* Header height */
             padding: 0; /* No padding */
             background-color: #1A1A1A; /* Dark background color for header (will be covered by logo) */
             border-bottom: 1px solid #333;
             border-radius: 15px 15px 0 0; /* Rounded top corners */
             overflow: hidden; /* Ensure content stays within bounds */
+            z-index: 0; /* Establish a stacking context for its children */
         }
+        /* Abstract grey art background for header, behind text */
+        /* Removed .header::before rule */
         .headerTitle {
             position: absolute;
             top: 15px;
@@ -67,7 +108,7 @@
             font-size: 28px;
             font-weight: bold;
             color: #FFD700; /* Gold color for branding */
-            z-index: 2; /* Ensure it's above other elements */
+            z-index: 3; /* Ensure it's above the abstract art */
             text-shadow: 1px 1px 3px rgba(0,0,0,0.7); /* Add subtle shadow for readability */
             font-family: 'Bebas Neue', sans-serif; /* Applied new font */
             font-size: 38px; /* Slightly larger for impact */
@@ -77,11 +118,11 @@
             top: 0;
             left: 0;
             width: 100%; /* Make it cover the full width */
-            height: 100%; /* Make it cover the full height */
+            height: 100%;
             object-fit: cover; /* Ensures the image covers the entire area, cropping if necessary */
-            z-index: 1; /* Place behind title and tagline */
+            z-index: 1; /* Place at the bottom layer of header content */
             /* Fallback styles for placeholder/error */
-            background-color: #333;
+            background-color: #333; /* Fallback background for logo area */
             color: #FFF;
             display: flex;
             justify-content: center;
@@ -97,7 +138,7 @@
             color: #AAA; /* Original color */
             font-weight: normal; /* Original font weight */
             text-align: left; /* Align text to the left */
-            z-index: 2; /* Ensure it's above other elements */
+            z-index: 3; /* Ensure it's above the abstract art */
             text-shadow: 1px 1px 3px rgba(0,0,0,0.7); /* Add subtle shadow for readability */
         }
         .navigationBar {
@@ -601,6 +642,158 @@
         .termsLink:hover {
             text-decoration: underline;
         }
+
+        /* Styles for Creator Dashboard */
+        .dashboardSection {
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+        }
+        .dashboardSectionTitle {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 10px;
+        }
+        .dashboardItem {
+            font-size: 14px;
+            color: #CCC;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+        .dashboardButton {
+            background-color: #FFD700;
+            padding: 8px 15px;
+            border-radius: 20px;
+            color: #0A0A0A;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+            margin-top: 10px;
+            margin-right: 10px;
+        }
+        .dashboardButton:hover {
+            background-color: #FFC400;
+        }
+        .dashboardContentList {
+            margin-top: 10px;
+            padding-left: 0; /* Remove default ul padding */
+            list-style: none; /* Remove bullet points */
+        }
+        .dashboardContentListItem {
+            background-color: #3A3A3A;
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            color: #FFF;
+        }
+        .dashboardContentListItem span {
+            flex-grow: 1;
+        }
+        .dashboardContentListItem .actionButton {
+            background-color: #555;
+            color: #FFF;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
+            transition: background-color 0.2s ease;
+        }
+        .dashboardContentListItem .actionButton:hover {
+            background-color: #777;
+        }
+
+        /* New styles for video link sections in dashboard */
+        .videoLinkSection {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #333;
+        }
+        .videoLinkSection:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .videoLinkSection .formLabel {
+            margin-bottom: 10px;
+            font-size: 16px;
+            color: #FFD700;
+        }
+        .videoInputContainer {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .videoInputContainer .formInput {
+            flex-grow: 1;
+        }
+        .videoThumbnailContainer {
+            position: relative;
+            width: 100%;
+            height: 150px; /* Fixed height for thumbnails */
+            background-color: #444;
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .videoThumbnail {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .videoThumbnailOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.4);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .thumbnailPlayIcon {
+            width: 40px;
+            height: 40px;
+            fill: #FFF;
+            opacity: 0.9;
+        }
+        .videoActions {
+            display: flex;
+            justify-content: flex-end; /* Align buttons to the right */
+            gap: 10px;
+        }
+        .videoActions .actionButton {
+            background-color: #FFD700;
+            color: #0A0A0A;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+        }
+        .videoActions .actionButton.remove {
+            background-color: #DC3545; /* Red for remove */
+            color: #FFF;
+        }
+        .videoActions .actionButton:hover {
+            background-color: #FFC400;
+        }
+        .videoActions .actionButton.remove:hover {
+            background-color: #C82333;
+        }
     </style>
 </head>
 <body>
@@ -608,6 +801,11 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React; // Import useRef
+
+        // Get Firebase instances from window (exported from the module script)
+        const auth = window.firebaseAuth;
+        const db = window.firebaseDb;
+        const initialAuthToken = window.initialAuthToken;
 
         // --- Placeholder Data ---
         // In a real app, this data would come from a backend API (e.g., Firestore, your own CMS)
@@ -703,7 +901,6 @@
             },
         ];
 
-
         // Helper function to extract YouTube video ID and format for embed URL
         const getYouTubeEmbedUrl = (youtubeUrl) => {
             const videoIdMatch = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/||shorts\/))([^&?#]+)/);
@@ -771,7 +968,7 @@
 
             // Function to close the video modal
             const closeVideoModal = () => {
-                setShowVideoModal(false);
+                    setShowVideoModal(false);
                 setCurrentVideoUrl('');
             };
 
@@ -973,9 +1170,6 @@
                     </div>
                 </div>
             );
-
-            // Removed CreatorSubmissionScreen as it's being replaced by CreatorSignUpScreen
-            // const CreatorSubmissionScreen = () => (...)
 
             const PremiumScreen = () => (
                 <div className="screenContainer">
@@ -1191,17 +1385,44 @@
                     }
                 };
 
-                const handleSubmit = (e) => {
+                const handleSubmit = async (e) => {
                     e.preventDefault();
                     if (!agreedToTerms) {
                         showMessage('Please agree to the Creator Terms & Conditions to sign up.');
                         return;
                     }
-                    // In a real app, this is where you'd send data to your backend for user registration
-                    console.log({ email, password, creatorName, bio, selectedCategories, existingWorkLink });
-                    showMessage(`Creator "${creatorName}" signed up successfully! (Simulated)`);
-                    // Optionally navigate back to home or a creator dashboard
-                    setActiveScreen('Home');
+
+                    try {
+                        // Create user with Firebase Authentication
+                        const userCredential = await firebaseAuth.createUserWithEmailAndPassword(auth, email, password);
+                        const user = userCredential.user;
+
+                        // In a real app, you would also save creator-specific profile data to Firestore here
+                        // For example:
+                        // await setDoc(doc(firebaseDb, "creators", user.uid), {
+                        //     email: email,
+                        //     creatorName: creatorName,
+                        //     bio: bio,
+                        //     categories: selectedCategories,
+                        //     existingWorkLink: existingWorkLink,
+                        //     createdAt: new Date()
+                        // });
+
+                        showMessage(`Creator "${creatorName}" signed up successfully! (Simulated, real user created)`);
+                        // Navigate to the Creator Dashboard after successful sign-up
+                        setActiveScreen('CreatorDashboard');
+                    } catch (error) {
+                        console.error("Error signing up creator:", error);
+                        let errorMessage = "Failed to sign up. Please try again.";
+                        if (error.code === 'auth/email-already-in-use') {
+                            errorMessage = "This email is already in use. Please use a different email or sign in.";
+                        } else if (error.code === 'auth/invalid-email') {
+                            errorMessage = "Invalid email address.";
+                        } else if (error.code === 'auth/weak-password') {
+                            errorMessage = "Password is too weak. Please choose a stronger password.";
+                        }
+                        showMessage(errorMessage);
+                    }
                 };
 
                 return (
@@ -1322,6 +1543,316 @@
                 );
             };
 
+            // --- Creator Dashboard Screen ---
+            const CreatorDashboardScreen = ({ showMessage, setActiveScreen }) => {
+                // Placeholder for the currently "logged in" creator's data
+                // In a real app, this would come from authentication context or state
+                const currentCreator = {
+                    name: "Guyana Film Collective", // Example creator name
+                    bio: "Passionate about telling Guyanese stories through film. Support our journey!",
+                    categories: ["Short Films", "Documentary"],
+                };
+
+                const [profilePictureUrl, setProfilePictureUrl] = useState('https://placehold.co/100x100/555/FFF?text=Profile');
+
+                // States for video links and their thumbnails/embed URLs
+                const [youtubeLink, setYoutubeLink] = useState('');
+                const [youtubeThumbnail, setYoutubeThumbnail] = useState('');
+                const [youtubeEmbedUrl, setYoutubeEmbedUrl] = useState('');
+
+                const [facebookLink, setFacebookLink] = useState('');
+                const [facebookThumbnail, setFacebookThumbnail] = useState('');
+                const [facebookEmbedUrl, setFacebookEmbedUrl] = useState('');
+
+                const [tiktokLink, setTiktokLink] = useState('');
+                const [tiktokThumbnail, setTiktokThumbnail] = useState('');
+                const [tiktokEmbedUrl, setTiktokEmbedUrl] = useState('');
+
+                // --- Helper functions for video platforms ---
+                const extractYouTubeId = (url) => {
+                    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^&?#]+)/);
+                    return match ? match[1] : null;
+                };
+
+                // Simplified Facebook ID extraction (might need Graph API for robust solution)
+                const extractFacebookId = (url) => {
+                    // This is a very basic regex and might not catch all Facebook video URLs.
+                    // A more robust solution often requires Facebook's Graph API.
+                    const match = url.match(/(?:facebook\.com\/(?:video.php\?v=|watch\/\?v=)|fb\.watch\/)([0-9]+)/);
+                    return match ? match[1] : null;
+                };
+
+                // Simplified TikTok ID extraction (might need TikTok API for robust solution)
+                const extractTikTokId = (url) => {
+                    // This is a very basic regex and might not catch all TikTok video URLs.
+                    // A more robust solution often requires TikTok's API.
+                    const match = url.match(/(?:tiktok\.com\/@(?:[a-zA-Z0-9._]+)\/video\/|vm\.tiktok\.com\/)([0-9]+)/);
+                    return match ? match[1] : null;
+                };
+
+                const getThumbnailAndEmbed = (platform, url) => {
+                    let videoId = null;
+                    let thumbnailUrl = '';
+                    let embedUrl = '';
+                    let title = '';
+
+                    switch (platform) {
+                        case 'youtube':
+                            videoId = extractYouTubeId(url);
+                            if (videoId) {
+                                thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+                                embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+                                title = 'YouTube Video'; // Placeholder title
+                            }
+                            break;
+                        case 'facebook':
+                            videoId = extractFacebookId(url);
+                            if (videoId) {
+                                // Facebook thumbnails are tricky without API, using placeholder
+                                thumbnailUrl = `https://placehold.co/150x100/4682B4/FFF?text=FB+Video`;
+                                embedUrl = `https://www.facebook.com/video/embed/?video_id=${videoId}`; // Simplified embed
+                                title = 'Facebook Video'; // Placeholder title
+                            }
+                            break;
+                        case 'tiktok':
+                            videoId = extractTikTokId(url);
+                            if (videoId) {
+                                // TikTok thumbnails are tricky without API, using placeholder
+                                thumbnailUrl = `https://placehold.co/150x100/6A5ACD/FFF?text=TikTok+Video`;
+                                embedUrl = `https://www.tiktok.com/embed/v2/${videoId}`; // Simplified embed
+                                title = 'TikTok Video'; // Placeholder title
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                    return { videoId, thumbnailUrl, embedUrl, title };
+                };
+
+                const handleVideoLinkChange = (platform, e) => {
+                    const url = e.target.value;
+                    const { thumbnailUrl, embedUrl } = getThumbnailAndEmbed(platform, url);
+
+                    if (platform === 'youtube') {
+                        setYoutubeLink(url);
+                        setYoutubeThumbnail(thumbnailUrl);
+                        setYoutubeEmbedUrl(embedUrl);
+                    } else if (platform === 'facebook') {
+                        setFacebookLink(url);
+                        setFacebookThumbnail(thumbnailUrl);
+                        setFacebookEmbedUrl(embedUrl);
+                    } else if (platform === 'tiktok') {
+                        setTiktokLink(url);
+                        setTiktokThumbnail(thumbnailUrl);
+                        setTiktokEmbedUrl(embedUrl);
+                    }
+                };
+
+                const handleRemoveVideo = (platform) => {
+                    if (platform === 'youtube') {
+                        setYoutubeLink('');
+                        setYoutubeThumbnail('');
+                        setYoutubeEmbedUrl('');
+                    } else if (platform === 'facebook') {
+                        setFacebookLink('');
+                        setFacebookThumbnail('');
+                        setFacebookEmbedUrl('');
+                    } else if (platform === 'tiktok') {
+                        setTiktokLink('');
+                        setTiktokThumbnail('');
+                        setTiktokEmbedUrl('');
+                    }
+                    showMessage(`${platform} video removed.`);
+                };
+
+                const handleAddVideo = (platform) => {
+                    // This button primarily makes the input visible if it was hidden or cleared.
+                    // The actual "add" logic happens when the user pastes a URL into the input field.
+                    showMessage(`Paste your ${platform} video link into the text box and click outside.`);
+                };
+
+                return (
+                    <div className="screenContainer">
+                        <p className="heading">Creator Dashboard</p>
+                        <p className="subHeading">Welcome, {currentCreator.name}!</p>
+
+                        <div className="dashboardSection">
+                            <p className="dashboardSectionTitle">Your Profile</p>
+                            <p className="dashboardItem">**Bio:** {currentCreator.bio}</p>
+                            <p className="dashboardItem">**Categories:** {currentCreator.categories.join(', ')}</p>
+                            <button
+                                className="dashboardButton"
+                                onClick={() => showMessage('Simulating profile edit...')}
+                            >
+                                Edit Profile
+                            </button>
+                            <button
+                                className="dashboardButton"
+                                onClick={() => showMessage('Simulating profile picture upload...')}
+                            >
+                                Upload Profile Picture
+                            </button>
+                        </div>
+
+                        <div className="dashboardSection">
+                            <p className="dashboardSectionTitle">My Uploaded Content</p>
+
+                            {/* YouTube Video Section */}
+                            <div className="videoLinkSection">
+                                <label htmlFor="youtubeLink" className="formLabel">YouTube Video Link:</label>
+                                {youtubeThumbnail ? (
+                                    <>
+                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(youtubeEmbedUrl)}>
+                                            <img src={youtubeThumbnail} alt="YouTube Thumbnail" className="videoThumbnail" />
+                                            <div className="videoThumbnailOverlay">
+                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <div className="videoActions">
+                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('youtube')}>Remove</button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <input
+                                            type="url"
+                                            id="youtubeLink"
+                                            className="formInput"
+                                            value={youtubeLink}
+                                            onChange={(e) => setYoutubeLink(e.target.value)}
+                                            onBlur={(e) => handleVideoLinkChange('youtube', e)}
+                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleVideoLinkChange('youtube', e); } }}
+                                            placeholder="Paste YouTube video URL here"
+                                        />
+                                        <div className="videoActions">
+                                            <button className="actionButton" onClick={() => handleAddVideo('youtube')}>Add YouTube Video</button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* Facebook Video Section */}
+                            <div className="videoLinkSection">
+                                <label htmlFor="facebookLink" className="formLabel">Facebook Video Link:</label>
+                                {facebookThumbnail ? (
+                                    <>
+                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(facebookEmbedUrl)}>
+                                            <img src={facebookThumbnail} alt="Facebook Thumbnail" className="videoThumbnail" />
+                                            <div className="videoThumbnailOverlay">
+                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <div className="videoActions">
+                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('facebook')}>Remove</button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <input
+                                            type="url"
+                                            id="facebookLink"
+                                            className="formInput"
+                                            value={facebookLink}
+                                            onChange={(e) => setFacebookLink(e.target.value)}
+                                            onBlur={(e) => handleVideoLinkChange('facebook', e)}
+                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleVideoLinkChange('facebook', e); } }}
+                                            placeholder="Paste Facebook video URL here"
+                                        />
+                                        <div className="videoActions">
+                                            <button className="actionButton" onClick={() => handleAddVideo('facebook')}>Add Facebook Video</button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* TikTok Video Section */}
+                            <div className="videoLinkSection">
+                                <label htmlFor="tiktokLink" className="formLabel">TikTok Video Link:</label>
+                                {tiktokThumbnail ? (
+                                    <>
+                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(tiktokEmbedUrl)}>
+                                            <img src={tiktokThumbnail} alt="TikTok Thumbnail" className="videoThumbnail" />
+                                            <div className="videoThumbnailOverlay">
+                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <div className="videoActions">
+                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('tiktok')}>Remove</button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <input
+                                            type="url"
+                                            id="tiktokLink"
+                                            className="formInput"
+                                            value={tiktokLink}
+                                            onChange={(e) => setTiktokLink(e.target.value)}
+                                            onBlur={(e) => handleVideoLinkChange('tiktok', e)}
+                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleVideoLinkChange('tiktok', e); } }}
+                                            placeholder="Paste TikTok video URL here"
+                                        />
+                                        <div className="videoActions">
+                                            <button className="actionButton" onClick={() => handleAddVideo('tiktok')}>Add TikTok Video</button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="dashboardSection">
+                            <p className="dashboardSectionTitle">My Crowdfunding Campaigns</p>
+                            {creatorCampaigns.filter(c => c.creator === currentCreator.name).length > 0 ? (
+                                <ul className="dashboardContentList">
+                                    {creatorCampaigns.filter(c => c.creator === currentCreator.name).map(campaign => (
+                                        <li key={campaign.id} className="dashboardContentListItem">
+                                            <span>{campaign.title} (${campaign.raised}/${campaign.goal})</span>
+                                            <button className="actionButton" onClick={() => showMessage(`Viewing details for "${campaign.title}"...`)}>Details</button>
+                                            <button className="actionButton" onClick={() => showMessage(`Editing "${campaign.title}"...`)}>Edit</button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="dashboardItem">You don't have any active campaigns.</p>
+                            )}
+                            <button
+                                className="dashboardButton"
+                                onClick={() => showMessage('Simulating new campaign creation form...')}
+                            >
+                                Create New Campaign
+                            </button>
+                        </div>
+
+                        <div className="dashboardSection">
+                            <p className="dashboardSectionTitle">Analytics Overview</p>
+                            <p className="dashboardItem">**Total Views:** 15,450 (Last 30 days)</p>
+                            <p className="dashboardItem">**Total Crowdfunding Raised:** $3,450</p>
+                            <p className="dashboardItem">**Audience Engagement:** High</p>
+                            <button
+                                className="dashboardButton"
+                                onClick={() => showMessage('Simulating detailed analytics report...')}
+                            >
+                                View Full Analytics
+                            </button>
+                        </div>
+
+                        <button
+                            className="button"
+                            onClick={() => setActiveScreen('Home')}
+                            style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                        >
+                            <span className="buttonText">Back to Home</span>
+                        </button>
+                    </div>
+                );
+            };
+
 
             // --- Render Current Screen ---
             const renderScreen = () => {
@@ -1338,6 +1869,8 @@
                         return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'CreatorCampaigns':
                         return <CreatorCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                    case 'CreatorDashboard': // New case for Creator Dashboard
+                        return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'About':
                         return <AboutContactScreen />;
                     default:
@@ -1355,6 +1888,7 @@
                             className="headerLogo"
                             onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }} /* Fallback image */
                         />
+                        {/* Abstract art pseudo-element is now behind this text and tagline */}
                         {/* App Name */}
                         <p className="headerTitle">NVA Network</p>
                         {/* Joined Tagline */}
@@ -1370,9 +1904,11 @@
                         <button className="navButton" onClick={() => setActiveScreen('Categories')}>
                             <span className={`navButtonText ${activeScreen === 'Categories' ? 'activeNavButtonText' : ''}`}>Categories</span>
                         </button>
-                        {/* Removed Creator Sign Up from here */}
                         <button className="navButton" onClick={() => setActiveScreen('Premium')}>
                             <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
+                        </button>
+                        <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
+                            <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Creator Dashboard</span>
                         </button>
                         <button className="navButton" onClick={() => setActiveScreen('About')}>
                             <span className={`navButtonText ${activeScreen === 'About' ? 'activeNavButtonText' : ''}`}>About</span>
