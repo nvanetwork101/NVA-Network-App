@@ -11,7 +11,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <!-- Firebase SDKs -->
-    <script type="module">
+    <script type="module" defer>  <!-- ADDED defer HERE -->
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -45,7 +45,7 @@
         window.firebaseAuth = auth;
         window.firebaseDb = db;
         window.firebaseStorage = storage; // Export Storage
-        window.initialAuthToken = initialAuthToken;
+        window.initialAuthToken = initialAuthToken; // Export corrected initialAuthToken
         window.createUserWithEmailAndPassword = createUserWithEmailAndPassword; // Expose the function itself
         window.signInWithEmailAndPassword = signInWithEmailAndPassword; // Expose sign-in function
         window.signOut = signOut; // Expose sign-out function
@@ -177,7 +177,7 @@
             border: none; /* Removed border */
         }
         .navButton:hover {
-            background-color: #FFC400; /* Darker gold on hover */
+            background-color: #FFC400;
         }
         .navButtonText {
             color: #0A0A0A; /* Changed to black for visibility */
@@ -910,13 +910,117 @@
             background-color: #FFC400;
         }
 
+        /* Profile Picture Adjustment Modal Styles */
+        .imageAdjustModalOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.95); /* More opaque */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000; /* Higher z-index than video modal */
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .imageAdjustModalContent {
+            background-color: #1A1A1A;
+            border-radius: 15px;
+            padding: 20px;
+            width: 90%;
+            max-width: 400px;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .canvasContainer {
+            position: relative;
+            width: 200px; /* Fixed size for the canvas view */
+            height: 200px;
+            border-radius: 50%; /* Circular clipping for the preview */
+            overflow: hidden;
+            border: 2px solid #FFD700; /* Gold border for the circle */
+            background-color: #333; /* Fallback background */
+            margin-bottom: 20px;
+            cursor: grab; /* Indicate draggable */
+        }
+
+        .canvasContainer.dragging {
+            cursor: grabbing;
+        }
+
+        canvas {
+            display: block; /* Remove extra space below canvas */
+            touch-action: none; /* Prevent default touch actions like scrolling/zooming by OS */
+        }
+
+        .modalButtons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .modalButton {
+            background-color: #FFD700;
+            color: #0A0A0A;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+        }
+
+        .modalButton:hover {
+            background-color: #FFC400;
+        }
+
+        .modalButton.cancel {
+            background-color: #555;
+            color: #FFF;
+        }
+
+        .modalButton.cancel:hover {
+            background-color: #777;
+        }
+
+        /* Styles for Zoom Controls */
+        .zoomControls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            align-items: center;
+        }
+        .zoomButton {
+            background-color: #3A3A3A;
+            color: #FFD700;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 1px solid #FFD700;
+            font-size: 24px;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        .zoomButton:hover {
+            background-color: #4A4A4A;
+        }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useCallback } = React;
 
         const auth = window.firebaseAuth;
         const db = window.firebaseDb;
@@ -1067,34 +1171,418 @@
             );
         };
 
+        // --- Profile Picture Adjustment Modal Component ---
+        const ProfilePictureAdjustModal = ({ imageUrl, onSave, onCancel, showMessage }) => {
+            const canvasRef = useRef(null);
+            const imageRef = useRef(new Image());
+            const [scale, setScale] = useState(1);
+            const [position, setPosition] = useState({ x: 0, y: 0 }); // Relative to canvas center, in image pixels
+            const [isDragging, setIsDragging] = useState(false);
+            const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Mouse/touch start position
+
+            const canvasSize = 200; // Size of the square canvas (e.g., 200x200 for a 100px diameter circle)
+            const devicePixelRatio = window.devicePixelRatio || 1; // For high-DPI displays
+            const adjustedCanvasSize = canvasSize * devicePixelRatio; // Adjusted size for high-DPI displays
+            const profilePicSize = 300; // Increased output size for profile picture (300x300px)
+
+            // Helper function to constrain position within boundaries
+            const constrainPosition = (pos) => {
+                const img = imageRef.current;
+                if (!img || !img.complete) return pos;
+                
+                const scaledWidth = img.naturalWidth * scale;
+                const scaledHeight = img.naturalHeight * scale;
+                
+                // Calculate the minimum position to keep at least 25% of the image visible
+                const minX = canvasSize - scaledWidth * 0.75;
+                const maxX = scaledWidth * 0.75 - canvasSize;
+                const minY = canvasSize - scaledHeight * 0.75;
+                const maxY = scaledHeight * 0.75 - canvasSize;
+                
+                return {
+                    x: Math.min(maxX, Math.max(minX, pos.x)),
+                    y: Math.min(maxY, Math.max(minY, pos.y))
+                };
+            };
+
+            // Helper function to get relative coordinates
+            const getRelativeCoordinates = (clientX, clientY) => {
+                const canvas = canvasRef.current;
+                if (!canvas) return { x: 0, y: 0 };
+                
+                const rect = canvas.getBoundingClientRect();
+                return {
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                };
+            };
+
+            // Function to draw image on canvas
+            const drawImage = useCallback(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                const ctx = canvas.getContext('2d');
+                const img = imageRef.current;
+
+                if (!img.complete || img.naturalWidth === 0) {
+                    // Image not loaded yet or invalid, clear canvas and wait
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    return;
+                }
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.save(); // Save the current canvas state
+
+                // Apply circular clipping path for preview
+                ctx.beginPath();
+                ctx.arc(canvasSize / 2, canvasSize / 2, canvasSize / 2, 0, Math.PI * 2, true);
+                ctx.closePath();
+                ctx.clip();
+
+                // Calculate scaled image dimensions
+                const scaledWidth = img.naturalWidth * scale;
+                const scaledHeight = img.naturalHeight * scale;
+
+                // Calculate image drawing position to center and apply pan
+                const drawX = (canvasSize / 2) - (scaledWidth / 2) + position.x;
+                const drawY = (canvasSize / 2) - (scaledHeight / 2) + position.y;
+
+                ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight);
+
+                ctx.restore(); // Restore canvas state to remove clipping path for next draw
+            }, [scale, position]); // Removed imageUrl from dependencies as it's not used in the function
+
+
+            // Set up canvas for high-DPI displays
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (canvas) {
+                    // Set the canvas dimensions accounting for device pixel ratio
+                    canvas.width = adjustedCanvasSize;
+                    canvas.height = adjustedCanvasSize;
+                    canvas.style.width = `${canvasSize}px`;
+                    canvas.style.height = `${canvasSize}px`;
+                    
+                    // Scale the context to account for the pixel ratio
+                    const ctx = canvas.getContext('2d');
+                    ctx.scale(devicePixelRatio, devicePixelRatio);
+                }
+            }, [adjustedCanvasSize, canvasSize, devicePixelRatio]);
+
+            useEffect(() => {
+                const img = imageRef.current;
+                img.crossOrigin = 'anonymous'; // Required for manipulating image data from other origins
+                img.src = imageUrl;
+
+                img.onload = () => {
+                    // Calculate initial scale to ensure the image covers the circular area
+                    // while minimizing unnecessary cropping
+                    const initialScale = Math.max(canvasSize / img.naturalWidth, canvasSize / img.naturalHeight);
+                    
+                    // Add a small buffer to ensure the image fully covers the circle
+                    const scaledWidth = img.naturalWidth * initialScale;
+                    const scaledHeight = img.naturalHeight * initialScale;
+                    
+                    // If the scaled image is too small in either dimension, increase the scale
+                    if (scaledWidth < canvasSize || scaledHeight < canvasSize) {
+                        const additionalScale = Math.max(
+                            canvasSize / scaledWidth,
+                            canvasSize / scaledHeight
+                        );
+                        setScale(initialScale * additionalScale * 1.05); // Add 5% extra to ensure coverage
+                    } else {
+                        setScale(initialScale);
+                    }
+                    
+                    setPosition({ x: 0, y: 0 }); // Reset position
+                    drawImage();
+                };
+
+                img.onerror = () => {
+                    showMessage("Failed to load image for adjustment. Please check the image URL.");
+                    console.error("Image failed to load for adjustment:", imageUrl);
+                };
+            }, [imageUrl, drawImage, showMessage, canvasSize]);
+
+
+            useEffect(() => {
+                // console.log('Scale or Position useEffect triggered. Scale:', scale, 'Position:', position); // Debug Log
+                drawImage();
+            }, [scale, position, drawImage]);
+
+            // --- Mouse / Touch Event Handlers for Panning ---
+            const handleMouseDown = (e) => {
+                setIsDragging(true);
+                const { x, y } = getRelativeCoordinates(e.clientX, e.clientY);
+                setDragStart({ x, y });
+            };
+
+            const handleMouseMove = (e) => {
+                if (!isDragging) return;
+                
+                const { x, y } = getRelativeCoordinates(e.clientX, e.clientY);
+                const dx = x - dragStart.x;
+                const dy = y - dragStart.y;
+                
+                setPosition(prev => {
+                    const newPos = { x: prev.x + dx, y: prev.y + dy };
+                    return constrainPosition(newPos); // Apply boundary constraints
+                });
+                
+                setDragStart({ x, y });
+            };
+
+            const handleMouseUp = () => {
+                setIsDragging(false);
+            };
+
+            const handleMouseLeave = () => { // Important for when mouse leaves canvas while dragging
+                setIsDragging(false);
+            };
+
+            // --- Touch Handlers (Pan and Pinch-Zoom) ---
+            const lastTouch = useRef([]); // To store multiple touch points for pinch-zoom
+
+            const handleTouchStart = (e) => {
+                if (e.touches.length === 1) { // Single touch for pan
+                    setIsDragging(true);
+                    const { x, y } = getRelativeCoordinates(e.touches[0].clientX, e.touches[0].clientY);
+                    setDragStart({ x, y });
+                } else if (e.touches.length === 2) { // Two touches for pinch-zoom
+                    setIsDragging(false); // Disable panning
+                    lastTouch.current = [
+                        { x: e.touches[0].clientX, y: e.touches[0].clientY },
+                        { x: e.touches[1].clientX, y: e.touches[1].clientY }
+                    ];
+                }
+            };
+
+            const handleTouchMove = (e) => {
+                e.preventDefault(); // Prevent page scrolling/zooming
+
+                const canvas = canvasRef.current;
+                if (!canvas || !imageRef.current.complete) return;
+
+                if (e.touches.length === 1 && isDragging) { // Pan
+                    const { x, y } = getRelativeCoordinates(e.touches[0].clientX, e.touches[0].clientY);
+                    const dx = x - dragStart.x;
+                    const dy = y - dragStart.y;
+                    
+                    setPosition(prev => {
+                        const newPos = { x: prev.x + dx, y: prev.y + dy };
+                        return constrainPosition(newPos); // Apply boundary constraints
+                    });
+                    
+                    setDragStart({ x, y });
+                } else if (e.touches.length === 2 && lastTouch.current.length === 2) { // Pinch-zoom
+                    const touch1 = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                    const touch2 = { x: e.touches[1].clientX, y: e.touches[1].clientY };
+
+                    // Calculate the center point between the two touches
+                    const centerX = (touch1.x + touch2.x) / 2;
+                    const centerY = (touch1.y + touch2.y) / 2;
+                    const centerPoint = getRelativeCoordinates(centerX, centerY);
+                    
+                    // Calculate distances for zoom
+                    const prevDistance = Math.hypot(
+                        lastTouch.current[1].x - lastTouch.current[0].x,
+                        lastTouch.current[1].y - lastTouch.current[0].y
+                    );
+                    const currentDistance = Math.hypot(touch2.x - touch1.x, touch2.y - touch1.y);
+                    
+                    // Calculate zoom factor
+                    const zoomFactor = currentDistance / prevDistance;
+                    
+                    // Update scale and position to zoom toward the center point
+                    setScale(prevScale => {
+                        const newScale = Math.max(0.1, Math.min(prevScale * zoomFactor, 10));
+                        
+                        // Adjust position to keep the zoom centered at the touch midpoint
+                        setPosition(prevPos => {
+                            // Calculate the vector from center to the point under the center
+                            const vectorX = centerPoint.x - canvasSize / 2;
+                            const vectorY = centerPoint.y - canvasSize / 2;
+                            
+                            // Adjust the position based on the scale change
+                            const newPos = {
+                                x: prevPos.x - vectorX * (zoomFactor - 1),
+                                y: prevPos.y - vectorY * (zoomFactor - 1)
+                            };
+                            
+                            return constrainPosition(newPos); // Apply boundary constraints
+                        });
+                        
+                        return newScale;
+                    });
+                    
+                    lastTouch.current = [touch1, touch2];
+                }
+            };
+
+            const handleTouchEnd = () => {
+                setIsDragging(false);
+                lastTouch.current = [];
+            };
+
+            // --- Mouse Wheel Zoom ---
+            const handleWheel = (e) => {
+                e.preventDefault(); // Prevent page scrolling
+                const zoomAmount = 0.1; // How much to zoom per scroll tick
+                const newScale = e.deltaY < 0 ? scale + zoomAmount : scale - zoomAmount;
+                setScale(s => {
+                    const finalScale = Math.max(0.1, Math.min(newScale, 10));
+                    // console.log('Wheel - New Scale:', finalScale); // Debug Log
+                    return finalScale;
+                });
+            };
+
+            // --- Save Cropped Image ---
+            const saveCroppedImage = () => {
+                const img = imageRef.current;
+                if (!img.complete || img.naturalWidth === 0) {
+                    showMessage("Image not loaded for saving. Please try again.");
+                    return;
+                }
+
+                const outputCanvas = document.createElement('canvas');
+                outputCanvas.width = profilePicSize;
+                outputCanvas.height = profilePicSize;
+                const ctx = outputCanvas.getContext('2d');
+
+                // Apply circular clipping path to output canvas
+                ctx.beginPath();
+                ctx.arc(profilePicSize / 2, profilePicSize / 2, profilePicSize / 2, 0, Math.PI * 2, true);
+                ctx.closePath();
+                ctx.clip();
+
+                // Optional: Add a white background to ensure transparent areas are filled
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(0, 0, profilePicSize, profilePicSize);
+
+                // Calculate the portion of the source image to draw into the target profile pic size
+                const scaledWidth = img.naturalWidth * scale;
+                const scaledHeight = img.naturalHeight * scale;
+
+                // Calculate the center of the visible area in the original image coordinates
+                const visibleCenterX = (scaledWidth / 2 - position.x) / scale;
+                const visibleCenterY = (scaledHeight / 2 - position.y) / scale;
+
+                // Calculate the visible area dimensions in the original image coordinates
+                const visibleWidth = canvasSize / scale;
+                const visibleHeight = canvasSize / scale;
+
+                // Calculate the top-left corner of the visible area
+                const sourceX = visibleCenterX - visibleWidth / 2;
+                const sourceY = visibleCenterY - visibleHeight / 2;
+                const sourceWidth = visibleWidth;
+                const sourceHeight = visibleHeight;
+
+                ctx.drawImage(
+                    img,
+                    sourceX, // Source X
+                    sourceY, // Source Y
+                    sourceWidth, // Source Width (from img, based on scale of original to canvas circle)
+                    sourceHeight, // Source Height (from img, based on scale of original to canvas circle)
+                    0, // Destination X on output canvas
+                    0, // Destination Y on output canvas
+                    profilePicSize, // Destination Width on output canvas
+                    profilePicSize // Destination Height on output canvas
+                );
+
+                // Convert canvas to Blob (PNG for transparent backgrounds or JPEG for solid)
+                outputCanvas.toBlob((blob) => {
+                    if (blob) {
+                        onSave(blob); // Pass the Blob to the parent's upload handler
+                    } else {
+                        showMessage("Failed to create image file. Please try again.");
+                    }
+                }, 'image/png', 0.9); // Use PNG for potential transparency, quality 0.9
+            };
+
+            return (
+                <div className="imageAdjustModalOverlay">
+                    <div className="imageAdjustModalContent">
+                        <p className="heading" style={{fontSize: '20px', marginBottom: '10px'}}>Adjust Profile Picture</p>
+                        <p className="subHeading" style={{fontSize: '14px', marginBottom: '15px', color: '#CCC'}}>Drag to pan, scroll/pinch to zoom.</p>
+                        <div
+                            className={`canvasContainer ${isDragging ? 'dragging' : ''}`}
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseLeave}
+                            onWheel={handleWheel}
+                            onTouchStart={handleTouchStart}
+                            onTouchMove={handleTouchMove}
+                            onTouchEnd={handleTouchEnd}
+                        >
+                            <canvas
+                                ref={canvasRef}
+                                width={canvasSize}
+                                height={canvasSize}
+                            ></canvas>
+                        </div>
+                        <div className="zoomControls">
+                            <button className="zoomButton" onClick={() => setScale(s => Math.max(0.1, s - 0.1))}>-</button>
+                            <span style={{color: '#FFF', fontSize: '16px'}}>Zoom: {Math.round(scale * 100)}%</span>
+                            <button className="zoomButton" onClick={() => setScale(s => Math.min(10, s + 0.1))}>+</button>
+                        </div>
+                        <button
+                            className="modalButton"
+                            onClick={() => {
+                                // Reset to initial position and scale
+                                const img = imageRef.current;
+                                if (img && img.complete) {
+                                    const initialScale = Math.max(canvasSize / img.naturalWidth, canvasSize / img.naturalHeight);
+                                    const scaledWidth = img.naturalWidth * initialScale;
+                                    const scaledHeight = img.naturalHeight * initialScale;
+                                    
+                                    if (scaledWidth < canvasSize || scaledHeight < canvasSize) {
+                                        const additionalScale = Math.max(
+                                            canvasSize / scaledWidth,
+                                            canvasSize / scaledHeight
+                                        );
+                                        setScale(initialScale * additionalScale * 1.05);
+                                    } else {
+                                        setScale(initialScale);
+                                    }
+                                    setPosition({ x: 0, y: 0 });
+                                }
+                            }}
+                            style={{marginTop: '10px', backgroundColor: '#555', color: '#FFF'}}
+                        >
+                            Reset Image
+                        </button>
+                        <div className="modalButtons">
+                            <button className="modalButton" onClick={saveCroppedImage}>Save</button>
+                            <button className="modalButton cancel" onClick={onCancel}>Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+
         // --- Main App Component ---
         function App() {
-            const [activeScreen, setActiveScreen] = useState('Home'); // State to manage current screen
-            const [activeCategory, setActiveCategory] = useState('Skits'); // State to manage active category
-            const [message, setMessage] = useState(''); // State for temporary messages
-            const [showVideoModal, setShowVideoModal] = useState(false); // State to control video modal visibility
-            const [currentVideoUrl, setCurrentVideoUrl] = useState(''); // State to store the URL of the video to play
-            const [currentUser, setCurrentUser] = useState(null); // State to hold the current logged-in user
+            const [currentUser, setCurrentUser] = useState(null);
+            const [activeScreen, setActiveScreen] = useState('Home');
 
-            // Auth state listener to update currentUser
+            const [activeCategory, setActiveCategory] = useState('Skits');
+            const [message, setMessage] = useState('');
+            const [showVideoModal, setShowVideoModal] = useState(false);
+            const [currentVideoUrl, setCurrentVideoUrl] = useState('');
+
+            // State for profile picture adjustment modal
+            const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
+            const [imageFileToAdjust, setImageFileToAdjust] = useState(null); // File object passed to the modal
+
             useEffect(() => {
                 const unsubscribe = onAuthStateChanged(auth, (user) => {
                     setCurrentUser(user);
-                    if (user) {
-                        // If a user is logged in, and they are on the signup/login screen,
-                        // redirect them to the dashboard.
-                        if (activeScreen === 'CreatorSignUp' || activeScreen === 'Login') {
-                            setActiveScreen('CreatorDashboard');
-                        }
-                    } else {
-                        // If user logs out, or session expires, ensure they are not on auth-gated screens
-                        if (activeScreen === 'CreatorDashboard') {
-                            setActiveScreen('Home');
-                        }
-                    }
                 });
-                return () => unsubscribe(); // Cleanup listener on component unmount
-            }, [activeScreen]); // Dependency added to re-check when screen changes
+                return () => unsubscribe();
+            }, []);
 
             // Placeholder images for the carousel - Duplicated for continuous loop
             const originalCarouselImages = [
@@ -1104,7 +1592,6 @@
                 'https://placehold.co/140x100/404040/DDD?text=Behind+Scenes',
                 'https://placehold.co/140x100/202020/CCC?text=Live+Event',
             ];
-            // Duplicate the array to create a seamless loop effect (at least twice the original for smooth looping)
             const carouselImages = [...originalCarouselImages, ...originalCarouselImages, ...originalCarouselImages];
 
             // Placeholder data for the Live Feed Vertical Carousel
@@ -1116,25 +1603,21 @@
                 { id: 'lf5', title: 'Behind The Scenes: Drama Shoot', creator: 'Creative Minds', thumbnail: 'https://placehold.co/80x60/202020/CCC?text=BTS1', url: 'https://www.youtube.com/embed/BTS_LIVE_5?autoplay=1' },
                 { id: 'lf6', title: 'Daily Vlog: Life in Georgetown', creator: 'GT Vlogger', thumbnail: 'https://placehold.co/80x60/909090/111?text=Vlog1', url: 'https://www.youtube.com/embed/VLOG_LIVE_6?autoplay=1' },
             ];
-            // Duplicate the array for seamless vertical looping
             const liveFeedItems = [...originalLiveFeedContent, ...originalLiveFeedContent, ...originalLiveFeedContent];
 
 
-            // Function to display temporary messages
             const showMessage = (msg) => {
                 setMessage(msg);
-                setTimeout(() => setMessage(''), 3000); // Clear message after 3 seconds
+                setTimeout(() => setMessage(''), 3000);
             };
 
-            // Function to handle opening video links
             const handleVideoPress = (url) => {
                 setCurrentVideoUrl(url);
                 setShowVideoModal(true);
             };
 
-            // Function to close the video modal
             const closeVideoModal = () => {
-                    setShowVideoModal(false);
+                setShowVideoModal(false);
                 setCurrentVideoUrl('');
             };
 
@@ -1142,7 +1625,7 @@
                 try {
                     await signOut(auth);
                     showMessage('Logged out successfully!');
-                    setActiveScreen('Home'); // Go to home after logout
+                    setActiveScreen('Home');
                 } catch (error) {
                     console.error("Error logging out:", error);
                     showMessage('Failed to log out. Please try again.');
@@ -1152,19 +1635,18 @@
             // --- Screens ---
 
             const HomeScreen = () => {
-                const horizontalCarouselRef = useRef(null); // Ref for horizontal carousel
+                const horizontalCarouselRef = useRef(null);
                 const horizontalScrollIntervalRef = useRef(null);
                 const [isHorizontalDragging, setIsHorizontalDragging] = useState(false);
                 const [horizontalStartX, setHorizontalStartX] = useState(0);
                 const [horizontalScrollLeft, setHorizontalScrollLeft] = useState(0);
 
-                const verticalCarouselRef = useRef(null); // Ref for vertical carousel
+                const verticalCarouselRef = useRef(null);
                 const verticalScrollIntervalRef = useRef(null);
                 const [isVerticalDragging, setIsVerticalDragging] = useState(false);
                 const [verticalStartY, setVerticalStartY] = useState(0);
                 const [verticalScrollTop, setVerticalScrollTop] = useState(0);
 
-                // --- Horizontal Carousel Auto-Scroll & Touch Handlers ---
                 const startHorizontalAutoScroll = () => {
                     if (horizontalScrollIntervalRef.current) clearInterval(horizontalScrollIntervalRef.current);
                     const carousel = horizontalCarouselRef.current;
@@ -1228,7 +1710,6 @@
                     setTimeout(startHorizontalAutoScroll, 1500);
                 };
 
-                // --- Vertical Carousel Auto-Scroll & Touch Handlers ---
                 const startVerticalAutoScroll = () => {
                     if (verticalScrollIntervalRef.current) clearInterval(verticalScrollIntervalRef.current);
                     const carousel = verticalCarouselRef.current;
@@ -1241,7 +1722,6 @@
                         const itemMarginBottom = parseFloat(window.getComputedStyle(firstItem).marginBottom);
                         scrollAmountPerItem = itemHeight + itemMarginBottom;
                     } else {
-                        // Fallback if item not found, estimate scroll amount for 2 items
                         scrollAmountPerItem = (carousel.offsetHeight / 2);
                     }
 
@@ -1250,12 +1730,11 @@
                     verticalScrollIntervalRef.current = setInterval(() => {
                         if (isVerticalDragging) return;
 
-                        // Check if current scroll position is past the first set of duplicated content
                         if (carousel.scrollTop >= originalContentHeight - (scrollAmountPerItem / 2)) {
-                             carousel.scrollTop = 0; // Instantly jump back to the start of the first set
+                             carousel.scrollTop = 0;
                         }
                         carousel.scrollBy({ top: scrollAmountPerItem, behavior: 'smooth' });
-                    }, 3000); // Adjust scroll speed as needed
+                    }, 3000);
                 };
 
                 const stopVerticalAutoScroll = () => {
@@ -1264,25 +1743,23 @@
                 };
 
                  useEffect(() => {
-                    startVerticalAutoScroll(); // Start auto-scrolling when component mounts
+                    startVerticalAutoScroll();
 
                     const carousel = verticalCarouselRef.current;
                     if (!carousel) return;
 
-                    // Mouse events for desktop hover (to pause/resume)
                     carousel.addEventListener('mouseenter', stopVerticalAutoScroll);
                     carousel.addEventListener('mouseleave', startVerticalAutoScroll);
 
-                    // Cleanup on component unmount
                     return () => {
                         stopVerticalAutoScroll();
                         carousel.removeEventListener('mouseenter', stopVerticalAutoScroll);
                         carousel.removeEventListener('mouseleave', startVerticalAutoScroll);
                     };
-                }, [isVerticalDragging]); // Re-run effect if isVerticalDragging changes
+                }, [isVerticalDragging]);
 
                 const handleVerticalTouchStart = (e) => {
-                    stopVerticalAutoScroll(); // Stop auto-scroll immediately on touch start
+                    stopVerticalAutoScroll();
                     setIsVerticalDragging(true);
                     setVerticalStartY(e.touches[0].pageY - verticalCarouselRef.current.offsetTop);
                     setVerticalScrollTop(verticalCarouselRef.current.scrollTop);
@@ -1290,15 +1767,14 @@
 
                 const handleVerticalTouchMove = (e) => {
                     if (!isVerticalDragging) return;
-                    e.preventDefault(); // Prevent default vertical scrolling
+                    e.preventDefault();
                     const y = e.touches[0].pageY - verticalCarouselRef.current.offsetTop;
-                    const walk = (y - verticalStartY) * 1.5; // Multiplier for faster scroll
+                    const walk = (y - verticalStartY) * 1.5;
                     verticalCarouselRef.current.scrollTop = verticalScrollTop - walk;
                 };
 
                 const handleVerticalTouchEnd = () => {
                     setIsVerticalDragging(false);
-                    // Resume auto-scroll after a short delay
                     setTimeout(startVerticalAutoScroll, 1500);
                 };
 
@@ -1317,7 +1793,7 @@
                             ) : (
                                 <button
                                     className="topButton"
-                                    onClick={() => setActiveScreen('Login')} // New Login button
+                                    onClick={() => setActiveScreen('Login')}
                                 >
                                     Login
                                 </button>
@@ -1348,10 +1824,10 @@
 
                         {/* "Trending" Section with Aligned Creator Sign Up Button */}
                         <div className="sectionHeaderWithButton">
-                            <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p> {/* Changed from New This Week */}
-                            {!currentUser && ( // Only show if not logged in
+                            <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
+                            {!currentUser && (
                                 <button
-                                    className="sectionHeaderButton" /* Using the new class for this button */
+                                    className="sectionHeaderButton"
                                     onClick={() => setActiveScreen('CreatorSignUp')}
                                 >
                                     Creator Sign Up
@@ -1359,11 +1835,10 @@
                             )}
                         </div>
                         <div className="contentGrid">
-                            {featuredContent.slice(0, 6).map((item) => ( /* Limited to 6 items */
+                            {featuredContent.slice(0, 6).map((item) => (
                                 <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
                                     <div className="thumbnailPlaceholder">
                                         <p className="thumbnailText">Video Thumbnail</p>
-                                        {/* SVG Play Icon */}
                                         <svg className="playIcon" viewBox="0 0 24 24">
                                             <path d="M8 5v14l11-7z"/>
                                         </svg>
@@ -1374,7 +1849,7 @@
                         </div>
 
                         {/* "Live Feed" Vertical Carousel Section */}
-                        <p className="sectionTitle">Live Feed</p> {/* Changed from Top Guyanese Skits */}
+                        <p className="sectionTitle">Live Feed</p>
                         <div
                             className="vertical-carousel-container"
                             ref={verticalCarouselRef}
@@ -1419,7 +1894,6 @@
                                 <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.url)}>
                                     <div className="thumbnailPlaceholder">
                                         <p className="thumbnailText">Video Thumbnail</p>
-                                        {/* SVG Play Icon */}
                                         <svg className="playIcon" viewBox="0 0 24 24">
                                             <path d="M8 5v14l11-7z"/>
                                         </svg>
@@ -1490,7 +1964,7 @@
                             <p className="pricingTier">Premium Yearly</p>
                             <p className="pricingFeatures">Discounted + bonus perks</p>
                             <p className="pricingPrice">$20 USD / ~$4,000 GYD</p>
-                        </div>
+                        </div >
                     </div>
                     <p className="smallText">
                         (Note: Actual payment integration would be done here using services like Stripe/PayPal.)
@@ -1910,99 +2384,24 @@
             // --- Creator Dashboard Screen ---
             const CreatorDashboardScreen = ({ showMessage, setActiveScreen, currentUser }) => {
                 const [creatorProfile, setCreatorProfile] = useState(null);
-                const [isEditingProfile, setIsEditingProfile] = useState(false); // State for editing mode
-                // States for editable profile fields
+                const [isEditingProfile, setIsEditingProfile] = useState(false);
                 const [editCreatorName, setEditCreatorName] = useState('');
                 const [editBio, setEditBio] = useState('');
                 const [editCategories, setEditCategories] = useState([]);
                 const [editExistingWorkLink, setEditExistingWorkLink] = useState('');
 
-                const profilePictureInputRef = useRef(null); // Ref for hidden file input
-
-                // Initialize uploadedVideos state based on fetched profile
+                const profilePictureInputRef = useRef(null);
                 const [uploadedVideos, setUploadedVideos] = useState({
                     youtube: null,
                     facebook: null,
                     tiktok: null
                 });
-
-                // Temporary states for input fields (cleared after adding)
                 const [youtubeInputLink, setYoutubeInputLink] = useState('');
                 const [facebookInputLink, setFacebookInputLink] = useState('');
-                const [tiktokInputLink, setTiktokInputLink] = useState('');
+                const [tiktokInputLink, setTiktokInputInputLink] = useState('');
 
-
-                // Fetch creator profile on component mount or when user changes
-                useEffect(() => {
-                    const fetchCreatorProfile = async () => {
-                        if (currentUser) {
-                            try {
-                                const creatorDocRef = doc(db, "creators", currentUser.uid);
-                                const docSnap = await getDoc(creatorDocRef);
-                                if (docSnap.exists()) {
-                                    const data = docSnap.data();
-                                    setCreatorProfile(data);
-                                    // Initialize edit states with fetched data
-                                    setEditCreatorName(data.creatorName || '');
-                                    setEditBio(data.bio || '');
-                                    setEditCategories(data.categories || []);
-                                    setEditExistingWorkLink(data.existingWorkLink || '');
-                                    setUploadedVideos(data.uploadedVideos || { youtube: null, facebook: null, tiktok: null });
-                                } else {
-                                    console.log("No creator profile found for this user. Creating basic profile in Firestore.");
-                                    // Create a basic profile if none exists (e.g., for users who signed up before this feature)
-                                    await setDoc(creatorDocRef, {
-                                        email: currentUser.email,
-                                        creatorName: currentUser.email.split('@')[0] || "", // Default name from email
-                                        bio: "",
-                                        categories: [],
-                                        existingWorkLink: "",
-                                        profilePictureUrl: '',
-                                        uploadedVideos: { youtube: null, facebook: null, tiktok: null },
-                                        createdAt: new Date().toISOString()
-                                    });
-                                    // Fetch it again to set it to state
-                                    const newDocSnap = await getDoc(creatorDocRef);
-                                    if(newDocSnap.exists()) {
-                                        setCreatorProfile(newDocSnap.data());
-                                        setEditCreatorName(newDocSnap.data().creatorName || '');
-                                        setEditBio(newDocSnap.data().bio || '');
-                                        setEditCategories(newDocSnap.data().categories || []);
-                                        setEditExistingWorkLink(newDocSnap.data().existingWorkLink || '');
-                                        setUploadedVideos(newDocSnap.data().uploadedVideos || { youtube: null, facebook: null, tiktok: null });
-                                    }
-                                }
-                            } catch (error) {
-                                console.error("Error fetching or creating creator profile:", error);
-                                showMessage("Error loading profile. Please try again.");
-                            }
-                        }
-                    };
-
-                    fetchCreatorProfile();
-                }, [currentUser]); // Re-fetch when currentUser changes
-
-                if (!currentUser) {
-                    return (
-                        <div className="screenContainer">
-                            <p className="heading">Access Denied</p>
-                            <p className="subHeading">Please login to access the Creator Dashboard.</p>
-                            <button
-                                className="button"
-                                onClick={() => setActiveScreen('Login')}
-                            >
-                                <span className="buttonText">Go to Login</span>
-                            </button>
-                             <button
-                                className="button"
-                                onClick={() => setActiveScreen('Home')}
-                                style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '10px' }}
-                            >
-                                <span className="buttonText">Back to Home</span>
-                            </button>
-                        </div>
-                    );
-                }
+                const [showImageAdjustModal, setShowImageAdjustModal] = useState(false); // State for the image adjustment modal
+                const [imageFileToAdjust, setImageFileToAdjust] = useState(null); // File object passed to the modal
 
                 // --- Profile Editing Functions ---
                 const handleSaveProfile = async () => {
@@ -2031,7 +2430,6 @@
                 };
 
                 const handleCancelEdit = () => {
-                    // Revert changes by resetting edit states to current profile
                     setEditCreatorName(creatorProfile.creatorName || '');
                     setEditBio(creatorProfile.bio || '');
                     setEditCategories(creatorProfile.categories || []);
@@ -2049,17 +2447,35 @@
                     }
                 };
 
-                // --- Profile Picture Upload Function ---
-                const handleProfilePictureUpload = async (e) => {
+                // --- Profile Picture Upload & Adjustment ---
+                const triggerProfilePictureUpload = (e) => {
                     const file = e.target.files[0];
-                    if (!file) return;
+                    if (file) {
+                        // Create a URL for the selected file to pass to the modal
+                        setImageFileToAdjust(file);
+                        setShowImageAdjustModal(true);
+                    }
+                };
 
+                const handleSaveAdjustedProfilePicture = async (adjustedBlob) => {
+                    if (!currentUser || !adjustedBlob) {
+                        showMessage("Error: No user or image to save.");
+                        return;
+                    }
+
+                    setShowImageAdjustModal(false); // Close modal
                     showMessage('Uploading profile picture...');
-                    try {
-                        const storageRef = ref(storage, `profile_pictures/${currentUser.uid}/${file.name}`);
-                        await uploadBytes(storageRef, file);
-                        const downloadURL = await getDownloadURL(storageRef);
 
+                    try {
+                        // Create a unique filename for the adjusted image (e.g., using timestamp or original file name + uid)
+                        const fileName = `profile_${currentUser.uid}_${Date.now()}.png`; // Always save as PNG for consistency with transparency
+                        const storageRefPath = ref(storage, `profile_pictures/${currentUser.uid}/${fileName}`);
+
+                        // Upload the adjusted image BLOB
+                        await uploadBytes(storageRefPath, adjustedBlob, { contentType: 'image/png' });
+                        const downloadURL = await getDownloadURL(storageRefPath);
+
+                        // Update Firestore with the new profile picture URL
                         const creatorRef = doc(db, "creators", currentUser.uid);
                         await updateDoc(creatorRef, {
                             profilePictureUrl: downloadURL,
@@ -2068,9 +2484,15 @@
                         setCreatorProfile(prev => ({ ...prev, profilePictureUrl: downloadURL }));
                         showMessage("Profile picture uploaded successfully!");
                     } catch (error) {
-                        console.error("Error uploading profile picture:", error);
+                        console.error("Error uploading adjusted profile picture:", error);
                         showMessage("Failed to upload profile picture. Please try again.");
                     }
+                };
+
+                const handleCancelAdjust = () => {
+                    setShowImageAdjustModal(false);
+                    setImageFileToAdjust(null);
+                    showMessage("Profile picture adjustment cancelled.");
                 };
 
                 // --- Video Link Management Functions (Now with Firestore Persistence) ---
@@ -2081,12 +2503,10 @@
 
                 const extractFacebookId = (url) => {
                     let videoId = null;
-                    // Common Facebook video URL patterns
                     let match = url.match(/(?:facebook\.com\/(?:video.php\?v=|watch\/\?v=)|fb\.watch\/|facebook\.com\/[^\/]+\/videos\/)([0-9]+)/);
                     if (match && match[1]) {
                         videoId = match[1];
                     } else {
-                        // Try matching for video ID in share links like facebook.com/pagename/videos/12345/
                         match = url.match(/facebook\.com\/[a-zA-Z0-9\._-]+\/videos\/(\d+)/);
                         if(match && match[1]) {
                             videoId = match[1];
@@ -2150,17 +2570,16 @@
                             ...prev,
                             [platform]: updated
                         }));
-                        // Save to Firestore
                         try {
                             const creatorRef = doc(db, "creators", currentUser.uid);
                             await updateDoc(creatorRef, {
-                                [`uploadedVideos.${platform}`]: updated, // Update specific platform video
+                                [`uploadedVideos.${platform}`]: updated,
                                 updatedAt: new Date().toISOString()
                             });
                             showMessage(`${platform} video added successfully!`);
                             if (platform === 'youtube') setYoutubeInputLink('');
                             else if (platform === 'facebook') setFacebookInputLink('');
-                            else if (platform === 'tiktok') setTiktokInputLink('');
+                            else if (platform === 'tiktok') setTiktokInputInputLink('');
                         } catch (error) {
                             console.error(`Error saving ${platform} video to Firestore:`, error);
                             showMessage(`Failed to save ${platform} video. Please check your internet connection and Firestore rules.`);
@@ -2176,11 +2595,10 @@
                         ...prev,
                         [platform]: null
                     }));
-                    // Remove from Firestore
                     try {
                         const creatorRef = doc(db, "creators", currentUser.uid);
                         await updateDoc(creatorRef, {
-                            [`uploadedVideos.${platform}`]: null, // Set specific platform video to null
+                            [`uploadedVideos.${platform}`]: null,
                             updatedAt: new Date().toISOString()
                         });
                         showMessage(`${platform} video removed successfully.`);
@@ -2190,12 +2608,64 @@
                     }
                 };
 
-                // --- Render Section ---
-                if (!creatorProfile) {
+                // Fetch creator profile on component mount or when user changes
+                useEffect(() => {
+                    const fetchCreatorProfile = async () => {
+                        if (currentUser) {
+                            try {
+                                const creatorDocRef = doc(db, "creators", currentUser.uid);
+                                const docSnap = await getDoc(creatorDocRef);
+                                if (docSnap.exists()) {
+                                    const data = docSnap.data();
+                                    setCreatorProfile(data);
+                                    setEditCreatorName(data.creatorName || '');
+                                    setEditBio(data.bio || '');
+                                    setEditCategories(data.categories || []);
+                                    setEditExistingWorkLink(data.existingWorkLink || '');
+                                    setUploadedVideos(data.uploadedVideos || { youtube: null, facebook: null, tiktok: null });
+                                } else {
+                                    console.log("No creator profile found for this user. Creating basic profile in Firestore.");
+                                    await setDoc(creatorDocRef, {
+                                        email: currentUser.email,
+                                        creatorName: currentUser.email.split('@')[0] || "",
+                                        bio: "",
+                                        categories: [],
+                                        existingWorkLink: "",
+                                        profilePictureUrl: '',
+                                        uploadedVideos: { youtube: null, facebook: null, tiktok: null },
+                                        createdAt: new Date().toISOString()
+                                    });
+                                    const newDocSnap = await getDoc(creatorDocRef);
+                                    if(newDocSnap.exists()) {
+                                        setCreatorProfile(newDocSnap.data());
+                                        setEditCreatorName(newDocSnap.data().creatorName || '');
+                                        setEditBio(newDocSnap.data().bio || '');
+                                        setEditCategories(newDocSnap.data().categories || []);
+                                        setEditExistingWorkLink(newDocSnap.data().existingWorkLink || '');
+                                        setUploadedVideos(newDocSnap.data().uploadedVideos || { youtube: null, facebook: null, tiktok: null });
+                                    }
+                                }
+                            } catch (error) {
+                                console.error("Error fetching or creating creator profile:", error);
+                                showMessage("Error loading profile. Please try again.");
+                            }
+                        }
+                    };
+
+                    fetchCreatorProfile();
+                }, [currentUser]);
+
+                if (!currentUser) {
                     return (
                         <div className="screenContainer">
-                            <p className="heading">Loading Creator Profile...</p>
-                            <p className="subHeading">This may take a moment.</p>
+                            <p className="heading">Access Denied</p>
+                            <p className="subHeading">Please login to access the Creator Dashboard.</p>
+                            <button
+                                className="button"
+                                onClick={() => setActiveScreen('Login')}
+                            >
+                                <span className="buttonText">Go to Login</span>
+                            </button>
                              <button
                                 className="button"
                                 onClick={() => setActiveScreen('Home')}
@@ -2207,267 +2677,187 @@
                     );
                 }
 
-                return (
-                    <div className="screenContainer">
-                        <p className="heading">Creator Dashboard</p>
-                        <p className="subHeading">Welcome, {creatorProfile.creatorName || currentUser.email}!</p>
+                if (!creatorProfile) {
+                    return (
+                        <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                            <p className="heading">Loading Creator Profile...</p>
+                            <p className="subHeading" style={{ color: '#FFD700' }}>Please ensure you are logged in and have an internet connection.</p>
+                            <p className="smallText" style={{ color: '#888' }}>
+                                If this takes too long, check your Firebase Firestore rules or refresh the app.
+                            </p>
+                        </div>
+                    );
+                }
 
-                        <div className="dashboardSection">
-                            <p className="dashboardSectionTitle">Your Profile</p>
-                            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
-                                <img
-                                    src={creatorProfile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
-                                    alt="Profile"
-                                    style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px' }}
-                                />
-                                <input
-                                    type="file"
-                                    ref={profilePictureInputRef}
-                                    style={{ display: 'none' }}
-                                    onChange={handleProfilePictureUpload}
-                                    accept="image/*"
-                                />
+                return (
+                    <> {/* React Fragment to return multiple top-level elements */}
+                        <div className="screenContainer">
+                            <p className="heading">Creator Dashboard</p>
+                            <p className="subHeading">Welcome, {creatorProfile.creatorName || currentUser.email}!</p>
+
+                            <div className="dashboardSection">
+                                <p className="dashboardSectionTitle">Your Profile</p>
+                                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
+                                    <img
+                                        src={creatorProfile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
+                                        alt="Profile"
+                                        style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px' }}
+                                    />
+                                    <input
+                                        type="file"
+                                        ref={profilePictureInputRef}
+                                        style={{ display: 'none' }}
+                                        onChange={triggerProfilePictureUpload} // Now triggers the modal
+                                        accept="image/*"
+                                    />
+                                    <button
+                                        className="dashboardButton"
+                                        onClick={() => profilePictureInputRef.current.click()}
+                                    >
+                                        Upload Profile Picture
+                                    </button>
+                                </div>
+
+
+                                {isEditingProfile ? (
+                                    <>
+                                        <div className="formGroup">
+                                            <label htmlFor="editCreatorName" className="formLabel">Creator Name (Public):</label>
+                                            <input
+                                                type="text"
+                                                id="editCreatorName"
+                                                className="formInput"
+                                                value={editCreatorName}
+                                                onChange={(e) => setEditCreatorName(e.target.value)}
+                                                required
+                                            />
+                                        </div>
+                                        <div className="formGroup">
+                                            <label htmlFor="editBio" className="formLabel">Brief Bio/Description:</label>
+                                            <textarea
+                                                id="editBio"
+                                                className="formTextarea"
+                                                value={editBio}
+                                                onChange={(e) => setEditBio(e.target.value)}
+                                                required
+                                            ></textarea>
+                                        </div>
+                                        <div className="checkboxGroup">
+                                            <p className="checkboxLabel">Content Categories:</p>
+                                            {['Skits', 'Short Films', 'Interviews', 'Live Premieres', 'Music', 'Documentary', 'Other'].map((cat) => (
+                                                <div key={cat} className="checkboxItem">
+                                                    <input
+                                                        type="checkbox"
+                                                        id={`edit-cat-${cat}`}
+                                                        value={cat}
+                                                        checked={editCategories.includes(cat)}
+                                                        onChange={handleProfileCategoryChange}
+                                                    />
+                                                    <label htmlFor={`edit-cat-${cat}`}>{cat}</label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="formGroup">
+                                            <label htmlFor="editExistingWork" className="formLabel">Link to Existing Work:</label>
+                                            <input
+                                                type="url"
+                                                id="editExistingWork"
+                                                className="formInput"
+                                                value={editExistingWorkLink}
+                                                onChange={(e) => setEditExistingWorkLink(e.target.value)}
+                                                placeholder="e.g., YouTube channel, Instagram profile"
+                                            />
+                                        </div>
+                                        <button className="dashboardButton" onClick={handleSaveProfile}>Save Changes</button>
+                                        <button className="dashboardButton" onClick={handleCancelEdit} style={{ backgroundColor: '#555' }}>Cancel</button>
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* Displaying raw data without labels */}
+                                        <p className="dashboardItem">{creatorProfile.creatorName}</p>
+                                        <p className="dashboardItem">{creatorProfile.email}</p>
+                                        <p className="dashboardItem">{creatorProfile.bio || 'No bio provided.'}</p>
+                                        <p className="dashboardItem">{(creatorProfile.categories && creatorProfile.categories.length > 0) ? creatorProfile.categories.join(', ') : 'No categories selected.'}</p>
+                                        {creatorProfile.existingWorkLink && <p className="dashboardItem"><a href={creatorProfile.existingWorkLink} target="_blank" style={{ color: '#FFD700', textDecoration: 'none' }}>{creatorProfile.existingWorkLink}</a></p>}
+                                        <button
+                                            className="dashboardButton"
+                                            onClick={() => setIsEditingProfile(true)}
+                                        >
+                                            Edit Profile
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="dashboardSection">
+                                <p className="dashboardSectionTitle">My Crowdfunding Campaigns</p>
+                                {creatorCampaigns.filter(c => c.creator === (creatorProfile?.creatorName || currentUser?.email)).length > 0 ? (
+                                    <ul className="dashboardContentList">
+                                        {creatorCampaigns.filter(c => c.creator === (creatorProfile?.creatorName || currentUser?.email)).map(campaign => (
+                                            <li key={campaign.id} className="dashboardContentListItem">
+                                                <span>{campaign.title} (${campaign.raised}/${campaign.goal})</span>
+                                                <button className="actionButton" onClick={() => showMessage(`Viewing details for "${campaign.title}"...`)}>Details</button>
+                                                <button className="actionButton" onClick={() => showMessage(`Editing "${campaign.title}"...`)}>Edit</button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <p className="dashboardItem">You don't have any active campaigns.</p>
+                                )}
                                 <button
                                     className="dashboardButton"
-                                    onClick={() => profilePictureInputRef.current.click()}
+                                    onClick={() => showMessage('New campaign creation form functionality coming soon!')}
                                 >
-                                    Upload Profile Picture
+                                    Create New Campaign
                                 </button>
                             </div>
 
-
-                            {isEditingProfile ? (
-                                <>
-                                    <div className="formGroup">
-                                        <label htmlFor="editCreatorName" className="formLabel">Creator Name (Public):</label>
-                                        <input
-                                            type="text"
-                                            id="editCreatorName"
-                                            className="formInput"
-                                            value={editCreatorName}
-                                            onChange={(e) => setEditCreatorName(e.target.value)}
-                                            required
-                                        />
-                                    </div>
-                                    <div className="formGroup">
-                                        <label htmlFor="editBio" className="formLabel">Brief Bio/Description:</label>
-                                        <textarea
-                                            id="editBio"
-                                            className="formTextarea"
-                                            value={editBio}
-                                            onChange={(e) => setEditBio(e.target.value)}
-                                            required
-                                        ></textarea>
-                                    </div>
-                                    <div className="checkboxGroup">
-                                        <p className="checkboxLabel">Content Categories:</p>
-                                        {['Skits', 'Short Films', 'Interviews', 'Live Premieres', 'Music', 'Documentary', 'Other'].map((cat) => (
-                                            <div key={cat} className="checkboxItem">
-                                                <input
-                                                    type="checkbox"
-                                                    id={`edit-cat-${cat}`}
-                                                    value={cat}
-                                                    checked={editCategories.includes(cat)}
-                                                    onChange={handleProfileCategoryChange}
-                                                />
-                                                <label htmlFor={`edit-cat-${cat}`}>{cat}</label>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="formGroup">
-                                        <label htmlFor="editExistingWork" className="formLabel">Link to Existing Work:</label>
-                                        <input
-                                            type="url"
-                                            id="editExistingWork"
-                                            className="formInput"
-                                            value={editExistingWorkLink}
-                                            onChange={(e) => setEditExistingWorkLink(e.target.value)}
-                                            placeholder="e.g., YouTube channel, Instagram profile"
-                                        />
-                                    </div>
-                                    <button className="dashboardButton" onClick={handleSaveProfile}>Save Changes</button>
-                                    <button className="dashboardButton" onClick={handleCancelEdit} style={{ backgroundColor: '#555' }}>Cancel</button>
-                                </>
-                            ) : (
-                                <>
-                                    <p className="dashboardItem">**Creator Name:** {creatorProfile.creatorName}</p>
-                                    <p className="dashboardItem">**Email:** {creatorProfile.email}</p>
-                                    <p className="dashboardItem">**Bio:** {creatorProfile.bio || 'Not provided yet.'}</p>
-                                    <p className="dashboardItem">**Categories:** {(creatorProfile.categories && creatorProfile.categories.length > 0) ? creatorProfile.categories.join(', ') : 'None selected.'}</p>
-                                    {creatorProfile.existingWorkLink && <p className="dashboardItem">**Existing Work:** <a href={creatorProfile.existingWorkLink} target="_blank" style={{ color: '#FFD700', textDecoration: 'none' }}>{creatorProfile.existingWorkLink}</a></p>}
-                                    <button
-                                        className="dashboardButton"
-                                        onClick={() => setIsEditingProfile(true)}
-                                    >
-                                        Edit Profile
-                                    </button>
-                                </>
-                            )}
-                        </div>
-
-                        <div className="dashboardSection">
-                            <p className="dashboardSectionTitle">My Uploaded Content</p>
-                            {/* Note on data persistence removed as it's now handled by Firestore */}
-
-                            {/* YouTube Video Section */}
-                            <div className="videoLinkSection">
-                                <label htmlFor="youtubeLink" className="formLabel">YouTube Video Link:</label>
-                                {uploadedVideos.youtube ? (
-                                    <>
-                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.youtube.embedUrl)}>
-                                            <img src={uploadedVideos.youtube.thumbnailUrl} alt="YouTube Thumbnail" className="videoThumbnail" />
-                                            <div className="videoThumbnailOverlay">
-                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
-                                                    <path d="M8 5v14l11-7z"/>
-                                                </svg>
-                                            </div>
-                                        </div>
-                                        <div className="videoActions">
-                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('youtube')}>Remove</button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="videoInputContainer">
-                                        <input
-                                            type="url"
-                                            id="youtubeLink"
-                                            className="formInput"
-                                            value={youtubeInputLink}
-                                            onChange={(e) => setYoutubeInputLink(e.target.value)}
-                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOrUpdateVideo('youtube', youtubeInputLink); } }}
-                                            placeholder="Paste YouTube video URL here"
-                                        />
-                                        <button className="actionButton" onClick={() => handleAddOrUpdateVideo('youtube', youtubeInputLink)} disabled={!youtubeInputLink.trim()}>Add</button>
-                                    </div>
-                                )}
+                            <div className="dashboardSection">
+                                <p className="dashboardSectionTitle">Analytics Overview</p>
+                                <p className="dashboardItem">Total Views: 15,450 (Last 30 days)</p>
+                                <p className="dashboardItem">Total Crowdfunding Raised: $3,450</p>
+                                <p className="dashboardItem">Audience Engagement: High</p>
+                                <button
+                                    className="dashboardButton"
+                                    onClick={() => showMessage('Detailed analytics report functionality coming soon!')}
+                                >
+                                    View Full Analytics
+                                </button>
                             </div>
 
-                            {/* Facebook Video Section */}
-                            <div className="videoLinkSection">
-                                <label htmlFor="facebookLink" className="formLabel">Facebook Video Link:</label>
-                                {uploadedVideos.facebook ? (
-                                    <>
-                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.facebook.embedUrl)}>
-                                            <img src={uploadedVideos.facebook.thumbnailUrl} alt="Facebook Thumbnail" className="videoThumbnail" />
-                                            <div className="videoThumbnailOverlay">
-                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
-                                                    <path d="M8 5v14l11-7z"/>
-                                                </svg>
-                                            </div>
-                                        </div>
-                                        <div className="videoActions">
-                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('facebook')}>Remove</button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="videoInputContainer">
-                                        <input
-                                            type="url"
-                                            id="facebookLink"
-                                            className="formInput"
-                                            value={facebookInputLink}
-                                            onChange={(e) => setFacebookInputLink(e.target.value)}
-                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOrUpdateVideo('facebook', facebookInputLink); } }}
-                                            placeholder="Paste Facebook video URL here"
-                                        />
-                                        <button className="actionButton" onClick={() => handleAddOrUpdateVideo('facebook', facebookInputLink)} disabled={!facebookInputLink.trim()}>Add</button>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* TikTok Video Section */}
-                            <div className="videoLinkSection">
-                                <label htmlFor="tiktokLink" className="formLabel">TikTok Video Link:</label>
-                                {uploadedVideos.tiktok ? (
-                                    <>
-                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.tiktok.embedUrl)}>
-                                            <img src={uploadedVideos.tiktok.thumbnailUrl} alt="TikTok Thumbnail" className="videoThumbnail" />
-                                            <div className="videoThumbnailOverlay">
-                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
-                                                    <path d="M8 5v14l11-7z"/>
-                                                </svg>
-                                            </div>
-                                        </div>
-                                        <div className="videoActions">
-                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('tiktok')}>Remove</button>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="videoInputContainer">
-                                        <input
-                                            type="url"
-                                            id="tiktokLink"
-                                            className="formInput"
-                                            value={tiktokInputLink}
-                                            onChange={(e) => setTiktokInputLink(e.target.value)}
-                                            onKeyPress={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddOrUpdateVideo('tiktok', tiktokInputLink); } }}
-                                            placeholder="Paste TikTok video URL here"
-                                        />
-                                        <button className="actionButton" onClick={() => handleAddOrUpdateVideo('tiktok', tiktokInputLink)} disabled={!tiktokInputLink.trim()}>Add</button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="dashboardSection">
-                            <p className="dashboardSectionTitle">My Crowdfunding Campaigns</p>
-                            {creatorCampaigns.filter(c => c.creator === (creatorProfile.creatorName || currentUser.email)).length > 0 ? (
-                                <ul className="dashboardContentList">
-                                    {creatorCampaigns.filter(c => c.creator === (creatorProfile.creatorName || currentUser.email)).map(campaign => (
-                                        <li key={campaign.id} className="dashboardContentListItem">
-                                            <span>{campaign.title} (${campaign.raised}/${campaign.goal})</span>
-                                            <button className="actionButton" onClick={() => showMessage(`Viewing details for "${campaign.title}"...`)}>Details</button>
-                                            <button className="actionButton" onClick={() => showMessage(`Editing "${campaign.title}"...`)}>Edit</button>
-                                        </li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <p className="dashboardItem">You don't have any active campaigns.</p>
-                            )}
                             <button
-                                className="dashboardButton"
-                                onClick={() => showMessage('New campaign creation form functionality coming soon!')}
+                                className="button"
+                                onClick={() => setActiveScreen('Home')}
+                                style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
                             >
-                                Create New Campaign
+                                <span className="buttonText">Back to Home</span>
                             </button>
                         </div>
-
-                        <div className="dashboardSection">
-                            <p className="dashboardSectionTitle">Analytics Overview</p>
-                            <p className="dashboardItem">**Total Views:** 15,450 (Last 30 days)</p>
-                            <p className="dashboardItem">**Total Crowdfunding Raised:** $3,450</p>
-                            <p className="dashboardItem">**Audience Engagement:** High</p>
-                            <button
-                                className="dashboardButton"
-                                onClick={() => showMessage('Detailed analytics report functionality coming soon!')}
-                            >
-                                View Full Analytics
-                            </button>
-                        </div>
-
-                        <button
-                            className="button"
-                            onClick={() => setActiveScreen('Home')}
-                            style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
-                        >
-                            <span className="buttonText">Back to Home</span>
-                        </button>
-                    </div>
+                        {showImageAdjustModal && imageFileToAdjust && (
+                            <ProfilePictureAdjustModal
+                                imageUrl={URL.createObjectURL(imageFileToAdjust)}
+                                onSave={handleSaveAdjustedProfilePicture}
+                                onCancel={handleCancelAdjust}
+                                showMessage={showMessage}
+                            />
+                        )}
+                    </>
                 );
             };
 
 
             // --- Render Current Screen ---
             const renderScreen = () => {
+                // Determine which screen to render based on activeScreen state
                 switch (activeScreen) {
                     case 'Home':
                         return <HomeScreen />;
                     case 'Categories':
                         return <CategoriesScreen />;
+                    case 'Login':
+                        return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'CreatorSignUp':
                         return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-                    case 'Login': // New Login screen case
-                        return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'Premium':
                         return <PremiumScreen />;
                     case 'Support':
@@ -2475,7 +2865,7 @@
                     case 'CreatorCampaigns':
                         return <CreatorCampaignsScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'CreatorDashboard':
-                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={currentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} />;
+                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} />;
                     case 'About':
                         return <AboutContactScreen />;
                     default:
@@ -2493,7 +2883,6 @@
                             className="headerLogo"
                             onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }} /* Fallback image */
                         />
-                        {/* Abstract art pseudo-element is now behind this text and tagline */}
                         {/* App Name */}
                         <p className="headerTitle">NVA Network</p>
                         {/* Joined Tagline */}
@@ -2513,7 +2902,7 @@
                             <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
                         </button>
                         <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
-                            <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Creator Dashboard</span>
+                            <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
                         </button>
                         <button className="navButton" onClick={() => setActiveScreen('About')}>
                             <span className={`navButtonText ${activeScreen === 'About' ? 'activeNavButtonText' : ''}`}>About</span>
@@ -2536,6 +2925,19 @@
 
         // Render the App component into the root div after all resources are loaded
         window.onload = function() {
+            // Check if Firebase instances and React/ReactDOM are available before rendering
+            if (
+                typeof window.firebaseAuth === 'undefined' ||
+                typeof window.onAuthStateChanged === 'undefined' ||
+                typeof window.firebaseDb === 'undefined' ||
+                typeof window.firebaseStorage === 'undefined' ||
+                typeof ReactDOM === 'undefined'
+            ) {
+                console.error("Firebase or ReactDOM not fully initialized. Retrying render...");
+                setTimeout(window.onload, 100); // Retry after a short delay
+                return;
+            }
+
             const root = ReactDOM.createRoot(document.getElementById('root'));
             root.render(<App />);
         };
