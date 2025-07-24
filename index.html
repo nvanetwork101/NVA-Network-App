@@ -5,18 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NVA Network</title>
     <!-- React and ReactDOM CDNs - Added 'defer' attribute -->
-    <script crossorigin src="[https://unpkg.com/react@18/umd/react.development.js](https://unpkg.com/react@18/umd/react.development.js)" defer></script>
-    <script crossorigin src="[https://unpkg.com/react-dom@18/umd/react-dom.development.js](https://unpkg.com/react-dom@18/umd/react-dom.development.js)" defer></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js" defer></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" defer></script>
     <!-- Babel for JSX transformation in browser -->
-    <script src="[https://unpkg.com/@babel/standalone/babel.min.js](https://unpkg.com/@babel/standalone/babel.min.js)"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <!-- Firebase SDKs -->
     <script type="module" defer>
-        import { initializeApp } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js)";
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js)";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js)";
-        import { getStorage, ref, uploadBytes, getDownloadURL } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js)";
-        import { getAnalytics } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js)";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 
         // Global Firebase variables (provided by Canvas environment)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -66,7 +66,7 @@
     </script>
 
     <!-- Google Fonts - Bebas Neue for title, Inter for body -->
-    <link href="[https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap)" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 
     <!-- PWA Enhancements START -->
     <!-- Link to your web app manifest file -->
@@ -1250,61 +1250,61 @@
 
 
         const featuredContent = [
-            { id: '1', title: 'Guyanese Comedy Special', type: 'skit', url: '[https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1](https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1)', creator: 'Comedy Crew' },
-            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: '[https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1](https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1)', creator: 'Laugh Central' },
-            { id: '3', title: 'Indie Film: "Georgetown Dreams"', type: 'short-film', url: '[https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1](https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1)', creator: 'Indie Films GY' },
-            { id: '4', title: 'Live Concert Replay: Mashramani', type: 'live-premiere', url: '[https://www.youtube.com/embed/example4?autoplay=1](https://www.youtube.com/embed/example4?autoplay=1)', creator: 'Vibes Ent.' },
-            { id: '5', title: 'Creator Interview: Rise of Talent', type: 'interview', url: '[https://www.youtube.com/embed/example5?autoplay=1](https://www.youtube.com/embed/example5?autoplay=1)', creator: 'NVA Insights' },
-            { id: '6', title: 'Short Film: "The Golden Arrowhead"', type: 'short-film', url: '[https://www.youtube.com/embed/example6?autoplay=1](https://www.youtube.com/embed/example6?autoplay=1)', creator: 'Heritage Films' },
-            { id: '7', title: 'New Skit Series: "Life in GT"', type: 'skit', url: '[https://www.youtube.com/embed/skit7?autoplay=1](https://www.youtube.com/embed/skit7?autoplay=1)', creator: 'GT Daily' },
-            { id: '8', title: 'Cooking Show: Guyanese Delights', type: 'skit', url: '[https://www.youtube.com/embed/skit8?autoplay=1](https://www.youtube.com/embed/skit8?autoplay=1)', creator: 'Chef Roti' },
-            { id: '9', title: 'Poetry Slam Live: Best of Season', type: 'live-premiere', url: '[https://www.youtube.com/embed/live9?autoplay=1](https://www.youtube.com/embed/live9?autoplay=1)', creator: 'Wordsmiths GY' },
-            { id: '10', title: 'Wildlife Doc: Amazonian Secrets', type: 'documentary', url: '[https://www.youtube.com/embed/doc1?autoplay=1](https://www.youtube.com/embed/doc1?autoplay=1)', creator: 'Nature Watch' },
-            { id: '11', title: 'Guyanese Music Spotlight', type: 'music', url: '[https://www.youtube.com/embed/music1?autoplay=1](https://www.youtube.com/embed/music1?autoplay=1)', creator: 'Riddim Connect' },
-            { id: '12', title: 'Interview: Young Entrepreneurs', type: 'interview', url: '[https://www.youtube.com/embed/int1?autoplay=1](https://www.youtube.com/embed/int1?autoplay=1)', creator: 'Business Buzz GY' },
+            { id: '1', title: 'Guyanese Comedy Special', type: 'skit', url: 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1', creator: 'Comedy Crew' },
+            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: 'https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1', creator: 'Laugh Central' },
+            { id: '3', title: 'Indie Film: "Georgetown Dreams"', type: 'short-film', url: 'https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1', creator: 'Indie Films GY' },
+            { id: '4', title: 'Live Concert Replay: Mashramani', type: 'live-premiere', url: 'https://www.youtube.com/embed/example4?autoplay=1', creator: 'Vibes Ent.' },
+            { id: '5', title: 'Creator Interview: Rise of Talent', type: 'interview', url: 'https://www.youtube.com/embed/example5?autoplay=1', creator: 'NVA Insights' },
+            { id: '6', title: 'Short Film: "The Golden Arrowhead"', type: 'short-film', url: 'https://www.youtube.com/embed/example6?autoplay=1', creator: 'Heritage Films' },
+            { id: '7', title: 'New Skit Series: "Life in GT"', type: 'skit', url: 'https://www.youtube.com/embed/skit7?autoplay=1', creator: 'GT Daily' },
+            { id: '8', title: 'Cooking Show: Guyanese Delights', type: 'skit', url: 'https://www.youtube.com/embed/skit8?autoplay=1', creator: 'Chef Roti' },
+            { id: '9', title: 'Poetry Slam Live: Best of Season', type: 'live-premiere', url: 'https://www.youtube.com/embed/live9?autoplay=1', creator: 'Wordsmiths GY' },
+            { id: '10', title: 'Wildlife Doc: Amazonian Secrets', type: 'documentary', url: 'https://www.youtube.com/embed/doc1?autoplay=1', creator: 'Nature Watch' },
+            { id: '11', title: 'Guyanese Music Spotlight', type: 'music', url: 'https://www.youtube.com/embed/music1?autoplay=1', creator: 'Riddim Connect' },
+            { id: '12', title: 'Interview: Young Entrepreneurs', type: 'interview', url: 'https://www.youtube.com/embed/int1?autoplay=1', creator: 'Business Buzz GY' },
         ];
 
 
         const categories = {
             Skits: [
-                { id: 's1', title: 'Laugh Out Loud: Best Skits Vol. 1', url: '[https://www.youtube.com/embed/skit1?autoplay=1](https://www.youtube.com/embed/skit1?autoplay=1)' },
-                { id: 's2', title: 'Daily Dose of Guyanese Humor', url: '[https://www.youtube.com/embed/skit2?autoplay=1](https://www.youtube.com/embed/skit2?autoplay=1)' },
-                { id: 's3', title: 'Guyana Vibes: Street Comedy', url: '[https://www.youtube.com/embed/skit3?autoplay=1](https://www.youtube.com/embed/skit3?autoplay=1)' },
-                { id: 's4', title: 'Caribbean Laughs: Episode 1', url: '[https://www.youtube.com/embed/skit4?autoplay=1](https://www.youtube.com/embed/skit4?autoplay=1)' },
-                { id: 's5', title: 'Funny Moments: Local Edition', url: '[https://www.youtube.com/embed/skit5?autoplay=1](https://www.youtube.com/embed/skit5?autoplay=1)' },
-                { id: 's6', title: 'The Best of Guyanese Skits', url: '[https://www.youtube.com/embed/skit6?autoplay=1](https://www.youtube.com/embed/skit6?autoplay=1)' },
-                { id: 's7', title: 'New Skit Series: "Life in GT"', url: '[https://www.youtube.com/embed/skit7?autoplay=1](https://www.youtube.com/embed/skit7?autoplay=1)' },
-                { id: 's8', title: 'Weekend Comedy Mashup', url: '[https://www.youtube.com/embed/skit8?autoplay=1](https://www.youtube.com/embed/skit8?autoplay=1)' },
+                { id: 's1', title: 'Laugh Out Loud: Best Skits Vol. 1', url: 'https://www.youtube.com/embed/skit1?autoplay=1' },
+                { id: 's2', title: 'Daily Dose of Guyanese Humor', url: 'https://www.youtube.com/embed/skit2?autoplay=1' },
+                { id: 's3', title: 'Guyana Vibes: Street Comedy', url: 'https://www.youtube.com/embed/skit3?autoplay=1' },
+                { id: 's4', title: 'Caribbean Laughs: Episode 1', url: 'https://www.youtube.com/embed/skit4?autoplay=1' },
+                { id: 's5', title: 'Funny Moments: Local Edition', url: 'https://www.youtube.com/embed/skit5?autoplay=1' },
+                { id: 's6', title: 'The Best of Guyanese Skits', url: 'https://www.youtube.com/embed/skit6?autoplay=1' },
+                { id: 's7', title: 'New Skit Series: "Life in GT"', url: 'https://www.youtube.com/embed/skit7?autoplay=1' },
+                { id: 's8', title: 'Weekend Comedy Mashup', url: 'https://www.youtube.com/embed/skit8?autoplay=1' },
             ],
             'Short Films': [
-                { id: 'sf1', title: 'The Golden Arrowhead: A Short Film', url: '[https://www.youtube.com/embed/shortfilm1?autoplay=1](https://www.youtube.com/embed/shortfilm1?autoplay=1)' },
-                { id: 'sf2', title: 'Tales from the Coast: Episode 1', url: '[https://www.youtube.com/embed/shortfilm2?autoplay=1](https://www.youtube.com/embed/shortfilm2?autoplay=1)' },
-                { id: 'sf3', title: 'Lost in the Jungle: A Drama', url: '[https://www.youtube.com/embed/shortfilm3?autoplay=1](https://www.youtube.com/embed/shortfilm3?autoplay=1)' },
-                { id: 'sf4', title: 'The Cane Field Mystery', url: '[https://www.youtube.com/embed/shortfilm4?autoplay=1](https://www.youtube.com/embed/shortfilm4?autoplay=1)' },
-                { id: 'sf5', title: 'A Day in the Market', url: '[https://www.youtube.com/embed/shortfilm5?autoplay=1](https://www.youtube.com/embed/shortfilm5?autoplay=1)' },
-                { id: 'sf6', title: 'The Hidden Falls', url: '[https://www.youtube.com/embed/shortfilm6?autoplay=1](https://www.youtube.com/embed/shortfilm6?autoplay=1)' },
-                { id: 'sf7', title: 'City Lights, Country Dreams', url: '[https://www.youtube.com/embed/shortfilm7?autoplay=1](https://www.youtube.com/embed/shortfilm7?autoplay=1)' },
-                { id: 'sf8', title: 'Echoes of the Past', url: '[https://www.youtube.com/embed/shortfilm8?autoplay=1](https://www.youtube.com/embed/shortfilm8?autoplay=1)' },
+                { id: 'sf1', title: 'The Golden Arrowhead: A Short Film', url: 'https://www.youtube.com/embed/shortfilm1?autoplay=1' },
+                { id: 'sf2', title: 'Tales from the Coast: Episode 1', url: 'https://www.youtube.com/embed/shortfilm2?autoplay=1' },
+                { id: 'sf3', title: 'Lost in the Jungle: A Drama', url: 'https://www.youtube.com/embed/shortfilm3?autoplay=1' },
+                { id: 'sf4', title: 'The Cane Field Mystery', url: 'https://www.youtube.com/embed/shortfilm4?autoplay=1' },
+                { id: 'sf5', title: 'A Day in the Market', url: 'https://www.youtube.com/embed/shortfilm5?autoplay=1' },
+                { id: 'sf6', title: 'The Hidden Falls', url: 'https://www.youtube.com/embed/shortfilm6?autoplay=1' },
+                { id: 'sf7', title: 'City Lights, Country Dreams', url: 'https://www.youtube.com/embed/shortfilm7?autoplay=1' },
+                { id: 'sf8', title: 'Echoes of the Past', url: 'https://www.youtube.com/embed/shortfilm8?autoplay=1' },
             ],
             Interviews: [
-                { id: 'i1', title: 'Creator Spotlight: Interview with Mark X', url: '[https://www.youtube.com/embed/interview1?autoplay=1](https://www.youtube.com/embed/interview1?autoplay=1)' },
-                { id: 'i2', title: 'Behind the Scenes: NVA Network', url: '[https://www.youtube.com/embed/interview2?autoplay=1](https://www.youtube.com/embed/interview2?autoplay=1)' },
-                { id: 'i3', title: 'Guyanese Icons: A Conversation', url: '[https://www.youtube.com/embed/interview3?autoplay=1](https://www.youtube.com/embed/interview3?autoplay=1)' },
-                { id: 'i4', title: 'The Future of Guyanese Art', url: '[https://www.youtube.com/embed/interview4?autoplay=1](https://www.youtube.com/embed/interview4?autoplay=1)' },
-                { id: 'i5', title: 'In-Depth with Local Artists', url: '[https://www.youtube.com/embed/interview5?autoplay=1](https://www.youtube.com/embed/interview5?autoplay=1)' },
-                { id: 'i6', title: 'Entrepreneurial Journeys in Guyana', url: '[https://www.youtube.com/embed/interview6?autoplay=1](https://www.youtube.com/embed/interview6?autoplay=1)' },
-                { id: 'i7', title: 'Community Leaders Speak Out', url: '[https://www.youtube.com/embed/interview7?autoplay=1](https://www.youtube.com/embed/interview7?autoplay=1)' },
-                { id: 'i8', title: 'The Making of a Guyanese Star', url: '[https://www.youtube.com/embed/interview8?autoplay=1](https://www.youtube.com/embed/interview8?autoplay=1)' },
+                { id: 'i1', title: 'Creator Spotlight: Interview with Mark X', url: 'https://www.youtube.com/embed/interview1?autoplay=1' },
+                { id: 'i2', title: 'Behind the Scenes: NVA Network', url: 'https://www.youtube.com/embed/interview2?autoplay=1' },
+                { id: 'i3', title: 'Guyanese Icons: A Conversation', url: 'https://www.youtube.com/embed/interview3?autoplay=1' },
+                { id: 'i4', title: 'The Future of Guyanese Art', url: 'https://www.youtube.com/embed/interview4?autoplay=1' },
+                { id: 'i5', title: 'In-Depth with Local Artists', url: 'https://www.youtube.com/embed/interview5?autoplay=1' },
+                { id: 'i6', title: 'Entrepreneurial Journeys in Guyana', url: 'https://www.youtube.com/embed/interview6?autoplay=1' },
+                { id: 'i7', title: 'Community Leaders Speak Out', url: 'https://www.youtube.com/embed/interview7?autoplay=1' },
+                { id: 'i8', title: 'The Making of a Guyanese Star', url: 'https://www.youtube.com/embed/interview8?autoplay=1' },
             ],
             'Live Premieres': [
-                { id: 'lp1', title: 'Upcoming: Guyanese Music Festival Live', url: '[https://www.youtube.com/embed/live1?autoplay=1](https://www.youtube.com/embed/live1?autoplay=1)' },
-                { id: 'lp2', title: 'Replay: NVA Network Launch Event', url: '[https://www.youtube.com/embed/live2?autoplay=1](https://www.youtube.com/embed/live2?autoplay=1)' },
-                { id: 'lp3', title: 'Live Comedy Night: Best of Guyana', url: '[https://www.youtube.com/embed/live3?autoplay=1](https://www.youtube.com/embed/live3?autoplay=1)' },
-                { id: 'lp4', title: 'Red Carpet Gala: NVA Awards', url: '[https://www.youtube.com/embed/live4?autoplay=1](https://www.youtube.com/embed/live4?autoplay=1)' },
-                { id: 'lp5', title: 'Exclusive: Talk Show Live', url: '[https://www.youtube.com/embed/live5?autoplay=1](https://www.youtube.com/embed/live5?autoplay=1)' },
-                { id: 'lp6', title: 'Poetry Slam Live: Guyana Edition', url: '[https://www.youtube.com/embed/live6?autoplay=1](https://www.youtube.com/embed/live6?autoplay=1)' },
-                { id: 'lp7', title: 'Cultural Dance Showcase', url: '[https://www.youtube.com/embed/live7?autoplay=1](https://www.youtube.com/embed/live7?autoplay=1)' },
-                { id: 'lp8', title: 'Q&A with Your Favorite Creators', url: '[https://www.youtube.com/embed/live8?autoplay=1](https://www.youtube.com/embed/live8?autoplay=1)' },
+                { id: 'lp1', title: 'Upcoming: Guyanese Music Festival Live', url: 'https://www.youtube.com/embed/live1?autoplay=1' },
+                { id: 'lp2', title: 'Replay: NVA Network Launch Event', url: 'https://www.youtube.com/embed/live2?autoplay=1' },
+                { id: 'lp3', title: 'Live Comedy Night: Best of Guyana', url: 'https://www.youtube.com/embed/live3?autoplay=1' },
+                { id: 'lp4', title: 'Red Carpet Gala: NVA Awards', url: 'https://www.youtube.com/embed/live4?autoplay=1' },
+                { id: 'lp5', title: 'Exclusive: Talk Show Live', url: 'https://www.youtube.com/embed/live5?autoplay=1' },
+                { id: 'lp6', title: 'Poetry Slam Live: Guyana Edition', url: 'https://www.youtube.com/embed/live6?autoplay=1' },
+                { id: 'lp7', title: 'Cultural Dance Showcase', url: 'https://www.youtube.com/embed/live7?autoplay=1' },
+                { id: 'lp8', title: 'Q&A with Your Favorite Creators', url: 'https://www.youtube.com/embed/live8?autoplay=1' },
             ],
         };
 
@@ -1316,8 +1316,8 @@
                 description: 'Help us produce a heartwarming short film about Guyanese traditions and family values.',
                 goal: 5000,
                 raised: 3200,
-                imageUrl: '[https://placehold.co/150x100/FFD700/0A0A0A?text=Film+Project](https://placehold.co/150x100/FFD700/0A0A0A?text=Film+Project)',
-                creatorProfilePictureUrl: '[https://placehold.co/100x100/555/FFF?text=GF](https://placehold.co/100x100/555/FFF?text=GF)',
+                imageUrl: 'https://placehold.co/150x100/FFD700/0A0A0A?text=Film+Project',
+                creatorProfilePictureUrl: 'https://placehold.co/100x100/555/FFF?text=GF',
                 createdAt: '2023-01-15T10:00:00Z'
             },
             {
@@ -1327,8 +1327,8 @@
                 description: 'Support our new web series bringing everyday Guyanese humor to your screens!',
                 goal: 3000,
                 raised: 1800,
-                imageUrl: '[https://placehold.co/150x100/FF6347/FFF?text=Comedy+Series](https://placehold.co/150x100/FF6347/FFF?text=Comedy+Series)',
-                creatorProfilePictureUrl: '[https://placehold.co/100x100/555/FFF?text=LO](https://placehold.co/100x100/555/FFF?text=LO)',
+                imageUrl: 'https://placehold.co/150x100/FF6347/FFF?text=Comedy+Series',
+                creatorProfilePictureUrl: 'https://placehold.co/100x100/555/FFF?text=LO',
                 createdAt: '2023-02-01T11:30:00Z'
             },
         ];
@@ -1390,7 +1390,7 @@
                 
                 return {
                     x: Math.min(maxX, Math.max(minX, pos.x)),
-                    y: Math.min(maxY, Math.max(maxY, pos.y)) // Fixed here, was minY instead of maxY
+                    y: Math.min(maxY, Math.max(minY, pos.y)) // Corrected: changed 'maxY' to 'minY'
                 };
             };
 
@@ -1745,12 +1745,12 @@
                     await addDoc(campaignsCollectionRef, {
                         creatorId: currentUser.uid,
                         creatorName: creatorProfile.creatorName || currentUser.email,
-                        creatorProfilePictureUrl: creatorProfile.profilePictureUrl || '[https://placehold.co/100x100/555/FFF?text=Profile](https://placehold.co/100x100/555/FFF?text=Profile)',
+                        creatorProfilePictureUrl: creatorProfile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile',
                         title: title,
                         description: description,
                         goal: parseFloat(goal),
                         raised: 0,
-                        imageUrl: imageUrl || '[https://placehold.co/300x200/2A2A2A/FFD700?text=Campaign+Link](https://placehold.co/300x200/2A2A2A/FFD700?text=Campaign+Link)',
+                        imageUrl: imageUrl || 'https://placehold.co/300x200/2A2A2A/FFD700?text=Campaign+Link',
                         createdAt: new Date().toISOString()
                     });
 
@@ -1814,7 +1814,7 @@
                                 className="formInput"
                                 value={imageUrl}
                                 onChange={(e) => setImageUrl(e.target.value)}
-                                placeholder="e.g., [https://yourproject.com](https://yourproject.com) or [https://example.com/image.jpg](https://example.com/image.jpg)"
+                                placeholder="e.g., https://yourproject.com or https://example.com/image.jpg"
                             />
                         </div>
 
@@ -1889,7 +1889,7 @@
                                     <div
                                         className="campaignListImagePlaceholder"
                                         style={{ backgroundImage: `url(${campaign.imageUrl})` }}
-                                        onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='url([https://placehold.co/150x100/2A2A2A/FFD700?text=Link+Preview](https://placehold.co/150x100/2A2A2A/FFD700?text=Link+Preview))'; }}
+                                        onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='url(https://placehold.co/150x100/2A2A2A/FFD700?text=Link+Preview)'; }}
                                     >
                                         <button
                                             className="campaignListProjectButton"
@@ -1909,10 +1909,10 @@
                                         <p className="campaignListTitle">{campaign.title}</p>
                                         <div className="campaignListCreator">
                                             <img
-                                                src={campaign.creatorProfilePictureUrl || '[https://placehold.co/100x100/555/FFF?text=Profile](https://placehold.co/100x100/555/FFF?text=Profile)'}
+                                                src={campaign.creatorProfilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
                                                 alt={campaign.creatorName}
                                                 className="campaignListCreatorProfilePic"
-                                                onError={(e) => { e.target.onerror = null; e.target.src='[https://placehold.co/24x24/555/FFF?text=P](https://placehold.co/24x24/555/FFF?text=P)'; }}
+                                                onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/24x24/555/FFF?text=P'; }}
                                             />
                                             <span>by {campaign.creatorName}</span>
                                         </div>
@@ -1999,15 +1999,15 @@
                             src={campaign.imageUrl}
                             alt={campaign.title}
                             className="campaignDetailImage"
-                            onError={(e) => { e.target.onerror = null; e.target.src='[https://placehold.co/350x200/2A2A2A/FFD700?text=Campaign+Link+Preview](https://placehold.co/350x200/2A2A2A/FFD700?text=Campaign+Link+Preview)'; }}
+                            onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/350x200/2A2A2A/FFD700?text=Campaign+Link+Preview'; }}
                         />
                         <p className="campaignDetailTitle">{campaign.title}</p>
                         <div className="campaignDetailCreator">
                             <img
-                                src={campaign.creatorProfilePictureUrl || '[https://placehold.co/100x100/555/FFF?text=Profile](https://placehold.co/100x100/555/FFF?text=Profile)'}
+                                src={campaign.creatorProfilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
                                 alt={campaign.creatorName}
                                 className="campaignDetailCreatorProfilePic"
-                                onError={(e) => { e.target.onerror = null; e.target.src='[https://placehold.co/32x32/555/FFF?text=P](https://placehold.co/32x32/555/FFF?text=P)'; }}
+                                onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/32x32/555/FFF?text=P'; }}
                             />
                             <span>by {campaign.creatorName}</span>
                         </div>
@@ -2112,21 +2112,21 @@
             }, []);
 
             const originalCarouselImages = [
-                '[https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night](https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night)',
-                '[https://placehold.co/140x100/808080/FFF?text=New+Series](https://placehold.co/140x100/808080/FFF?text=New+Series)',
-                '[https://placehold.co/140x100/606060/EEE?text=Exclusive](https://placehold.co/140x100/606060/EEE?text=Exclusive)',
-                '[https://placehold.co/140x100/404040/DDD?text=Behind+Scenes](https://placehold.co/140x100/404040/DDD?text=Behind+Scenes)',
-                '[https://placehold.co/140x100/202020/CCC?text=Live+Event](https://placehold.co/140x100/202020/CCC?text=Live+Event)',
+                'https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night',
+                'https://placehold.co/140x100/808080/FFF?text=New+Series',
+                'https://placehold.co/140x100/606060/EEE?text=Exclusive',
+                'https://placehold.co/140x100/404040/DDD?text=Behind+Scenes',
+                'https://placehold.co/140x100/202020/CCC?text=Live+Event',
             ];
             const carouselImages = [...originalCarouselImages, ...originalCarouselImages, ...originalCarouselImages];
 
             const originalLiveFeedContent = [
-                { id: 'lf1', title: 'New Comedy Skit: Dem Boys', creator: 'Street Jokes GY', thumbnail: '[https://placehold.co/80x60/808080/FFF?text=Skit1](https://placehold.co/80x60/808080/FFF?text=Skit1)', url: '[https://www.youtube.com/embed/SKIT_LIVE_1?autoplay=1](https://www.youtube.com/embed/SKIT_LIVE_1?autoplay=1)' },
-                { id: 'lf2', title: 'Interview: Rising Star', creator: 'NVA Insights', thumbnail: '[https://placehold.co/80x60/A0A0A0/000?text=Int1](https://placehold.co/80x60/A0A0A0/000?text=Int1)', url: '[https://www.youtube.com/embed/INTERVIEW_LIVE_2?autoplay=1](https://www.youtube.com/embed/INTERVIEW_LIVE_2?autoplay=1)' },
-                { id: 'lf3', title: 'Short Film Trailer: Lost Gold', creator: 'Guyana Films', thumbnail: '[https://placehold.co/80x60/606060/EEE?text=Film1](https://placehold.co/80x60/606060/EEE?text=Film1)', url: '[https://www.youtube.com/embed/FILM_LIVE_3?autoplay=1](https://www.youtube.com/embed/FILM_LIVE_3?autoplay=1)' },
-                { id: 'lf4', title: 'Live Music Session: Reggae Vibes', creator: 'Riddim Makers', thumbnail: '[https://placehold.co/80x60/404040/DDD?text=Music1](https://placehold.co/80x60/404040/DDD?text=Music1)', url: '[https://www.youtube.com/embed/MUSIC_LIVE_4?autoplay=1](https://www.youtube.com/embed/MUSIC_LIVE_4?autoplay=1)' },
-                { id: 'lf5', title: 'Behind The Scenes: Drama Shoot', creator: 'Creative Minds', thumbnail: '[https://placehold.co/80x60/202020/CCC?text=BTS1](https://placehold.co/80x60/202020/CCC?text=BTS1)', url: '[https://www.youtube.com/embed/BTS_LIVE_5?autoplay=1](https://www.youtube.com/embed/BTS_LIVE_5?autoplay=1)' },
-                { id: 'lf6', title: 'Daily Vlog: Life in Georgetown', creator: 'GT Vlogger', thumbnail: '[https://placehold.co/80x60/909090/111?text=Vlog1](https://placehold.co/80x60/909090/111?text=Vlog1)', url: '[https://www.youtube.com/embed/VLOG_LIVE_6?autoplay=1](https://www.youtube.com/embed/VLOG_LIVE_6?autoplay=1)' },
+                { id: 'lf1', title: 'New Comedy Skit: Dem Boys', creator: 'Street Jokes GY', thumbnail: 'https://placehold.co/80x60/808080/FFF?text=Skit1', url: 'https://www.youtube.com/embed/SKIT_LIVE_1?autoplay=1' },
+                { id: 'lf2', title: 'Interview: Rising Star', creator: 'NVA Insights', thumbnail: 'https://placehold.co/80x60/A0A0A0/000?text=Int1', url: 'https://www.youtube.com/embed/INTERVIEW_LIVE_2?autoplay=1' },
+                { id: 'lf3', title: 'Short Film Trailer: Lost Gold', creator: 'Guyana Films', thumbnail: 'https://placehold.co/80x60/606060/EEE?text=Film1', url: 'https://www.youtube.com/embed/FILM_LIVE_3?autoplay=1' },
+                { id: 'lf4', title: 'Live Music Session: Reggae Vibes', creator: 'Riddim Makers', thumbnail: 'https://placehold.co/80x60/404040/DDD?text=Music1', url: 'https://www.youtube.com/embed/MUSIC_LIVE_4?autoplay=1' },
+                { id: 'lf5', title: 'Behind The Scenes: Drama Shoot', creator: 'Creative Minds', thumbnail: 'https://placehold.co/80x60/202020/CCC?text=BTS1', url: 'https://www.youtube.com/embed/BTS_LIVE_5?autoplay=1' },
+                { id: 'lf6', title: 'Daily Vlog: Life in Georgetown', creator: 'GT Vlogger', thumbnail: 'https://placehold.co/80x60/909090/111?text=Vlog1', url: 'https://www.youtube.com/embed/VLOG_LIVE_6?autoplay=1' },
             ];
             const liveFeedItems = [...originalLiveFeedContent, ...originalLiveFeedContent, ...originalLiveFeedContent];
 
@@ -3209,7 +3209,7 @@
                                 <p className="dashboardSectionTitle">Your Profile</p>
                                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
                                     <img
-                                        src={creatorProfile.profilePictureUrl || '[https://placehold.co/100x100/555/FFF?text=Profile](https://placehold.co/100x100/555/FFF?text=Profile)'}
+                                        src={creatorProfile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
                                         alt="Profile"
                                         style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px' }}
                                     />
@@ -3332,7 +3332,7 @@
                                             className="formInput"
                                             value={youtubeInputLink}
                                             onChange={(e) => setYoutubeInputLink(e.target.value)}
-                                            placeholder="e.g., [https://www.youtube.com/watch?v=VIDEO_ID](https://www.youtube.com/watch?v=VIDEO_ID)"
+                                            placeholder="e.g., https://www.youtube.com/watch?v=VIDEO_ID"
                                         />
                                         {uploadedVideos.youtube ? (
                                             <button className="actionButton remove" onClick={() => handleRemoveVideo('youtube')}>Remove</button>
@@ -3361,7 +3361,7 @@
                                             className="formInput"
                                             value={facebookInputLink}
                                             onChange={(e) => setFacebookInputLink(e.target.value)}
-                                            placeholder="e.g., [https://www.facebook.com/video.php?v=VIDEO_ID](https://www.facebook.com/video.php?v=VIDEO_ID) or [https://fb.watch/](https://fb.watch/)..."
+                                            placeholder="e.g., https://www.facebook.com/video.php?v=VIDEO_ID or https://fb.watch/..."
                                         />
                                         {uploadedVideos.facebook ? (
                                             <button className="actionButton remove" onClick={() => handleRemoveVideo('facebook')}>Remove</button>
@@ -3393,7 +3393,7 @@
                                             className="formInput"
                                             value={tiktokInputLink}
                                             onChange={(e) => setTiktokInputInputLink(e.target.value)}
-                                            placeholder="e.g., [https://www.tiktok.com/@user/video/VIDEO_ID](https://www.tiktok.com/@user/video/VIDEO_ID)"
+                                            placeholder="e.g., https://www.tiktok.com/@user/video/VIDEO_ID"
                                         />
                                         {uploadedVideos.tiktok ? (
                                             <button className="actionButton remove" onClick={() => handleRemoveVideo('tiktok')}>Remove</button>
@@ -3481,10 +3481,10 @@
                 <div className="container">
                     <div className="header">
                         <img
-                            src="[https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png](https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png)"
+                            src="https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png"
                             alt="NVA Network Logo"
                             className="headerLogo"
-                            onError={(e) => { e.target.onerror = null; e.target.src='[https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error](https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error)'; }}
+                            onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }}
                         />
                         <p className="headerTitle">NVA Network</p>
                         <p className="tagline">Guyanese Content to a Global Stage.</p>
