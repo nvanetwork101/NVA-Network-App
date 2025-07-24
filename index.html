@@ -5,18 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NVA Network</title>
     <!-- React and ReactDOM CDNs - Added 'defer' attribute -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js" defer></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" defer></script>
+    <script crossorigin src="[https://unpkg.com/react@18/umd/react.development.js](https://unpkg.com/react@18/umd/react.development.js)" defer></script>
+    <script crossorigin src="[https://unpkg.com/react-dom@18/umd/react-dom.development.js](https://unpkg.com/react-dom@18/umd/react-dom.development.js)" defer></script>
     <!-- Babel for JSX transformation in browser -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="[https://unpkg.com/@babel/standalone/babel.min.js](https://unpkg.com/@babel/standalone/babel.min.js)"></script>
 
     <!-- Firebase SDKs -->
     <script type="module" defer>
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+        import { initializeApp } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js)";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js)";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js)";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js)";
+        import { getAnalytics } from "[https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js](https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js)";
 
         // Global Firebase variables (provided by Canvas environment)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -54,13 +54,19 @@
         window.setDoc = setDoc; // Expose Firestore setDoc
         window.getDoc = getDoc; // Expose Firestore getDoc
         window.updateDoc = updateDoc; // Expose Firestore updateDoc
+        window.collection = collection; // Expose Firestore collection
+        window.addDoc = addDoc; // Expose Firestore addDoc
+        window.query = query; // Expose Firestore query
+        window.orderBy = orderBy; // Expose Firestore orderBy
+        window.onSnapshot = onSnapshot; // Expose Firestore onSnapshot
         window.ref = ref; // Expose Storage ref
         window.uploadBytes = uploadBytes; // Storage uploadBytes function
         window.getDownloadURL = getDownloadURL; // Storage getDownloadURL function
+        window.appId = appId; // Export appId for use in Firestore paths
     </script>
 
     <!-- Google Fonts - Bebas Neue for title, Inter for body -->
-    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="[https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap)" rel="stylesheet">
 
     <!-- PWA Enhancements START -->
     <!-- Link to your web app manifest file -->
@@ -331,7 +337,7 @@
             display: flex;
             flex-direction: column; /* Arrange items in a column */
             margin-bottom: 20px;
-            background-color: #1A1A1A; /* Background for the carousel area */
+            background-color: #1A1A1A;
             border-radius: 10px;
             padding: 10px;
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
@@ -526,9 +532,9 @@
         }
         .videoModalContent {
             background-color: #1A1A1A;
-            border-radius: 10px;
-            width: 95vw; /* Make it take 95% of viewport width */
-            height: 95vh; /* Make it take 95% of viewport height */
+            border-radius: 0; /* Removed for full screen effect */
+            width: 100vw; /* Make it take 100% of viewport width */
+            height: 100vh; /* Make it take 100% of viewport height */
             max-width: 1200px; /* Cap maximum width for very large screens */
             max-height: 800px; /* Cap maximum height for very large screens to maintain aspect ratio */
             overflow: hidden;
@@ -1020,6 +1026,199 @@
         .zoomButton:hover {
             background-color: #4A4A4A;
         }
+
+        /* New styles for all campaigns list */
+        .allCampaignsList {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .allCampaignsListItem {
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: flex-start; /* Align items to the top */
+            cursor: pointer; /* Pointer to indicate clickable for the whole card */
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .allCampaignsListItem:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7);
+        }
+        .campaignListImagePlaceholder { /* New class for the image/button container */
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-right: 15px;
+            flex-shrink: 0;
+            background-color: #3A3A3A; /* Background for the placeholder/button */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative; /* For the button text */
+            overflow: hidden; /* To handle background image overflow if it's large */
+            background-size: cover; /* Make background image cover the area */
+            background-position: center; /* Center the background image */
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.5); /* Subtle inner shadow */
+        }
+        .campaignListProjectButton { /* New class for the actual clickable button inside */
+            background-color: rgba(255, 215, 0, 0.8); /* Semi-transparent gold */
+            color: #0A0A0A;
+            padding: 5px 8px;
+            border-radius: 5px;
+            font-size: 10px;
+            font-weight: bold;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.2s ease;
+            position: absolute; /* Position over the background image */
+            bottom: 5px; /* Place it at the bottom */
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap; /* Prevent text wrapping */
+            text-shadow: 0 0 3px rgba(0,0,0,0.5);
+            line-height: 1; /* Adjust line height for smaller button */
+        }
+        .campaignListProjectButton:hover {
+            background-color: #FFD700; /* Solid gold on hover */
+        }
+
+        .campaignListContent {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .campaignListTitle {
+            font-size: 16px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 5px;
+        }
+        .campaignListCreator {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+            color: #CCC;
+            margin-bottom: 8px;
+        }
+        .campaignListCreatorProfilePic {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-right: 8px;
+            border: 1px solid #FFD700; /* Small border for visibility */
+        }
+        .campaignListDescription {
+            font-size: 13px;
+            color: #AAA;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 2; /* Show only 2 lines */
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 10px;
+        }
+        .campaignListStats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #CCC;
+            width: 100%;
+        }
+        .campaignListGoal, .campaignListRaised {
+            font-weight: bold;
+            color: #FFF;
+        }
+
+        /* Campaign Details Screen Specific Styles */
+        .campaignDetailHeader {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .campaignDetailImage {
+            width: 100%;
+            max-width: 350px; /* Max width for images */
+            height: 200px;
+            object-fit: cover;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+        }
+        .campaignDetailTitle {
+            font-size: 22px;
+            font-weight: bold;
+            color: #FFD700;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .campaignDetailCreator {
+            display: flex;
+            align-items: center;
+            font-size: 15px;
+            color: #CCC;
+            margin-bottom: 15px;
+        }
+        .campaignDetailCreatorProfilePic {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-right: 10px;
+            border: 2px solid #FFD700;
+        }
+        .campaignDetailDescription {
+            font-size: 14px;
+            color: #AAA;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            background-color: #1A1A1A;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.3);
+        }
+        .campaignDetailStats {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            margin-bottom: 20px;
+            padding: 10px 0;
+            border-top: 1px solid #333;
+            border-bottom: 1px solid #333;
+        }
+        .campaignDetailStatItem {
+            text-align: center;
+            font-size: 14px;
+            color: #CCC;
+        }
+        .campaignDetailStatValue {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FFF;
+        }
+        .campaignDetailProgressBarContainer {
+            width: 80%;
+            background-color: #444;
+            border-radius: 5px;
+            height: 12px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            align-self: center; /* Center the progress bar */
+        }
+        .campaignDetailProgressBar {
+            height: 100%;
+            background-color: #FFD700;
+            border-radius: 5px;
+        }
+
     </style>
 </head>
 <body>
@@ -1030,82 +1229,86 @@
 
         const auth = window.firebaseAuth;
         const db = window.firebaseDb;
-        const storage = window.firebaseStorage; // Get Storage instance
+        const storage = window.firebaseStorage;
         const createUserWithEmailAndPassword = window.createUserWithEmailAndPassword;
         const signInWithEmailAndPassword = window.signInWithEmailAndPassword;
         const signOut = window.signOut;
         const onAuthStateChanged = window.onAuthStateChanged;
-        const doc = window.doc; // Firestore doc function
-        const setDoc = window.setDoc; // Firestore setDoc function
-        const getDoc = window.getDoc; // Firestore getDoc function
-        const updateDoc = window.updateDoc; // Firestore updateDoc function
-        const ref = window.ref; // Expose Storage ref
-        const uploadBytes = window.uploadBytes; // Storage uploadBytes function
-        const getDownloadURL = window.getDownloadURL; // Storage getDownloadURL function
+        const doc = window.doc;
+        const setDoc = window.setDoc;
+        const getDoc = window.getDoc;
+        const updateDoc = window.updateDoc;
+        const collection = window.collection;
+        const addDoc = window.addDoc;
+        const query = window.query;
+        const orderBy = window.orderBy;
+        const onSnapshot = window.onSnapshot;
+        const ref = window.ref;
+        const uploadBytes = window.uploadBytes;
+        const getDownloadURL = window.getDownloadURL;
+        const appId = window.appId;
 
 
-        // --- Placeholder Data ---
         const featuredContent = [
-            { id: '1', title: 'Guyanese Comedy Special', type: 'skit', url: 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1', creator: 'Comedy Crew' },
-            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: 'https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1', creator: 'Laugh Central' },
-            { id: '3', title: 'Indie Film: "Georgetown Dreams"', type: 'short-film', url: 'https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1', creator: 'Indie Films GY' },
-            { id: '4', title: 'Live Concert Replay: Mashramani', type: 'live-premiere', url: 'https://www.youtube.com/embed/example4?autoplay=1', creator: 'Vibes Ent.' },
-            { id: '5', title: 'Creator Interview: Rise of Talent', type: 'interview', url: 'https://www.youtube.com/embed/example5?autoplay=1', creator: 'NVA Insights' },
-            { id: '6', title: 'Short Film: "The Golden Arrowhead"', type: 'short-film', url: 'https://www.youtube.com/embed/example6?autoplay=1', creator: 'Heritage Films' },
-            { id: '7', title: 'New Skit Series: "Life in GT"', type: 'skit', url: 'https://www.youtube.com/embed/skit7?autoplay=1', creator: 'GT Daily' },
-            { id: '8', title: 'Cooking Show: Guyanese Delights', type: 'skit', url: 'https://www.youtube.com/embed/skit8?autoplay=1', creator: 'Chef Roti' },
-            { id: '9', title: 'Poetry Slam Live: Best of Season', type: 'live-premiere', url: 'https://www.youtube.com/embed/live9?autoplay=1', creator: 'Wordsmiths GY' },
-            { id: '10', title: 'Wildlife Doc: Amazonian Secrets', type: 'documentary', url: 'https://www.youtube.com/embed/doc1?autoplay=1', creator: 'Nature Watch' },
-            { id: '11', title: 'Guyanese Music Spotlight', type: 'music', url: 'https://www.youtube.com/embed/music1?autoplay=1', creator: 'Riddim Connect' },
-            { id: '12', title: 'Interview: Young Entrepreneurs', type: 'interview', url: 'https://www.youtube.com/embed/int1?autoplay=1', creator: 'Business Buzz GY' },
+            { id: '1', title: 'Guyanese Comedy Special', type: 'skit', url: '[https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1](https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1)', creator: 'Comedy Crew' },
+            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: '[https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1](https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1)', creator: 'Laugh Central' },
+            { id: '3', title: 'Indie Film: "Georgetown Dreams"', type: 'short-film', url: '[https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1](https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1)', creator: 'Indie Films GY' },
+            { id: '4', title: 'Live Concert Replay: Mashramani', type: 'live-premiere', url: '[https://www.youtube.com/embed/example4?autoplay=1](https://www.youtube.com/embed/example4?autoplay=1)', creator: 'Vibes Ent.' },
+            { id: '5', title: 'Creator Interview: Rise of Talent', type: 'interview', url: '[https://www.youtube.com/embed/example5?autoplay=1](https://www.youtube.com/embed/example5?autoplay=1)', creator: 'NVA Insights' },
+            { id: '6', title: 'Short Film: "The Golden Arrowhead"', type: 'short-film', url: '[https://www.youtube.com/embed/example6?autoplay=1](https://www.youtube.com/embed/example6?autoplay=1)', creator: 'Heritage Films' },
+            { id: '7', title: 'New Skit Series: "Life in GT"', type: 'skit', url: '[https://www.youtube.com/embed/skit7?autoplay=1](https://www.youtube.com/embed/skit7?autoplay=1)', creator: 'GT Daily' },
+            { id: '8', title: 'Cooking Show: Guyanese Delights', type: 'skit', url: '[https://www.youtube.com/embed/skit8?autoplay=1](https://www.youtube.com/embed/skit8?autoplay=1)', creator: 'Chef Roti' },
+            { id: '9', title: 'Poetry Slam Live: Best of Season', type: 'live-premiere', url: '[https://www.youtube.com/embed/live9?autoplay=1](https://www.youtube.com/embed/live9?autoplay=1)', creator: 'Wordsmiths GY' },
+            { id: '10', title: 'Wildlife Doc: Amazonian Secrets', type: 'documentary', url: '[https://www.youtube.com/embed/doc1?autoplay=1](https://www.youtube.com/embed/doc1?autoplay=1)', creator: 'Nature Watch' },
+            { id: '11', title: 'Guyanese Music Spotlight', type: 'music', url: '[https://www.youtube.com/embed/music1?autoplay=1](https://www.youtube.com/embed/music1?autoplay=1)', creator: 'Riddim Connect' },
+            { id: '12', title: 'Interview: Young Entrepreneurs', type: 'interview', url: '[https://www.youtube.com/embed/int1?autoplay=1](https://www.youtube.com/embed/int1?autoplay=1)', creator: 'Business Buzz GY' },
         ];
 
 
         const categories = {
             Skits: [
-                { id: 's1', title: 'Laugh Out Loud: Best Skits Vol. 1', url: 'https://www.youtube.com/embed/skit1?autoplay=1' },
-                { id: 's2', title: 'Daily Dose of Guyanese Humor', url: 'https://www.youtube.com/embed/skit2?autoplay=1' },
-                { id: 's3', title: 'Guyana Vibes: Street Comedy', url: 'https://www.youtube.com/embed/skit3?autoplay=1' },
-                { id: 's4', title: 'Caribbean Laughs: Episode 1', url: 'https://www.youtube.com/embed/skit4?autoplay=1' },
-                { id: 's5', title: 'Funny Moments: Local Edition', url: 'https://www.youtube.com/embed/skit5?autoplay=1' },
-                { id: 's6', title: 'The Best of Guyanese Skits', url: 'https://www.youtube.com/embed/skit6?autoplay=1' },
-                { id: 's7', title: 'New Skit Series: "Life in GT"', url: 'https://www.youtube.com/embed/skit7?autoplay=1' },
-                { id: 's8', title: 'Weekend Comedy Mashup', url: 'https://www.youtube.com/embed/skit8?autoplay=1' },
+                { id: 's1', title: 'Laugh Out Loud: Best Skits Vol. 1', url: '[https://www.youtube.com/embed/skit1?autoplay=1](https://www.youtube.com/embed/skit1?autoplay=1)' },
+                { id: 's2', title: 'Daily Dose of Guyanese Humor', url: '[https://www.youtube.com/embed/skit2?autoplay=1](https://www.youtube.com/embed/skit2?autoplay=1)' },
+                { id: 's3', title: 'Guyana Vibes: Street Comedy', url: '[https://www.youtube.com/embed/skit3?autoplay=1](https://www.youtube.com/embed/skit3?autoplay=1)' },
+                { id: 's4', title: 'Caribbean Laughs: Episode 1', url: '[https://www.youtube.com/embed/skit4?autoplay=1](https://www.youtube.com/embed/skit4?autoplay=1)' },
+                { id: 's5', title: 'Funny Moments: Local Edition', url: '[https://www.youtube.com/embed/skit5?autoplay=1](https://www.youtube.com/embed/skit5?autoplay=1)' },
+                { id: 's6', title: 'The Best of Guyanese Skits', url: '[https://www.youtube.com/embed/skit6?autoplay=1](https://www.youtube.com/embed/skit6?autoplay=1)' },
+                { id: 's7', title: 'New Skit Series: "Life in GT"', url: '[https://www.youtube.com/embed/skit7?autoplay=1](https://www.youtube.com/embed/skit7?autoplay=1)' },
+                { id: 's8', title: 'Weekend Comedy Mashup', url: '[https://www.youtube.com/embed/skit8?autoplay=1](https://www.youtube.com/embed/skit8?autoplay=1)' },
             ],
             'Short Films': [
-                { id: 'sf1', title: 'The Golden Arrowhead: A Short Film', url: 'https://www.youtube.com/embed/shortfilm1?autoplay=1' },
-                { id: 'sf2', title: 'Tales from the Coast: Episode 1', url: 'https://www.youtube.com/embed/shortfilm2?autoplay=1' },
-                { id: 'sf3', title: 'Lost in the Jungle: A Drama', url: 'https://www.youtube.com/embed/shortfilm3?autoplay=1' },
-                { id: 'sf4', title: 'The Cane Field Mystery', url: 'https://www.youtube.com/embed/shortfilm4?autoplay=1' },
-                { id: 'sf5', title: 'A Day in the Market', url: 'https://www.youtube.com/embed/shortfilm5?autoplay=1' },
-                { id: 'sf6', title: 'The Hidden Falls', url: 'https://www.youtube.com/embed/shortfilm6?autoplay=1' },
-                { id: 'sf7', title: 'City Lights, Country Dreams', url: 'https://www.youtube.com/embed/shortfilm7?autoplay=1' },
-                { id: 'sf8', title: 'Echoes of the Past', url: 'https://www.youtube.com/embed/shortfilm8?autoplay=1' },
+                { id: 'sf1', title: 'The Golden Arrowhead: A Short Film', url: '[https://www.youtube.com/embed/shortfilm1?autoplay=1](https://www.youtube.com/embed/shortfilm1?autoplay=1)' },
+                { id: 'sf2', title: 'Tales from the Coast: Episode 1', url: '[https://www.youtube.com/embed/shortfilm2?autoplay=1](https://www.youtube.com/embed/shortfilm2?autoplay=1)' },
+                { id: 'sf3', title: 'Lost in the Jungle: A Drama', url: '[https://www.youtube.com/embed/shortfilm3?autoplay=1](https://www.youtube.com/embed/shortfilm3?autoplay=1)' },
+                { id: 'sf4', title: 'The Cane Field Mystery', url: '[https://www.youtube.com/embed/shortfilm4?autoplay=1](https://www.youtube.com/embed/shortfilm4?autoplay=1)' },
+                { id: 'sf5', title: 'A Day in the Market', url: '[https://www.youtube.com/embed/shortfilm5?autoplay=1](https://www.youtube.com/embed/shortfilm5?autoplay=1)' },
+                { id: 'sf6', title: 'The Hidden Falls', url: '[https://www.youtube.com/embed/shortfilm6?autoplay=1](https://www.youtube.com/embed/shortfilm6?autoplay=1)' },
+                { id: 'sf7', title: 'City Lights, Country Dreams', url: '[https://www.youtube.com/embed/shortfilm7?autoplay=1](https://www.youtube.com/embed/shortfilm7?autoplay=1)' },
+                { id: 'sf8', title: 'Echoes of the Past', url: '[https://www.youtube.com/embed/shortfilm8?autoplay=1](https://www.youtube.com/embed/shortfilm8?autoplay=1)' },
             ],
             Interviews: [
-                { id: 'i1', title: 'Creator Spotlight: Interview with Mark X', url: 'https://www.youtube.com/embed/interview1?autoplay=1' },
-                { id: 'i2', title: 'Behind the Scenes: NVA Network', url: 'https://www.youtube.com/embed/interview2?autoplay=1' },
-                { id: 'i3', title: 'Guyanese Icons: A Conversation', url: 'https://www.youtube.com/embed/interview3?autoplay=1' },
-                { id: 'i4', title: 'The Future of Guyanese Art', url: 'https://www.youtube.com/embed/interview4?autoplay=1' },
-                { id: 'i5', title: 'In-Depth with Local Artists', url: 'https://www.youtube.com/embed/interview5?autoplay=1' },
-                { id: 'i6', title: 'Entrepreneurial Journeys in Guyana', url: 'https://www.youtube.com/embed/interview6?autoplay=1' },
-                { id: 'i7', title: 'Community Leaders Speak Out', url: 'https://www.youtube.com/embed/interview7?autoplay=1' },
-                { id: 'i8', title: 'The Making of a Guyanese Star', url: 'https://www.youtube.com/embed/interview8?autoplay=1' },
+                { id: 'i1', title: 'Creator Spotlight: Interview with Mark X', url: '[https://www.youtube.com/embed/interview1?autoplay=1](https://www.youtube.com/embed/interview1?autoplay=1)' },
+                { id: 'i2', title: 'Behind the Scenes: NVA Network', url: '[https://www.youtube.com/embed/interview2?autoplay=1](https://www.youtube.com/embed/interview2?autoplay=1)' },
+                { id: 'i3', title: 'Guyanese Icons: A Conversation', url: '[https://www.youtube.com/embed/interview3?autoplay=1](https://www.youtube.com/embed/interview3?autoplay=1)' },
+                { id: 'i4', title: 'The Future of Guyanese Art', url: '[https://www.youtube.com/embed/interview4?autoplay=1](https://www.youtube.com/embed/interview4?autoplay=1)' },
+                { id: 'i5', title: 'In-Depth with Local Artists', url: '[https://www.youtube.com/embed/interview5?autoplay=1](https://www.youtube.com/embed/interview5?autoplay=1)' },
+                { id: 'i6', title: 'Entrepreneurial Journeys in Guyana', url: '[https://www.youtube.com/embed/interview6?autoplay=1](https://www.youtube.com/embed/interview6?autoplay=1)' },
+                { id: 'i7', title: 'Community Leaders Speak Out', url: '[https://www.youtube.com/embed/interview7?autoplay=1](https://www.youtube.com/embed/interview7?autoplay=1)' },
+                { id: 'i8', title: 'The Making of a Guyanese Star', url: '[https://www.youtube.com/embed/interview8?autoplay=1](https://www.youtube.com/embed/interview8?autoplay=1)' },
             ],
             'Live Premieres': [
-                { id: 'lp1', title: 'Upcoming: Guyanese Music Festival Live', url: 'https://www.youtube.com/embed/live1?autoplay=1' },
-                { id: 'lp2', title: 'Replay: NVA Network Launch Event', url: 'https://www.youtube.com/embed/live2?autoplay=1' },
-                { id: 'lp3', title: 'Live Comedy Night: Best of Guyana', url: 'https://www.youtube.com/embed/live3?autoplay=1' },
-                { id: 'lp4', title: 'Red Carpet Gala: NVA Awards', url: 'https://www.youtube.com/embed/live4?autoplay=1' },
-                { id: 'lp5', title: 'Exclusive: Talk Show Live', url: 'https://www.youtube.com/embed/live5?autoplay=1' },
-                { id: 'lp6', title: 'Poetry Slam Live: Guyana Edition', url: 'https://www.youtube.com/embed/live6?autoplay=1' },
-                { id: 'lp7', title: 'Cultural Dance Showcase', url: 'https://www.youtube.com/embed/live7?autoplay=1' },
-                { id: 'lp8', title: 'Q&A with Your Favorite Creators', url: 'https://www.youtube.com/embed/live8?autoplay=1' },
+                { id: 'lp1', title: 'Upcoming: Guyanese Music Festival Live', url: '[https://www.youtube.com/embed/live1?autoplay=1](https://www.youtube.com/embed/live1?autoplay=1)' },
+                { id: 'lp2', title: 'Replay: NVA Network Launch Event', url: '[https://www.youtube.com/embed/live2?autoplay=1](https://www.youtube.com/embed/live2?autoplay=1)' },
+                { id: 'lp3', title: 'Live Comedy Night: Best of Guyana', url: '[https://www.youtube.com/embed/live3?autoplay=1](https://www.youtube.com/embed/live3?autoplay=1)' },
+                { id: 'lp4', title: 'Red Carpet Gala: NVA Awards', url: '[https://www.youtube.com/embed/live4?autoplay=1](https://www.youtube.com/embed/live4?autoplay=1)' },
+                { id: 'lp5', title: 'Exclusive: Talk Show Live', url: '[https://www.youtube.com/embed/live5?autoplay=1](https://www.youtube.com/embed/live5?autoplay=1)' },
+                { id: 'lp6', title: 'Poetry Slam Live: Guyana Edition', url: '[https://www.youtube.com/embed/live6?autoplay=1](https://www.youtube.com/embed/live6?autoplay=1)' },
+                { id: 'lp7', title: 'Cultural Dance Showcase', url: '[https://www.youtube.com/embed/live7?autoplay=1](https://www.youtube.com/embed/live7?autoplay=1)' },
+                { id: 'lp8', title: 'Q&A with Your Favorite Creators', url: '[https://www.youtube.com/embed/live8?autoplay=1](https://www.youtube.com/embed/live8?autoplay=1)' },
             ],
         };
 
-        // --- Placeholder Creator Campaign Data ---
-        const creatorCampaigns = [
+        const staticCreatorCampaigns = [
             {
                 id: 'cc1',
                 title: 'Fund "The Golden Mango" Short Film',
@@ -1113,7 +1316,9 @@
                 description: 'Help us produce a heartwarming short film about Guyanese traditions and family values.',
                 goal: 5000,
                 raised: 3200,
-                imageUrl: 'https://placehold.co/150x100/FFD700/0A0A0A?text=Film+Project'
+                imageUrl: '[https://placehold.co/150x100/FFD700/0A0A0A?text=Film+Project](https://placehold.co/150x100/FFD700/0A0A0A?text=Film+Project)',
+                creatorProfilePictureUrl: '[https://placehold.co/100x100/555/FFF?text=GF](https://placehold.co/100x100/555/FFF?text=GF)',
+                createdAt: '2023-01-15T10:00:00Z'
             },
             {
                 id: 'cc2',
@@ -1122,42 +1327,23 @@
                 description: 'Support our new web series bringing everyday Guyanese humor to your screens!',
                 goal: 3000,
                 raised: 1800,
-                imageUrl: 'https://placehold.co/150x100/FF6347/FFF?text=Comedy+Series'
-            },
-            {
-                id: 'cc3',
-                title: 'Music Video Production for Local Artist',
-                creator: 'Vibes Music Studio',
-                description: 'Help us create a high-quality music video for an emerging Guyanese artist.',
-                goal: 2500,
-                raised: 250,
-                imageUrl: 'https://placehold.co/150x100/4682B4/FFF?text=Music+Video'
-            },
-            {
-                id: 'cc4',
-                title: 'Documentary: "Faces of the Interior"',
-                creator: 'Guyana Stories Docu',
-                description: 'Support our journey to capture the untold stories of communities in Guyana\'s interior.',
-                goal: 8000,
-                raised: 6000,
-                imageUrl: 'https://placehold.co/150x100/6A5ACD/FFF?text=Documentary'
+                imageUrl: '[https://placehold.co/150x100/FF6347/FFF?text=Comedy+Series](https://placehold.co/150x100/FF6347/FFF?text=Comedy+Series)',
+                creatorProfilePictureUrl: '[https://placehold.co/100x100/555/FFF?text=LO](https://placehold.co/100x100/555/FFF?text=LO)',
+                createdAt: '2023-02-01T11:30:00Z'
             },
         ];
 
-        // Helper function to extract YouTube video ID and format for embed URL
         const getYouTubeEmbedUrl = (youtubeUrl) => {
             const videoIdMatch = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/||shorts\/))([^&?#]+)/);
             if (videoIdMatch && videoIdMatch[1]) {
-                return `https://www.youtube.com/embed/${videoIdMatch[1]}?autoplay=1&rel=0`; // autoplay and no related videos
+                return `https://www.youtube.com/embed/${videoIdMatch[1]}?autoplay=1&rel=0`;
             }
-            return youtubeUrl; // Return original if not a standard YouTube URL
+            return youtubeUrl;
         };
 
-        // --- Video Player Modal Component ---
         const VideoPlayerModal = ({ videoUrl, onClose }) => {
             if (!videoUrl) return null;
 
-            // Ensure the URL is in embed format
             const embedUrl = getYouTubeEmbedUrl(videoUrl);
 
             return (
@@ -1177,21 +1363,19 @@
             );
         };
 
-        // --- Profile Picture Adjustment Modal Component ---
         const ProfilePictureAdjustModal = ({ imageUrl, onSave, onCancel, showMessage }) => {
             const canvasRef = useRef(null);
             const imageRef = useRef(new Image());
             const [scale, setScale] = useState(1);
-            const [position, setPosition] = useState({ x: 0, y: 0 }); // Relative to canvas center, in image pixels
+            const [position, setPosition] = useState({ x: 0, y: 0 });
             const [isDragging, setIsDragging] = useState(false);
-            const [dragStart, setDragStart] = useState({ x: 0, y: 0 }); // Mouse/touch start position
+            const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-            const canvasSize = 200; // Size of the square canvas (e.g., 200x200 for a 100px diameter circle)
-            const devicePixelRatio = window.devicePixelRatio || 1; // For high-DPI displays
-            const adjustedCanvasSize = canvasSize * devicePixelRatio; // Adjusted size for high-DPI displays
-            const profilePicSize = 300; // Increased output size for profile picture (300x300px)
+            const canvasSize = 200;
+            const devicePixelRatio = window.devicePixelRatio || 1;
+            const adjustedCanvasSize = canvasSize * devicePixelRatio;
+            const profilePicSize = 300;
 
-            // Helper function to constrain position within boundaries
             const constrainPosition = (pos) => {
                 const img = imageRef.current;
                 if (!img || !img.complete) return pos;
@@ -1199,7 +1383,6 @@
                 const scaledWidth = img.naturalWidth * scale;
                 const scaledHeight = img.naturalHeight * scale;
                 
-                // Calculate the minimum position to keep at least 25% of the image visible
                 const minX = canvasSize - scaledWidth * 0.75;
                 const maxX = scaledWidth * 0.75 - canvasSize;
                 const minY = canvasSize - scaledHeight * 0.75;
@@ -1207,11 +1390,10 @@
                 
                 return {
                     x: Math.min(maxX, Math.max(minX, pos.x)),
-                    y: Math.min(maxY, Math.max(minY, pos.y))
+                    y: Math.min(maxY, Math.max(maxY, pos.y)) // Fixed here, was minY instead of maxY
                 };
             };
 
-            // Helper function to get relative coordinates
             const getRelativeCoordinates = (clientX, clientY) => {
                 const canvas = canvasRef.current;
                 if (!canvas) return { x: 0, y: 0 };
@@ -1223,7 +1405,6 @@
                 };
             };
 
-            // Function to draw image on canvas
             const drawImage = useCallback(() => {
                 const canvas = canvasRef.current;
                 if (!canvas) return;
@@ -1232,45 +1413,38 @@
                 const img = imageRef.current;
 
                 if (!img.complete || img.naturalWidth === 0) {
-                    // Image not loaded yet or invalid, clear canvas and wait
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     return;
                 }
 
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.save(); // Save the current canvas state
+                ctx.save();
 
-                // Apply circular clipping path for preview
                 ctx.beginPath();
                 ctx.arc(canvasSize / 2, canvasSize / 2, canvasSize / 2, 0, Math.PI * 2, true);
                 ctx.closePath();
                 ctx.clip();
 
-                // Calculate scaled image dimensions
                 const scaledWidth = img.naturalWidth * scale;
                 const scaledHeight = img.naturalHeight * scale;
 
-                // Calculate image drawing position to center and apply pan
                 const drawX = (canvasSize / 2) - (scaledWidth / 2) + position.x;
                 const drawY = (canvasSize / 2) - (scaledHeight / 2) + position.y;
 
                 ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight);
 
-                ctx.restore(); // Restore canvas state to remove clipping path for next draw
+                ctx.restore();
             }, [scale, position]);
 
 
-            // Set up canvas for high-DPI displays
             useEffect(() => {
                 const canvas = canvasRef.current;
                 if (canvas) {
-                    // Set the canvas dimensions accounting for device pixel ratio
                     canvas.width = adjustedCanvasSize;
                     canvas.height = adjustedCanvasSize;
                     canvas.style.width = `${canvasSize}px`;
                     canvas.style.height = `${canvasSize}px`;
                     
-                    // Scale the context to account for the pixel ratio
                     const ctx = canvas.getContext('2d');
                     ctx.scale(devicePixelRatio, devicePixelRatio);
                 }
@@ -1278,30 +1452,26 @@
 
             useEffect(() => {
                 const img = imageRef.current;
-                img.crossOrigin = 'anonymous'; // Required for manipulating image data from other origins
+                img.crossOrigin = 'anonymous';
                 img.src = imageUrl;
 
                 img.onload = () => {
-                    // Calculate initial scale to ensure the image covers the circular area
-                    // while minimizing unnecessary cropping
                     const initialScale = Math.max(canvasSize / img.naturalWidth, canvasSize / img.naturalHeight);
                     
-                    // Add a small buffer to ensure the image fully covers the circle
                     const scaledWidth = img.naturalWidth * initialScale;
                     const scaledHeight = img.naturalHeight * initialScale;
                     
-                    // If the scaled image is too small in either dimension, increase the scale
                     if (scaledWidth < canvasSize || scaledHeight < canvasSize) {
                         const additionalScale = Math.max(
                             canvasSize / scaledWidth,
                             canvasSize / scaledHeight
                         );
-                        setScale(initialScale * additionalScale * 1.05); // Add 5% extra to ensure coverage
+                        setScale(initialScale * additionalScale * 1.05);
                     } else {
                         setScale(initialScale);
                     }
                     
-                    setPosition({ x: 0, y: 0 }); // Reset position
+                    setPosition({ x: 0, y: 0 });
                     drawImage();
                 };
 
@@ -1313,11 +1483,9 @@
 
 
             useEffect(() => {
-                // console.log('Scale or Position useEffect triggered. Scale:', scale, 'Position:', position); // Debug Log
                 drawImage();
             }, [scale, position, drawImage]);
 
-            // --- Mouse / Touch Event Handlers for Panning ---
             const handleMouseDown = (e) => {
                 setIsDragging(true);
                 const { x, y } = getRelativeCoordinates(e.clientX, e.clientY);
@@ -1333,7 +1501,7 @@
                 
                 setPosition(prev => {
                     const newPos = { x: prev.x + dx, y: prev.y + dy };
-                    return constrainPosition(newPos); // Apply boundary constraints
+                    return constrainPosition(newPos);
                 });
                 
                 setDragStart({ x, y });
@@ -1343,20 +1511,19 @@
                 setIsDragging(false);
             };
 
-            const handleMouseLeave = () => { // Important for when mouse leaves canvas while dragging
+            const handleMouseLeave = () => {
                 setIsDragging(false);
             };
 
-            // --- Touch Handlers (Pan and Pinch-Zoom) ---
-            const lastTouch = useRef([]); // To store multiple touch points for pinch-zoom
+            const lastTouch = useRef([]);
 
             const handleTouchStart = (e) => {
-                if (e.touches.length === 1) { // Single touch for pan
+                if (e.touches.length === 1) {
                     setIsDragging(true);
                     const { x, y } = getRelativeCoordinates(e.touches[0].clientX, e.touches[0].clientY);
                     setDragStart({ x, y });
-                } else if (e.touches.length === 2) { // Two touches for pinch-zoom
-                    setIsDragging(false); // Disable panning
+                } else if (e.touches.length === 2) {
+                    setIsDragging(false);
                     lastTouch.current = [
                         { x: e.touches[0].clientX, y: e.touches[0].clientY },
                         { x: e.touches[1].clientX, y: e.touches[1].clientY }
@@ -1365,58 +1532,51 @@
             };
 
             const handleTouchMove = (e) => {
-                e.preventDefault(); // Prevent page scrolling/zooming
+                e.preventDefault();
 
                 const canvas = canvasRef.current;
                 if (!canvas || !imageRef.current.complete) return;
 
-                if (e.touches.length === 1 && isDragging) { // Pan
+                if (e.touches.length === 1 && isDragging) {
                     const { x, y } = getRelativeCoordinates(e.touches[0].clientX, e.touches[0].clientY);
                     const dx = x - dragStart.x;
                     const dy = y - dragStart.y;
                     
                     setPosition(prev => {
                         const newPos = { x: prev.x + dx, y: prev.y + dy };
-                        return constrainPosition(newPos); // Apply boundary constraints
+                        return constrainPosition(newPos);
                     });
                     
                     setDragStart({ x, y });
-                } else if (e.touches.length === 2 && lastTouch.current.length === 2) { // Pinch-zoom
+                } else if (e.touches.length === 2 && lastTouch.current.length === 2) {
                     const touch1 = { x: e.touches[0].clientX, y: e.touches[0].clientY };
                     const touch2 = { x: e.touches[1].clientX, y: e.touches[1].clientY };
 
-                    // Calculate the center point between the two touches
                     const centerX = (touch1.x + touch2.x) / 2;
                     const centerY = (touch1.y + touch2.y) / 2;
                     const centerPoint = getRelativeCoordinates(centerX, centerY);
                     
-                    // Calculate distances for zoom
                     const prevDistance = Math.hypot(
                         lastTouch.current[1].x - lastTouch.current[0].x,
                         lastTouch.current[1].y - lastTouch.current[0].y
                     );
                     const currentDistance = Math.hypot(touch2.x - touch1.x, touch2.y - touch1.y);
                     
-                    // Calculate zoom factor
                     const zoomFactor = currentDistance / prevDistance;
                     
-                    // Update scale and position to zoom toward the center point
                     setScale(prevScale => {
                         const newScale = Math.max(0.1, Math.min(prevScale * zoomFactor, 10));
                         
-                        // Adjust position to keep the zoom centered at the touch midpoint
                         setPosition(prevPos => {
-                            // Calculate the vector from center to the point under the center
                             const vectorX = centerPoint.x - canvasSize / 2;
                             const vectorY = centerPoint.y - canvasSize / 2;
                             
-                            // Adjust the position based on the scale change
                             const newPos = {
                                 x: prevPos.x - vectorX * (zoomFactor - 1),
                                 y: prevPos.y - vectorY * (zoomFactor - 1)
                             };
                             
-                            return constrainPosition(newPos); // Apply boundary constraints
+                            return constrainPosition(newPos);
                         });
                         
                         return newScale;
@@ -1431,19 +1591,16 @@
                 lastTouch.current = [];
             };
 
-            // --- Mouse Wheel Zoom ---
             const handleWheel = (e) => {
-                e.preventDefault(); // Prevent page scrolling
-                const zoomAmount = 0.1; // How much to zoom per scroll tick
+                e.preventDefault();
+                const zoomAmount = 0.1;
                 const newScale = e.deltaY < 0 ? scale + zoomAmount : scale - zoomAmount;
                 setScale(s => {
                     const finalScale = Math.max(0.1, Math.min(newScale, 10));
-                    // console.log('Wheel - New Scale:', finalScale); // Debug Log
                     return finalScale;
                 });
             };
 
-            // --- Save Cropped Image ---
             const saveCroppedImage = () => {
                 const img = imageRef.current;
                 if (!img.complete || img.naturalWidth === 0) {
@@ -1456,29 +1613,23 @@
                 outputCanvas.height = profilePicSize;
                 const ctx = outputCanvas.getContext('2d');
 
-                // Apply circular clipping path to output canvas
                 ctx.beginPath();
                 ctx.arc(profilePicSize / 2, profilePicSize / 2, profilePicSize / 2, 0, Math.PI * 2, true);
                 ctx.closePath();
                 ctx.clip();
 
-                // Optional: Add a white background to ensure transparent areas are filled
                 ctx.fillStyle = '#FFFFFF';
                 ctx.fillRect(0, 0, profilePicSize, profilePicSize);
 
-                // Calculate the portion of the source image to draw into the target profile pic size
                 const scaledWidth = img.naturalWidth * scale;
                 const scaledHeight = img.naturalHeight * scale;
 
-                // Calculate the center of the visible area in the original image coordinates
                 const visibleCenterX = (scaledWidth / 2 - position.x) / scale;
                 const visibleCenterY = (scaledHeight / 2 - position.y) / scale;
 
-                // Calculate the visible area dimensions in the original image coordinates
                 const visibleWidth = canvasSize / scale;
                 const visibleHeight = canvasSize / scale;
 
-                // Calculate the top-left corner of the visible area
                 const sourceX = visibleCenterX - visibleWidth / 2;
                 const sourceY = visibleCenterY - visibleHeight / 2;
                 const sourceWidth = visibleWidth;
@@ -1486,24 +1637,23 @@
 
                 ctx.drawImage(
                     img,
-                    sourceX, // Source X
-                    sourceY, // Source Y
-                    sourceWidth, // Source Width (from img, based on scale of original to canvas circle)
-                    sourceHeight, // Source Height (from img, based on scale of original to canvas circle)
-                    0, // Destination X on output canvas
-                    0, // Destination Y on output canvas
-                    profilePicSize, // Destination Width on output canvas
-                    profilePicSize // Destination Height on output canvas
+                    sourceX,
+                    sourceY,
+                    sourceWidth,
+                    sourceHeight,
+                    0,
+                    0,
+                    profilePicSize,
+                    profilePicSize
                 );
 
-                // Convert canvas to Blob (PNG for transparent backgrounds or JPEG for solid)
                 outputCanvas.toBlob((blob) => {
                     if (blob) {
-                        onSave(blob); // Pass the Blob to the parent's upload handler
+                        onSave(blob);
                     } else {
                         showMessage("Failed to create image file. Please try again.");
                     }
-                }, 'image/png', 0.9); // Use PNG for potential transparency, quality 0.9
+                }, 'image/png', 0.9);
             };
 
             return (
@@ -1536,7 +1686,6 @@
                         <button
                             className="modalButton"
                             onClick={() => {
-                                // Reset to initial position and scale
                                 const img = imageRef.current;
                                 if (img && img.complete) {
                                     const initialScale = Math.max(canvasSize / img.naturalWidth, canvasSize / img.naturalHeight);
@@ -1568,8 +1717,348 @@
             );
         };
 
+        const CreateCampaignScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile }) => {
+            const [title, setTitle] = useState('');
+            const [description, setDescription] = useState('');
+            const [goal, setGoal] = useState('');
+            const [imageUrl, setImageUrl] = useState('');
 
-        // --- Main App Component ---
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+
+                if (!title || !description || !goal) {
+                    showMessage('Please fill in all required fields: Title, Description, and Funding Goal.');
+                    return;
+                }
+                if (isNaN(goal) || parseFloat(goal) <= 0) {
+                    showMessage('Funding Goal must be a positive number.');
+                    return;
+                }
+
+                if (!currentUser || !creatorProfile) {
+                    showMessage('Error: Creator data not available. Please log in.');
+                    return;
+                }
+
+                try {
+                    const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
+                    await addDoc(campaignsCollectionRef, {
+                        creatorId: currentUser.uid,
+                        creatorName: creatorProfile.creatorName || currentUser.email,
+                        creatorProfilePictureUrl: creatorProfile.profilePictureUrl || '[https://placehold.co/100x100/555/FFF?text=Profile](https://placehold.co/100x100/555/FFF?text=Profile)',
+                        title: title,
+                        description: description,
+                        goal: parseFloat(goal),
+                        raised: 0,
+                        imageUrl: imageUrl || '[https://placehold.co/300x200/2A2A2A/FFD700?text=Campaign+Link](https://placehold.co/300x200/2A2A2A/FFD700?text=Campaign+Link)',
+                        createdAt: new Date().toISOString()
+                    });
+
+                    showMessage(`Campaign "${title}" created successfully!`);
+                    setActiveScreen('CreatorDashboard');
+                } catch (error) {
+                    console.error("Error creating campaign:", error);
+                    showMessage(`Failed to create campaign: ${error.message}. Please check your internet and Firestore rules.`);
+                }
+            };
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Create New Campaign</p>
+                    <p className="subHeading">Tell us about your project and your funding goal.</p>
+
+                    <form onSubmit={handleSubmit}>
+                        <div className="formGroup">
+                            <label htmlFor="campaignTitle" className="formLabel">Campaign Title:</label>
+                            <input
+                                type="text"
+                                id="campaignTitle"
+                                className="formInput"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                required
+                            />
+                        </div>
+
+                        <div className="formGroup">
+                            <label htmlFor="campaignDescription" className="formLabel">Description:</label>
+                            <textarea
+                                id="campaignDescription"
+                                className="formTextarea"
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                placeholder="Describe your project, what you need funding for, and what supporters will get!"
+                                required
+                            ></textarea>
+                        </div>
+
+                        <div className="formGroup">
+                            <label htmlFor="campaignGoal" className="formLabel">Funding Goal (USD):</label>
+                            <input
+                                type="number"
+                                id="campaignGoal"
+                                className="formInput"
+                                value={goal}
+                                onChange={(e) => setGoal(e.target.value)}
+                                min="1"
+                                step="any"
+                                required
+                            />
+                        </div>
+
+                        <div className="formGroup">
+                            <label htmlFor="campaignImage" className="formLabel">Project Link / Image URL (Optional):</label>
+                            <input
+                                type="url"
+                                id="campaignImage"
+                                className="formInput"
+                                value={imageUrl}
+                                onChange={(e) => setImageUrl(e.target.value)}
+                                placeholder="e.g., [https://yourproject.com](https://yourproject.com) or [https://example.com/image.jpg](https://example.com/image.jpg)"
+                            />
+                        </div>
+
+                        <button type="submit" className="button">
+                            <span className="buttonText">Submit Campaign</span>
+                        </button>
+                    </form>
+
+                    <button
+                        className="button"
+                        onClick={() => setActiveScreen('CreatorDashboard')}
+                        style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                    >
+                        <span className="buttonText">Cancel and Back to Dashboard</span>
+                    </button>
+                </div>
+            );
+        };
+
+        const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignId }) => {
+            const [campaigns, setCampaigns] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
+                const q = query(campaignsCollectionRef, orderBy('createdAt', 'desc'));
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const fetchedCampaigns = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    setCampaigns(fetchedCampaigns);
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Error fetching campaigns:", error);
+                    showMessage("Failed to load campaigns. Please try again.");
+                    setLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, []);
+
+
+            if (loading) {
+                return (
+                    <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                        <p className="heading">Loading Campaigns...</p>
+                        <p className="subHeading" style={{ color: '#FFD700' }}>Please ensure you have an internet connection.</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">All Campaigns</p>
+                    <p className="subHeading">Discover and support projects by Guyanese creators!</p>
+
+                    {campaigns.length === 0 ? (
+                        <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No campaigns found yet. Be the first to create one!</p>
+                    ) : (
+                        <div className="allCampaignsList">
+                            {campaigns.map(campaign => (
+                                <div
+                                    key={campaign.id}
+                                    className="allCampaignsListItem"
+                                    onClick={() => {
+                                        setSelectedCampaignId(campaign.id);
+                                        setActiveScreen('CampaignDetails');
+                                    }}
+                                >
+                                    <div
+                                        className="campaignListImagePlaceholder"
+                                        style={{ backgroundImage: `url(${campaign.imageUrl})` }}
+                                        onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='url([https://placehold.co/150x100/2A2A2A/FFD700?text=Link+Preview](https://placehold.co/150x100/2A2A2A/FFD700?text=Link+Preview))'; }}
+                                    >
+                                        <button
+                                            className="campaignListProjectButton"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (campaign.imageUrl) {
+                                                    window.open(campaign.imageUrl, '_blank');
+                                                } else {
+                                                    showMessage('No project link provided for this campaign.');
+                                                }
+                                            }}
+                                        >
+                                            View Project
+                                        </button>
+                                    </div>
+                                    <div className="campaignListContent">
+                                        <p className="campaignListTitle">{campaign.title}</p>
+                                        <div className="campaignListCreator">
+                                            <img
+                                                src={campaign.creatorProfilePictureUrl || '[https://placehold.co/100x100/555/FFF?text=Profile](https://placehold.co/100x100/555/FFF?text=Profile)'}
+                                                alt={campaign.creatorName}
+                                                className="campaignListCreatorProfilePic"
+                                                onError={(e) => { e.target.onerror = null; e.target.src='[https://placehold.co/24x24/555/FFF?text=P](https://placehold.co/24x24/555/FFF?text=P)'; }}
+                                            />
+                                            <span>by {campaign.creatorName}</span>
+                                        </div>
+                                        <p className="campaignListDescription">{campaign.description}</p>
+                                        <div className="campaignProgressContainer" style={{ height: '8px', marginBottom: '5px' }}>
+                                            <div
+                                                className="campaignProgressBar"
+                                                style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}
+                                            ></div>
+                                        </div>
+                                        <div className="campaignListStats">
+                                            <span>Raised: <span className="campaignListRaised">${campaign.raised}</span></span>
+                                            <span>Goal: <span className="campaignListGoal">${campaign.goal}</span></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <button
+                        className="button"
+                        onClick={() => setActiveScreen('Home')}
+                        style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                    >
+                        <span className="buttonText">Back to Home</span>
+                    </button>
+                </div>
+            );
+        };
+
+        const CampaignDetailsScreen = ({ showMessage, setActiveScreen, selectedCampaignId }) => {
+            const [campaign, setCampaign] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const fetchCampaignDetails = async () => {
+                    if (!selectedCampaignId) {
+                        showMessage("No campaign selected.");
+                        setActiveScreen('AllCampaigns');
+                        return;
+                    }
+
+                    try {
+                        const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, selectedCampaignId);
+                        const docSnap = await getDoc(campaignDocRef);
+
+                        if (docSnap.exists()) {
+                            setCampaign({ id: docSnap.id, ...docSnap.data() });
+                        } else {
+                            showMessage("Campaign not found.");
+                            setActiveScreen('AllCampaigns');
+                        }
+                        setLoading(false);
+                    } catch (error) {
+                        console.error("Error fetching campaign details:", error);
+                        showMessage("Failed to load campaign details. Please try again.");
+                        setLoading(false);
+                        setActiveScreen('AllCampaigns');
+                    }
+                };
+
+                fetchCampaignDetails();
+            }, [selectedCampaignId, setActiveScreen, showMessage]);
+
+            if (loading) {
+                return (
+                    <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                        <p className="heading">Loading Campaign Details...</p>
+                        <p className="subHeading" style={{ color: '#FFD700' }}>Please ensure you have an internet connection.</p>
+                    </div>
+                );
+            }
+
+            if (!campaign) {
+                return null;
+            }
+
+            const progressPercentage = (campaign.raised / campaign.goal) * 100;
+
+            return (
+                <div className="screenContainer">
+                    <div className="campaignDetailHeader">
+                        <img
+                            src={campaign.imageUrl}
+                            alt={campaign.title}
+                            className="campaignDetailImage"
+                            onError={(e) => { e.target.onerror = null; e.target.src='[https://placehold.co/350x200/2A2A2A/FFD700?text=Campaign+Link+Preview](https://placehold.co/350x200/2A2A2A/FFD700?text=Campaign+Link+Preview)'; }}
+                        />
+                        <p className="campaignDetailTitle">{campaign.title}</p>
+                        <div className="campaignDetailCreator">
+                            <img
+                                src={campaign.creatorProfilePictureUrl || '[https://placehold.co/100x100/555/FFF?text=Profile](https://placehold.co/100x100/555/FFF?text=Profile)'}
+                                alt={campaign.creatorName}
+                                className="campaignDetailCreatorProfilePic"
+                                onError={(e) => { e.target.onerror = null; e.target.src='[https://placehold.co/32x32/555/FFF?text=P](https://placehold.co/32x32/555/FFF?text=P)'; }}
+                            />
+                            <span>by {campaign.creatorName}</span>
+                        </div>
+                    </div>
+
+                    <p className="campaignDetailDescription">{campaign.description}</p>
+
+                    <div className="campaignDetailStats">
+                        <div className="campaignDetailStatItem">
+                            <p className="campaignDetailStatValue">${campaign.raised}</p>
+                            <p>Raised</p>
+                        </div>
+                        <div className="campaignDetailStatItem">
+                            <p className="campaignDetailStatValue">${campaign.goal}</p>
+                            <p>Goal</p>
+                        </div>
+                        <div className="campaignDetailStatItem">
+                            <p className="campaignDetailStatValue">{Math.round(progressPercentage)}%</p>
+                            <p>Progress</p>
+                        </div>
+                    </div>
+                    <div className="campaignDetailProgressBarContainer">
+                        <div className="campaignDetailProgressBar" style={{ width: `${progressPercentage}%` }}></div>
+                    </div>
+
+
+                    <button
+                        className="button"
+                        onClick={() => {
+                            if (campaign.imageUrl) {
+                                window.open(campaign.imageUrl, '_blank');
+                            } else {
+                                showMessage(`Simulating donation to "${campaign.title}". In a real app, this would initiate payment.`);
+                            }
+                        }}
+                    >
+                        <span className="buttonText">{campaign.imageUrl ? 'Visit Project / Support' : 'Support This Campaign'}</span>
+                    </button>
+
+                    <button
+                        className="button"
+                        onClick={() => setActiveScreen('AllCampaigns')}
+                        style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                    >
+                        <span className="buttonText">Back to All Campaigns</span>
+                    </button>
+                </div>
+            );
+        };
+
+
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
             const [activeScreen, setActiveScreen] = useState('Home');
@@ -1579,35 +2068,65 @@
             const [showVideoModal, setShowVideoModal] = useState(false);
             const [currentVideoUrl, setCurrentVideoUrl] = useState('');
 
-            // State for profile picture adjustment modal
             const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
-            const [imageFileToAdjust, setImageFileToAdjust] = useState(null); // File object passed to the modal
+            const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
+            const [creatorProfile, setCreatorProfile] = useState(null);
+
+            const [selectedCampaignId, setSelectedCampaignId] = useState(null);
+
 
             useEffect(() => {
-                const unsubscribe = onAuthStateChanged(auth, (user) => {
+                const unsubscribe = onAuthStateChanged(auth, async (user) => {
                     setCurrentUser(user);
+                    if (user) {
+                        try {
+                            const creatorDocRef = doc(db, "creators", user.uid);
+                            const docSnap = await getDoc(creatorDocRef);
+                            if (docSnap.exists()) {
+                                setCreatorProfile(docSnap.data());
+                            } else {
+                                await setDoc(creatorDocRef, {
+                                    email: user.email,
+                                    creatorName: user.email.split('@')[0] || "",
+                                    bio: "",
+                                    categories: [],
+                                    existingWorkLink: "",
+                                    profilePictureUrl: '',
+                                    uploadedVideos: { youtube: null, facebook: null, tiktok: null },
+                                    createdAt: new Date().toISOString()
+                                });
+                                const newDocSnap = await getDoc(creatorDocRef);
+                                if(newDocSnap.exists()) {
+                                    setCreatorProfile(newDocSnap.data());
+                                }
+                            }
+                        } catch (error) {
+                            console.error("Error fetching/creating creator profile on auth state change:", error);
+                            showMessage("Error loading profile data.");
+                        }
+                    } else {
+                        setCreatorProfile(null);
+                    }
                 });
                 return () => unsubscribe();
             }, []);
 
-            // Placeholder images for the carousel - Duplicated for continuous loop
             const originalCarouselImages = [
-                'https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night',
-                'https://placehold.co/140x100/808080/FFF?text=New+Series',
-                'https://placehold.co/140x100/606060/EEE?text=Exclusive',
-                'https://placehold.co/140x100/404040/DDD?text=Behind+Scenes',
-                'https://placehold.co/140x100/202020/CCC?text=Live+Event',
+                '[https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night](https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night)',
+                '[https://placehold.co/140x100/808080/FFF?text=New+Series](https://placehold.co/140x100/808080/FFF?text=New+Series)',
+                '[https://placehold.co/140x100/606060/EEE?text=Exclusive](https://placehold.co/140x100/606060/EEE?text=Exclusive)',
+                '[https://placehold.co/140x100/404040/DDD?text=Behind+Scenes](https://placehold.co/140x100/404040/DDD?text=Behind+Scenes)',
+                '[https://placehold.co/140x100/202020/CCC?text=Live+Event](https://placehold.co/140x100/202020/CCC?text=Live+Event)',
             ];
             const carouselImages = [...originalCarouselImages, ...originalCarouselImages, ...originalCarouselImages];
 
-            // Placeholder data for the Live Feed Vertical Carousel
             const originalLiveFeedContent = [
-                { id: 'lf1', title: 'New Comedy Skit: Dem Boys', creator: 'Street Jokes GY', thumbnail: 'https://placehold.co/80x60/808080/FFF?text=Skit1', url: 'https://www.youtube.com/embed/SKIT_LIVE_1?autoplay=1' },
-                { id: 'lf2', title: 'Interview: Rising Star', creator: 'NVA Insights', thumbnail: 'https://placehold.co/80x60/A0A0A0/000?text=Int1', url: 'https://www.youtube.com/embed/INTERVIEW_LIVE_2?autoplay=1' },
-                { id: 'lf3', title: 'Short Film Trailer: Lost Gold', creator: 'Guyana Films', thumbnail: 'https://placehold.co/80x60/606060/EEE?text=Film1', url: 'https://www.youtube.com/embed/FILM_LIVE_3?autoplay=1' },
-                { id: 'lf4', title: 'Live Music Session: Reggae Vibes', creator: 'Riddim Makers', thumbnail: 'https://placehold.co/80x60/404040/DDD?text=Music1', url: 'https://www.youtube.com/embed/MUSIC_LIVE_4?autoplay=1' },
-                { id: 'lf5', title: 'Behind The Scenes: Drama Shoot', creator: 'Creative Minds', thumbnail: 'https://placehold.co/80x60/202020/CCC?text=BTS1', url: 'https://www.youtube.com/embed/BTS_LIVE_5?autoplay=1' },
-                { id: 'lf6', title: 'Daily Vlog: Life in Georgetown', creator: 'GT Vlogger', thumbnail: 'https://placehold.co/80x60/909090/111?text=Vlog1', url: 'https://www.youtube.com/embed/VLOG_LIVE_6?autoplay=1' },
+                { id: 'lf1', title: 'New Comedy Skit: Dem Boys', creator: 'Street Jokes GY', thumbnail: '[https://placehold.co/80x60/808080/FFF?text=Skit1](https://placehold.co/80x60/808080/FFF?text=Skit1)', url: '[https://www.youtube.com/embed/SKIT_LIVE_1?autoplay=1](https://www.youtube.com/embed/SKIT_LIVE_1?autoplay=1)' },
+                { id: 'lf2', title: 'Interview: Rising Star', creator: 'NVA Insights', thumbnail: '[https://placehold.co/80x60/A0A0A0/000?text=Int1](https://placehold.co/80x60/A0A0A0/000?text=Int1)', url: '[https://www.youtube.com/embed/INTERVIEW_LIVE_2?autoplay=1](https://www.youtube.com/embed/INTERVIEW_LIVE_2?autoplay=1)' },
+                { id: 'lf3', title: 'Short Film Trailer: Lost Gold', creator: 'Guyana Films', thumbnail: '[https://placehold.co/80x60/606060/EEE?text=Film1](https://placehold.co/80x60/606060/EEE?text=Film1)', url: '[https://www.youtube.com/embed/FILM_LIVE_3?autoplay=1](https://www.youtube.com/embed/FILM_LIVE_3?autoplay=1)' },
+                { id: 'lf4', title: 'Live Music Session: Reggae Vibes', creator: 'Riddim Makers', thumbnail: '[https://placehold.co/80x60/404040/DDD?text=Music1](https://placehold.co/80x60/404040/DDD?text=Music1)', url: '[https://www.youtube.com/embed/MUSIC_LIVE_4?autoplay=1](https://www.youtube.com/embed/MUSIC_LIVE_4?autoplay=1)' },
+                { id: 'lf5', title: 'Behind The Scenes: Drama Shoot', creator: 'Creative Minds', thumbnail: '[https://placehold.co/80x60/202020/CCC?text=BTS1](https://placehold.co/80x60/202020/CCC?text=BTS1)', url: '[https://www.youtube.com/embed/BTS_LIVE_5?autoplay=1](https://www.youtube.com/embed/BTS_LIVE_5?autoplay=1)' },
+                { id: 'lf6', title: 'Daily Vlog: Life in Georgetown', creator: 'GT Vlogger', thumbnail: '[https://placehold.co/80x60/909090/111?text=Vlog1](https://placehold.co/80x60/909090/111?text=Vlog1)', url: '[https://www.youtube.com/embed/VLOG_LIVE_6?autoplay=1](https://www.youtube.com/embed/VLOG_LIVE_6?autoplay=1)' },
             ];
             const liveFeedItems = [...originalLiveFeedContent, ...originalLiveFeedContent, ...originalLiveFeedContent];
 
@@ -1637,8 +2156,6 @@
                     showMessage('Failed to log out. Please try again.');
                 }
             };
-
-            // --- Screens ---
 
             const HomeScreen = () => {
                 const horizontalCarouselRef = useRef(null);
@@ -1787,7 +2304,6 @@
 
                 return (
                     <div className="screenContainer">
-                        {/* Container for top-right buttons */}
                         <div className="topRightButtonContainer">
                             {currentUser ? (
                                 <button
@@ -1812,7 +2328,6 @@
                             </button>
                         </div>
 
-                        {/* Horizontal Image Carousel Section - Featured Highlights */}
                         <p className="sectionTitle">Featured Highlights</p>
                         <div
                             className="horizontal-carousel-container"
@@ -1828,7 +2343,6 @@
                             ))}
                         </div>
 
-                        {/* "Trending" Section with Aligned Creator Sign Up Button */}
                         <div className="sectionHeaderWithButton">
                             <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
                             {!currentUser && (
@@ -1854,7 +2368,6 @@
                             ))}
                         </div>
 
-                        {/* "Live Feed" Vertical Carousel Section */}
                         <p className="sectionTitle">Live Feed</p>
                         <div
                             className="vertical-carousel-container"
@@ -1923,14 +2436,14 @@
                             Get early access to new shows, premium-only series, uncensored versions,
                             and exclusive live events. Example: "Watch the full uncut version of Vibes Unfiltered before anyone else!"
                         </p>
-                    </div >
+                    </div>
 
                     <div className="premiumFeatureCard">
                         <p className="premiumFeatureTitle">2. Ad-Free Viewing</p>
                         <p className="premiumFeatureDescription">
                             Enjoy a seamless, uninterrupted viewing experience without in-app banner ads or pre-roll ads.
                         </p>
-                    </div >
+                    </div>
 
                     <div className="premiumFeatureCard">
                         <p className="premiumFeatureTitle">3. Special Perks & Giveaways</p>
@@ -1945,7 +2458,7 @@
                         <p className="premiumFeatureDescription">
                             Receive a "VIP badge," vote on featured content, and join private chat rooms with creators.
                         </p>
-                    </div >
+                    </div>
 
                     <div className="premiumFeatureCard">
                         <p className="premiumFeatureTitle">5. Downloadable/Offline Viewing (Future)</p>
@@ -1970,7 +2483,7 @@
                             <p className="pricingTier">Premium Yearly</p>
                             <p className="pricingFeatures">Discounted + bonus perks</p>
                             <p className="pricingPrice">$20 USD / ~$4,000 GYD</p>
-                        </div >
+                        </div>
                     </div>
                     <p className="smallText">
                         (Note: Actual payment integration would be done here using services like Stripe/PayPal.)
@@ -2003,7 +2516,6 @@
                     <p className="contactInfo">Email: contact@nvanetwork.gy</p>
                     <p className="contactInfo">Phone: +592-555-NVA (Placeholder)</p>
                     <p className="contactInfo">Follow us on social media!</p>
-                    {/* Add social media links here if desired */}
                 </div>
             );
 
@@ -2037,7 +2549,7 @@
 
                     <button
                         className="button"
-                        onClick={() => setActiveScreen('CreatorCampaigns')}
+                        onClick={() => setActiveScreen('AllCampaigns')}
                     >
                         <span className="buttonText">Browse Creator Campaigns</span>
                     </button>
@@ -2050,59 +2562,94 @@
                         Thank you for being a part of the NVA Network family!
                     </p>
 
-                    {/* Added a small note about the platform fee for transparency with donors */}
                     <p className="smallText" style={{ marginTop: '20px', color: '#888' }}>
                         *A small platform fee (e.g., 5%) helps NVA Network cover operational costs and continue supporting our creators.
                     </p>
                 </div>
             );
 
-            // --- New Creator Campaigns Screen ---
-            const CreatorCampaignsScreen = ({ showMessage, setActiveScreen }) => (
-                <div className="screenContainer">
-                    <p className="heading">Creator Campaigns</p>
-                    <p className="subHeading">Discover and support projects by Guyanese talent!</p>
+            const CreatorCampaignsScreen = ({ showMessage, setActiveScreen }) => {
+                const [allCampaigns, setAllCampaigns] = useState([]);
+                const [loadingCampaigns, setLoadingCampaigns] = useState(true);
 
-                    {creatorCampaigns.map((campaign) => (
-                        <div key={campaign.id} className="campaignCard">
-                            <h3 className="campaignTitle">{campaign.title}</h3>
-                            <p className="campaignCreator">By: {campaign.creator}</p>
-                            <p className="campaignDescription">{campaign.description}</p>
-                            <div className="campaignProgressContainer">
-                                <div
-                                    className="campaignProgressBar"
-                                    style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}
-                                ></div>
-                            </div>
-                            <div className="campaignStats">
-                                <span>Raised: <span className="campaignRaised">${campaign.raised}</span></span>
-                                <span>Goal: <span className="campaignGoal">${campaign.goal}</span></span>
-                            </div>
-                            <button
-                                className="campaignButton"
-                                onClick={() => showMessage(`Simulating support for "${campaign.title}". In a real app, this would lead to payment options.`)}
-                            >
-                                Support This Campaign
-                            </button>
+                useEffect(() => {
+                    const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
+                    const q = query(campaignsCollectionRef, orderBy('createdAt', 'desc'));
+
+                    const unsubscribe = onSnapshot(q, (snapshot) => {
+                        const fetchedCampaigns = snapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data()
+                        }));
+                        setAllCampaigns(fetchedCampaigns);
+                        setLoadingCampaigns(false);
+                    }, (error) => {
+                        console.error("Error fetching campaigns:", error);
+                        showMessage("Failed to load campaigns. Please check your internet connection and Firestore rules.");
+                        setLoadingCampaigns(false);
+                    });
+
+                    return () => unsubscribe();
+                }, []);
+
+                if (loadingCampaigns) {
+                    return (
+                        <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                            <p className="heading">Loading Campaigns...</p>
+                            <p className="subHeading" style={{ color: '#FFD700' }}>This may take a moment.</p>
                         </div>
-                    ))}
+                    );
+                }
 
-                    <p className="smallText" style={{ marginTop: '20px' }}>
-                        Don't see your favorite creator? Encourage them to submit their content and campaigns!
-                    </p>
+                return (
+                    <div className="screenContainer">
+                        <p className="heading">Active Creator Campaigns</p>
+                        <p className="subHeading">Discover and support projects by Guyanese talent!</p>
 
-                    {/* Back to Support Us button */}
-                    <button
-                        className="button"
-                        onClick={() => setActiveScreen('Support')}
-                        style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
-                    >
-                        <span className="buttonText">Back to Support Options</span>
-                    </button>
-                </div>
-            );
+                        {allCampaigns.length === 0 ? (
+                            <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No active campaigns found. Be the first to create one!</p>
+                        ) : (
+                            allCampaigns.map((campaign) => (
+                                <div key={campaign.id} className="campaignCard">
+                                    <h3 className="campaignTitle">{campaign.title}</h3>
+                                    <p className="campaignCreator">By: {campaign.creatorName}</p>
+                                    <p className="campaignDescription">{campaign.description}</p>
+                                    <div className="campaignProgressContainer">
+                                        <div
+                                            className="campaignProgressBar"
+                                            style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                    <div className="campaignStats">
+                                        <span>Raised: <span className="campaignRaised">${campaign.raised}</span></span>
+                                        <span>Goal: <span className="campaignGoal">${campaign.goal}</span></span>
+                                    </div>
+                                    <button
+                                        className="campaignButton"
+                                        onClick={() => showMessage(`Simulating support for "${campaign.title}". In a real app, this would lead to payment options.`)}
+                                    >
+                                        Support This Campaign
+                                    </button>
+                                </div>
+                            ))
+                        )}
 
-            // --- New Creator Sign Up Screen ---
+                        <p className="smallText" style={{ marginTop: '20px' }}>
+                            Don't see your favorite creator? Encourage them to submit their content and campaigns!
+                        </p>
+
+                        <button
+                            className="button"
+                            onClick={() => setActiveScreen('Support')}
+                            style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                        >
+                            <span className="buttonText">Back to Support Options</span>
+                        </button>
+                    </div>
+                );
+            };
+
+
             const CreatorSignUpScreen = ({ showMessage, setActiveScreen }) => {
                 const [email, setEmail] = useState('');
                 const [password, setPassword] = useState('');
@@ -2130,7 +2677,6 @@
                         return;
                     }
 
-                    // --- Password Validation ---
                     if (password.length < 8) {
                         showMessage('Password must be at least 8 characters long.');
                         return;
@@ -2143,28 +2689,24 @@
                         showMessage('Password must include at least one capital letter.');
                         return;
                     }
-                    // --- End Password Validation ---
 
                     try {
-                        // Create user with Firebase Authentication
                         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                         const user = userCredential.user;
 
-                        // Save creator profile data to Firestore
-                        const creatorRef = doc(db, "creators", user.uid); // Get a document reference for the new creator
+                        const creatorRef = doc(db, "creators", user.uid);
                         await setDoc(creatorRef, {
                             email: email,
                             creatorName: creatorName,
                             bio: bio,
                             categories: selectedCategories,
                             existingWorkLink: existingWorkLink,
-                            profilePictureUrl: '', // Initialize with empty string
-                            uploadedVideos: { youtube: null, facebook: null, tiktok: null }, // Initialize video links
+                            profilePictureUrl: '',
+                            uploadedVideos: { youtube: null, facebook: null, tiktok: null },
                             createdAt: new Date().toISOString()
                         });
 
                         showMessage(`Creator "${creatorName}" signed up successfully! (User created in Firebase)`);
-                        // Navigate to the Creator Dashboard after successful sign-up
                         setActiveScreen('CreatorDashboard');
                     } catch (error) {
                         console.error("Error signing up creator:", error);
@@ -2307,7 +2849,6 @@
                 );
             };
 
-            // --- Login Screen ---
             const LoginScreen = ({ showMessage, setActiveScreen }) => {
                 const [email, setEmail] = useState('');
                 const [password, setPassword] = useState('');
@@ -2317,7 +2858,7 @@
                     try {
                         await signInWithEmailAndPassword(auth, email, password);
                         showMessage(`Logged in as ${email}!`);
-                        setActiveScreen('CreatorDashboard'); // Redirect to dashboard on successful login
+                        setActiveScreen('CreatorDashboard');
                     } catch (error) {
                         console.error("Error logging in:", error);
                         let errorMessage = "Login failed. Please check your credentials.";
@@ -2387,9 +2928,7 @@
                 );
             };
 
-            // --- Creator Dashboard Screen ---
-            const CreatorDashboardScreen = ({ showMessage, setActiveScreen, currentUser }) => {
-                const [creatorProfile, setCreatorProfile] = useState(null);
+            const CreatorDashboardScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile }) => {
                 const [isEditingProfile, setIsEditingProfile] = useState(false);
                 const [editCreatorName, setEditCreatorName] = useState('');
                 const [editBio, setEditBio] = useState('');
@@ -2406,10 +2945,20 @@
                 const [facebookInputLink, setFacebookInputLink] = useState('');
                 const [tiktokInputLink, setTiktokInputInputLink] = useState('');
 
-                const [showImageAdjustModal, setShowImageAdjustModal] = useState(false); // State for the image adjustment modal
-                const [imageFileToAdjust, setImageFileToAdjust] = useState(null); // File object passed to the modal
+                const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
+                const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
 
-                // --- Profile Editing Functions ---
+                useEffect(() => {
+                    if (creatorProfile) {
+                        setEditCreatorName(creatorProfile.creatorName || '');
+                        setEditBio(creatorProfile.bio || '');
+                        setEditCategories(creatorProfile.categories || []);
+                        setEditExistingWorkLink(creatorProfile.existingWorkLink || '');
+                        setUploadedVideos(creatorProfile.uploadedVideos || { youtube: null, facebook: null, tiktok: null });
+                    }
+                }, [creatorProfile]);
+
+
                 const handleSaveProfile = async () => {
                     try {
                         const creatorRef = doc(db, "creators", currentUser.uid);
@@ -2453,11 +3002,9 @@
                     }
                 };
 
-                // --- Profile Picture Upload & Adjustment ---
                 const triggerProfilePictureUpload = (e) => {
                     const file = e.target.files[0];
                     if (file) {
-                        // Create a URL for the selected file to pass to the modal
                         setImageFileToAdjust(file);
                         setShowImageAdjustModal(true);
                     }
@@ -2469,19 +3016,16 @@
                         return;
                     }
 
-                    setShowImageAdjustModal(false); // Close modal
+                    setShowImageAdjustModal(false);
                     showMessage('Uploading profile picture...');
 
                     try {
-                        // Create a unique filename for the adjusted image (e.g., using timestamp or original file name + uid)
-                        const fileName = `profile_${currentUser.uid}_${Date.now()}.png`; // Always save as PNG for consistency with transparency
+                        const fileName = `profile_${currentUser.uid}_${Date.now()}.png`;
                         const storageRefPath = ref(storage, `profile_pictures/${currentUser.uid}/${fileName}`);
 
-                        // Upload the adjusted image BLOB
                         await uploadBytes(storageRefPath, adjustedBlob, { contentType: 'image/png' });
                         const downloadURL = await getDownloadURL(storageRefPath);
 
-                        // Update Firestore with the new profile picture URL
                         const creatorRef = doc(db, "creators", currentUser.uid);
                         await updateDoc(creatorRef, {
                             profilePictureUrl: downloadURL,
@@ -2501,7 +3045,6 @@
                     showMessage("Profile picture adjustment cancelled.");
                 };
 
-                // --- Video Link Management Functions (Now with Firestore Persistence) ---
                 const extractYouTubeId = (url) => {
                     const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^&?#]+)/);
                     return match ? match[1] : null;
@@ -2542,30 +3085,26 @@
                             }
                             break;
                         case 'facebook':
-                            videoId = extractFacebookId(url); // Attempt to extract ID for basic validation
-                            if (videoId) { // If an ID is found, proceed with embedding strategy
-                                // Note: Directly fetching Facebook video thumbnails is complex due to platform restrictions (CORS, Graph API requirements).
-                                // A generic, branded placeholder is used as a reliable fallback for client-side apps.
-                                thumbnailUrl = `https://placehold.co/150x100/4267B2/FFFFFF?text=Facebook+Video`; // Facebook blue placeholder
+                            videoId = extractFacebookId(url);
+                            if (videoId) {
+                                thumbnailUrl = `https://placehold.co/150x100/4267B2/FFFFFF?text=Facebook+Video`;
                                 embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=0&width=560&autoplay=1`;
                                 title = 'Facebook Video (May require public setting or open in new tab)';
                             } else {
                                 thumbnailUrl = `https://placehold.co/150x100/999999/FFFFFF?text=Invalid+FB+Video`;
-                                embedUrl = ''; // No valid embed URL
+                                embedUrl = '';
                                 title = 'Invalid Facebook Video Link';
                             }
                             break;
                         case 'tiktok':
                             videoId = extractTikTokId(url);
                             if (videoId) {
-                                // Note: Directly fetching TikTok video thumbnails is complex due to platform restrictions (CORS, API requirements).
-                                // A generic, branded placeholder is used as a reliable fallback for client-side apps.
-                                thumbnailUrl = `https://placehold.co/150x100/69C9D0/FFFFFF?text=TikTok+Video`; // TikTok green placeholder
+                                thumbnailUrl = `https://placehold.co/150x100/69C9D0/FFFFFF?text=TikTok+Video`;
                                 embedUrl = `https://www.tiktok.com/embed/${videoId}`;
                                 title = 'TikTok Video';
                             } else {
                                 thumbnailUrl = `https://placehold.co/150x100/999999/FFFFFF?text=Invalid+TikTok+Video`;
-                                embedUrl = ''; // No valid embed URL
+                                embedUrl = '';
                                 title = 'Invalid TikTok Video Link';
                             }
                             break;
@@ -2626,53 +3165,6 @@
                     }
                 };
 
-                // Fetch creator profile on component mount or when user changes
-                useEffect(() => {
-                    const fetchCreatorProfile = async () => {
-                        if (currentUser) {
-                            try {
-                                const creatorDocRef = doc(db, "creators", currentUser.uid);
-                                const docSnap = await getDoc(creatorDocRef);
-                                if (docSnap.exists()) {
-                                    const data = docSnap.data();
-                                    setCreatorProfile(data);
-                                    setEditCreatorName(data.creatorName || '');
-                                    setEditBio(data.bio || '');
-                                    setEditCategories(data.categories || []);
-                                    setEditExistingWorkLink(data.existingWorkLink || '');
-                                    setUploadedVideos(data.uploadedVideos || { youtube: null, facebook: null, tiktok: null });
-                                } else {
-                                    console.log("No creator profile found for this user. Creating basic profile in Firestore.");
-                                    await setDoc(creatorDocRef, {
-                                        email: currentUser.email,
-                                        creatorName: currentUser.email.split('@')[0] || "",
-                                        bio: "",
-                                        categories: [],
-                                        existingWorkLink: "",
-                                        profilePictureUrl: '',
-                                        uploadedVideos: { youtube: null, facebook: null, tiktok: null },
-                                        createdAt: new Date().toISOString()
-                                    });
-                                    const newDocSnap = await getDoc(creatorDocRef);
-                                    if(newDocSnap.exists()) {
-                                        setCreatorProfile(newDocSnap.data());
-                                        setEditCreatorName(newDocSnap.data().creatorName || '');
-                                        setEditBio(newDocSnap.data().bio || '');
-                                        setEditCategories(newDocSnap.data().categories || []);
-                                        setEditExistingWorkLink(newDocSnap.data().existingWorkLink || '');
-                                        setUploadedVideos(newDocSnap.data().uploadedVideos || { youtube: null, facebook: null, tiktok: null });
-                                    }
-                                }
-                            } catch (error) {
-                                console.error("Error fetching or creating creator profile:", error);
-                                showMessage("Error loading profile. Please try again.");
-                            }
-                        }
-                    };
-
-                    fetchCreatorProfile();
-                }, [currentUser]);
-
                 if (!currentUser) {
                     return (
                         <div className="screenContainer">
@@ -2708,7 +3200,7 @@
                 }
 
                 return (
-                    <> {/* React Fragment to return multiple top-level elements */}
+                    <>
                         <div className="screenContainer">
                             <p className="heading">Creator Dashboard</p>
                             <p className="subHeading">Welcome, {creatorProfile.creatorName || currentUser.email}!</p>
@@ -2717,7 +3209,7 @@
                                 <p className="dashboardSectionTitle">Your Profile</p>
                                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
                                     <img
-                                        src={creatorProfile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
+                                        src={creatorProfile.profilePictureUrl || '[https://placehold.co/100x100/555/FFF?text=Profile](https://placehold.co/100x100/555/FFF?text=Profile)'}
                                         alt="Profile"
                                         style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px' }}
                                     />
@@ -2725,7 +3217,7 @@
                                         type="file"
                                         ref={profilePictureInputRef}
                                         style={{ display: 'none' }}
-                                        onChange={triggerProfilePictureUpload} // Now triggers the modal
+                                        onChange={triggerProfilePictureUpload}
                                         accept="image/*"
                                     />
                                     <button
@@ -2791,7 +3283,6 @@
                                     </>
                                 ) : (
                                     <>
-                                        {/* Displaying raw data without labels */}
                                         <p className="dashboardItem">{creatorProfile.creatorName}</p>
                                         <p className="dashboardItem">{creatorProfile.email}</p>
                                         <p className="dashboardItem">{creatorProfile.bio || 'No bio provided.'}</p>
@@ -2809,9 +3300,9 @@
 
                             <div className="dashboardSection">
                                 <p className="dashboardSectionTitle">My Crowdfunding Campaigns</p>
-                                {creatorCampaigns.filter(c => c.creator === (creatorProfile?.creatorName || currentUser?.email)).length > 0 ? (
+                                {staticCreatorCampaigns.filter(c => c.creator === (creatorProfile?.creatorName || currentUser?.email)).length > 0 ? (
                                     <ul className="dashboardContentList">
-                                        {creatorCampaigns.filter(c => c.creator === (creatorProfile?.creatorName || currentUser?.email)).map(campaign => (
+                                        {staticCreatorCampaigns.filter(c => c.creator === (creatorProfile?.creatorName || currentUser?.email)).map(campaign => (
                                             <li key={campaign.id} className="dashboardContentListItem">
                                                 <span>{campaign.title} (${campaign.raised}/${campaign.goal})</span>
                                                 <button className="actionButton" onClick={() => showMessage(`Viewing details for "${campaign.title}"...`)}>Details</button>
@@ -2824,7 +3315,7 @@
                                 )}
                                 <button
                                     className="dashboardButton"
-                                    onClick={() => showMessage('New campaign creation form functionality coming soon!')}
+                                    onClick={() => setActiveScreen('CreateCampaign')}
                                 >
                                     Create New Campaign
                                 </button>
@@ -2841,7 +3332,7 @@
                                             className="formInput"
                                             value={youtubeInputLink}
                                             onChange={(e) => setYoutubeInputLink(e.target.value)}
-                                            placeholder="e.g., https://www.youtube.com/watch?v=VIDEO_ID"
+                                            placeholder="e.g., [https://www.youtube.com/watch?v=VIDEO_ID](https://www.youtube.com/watch?v=VIDEO_ID)"
                                         />
                                         {uploadedVideos.youtube ? (
                                             <button className="actionButton remove" onClick={() => handleRemoveVideo('youtube')}>Remove</button>
@@ -2870,7 +3361,7 @@
                                             className="formInput"
                                             value={facebookInputLink}
                                             onChange={(e) => setFacebookInputLink(e.target.value)}
-                                            placeholder="e.g., https://www.facebook.com/video.php?v=VIDEO_ID or https://fb.watch/..."
+                                            placeholder="e.g., [https://www.facebook.com/video.php?v=VIDEO_ID](https://www.facebook.com/video.php?v=VIDEO_ID) or [https://fb.watch/](https://fb.watch/)..."
                                         />
                                         {uploadedVideos.facebook ? (
                                             <button className="actionButton remove" onClick={() => handleRemoveVideo('facebook')}>Remove</button>
@@ -2902,7 +3393,7 @@
                                             className="formInput"
                                             value={tiktokInputLink}
                                             onChange={(e) => setTiktokInputInputLink(e.target.value)}
-                                            placeholder="e.g., https://www.tiktok.com/@user/video/VIDEO_ID"
+                                            placeholder="e.g., [https://www.tiktok.com/@user/video/VIDEO_ID](https://www.tiktok.com/@user/video/VIDEO_ID)"
                                         />
                                         {uploadedVideos.tiktok ? (
                                             <button className="actionButton remove" onClick={() => handleRemoveVideo('tiktok')}>Remove</button>
@@ -2957,9 +3448,7 @@
             };
 
 
-            // --- Render Current Screen ---
             const renderScreen = () => {
-                // Determine which screen to render based on activeScreen state
                 switch (activeScreen) {
                     case 'Home':
                         return <HomeScreen />;
@@ -2973,10 +3462,14 @@
                         return <PremiumScreen />;
                     case 'Support':
                         return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-                    case 'CreatorCampaigns':
-                        return <CreatorCampaignsScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                    case 'AllCampaigns':
+                        return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} />;
+                    case 'CampaignDetails':
+                        return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} />;
                     case 'CreatorDashboard':
-                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} />;
+                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} />;
+                    case 'CreateCampaign':
+                        return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} />;
                     case 'About':
                         return <AboutContactScreen />;
                     default:
@@ -2987,16 +3480,13 @@
             return (
                 <div className="container">
                     <div className="header">
-                        {/* Logo Image as background cover */}
                         <img
-                            src="https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png"
+                            src="[https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png](https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png)"
                             alt="NVA Network Logo"
                             className="headerLogo"
-                            onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }} /* Fallback image */
+                            onError={(e) => { e.target.onerror = null; e.target.src='[https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error](https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error)'; }}
                         />
-                        {/* App Name */}
                         <p className="headerTitle">NVA Network</p>
-                        {/* Joined Tagline */}
                         <p className="tagline">Guyanese Content to a Global Stage.</p>
                     </div>
 
@@ -3026,7 +3516,6 @@
                         </div>
                     )}
 
-                    {/* Video Player Modal */}
                     {showVideoModal && (
                         <VideoPlayerModal videoUrl={currentVideoUrl} onClose={closeVideoModal} />
                     )}
@@ -3034,9 +3523,7 @@
             );
         }
 
-        // Render the App component into the root div after all resources are loaded
         window.onload = function() {
-            // Check if Firebase instances and React/ReactDOM are available before rendering
             if (
                 typeof window.firebaseAuth === 'undefined' ||
                 typeof window.onAuthStateChanged === 'undefined' ||
@@ -3045,7 +3532,7 @@
                 typeof ReactDOM === 'undefined'
             ) {
                 console.error("Firebase or ReactDOM not fully initialized. Retrying render...");
-                setTimeout(window.onload, 100); // Retry after a short delay
+                setTimeout(window.onload, 100);
                 return;
             }
 
