@@ -110,7 +110,7 @@
             position: relative; /* For absolute positioning of children and pseudo-element */
             height: 150px; /* Header height */
             padding: 0; /* No padding */
-            background-color: #1A1A1A; /* Dark background color for header (will be covered by logo) */
+            background-color: #1A1A1A;
             border-bottom: 1px solid #333;
             border-radius: 15px 15px 0 0; /* Rounded top corners */
             overflow: hidden; /* Ensure content stays within bounds */
@@ -527,17 +527,23 @@
         .videoModalContent {
             background-color: #1A1A1A;
             border-radius: 10px;
-            width: 90%;
-            max-width: 400px; /* Keep it within mobile-like constraints */
+            width: 95vw; /* Make it take 95% of viewport width */
+            height: 95vh; /* Make it take 95% of viewport height */
+            max-width: 1200px; /* Cap maximum width for very large screens */
+            max-height: 800px; /* Cap maximum height for very large screens to maintain aspect ratio */
             overflow: hidden;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
             position: relative;
+            display: flex; /* Enable flex for vertical centering of iframe */
+            flex-direction: column;
+            justify-content: center; /* Center content vertically */
+            align-items: center; /* Center content horizontally */
         }
         .videoIframeContainer {
             position: relative;
             width: 100%;
-            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
-            height: 0;
+            padding-bottom: 56.25%; /* 16:9 Aspect Ratio (height relative to width) */
+            height: 0; /* Important for padding-bottom trick */
             overflow: hidden;
         }
         .videoIframeContainer iframe {
@@ -1033,7 +1039,7 @@
         const setDoc = window.setDoc; // Firestore setDoc function
         const getDoc = window.getDoc; // Firestore getDoc function
         const updateDoc = window.updateDoc; // Firestore updateDoc function
-        const ref = window.ref; // Storage ref function
+        const ref = window.ref; // Expose Storage ref
         const uploadBytes = window.uploadBytes; // Storage uploadBytes function
         const getDownloadURL = window.getDownloadURL; // Storage getDownloadURL function
 
@@ -1917,7 +1923,7 @@
                             Get early access to new shows, premium-only series, uncensored versions,
                             and exclusive live events. Example: "Watch the full uncut version of Vibes Unfiltered before anyone else!"
                         </p>
-                    </div>
+                    </div >
 
                     <div className="premiumFeatureCard">
                         <p className="premiumFeatureTitle">2. Ad-Free Viewing</p>
@@ -2538,12 +2544,12 @@
                         case 'facebook':
                             videoId = extractFacebookId(url); // Attempt to extract ID for basic validation
                             if (videoId) { // If an ID is found, proceed with embedding strategy
+                                // Note: Directly fetching Facebook video thumbnails is complex due to platform restrictions (CORS, Graph API requirements).
+                                // A generic, branded placeholder is used as a reliable fallback for client-side apps.
                                 thumbnailUrl = `https://placehold.co/150x100/4267B2/FFFFFF?text=Facebook+Video`; // Facebook blue placeholder
-                                // For Facebook, the embed plugin uses the *original URL* encoded as the 'href'
                                 embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=0&width=560&autoplay=1`;
                                 title = 'Facebook Video (May require public setting or open in new tab)';
                             } else {
-                                // If no videoId is extracted, it might be an invalid URL or a type that cannot be embedded
                                 thumbnailUrl = `https://placehold.co/150x100/999999/FFFFFF?text=Invalid+FB+Video`;
                                 embedUrl = ''; // No valid embed URL
                                 title = 'Invalid Facebook Video Link';
@@ -2552,9 +2558,15 @@
                         case 'tiktok':
                             videoId = extractTikTokId(url);
                             if (videoId) {
+                                // Note: Directly fetching TikTok video thumbnails is complex due to platform restrictions (CORS, API requirements).
+                                // A generic, branded placeholder is used as a reliable fallback for client-side apps.
                                 thumbnailUrl = `https://placehold.co/150x100/69C9D0/FFFFFF?text=TikTok+Video`; // TikTok green placeholder
                                 embedUrl = `https://www.tiktok.com/embed/${videoId}`;
                                 title = 'TikTok Video';
+                            } else {
+                                thumbnailUrl = `https://placehold.co/150x100/999999/FFFFFF?text=Invalid+TikTok+Video`;
+                                embedUrl = ''; // No valid embed URL
+                                title = 'Invalid TikTok Video Link';
                             }
                             break;
                         default:
