@@ -1251,7 +1251,7 @@
                 ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight);
 
                 ctx.restore(); // Restore canvas state to remove clipping path for next draw
-            }, [scale, position]); // Removed imageUrl from dependencies as it's not used in the function
+            }, [scale, position]);
 
 
             // Set up canvas for high-DPI displays
@@ -2536,19 +2536,25 @@
                             }
                             break;
                         case 'facebook':
-                            videoId = extractFacebookId(url);
-                            if (videoId) {
-                                thumbnailUrl = `https://placehold.co/150x100/4682B4/FFF?text=FB+Video`; // Generic placeholder
-                                embedUrl = `https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Fvideo.php%3Fv%3D${videoId}%2F&show_text=0&width=560&autoplay=1`;
-                                title = 'Facebook Video (Public videos should play in-app; others may open new tab)';
+                            videoId = extractFacebookId(url); // Attempt to extract ID for basic validation
+                            if (videoId) { // If an ID is found, proceed with embedding strategy
+                                thumbnailUrl = `https://placehold.co/150x100/4267B2/FFFFFF?text=Facebook+Video`; // Facebook blue placeholder
+                                // For Facebook, the embed plugin uses the *original URL* encoded as the 'href'
+                                embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=0&width=560&autoplay=1`;
+                                title = 'Facebook Video (May require public setting or open in new tab)';
+                            } else {
+                                // If no videoId is extracted, it might be an invalid URL or a type that cannot be embedded
+                                thumbnailUrl = `https://placehold.co/150x100/999999/FFFFFF?text=Invalid+FB+Video`;
+                                embedUrl = ''; // No valid embed URL
+                                title = 'Invalid Facebook Video Link';
                             }
                             break;
                         case 'tiktok':
                             videoId = extractTikTokId(url);
                             if (videoId) {
-                                thumbnailUrl = `https://placehold.co/150x100/6A5ACD/FFF?text=TikTok+Video`; // Generic placeholder
-                                embedUrl = `https://www.tiktok.com/embed/${videoId}`; // Simplified embed path
-                                title = 'TikTok Video (Plays in-app if embeddable, else may open new tab)';
+                                thumbnailUrl = `https://placehold.co/150x100/69C9D0/FFFFFF?text=TikTok+Video`; // TikTok green placeholder
+                                embedUrl = `https://www.tiktok.com/embed/${videoId}`;
+                                title = 'TikTok Video';
                             }
                             break;
                         default:
@@ -2852,7 +2858,7 @@
                                             className="formInput"
                                             value={facebookInputLink}
                                             onChange={(e) => setFacebookInputLink(e.target.value)}
-                                            placeholder="e.g., https://www.facebook.com/video.php?v=VIDEO_ID"
+                                            placeholder="e.g., https://www.facebook.com/video.php?v=VIDEO_ID or https://fb.watch/..."
                                         />
                                         {uploadedVideos.facebook ? (
                                             <button className="actionButton remove" onClick={() => handleRemoveVideo('facebook')}>Remove</button>
@@ -2870,6 +2876,9 @@
                                             </div>
                                         </div>
                                     )}
+                                    <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
+                                        Note: Facebook video embedding can be temperamental due to privacy settings. Not all links may play in-app.
+                                    </p>
                                 </div>
 
                                 <div className="videoLinkSection">
