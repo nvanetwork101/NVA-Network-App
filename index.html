@@ -1226,6 +1226,63 @@
             border-radius: 5px;
         }
 
+        /* Admin Dashboard Specific Styles */
+        .adminActionButton {
+            background-color: #FFD700;
+            color: #0A0A0A;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            margin-left: 10px;
+            transition: background-color 0.2s ease;
+        }
+        .adminActionButton.approve {
+            background-color: #008000; /* Green for approve */
+            color: #FFF;
+        }
+        .adminActionButton.reject {
+            background-color: #DC3545; /* Red for reject */
+            color: #FFF;
+        }
+        .adminActionButton:hover {
+            filter: brightness(1.1);
+        }
+        .adminActionButton.approve:hover {
+            background-color: #006400;
+        }
+        .adminActionButton.reject:hover {
+            background-color: #C82333;
+        }
+        .adminDashboardItem {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #3A3A3A;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            color: #FFF;
+            font-size: 14px;
+        }
+        .adminDashboardItemTitle {
+            flex-grow: 1;
+            font-weight: bold;
+        }
+        .adminDashboardItemStatus {
+            font-size: 12px;
+            margin-left: 10px;
+            color: #FFD700; /* Default for pending */
+        }
+        .adminDashboardItemStatus.active {
+            color: #00FF00;
+        }
+        .adminDashboardItemStatus.rejected {
+            color: #DC3545;
+        }
+
     </style>
 </head>
 <body>
@@ -1725,18 +1782,19 @@
                 }
 
                 try {
-                    // Check if the creator already has an active campaign (endDate in the future)
+                    // Check if the creator already has an active campaign (endDate in the future and status 'active')
                     const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
                     const now = new Date().toISOString();
                     const q = query(
                         campaignsCollectionRef,
                         where('creatorId', '==', currentUser.uid),
-                        where('endDate', '>', now) // Check for active campaigns
+                        where('status', '==', 'active'), // Only count active campaigns
+                        where('endDate', '>', now)
                     );
                     const querySnapshot = await getDocs(q);
 
                     if (!querySnapshot.empty) {
-                        showMessage('You can only have one active crowdfunding campaign at a time. Please wait for it to end or manage it.');
+                        showMessage('You can only have one active crowdfunding campaign at a time. Please wait for it to end or manage it in your dashboard.');
                         return;
                     }
 
@@ -1754,10 +1812,11 @@
                         raised: 0,
                         imageUrl: imageUrl || '', // Now uses empty string instead of placeholder URL if no image is provided
                         createdAt: createdAt.toISOString(),
-                        endDate: endDate.toISOString() // Save the calculated end date
+                        endDate: endDate.toISOString(), // Save the calculated end date
+                        status: 'pending' // Initial status is pending approval
                     });
 
-                    showMessage(`Campaign "${title}" created successfully!`);
+                    showMessage(`Campaign "${title}" submitted for review! It will appear on the public page once approved.`);
                     setActiveScreen('CreatorDashboard');
                 } catch (error) {
                     console.error("Error creating campaign:", error);
@@ -1769,6 +1828,9 @@
                 <div className="screenContainer">
                     <p className="heading">Create New Campaign</p>
                     <p className="subHeading">Tell us about your project and your funding goal. Campaign will run for 30 days.</p>
+                    <p className="smallText" style={{ textAlign: 'center', color: '#CCC', marginBottom: '15px' }}>
+                        Your campaign will be reviewed by NVA Network administrators and will appear on the public "All Campaigns" page once approved.
+                    </p>
 
                     <form onSubmit={handleSubmit}>
                         <div className="formGroup">
@@ -1822,7 +1884,7 @@
                         </div>
 
                         <button type="submit" className="button">
-                            <span className="buttonText">Submit Campaign</span>
+                            <span className="buttonText">Submit Campaign for Review</span>
                         </button>
                     </form>
 
@@ -1843,7 +1905,11 @@
 
             useEffect(() => {
                 const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
-                const q = query(campaignsCollectionRef, orderBy('createdAt', 'desc'));
+                const q = query(
+                    campaignsCollectionRef,
+                    where('status', '==', 'active'), // Only show active campaigns
+                    orderBy('createdAt', 'desc')
+                );
 
                 const unsubscribe = onSnapshot(q, (snapshot) => {
                     const fetchedCampaigns = snapshot.docs.map(doc => ({
@@ -1877,7 +1943,7 @@
                     <p className="subHeading">Discover and support projects by Guyanese creators!</p>
 
                     {campaigns.length === 0 ? (
-                        <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No campaigns found yet. Be the first to create one!</p>
+                        <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No active campaigns found yet.</p>
                     ) : (
                         <div className="allCampaignsList">
                             {campaigns.map(campaign => {
@@ -1951,7 +2017,7 @@
             );
         };
 
-        const CampaignDetailsScreen = ({ showMessage, setActiveScreen, selectedCampaignId }) => {
+        const CampaignDetailsScreen = ({ showMessage, setActiveScreen, selectedCampaignId, currentUser }) => {
             const [campaign, setCampaign] = useState(null);
             const [loading, setLoading] = useState(true);
             const campaignImageRef = useRef(null); // Ref to the image element
@@ -1998,6 +2064,10 @@
                 const isEnded = new Date(campaign.endDate) < new Date();
                 if (isEnded) {
                     showMessage("This campaign has ended and can no longer receive donations.");
+                    return;
+                }
+                if (campaign.status !== 'active') {
+                    showMessage("This campaign is not yet active and cannot receive donations.");
                     return;
                 }
 
@@ -2048,6 +2118,7 @@
             const progressPercentage = (campaign.raised / campaign.goal) * 100;
             const isCampaignEnded = new Date(campaign.endDate) < new Date();
             const daysRemaining = Math.ceil((new Date(campaign.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+            const isCampaignActive = campaign.status === 'active' && !isCampaignEnded;
 
 
             return (
@@ -2062,7 +2133,11 @@
                             style={{ display: campaign.imageUrl ? 'block' : 'none' }} /* Initially hide if no imageUrl */
                         />
                         <p className="campaignDetailTitle">
-                            {campaign.title} {isCampaignEnded && <span style={{color: '#DC3545', fontSize: '16px'}}>(Ended)</span>}
+                            {campaign.title}
+                            {isCampaignEnded && <span style={{color: '#DC3545', fontSize: '16px', marginLeft: '10px'}}>(Ended)</span>}
+                            {!isCampaignEnded && campaign.status === 'pending' && <span style={{color: '#FFD700', fontSize: '16px', marginLeft: '10px'}}>(Pending Review)</span>}
+                            {!isCampaignEnded && campaign.status === 'rejected' && <span style={{color: '#DC3545', fontSize: '16px', marginLeft: '10px'}}>(Rejected)</span>}
+                            {!isCampaignEnded && campaign.status === 'active' && <span style={{color: '#00FF00', fontSize: '16px', marginLeft: '10px'}}>(Active)</span>}
                         </p>
                         <div className="campaignDetailCreator">
                             <img
@@ -2100,7 +2175,7 @@
                             This campaign ended on {new Date(campaign.endDate).toLocaleDateString()}.
                         </p>
                     ) : (
-                        <p className="smallText" style={{ textAlign: 'center', color: '#FFD700', marginTop: '10px' }}>
+                        <p className="smallText" style={{ textAlign: 'center', color: '#00FF00', marginTop: '10px' }}>
                             {daysRemaining > 0 ? `${daysRemaining} days remaining` : 'Campaign ending soon!'}
                         </p>
                     )}
@@ -2109,10 +2184,10 @@
                     <button
                         className="button"
                         onClick={handleSupportCampaign}
-                        disabled={isCampaignEnded}
-                        style={isCampaignEnded ? { backgroundColor: '#555', cursor: 'not-allowed' } : {}}
+                        disabled={!isCampaignActive} // Only active campaigns can be supported
+                        style={!isCampaignActive ? { backgroundColor: '#555', cursor: 'not-allowed' } : {}}
                     >
-                        <span className="buttonText">{isCampaignEnded ? 'Campaign Ended' : 'Support This Campaign'}</span>
+                        <span className="buttonText">{isCampaignEnded ? 'Campaign Ended' : (campaign.status === 'pending' ? 'Pending Review' : (campaign.status === 'rejected' ? 'Campaign Rejected' : 'Support This Campaign'))}</span>
                     </button>
 
                     {campaign.imageUrl && (
@@ -2136,6 +2211,137 @@
             );
         };
 
+        const AdminDashboardScreen = ({ showMessage, setActiveScreen, currentUser }) => {
+            const [pendingCampaigns, setPendingCampaigns] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
+                const q = query(
+                    campaignsCollectionRef,
+                    where('status', '==', 'pending'),
+                    orderBy('createdAt', 'asc') // Order by oldest pending first
+                );
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const fetchedCampaigns = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    setPendingCampaigns(fetchedCampaigns);
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Error fetching pending campaigns for admin:", error);
+                    showMessage("Failed to load pending campaigns.");
+                    setLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, [showMessage]); // Depend on showMessage to avoid linting warnings
+
+            const handleApproveCampaign = async (campaignId, campaignTitle) => {
+                try {
+                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId);
+                    await updateDoc(campaignDocRef, {
+                        status: 'active',
+                        approvedBy: currentUser.uid,
+                        approvedAt: new Date().toISOString()
+                    });
+                    showMessage(`Campaign "${campaignTitle}" approved!`);
+                } catch (error) {
+                    console.error("Error approving campaign:", error);
+                    showMessage(`Failed to approve campaign: ${error.message}`);
+                }
+            };
+
+            const handleRejectCampaign = async (campaignId, campaignTitle) => {
+                try {
+                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId);
+                    await updateDoc(campaignDocRef, {
+                        status: 'rejected',
+                        rejectedBy: currentUser.uid,
+                        rejectedAt: new Date().toISOString()
+                    });
+                    showMessage(`Campaign "${campaignTitle}" rejected.`);
+                } catch (error) {
+                    console.error("Error rejecting campaign:", error);
+                    showMessage(`Failed to reject campaign: ${error.message}`);
+                }
+            };
+
+            if (!currentUser) {
+                return (
+                    <div className="screenContainer">
+                        <p className="heading">Access Denied</p>
+                        <p className="subHeading">You must be logged in to view the Admin Dashboard.</p>
+                        <button
+                            className="button"
+                            onClick={() => setActiveScreen('Login')}
+                        >
+                            <span className="buttonText">Go to Login</span>
+                        </button>
+                    </div>
+                );
+            }
+
+            if (loading) {
+                return (
+                    <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                        <p className="heading">Loading Admin Dashboard...</p>
+                        <p className="subHeading" style={{ color: '#FFD700' }}>Checking for pending campaigns.</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Admin Dashboard</p>
+                    <p className="subHeading">Manage pending crowdfunding campaigns.</p>
+
+                    <div className="dashboardSection">
+                        <p className="dashboardSectionTitle">Pending Campaigns ({pendingCampaigns.length})</p>
+                        {pendingCampaigns.length === 0 ? (
+                            <p className="dashboardItem">No campaigns currently pending review.</p>
+                        ) : (
+                            <div className="dashboardContentList">
+                                {pendingCampaigns.map(campaign => (
+                                    <div key={campaign.id} className="adminDashboardItem">
+                                        <div style={{ flexGrow: 1, marginRight: '10px' }}>
+                                            <p className="adminDashboardItemTitle">{campaign.title}</p>
+                                            <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
+                                            <p style={{ fontSize: '12px', color: '#AAA' }}>Goal: ${campaign.goal}</p>
+                                        </div>
+                                        <div>
+                                            <button
+                                                className="adminActionButton approve"
+                                                onClick={() => handleApproveCampaign(campaign.id, campaign.title)}
+                                            >
+                                                Approve
+                                            </button>
+                                            <button
+                                                className="adminActionButton reject"
+                                                onClick={() => handleRejectCampaign(campaign.id, campaign.title)}
+                                            >
+                                                Reject
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <button
+                        className="button"
+                        onClick={() => setActiveScreen('Home')}
+                        style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                    >
+                        <span className="buttonText">Back to Home</span>
+                    </button>
+                </div>
+            );
+        };
+
 
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
@@ -2149,7 +2355,7 @@
             const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
             const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
             const [creatorProfile, setCreatorProfile] = useState(null);
-            const [creatorActiveCampaign, setCreatorActiveCampaign] = useState(null); // New state for active campaign
+            const [creatorCampaigns, setCreatorCampaigns] = useState([]); // State for all creator's campaigns
 
             const [selectedCampaignId, setSelectedCampaignId] = useState(null);
 
@@ -2164,6 +2370,7 @@
                             if (docSnap.exists()) {
                                 setCreatorProfile(docSnap.data());
                             } else {
+                                // New user, create profile with isAdmin: false by default
                                 await setDoc(creatorDocRef, {
                                     email: user.email,
                                     creatorName: user.email.split('@')[0] || "",
@@ -2172,7 +2379,8 @@
                                     existingWorkLink: "",
                                     profilePictureUrl: '',
                                     uploadedVideos: { youtube: null, facebook: null, tiktok: null },
-                                    createdAt: new Date().toISOString()
+                                    createdAt: new Date().toISOString(),
+                                    isAdmin: false // Default new users to not be admin
                                 });
                                 const newDocSnap = await getDoc(creatorDocRef);
                                 if(newDocSnap.exists()) {
@@ -2190,34 +2398,30 @@
                 return () => unsubscribe();
             }, []);
 
-            // New useEffect to fetch creator's active campaign
+            // New useEffect to fetch ALL of creator's campaigns for dashboard
             useEffect(() => {
                 let unsubscribe = () => {};
                 if (currentUser) {
                     const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
-                    const now = new Date().toISOString();
-                    // Query for campaigns by this creator that are still active
+                    // Fetch all campaigns by this creator, ordered by creation date
                     const q = query(
                         campaignsCollectionRef,
                         where('creatorId', '==', currentUser.uid),
-                        where('endDate', '>', now), // Check for active campaigns
-                        orderBy('endDate', 'asc') // Order by end date just in case there are multiple (shouldn't be with limit)
+                        orderBy('createdAt', 'desc')
                     );
 
                     unsubscribe = onSnapshot(q, (snapshot) => {
-                        if (!snapshot.empty) {
-                            // Assuming only one active campaign allowed, take the first one
-                            setCreatorActiveCampaign({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
-                        } else {
-                            setCreatorActiveCampaign(null);
-                        }
+                        const fetchedCampaigns = snapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data()
+                        }));
+                        setCreatorCampaigns(fetchedCampaigns);
                     }, (error) => {
-                        console.error("Error fetching creator's active campaigns:", error);
-                        // showMessage("Error loading your campaign data."); // Don't spam messages if no campaigns
-                        setCreatorActiveCampaign(null); // Ensure state is cleared on error
+                        console.error("Error fetching creator's campaigns:", error);
+                        setCreatorCampaigns([]); // Clear campaigns on error
                     });
                 } else {
-                    setCreatorActiveCampaign(null); // Clear active campaign if no user
+                    setCreatorCampaigns([]); // Clear campaigns if no user
                 }
 
                 return () => unsubscribe(); // Cleanup listener
@@ -2481,7 +2685,15 @@
                             ))}
                         </div>
 
-                        <p className="sectionTitle">Live Feed</p>
+                        <div className="sectionHeaderWithButton">
+                            <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
+                            <button
+                                className="sectionHeaderButton"
+                                onClick={() => setActiveScreen('Categories')}
+                            >
+                                Categories
+                            </button>
+                        </div>
                         <div
                             className="vertical-carousel-container"
                             ref={verticalCarouselRef}
@@ -2574,6 +2786,7 @@
                     </div>
 
                     <div className="premiumFeatureCard">
+                        <p className="premiumFeatureTitle">5. Downloadable/Offline Viewing (Future)</p>
                         <p className="premiumFeatureDescription">
                             (Coming Soon) Download original content to watch offline, perfect for inconsistent internet.
                         </p>
@@ -2734,7 +2947,8 @@
                             existingWorkLink: existingWorkLink,
                             profilePictureUrl: '',
                             uploadedVideos: { youtube: null, facebook: null, tiktok: null },
-                            createdAt: new Date().toISOString()
+                            createdAt: new Date().toISOString(),
+                            isAdmin: false // Default new users to not be admin
                         });
 
                         showMessage(`Creator "${creatorName}" signed up successfully! (User created in Firebase)`);
@@ -2889,7 +3103,7 @@
                     try {
                         await signInWithEmailAndPassword(auth, email, password);
                         showMessage(`Logged in as ${email}!`);
-                        setActiveScreen('CreatorDashboard');
+                        setActiveScreen('Home'); // Redirect to Home after login
                     } catch (error) {
                         console.error("Error logging in:", error);
                         let errorMessage = "Login failed. Please check your credentials.";
@@ -2959,7 +3173,7 @@
                 );
             };
 
-            const CreatorDashboardScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, setCreatorProfile, creatorActiveCampaign }) => {
+            const CreatorDashboardScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, setCreatorProfile, creatorCampaigns }) => {
                 const [isEditingProfile, setIsEditingProfile] = useState(false);
                 const [editCreatorName, setEditCreatorName] = useState('');
                 const [editBio, setEditBio] = useState('');
@@ -3167,7 +3381,7 @@
                             showMessage(`${platform} video added successfully!`);
                             if (platform === 'youtube') setYoutubeInputLink('');
                             else if (platform === 'facebook') setFacebookInputLink('');
-                            else if (platform === 'tiktok') setTiktokInputLink(''); // Corrected usage here
+                            else if (platform === 'tiktok') setTiktokInputLink('');
                         } catch (error) {
                             console.error(`Error saving ${platform} video to Firestore:`, error);
                             showMessage(`Failed to save ${platform} video. Please check your internet connection and Firestore rules.`);
@@ -3230,7 +3444,16 @@
                     );
                 }
 
-                const hasActiveCampaign = !!creatorActiveCampaign;
+                // Filter campaigns into active, pending, ended
+                const now = new Date();
+                const activeCampaigns = creatorCampaigns.filter(c => c.status === 'active' && new Date(c.endDate) > now);
+                const pendingCampaigns = creatorCampaigns.filter(c => c.status === 'pending');
+                const endedCampaigns = creatorCampaigns.filter(c => new Date(c.endDate) <= now);
+                const rejectedCampaigns = creatorCampaigns.filter(c => c.status === 'rejected');
+
+
+                const hasActiveCampaign = activeCampaigns.length > 0;
+                const creatorActiveCampaign = hasActiveCampaign ? activeCampaigns[0] : null; // Assuming one active campaign
                 const activeCampaignDaysRemaining = creatorActiveCampaign ? Math.ceil((new Date(creatorActiveCampaign.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 0;
 
 
@@ -3338,7 +3561,7 @@
                                 <p className="dashboardSectionTitle">My Crowdfunding Campaigns</p>
                                 {hasActiveCampaign && creatorActiveCampaign ? (
                                     <>
-                                        <p className="dashboardItem" style={{ color: '#FFD700', fontWeight: 'bold' }}>Active Campaign:</p>
+                                        <p className="dashboardItem" style={{ color: '#00FF00', fontWeight: 'bold' }}>Active Campaign:</p>
                                         <div className="allCampaignsListItem" style={{marginBottom: '10px'}}
                                             onClick={() => {
                                                 setSelectedCampaignId(creatorActiveCampaign.id);
@@ -3365,7 +3588,9 @@
                                                 </button>
                                             </div>
                                             <div className="campaignListContent">
-                                                <p className="campaignListTitle">{creatorActiveCampaign.title}</p>
+                                                <p className="campaignListTitle">
+                                                    {creatorActiveCampaign.title}
+                                                </p>
                                                 <p className="campaignListDescription" style={{ WebkitLineClamp: '1' }}>{creatorActiveCampaign.description}</p>
                                                 <div className="campaignProgressContainer" style={{ height: '5px', marginBottom: '5px' }}>
                                                     <div
@@ -3407,6 +3632,60 @@
                                         >
                                             Create New Campaign
                                         </button>
+                                    </>
+                                )}
+
+                                {pendingCampaigns.length > 0 && (
+                                    <>
+                                        <p className="dashboardItem" style={{ color: '#FFD700', fontWeight: 'bold', marginTop: '20px' }}>Pending Campaigns:</p>
+                                        <div className="dashboardContentList">
+                                            {pendingCampaigns.map(campaign => (
+                                                <div key={campaign.id} className="dashboardContentListItem"
+                                                    onClick={() => {
+                                                        setSelectedCampaignId(campaign.id);
+                                                        setActiveScreen('CampaignDetails');
+                                                    }}>
+                                                    <span>{campaign.title}</span>
+                                                    <span style={{color: '#FFD700', fontSize: '12px', marginLeft: '10px'}}>(Pending)</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+
+                                {rejectedCampaigns.length > 0 && (
+                                    <>
+                                        <p className="dashboardItem" style={{ color: '#DC3545', fontWeight: 'bold', marginTop: '20px' }}>Rejected Campaigns:</p>
+                                        <div className="dashboardContentList">
+                                            {rejectedCampaigns.map(campaign => (
+                                                <div key={campaign.id} className="dashboardContentListItem"
+                                                    onClick={() => {
+                                                        setSelectedCampaignId(campaign.id);
+                                                        setActiveScreen('CampaignDetails');
+                                                    }}>
+                                                    <span>{campaign.title}</span>
+                                                    <span style={{color: '#DC3545', fontSize: '12px', marginLeft: '10px'}}>(Rejected)</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+
+                                {endedCampaigns.length > 0 && (
+                                    <>
+                                        <p className="dashboardItem" style={{ color: '#CCC', fontWeight: 'bold', marginTop: '20px' }}>Ended Campaigns:</p>
+                                        <div className="dashboardContentList">
+                                            {endedCampaigns.map(campaign => (
+                                                <div key={campaign.id} className="dashboardContentListItem"
+                                                    onClick={() => {
+                                                        setSelectedCampaignId(campaign.id);
+                                                        setActiveScreen('CampaignDetails');
+                                                    }}>
+                                                    <span>{campaign.title}</span>
+                                                    <span style={{color: '#DC3545', fontSize: '12px', marginLeft: '10px'}}>(Ended)</span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </>
                                 )}
                             </div>
@@ -3483,7 +3762,7 @@
                                             id="tiktokLink"
                                             className="formInput"
                                             value={tiktokInputLink}
-                                            onChange={(e) => setTiktokInputLink(e.target.value)} // Corrected usage here
+                                            onChange={(e) => setTiktokInputLink(e.target.value)}
                                             placeholder="e.g., https://www.tiktok.com/@user/video/VIDEO_ID"
                                         />
                                         {uploadedVideos.tiktok ? (
@@ -3540,6 +3819,8 @@
 
 
             const renderScreen = () => {
+                // Now, the activeScreen state (which is initialized to 'Home') will be the sole determinant
+                // of which screen is rendered. The admin can then navigate using the buttons, including the 'Admin' button.
                 switch (activeScreen) {
                     case 'Home':
                         return <HomeScreen />;
@@ -3558,9 +3839,11 @@
                     case 'CampaignDetails':
                         return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} />;
                     case 'CreatorDashboard':
-                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} creatorActiveCampaign={creatorActiveCampaign} />;
+                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} creatorCampaigns={creatorCampaigns} />;
                     case 'CreateCampaign':
                         return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} />;
+                    case 'AdminDashboard':
+                        return <AdminDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} />;
                     case 'About':
                         return <AboutContactScreen />;
                     default:
@@ -3587,15 +3870,18 @@
                         <button className="navButton" onClick={() => setActiveScreen('Home')}>
                             <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
                         </button>
-                        <button className="navButton" onClick={() => setActiveScreen('Categories')}>
-                            <span className={`navButtonText ${activeScreen === 'Categories' ? 'activeCategoryTabText' : ''}`}>Categories</span>
-                        </button>
                         <button className="navButton" onClick={() => setActiveScreen('Premium')}>
                             <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
                         </button>
                         <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
                             <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
                         </button>
+                        {/* Admin Dashboard Button - Only visible to admins */}
+                        {currentUser && creatorProfile && creatorProfile.isAdmin && (
+                            <button className="navButton" onClick={() => setActiveScreen('AdminDashboard')}>
+                                <span className={`navButtonText ${activeScreen === 'AdminDashboard' ? 'activeNavButtonText' : ''}`}>Admin</span>
+                            </button>
+                        )}
                         <button className="navButton" onClick={() => setActiveScreen('About')}>
                             <span className={`navButtonText ${activeScreen === 'About' ? 'activeNavButtonText' : ''}`}>About</span>
                         </button>
