@@ -4,81 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NVA Network</title>
-    <!-- React and ReactDOM CDNs - Added 'defer' attribute -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js" defer></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" defer></script>
-    <!-- Babel for JSX transformation in browser -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- Firebase SDKs -->
-    <script type="module" defer>
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
-
-        // Global Firebase variables (provided by Canvas environment)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        // Your web app's Firebase configuration
-        const firebaseConfig = {
-            apiKey: "AIzaSyDUGp5pjqrushhUDPa9RLLp2xmttnKqU9Q",
-            authDomain: "nvanetworkapp.firebaseapp.com",
-            projectId: "nvanetworkapp",
-            storageBucket: "nvanetworkapp.firebasestorage.app",
-            messagingSenderId: "122220543439",
-            appId: "1:122220543439:web:e36cced435463b7939a6ba",
-            measurementId: "G-6RNS6DH3G0"
-        };
-
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const storage = getStorage(app); // Initialize Storage
-        const analytics = getAnalytics(app);
-
-        // Export for use in React component
-        window.firebaseApp = app;
-        window.firebaseAuth = auth;
-        window.firebaseDb = db;
-        window.firebaseStorage = storage; // Export Storage
-        window.initialAuthToken = initialAuthToken; // Export corrected initialAuthToken
-        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword; // Expose the function itself
-        window.signInWithEmailAndPassword = signInWithEmailAndPassword; // Expose sign-in function
-        window.signOut = signOut; // Expose sign-out function
-        window.onAuthStateChanged = onAuthStateChanged; // Expose auth state listener
-        window.doc = doc; // Expose Firestore doc
-        window.setDoc = setDoc; // Expose Firestore setDoc
-        window.getDoc = getDoc; // Expose Firestore getDoc
-        window.updateDoc = updateDoc; // Expose Firestore updateDoc
-        window.collection = collection; // Expose Firestore collection
-        window.addDoc = addDoc; // Expose Firestore addDoc
-        window.query = query; // Expose Firestore query
-        window.orderBy = orderBy; // Expose Firestore orderBy
-        window.onSnapshot = onSnapshot; // Expose Firestore onSnapshot
-        window.where = where; // Expose Firestore where
-        window.getDocs = getDocs; // Expose Firestore getDocs
-        window.ref = ref;
-        window.uploadBytes = uploadBytes;
-        window.getDownloadURL = getDownloadURL;
-        window.appId = appId;
-    </script>
-
     <!-- Google Fonts - Bebas Neue for title, Inter for body -->
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-
     <!-- PWA Enhancements START -->
-    <!-- Link to your web app manifest file -->
     <link rel="manifest" href="/manifest.json">
-    <!-- Apple Touch Icon for iOS home screen -->
     <link rel="apple-touch-icon" href="/icon-192x192.png">
-    <!-- Theme color for browser UI (e.g., status bar on Android) -->
     <meta name="theme-color" content="#0A0A0A">
     <!-- PWA Enhancements END -->
-
     <style>
         html, body {
             height: 100%; /* Ensure html and body take full height */
@@ -1288,6 +1220,70 @@
 <body>
     <div id="root"></div>
 
+    <!-- 1. Initialize Firebase SDKs (module type) - Must be loaded before React components that use them -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+
+        // Global Firebase variables (provided by Canvas environment)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUGp5pjqrushhUDPa9RLLp2xmttnKqU9Q",
+            authDomain: "nvanetworkapp.firebaseapp.com",
+            projectId: "nvanetworkapp",
+            storageBucket: "nvanetworkapp.firebasestorage.app",
+            messagingSenderId: "122220543439",
+            appId: "1:122220543439:web:e36cced435463b7939a6ba",
+            measurementId: "G-6RNS6DH3G0"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app); // Initialize Storage
+        const analytics = getAnalytics(app);
+
+        // Export for use in React component
+        window.firebaseApp = app;
+        window.firebaseAuth = auth;
+        window.firebaseDb = db;
+        window.firebaseStorage = storage; // Export Storage
+        window.initialAuthToken = initialAuthToken; // Export corrected initialAuthToken
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword; // Expose the function itself
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword; // Expose sign-in function
+        window.signOut = signOut; // Expose sign-out function
+        window.onAuthStateChanged = onAuthStateChanged; // Expose auth state listener
+        window.doc = doc; // Expose Firestore doc
+        window.setDoc = setDoc; // Expose Firestore setDoc
+        window.getDoc = getDoc; // Expose Firestore getDoc
+        window.updateDoc = updateDoc; // Expose Firestore updateDoc
+        window.collection = collection; // Expose Firestore collection
+        window.addDoc = addDoc; // Expose Firestore addDoc
+        window.query = query; // Expose Firestore query
+        window.orderBy = orderBy; // Expose Firestore orderBy
+        window.onSnapshot = onSnapshot; // Expose Firestore onSnapshot
+        window.where = where; // Expose Firestore where
+        window.getDocs = getDocs; // Expose Firestore getDocs
+        window.ref = ref;
+        window.uploadBytes = uploadBytes;
+        window.getDownloadURL = getDownloadURL;
+        window.appId = appId;
+    </script>
+
+    <!-- 2. Load React and ReactDOM (synchronously, no defer) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- 3. Load Babel (synchronously, to process JSX from the next script) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- 4. Define your React App component (JSX content here) -->
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
@@ -2358,6 +2354,8 @@
             const [creatorCampaigns, setCreatorCampaigns] = useState([]); // State for all creator's campaigns
 
             const [selectedCampaignId, setSelectedCampaignId] = useState(null);
+            // New state for admin-selected campaign details
+            const [selectedAdminCampaignId, setSelectedAdminCampaignId] = useState(null);
 
 
             useEffect(() => {
@@ -2685,15 +2683,7 @@
                             ))}
                         </div>
 
-                        <div className="sectionHeaderWithButton">
-                            <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
-                            <button
-                                className="sectionHeaderButton"
-                                onClick={() => setActiveScreen('Categories')}
-                            >
-                                Categories
-                            </button>
-                        </div>
+                        <p className="sectionTitle">Live Feed</p>
                         <div
                             className="vertical-carousel-container"
                             ref={verticalCarouselRef}
@@ -2953,7 +2943,8 @@
 
                         showMessage(`Creator "${creatorName}" signed up successfully! (User created in Firebase)`);
                         setActiveScreen('CreatorDashboard');
-                    } catch (error) {
+                    }
+                    catch (error) {
                         console.error("Error signing up creator:", error);
                         let errorMessage = "Failed to sign up. Please try again.";
                         if (error.code === 'auth/email-already-in-use') {
@@ -3103,7 +3094,7 @@
                     try {
                         await signInWithEmailAndPassword(auth, email, password);
                         showMessage(`Logged in as ${email}!`);
-                        setActiveScreen('Home'); // Redirect to Home after login
+                        setActiveScreen('CreatorDashboard');
                     } catch (error) {
                         console.error("Error logging in:", error);
                         let errorMessage = "Login failed. Please check your credentials.";
@@ -3819,8 +3810,11 @@
 
 
             const renderScreen = () => {
-                // Now, the activeScreen state (which is initialized to 'Home') will be the sole determinant
-                // of which screen is rendered. The admin can then navigate using the buttons, including the 'Admin' button.
+                // If an admin has selected a campaign to review, show AdminCampaignDetailsScreen
+                if (activeScreen === 'AdminCampaignDetails' && selectedAdminCampaignId) {
+                    return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} />;
+                }
+                // Otherwise, render screens based on activeScreen state
                 switch (activeScreen) {
                     case 'Home':
                         return <HomeScreen />;
@@ -3843,7 +3837,8 @@
                     case 'CreateCampaign':
                         return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} />;
                     case 'AdminDashboard':
-                        return <AdminDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} />;
+                        // Pass setSelectedAdminCampaignId to AdminDashboardScreen
+                        return <AdminDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} setSelectedAdminCampaignId={setSelectedAdminCampaignId} />;
                     case 'About':
                         return <AboutContactScreen />;
                     default:
@@ -3900,6 +3895,7 @@
             );
         }
 
+        // Render your React App once the DOM is ready and Firebase is initialized
         window.onload = function() {
             if (
                 typeof window.firebaseAuth === 'undefined' ||
