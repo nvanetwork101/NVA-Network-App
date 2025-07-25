@@ -1215,6 +1215,83 @@
             color: #DC3545;
         }
 
+        /* Confirmation Modal Styles */
+        .confirmationModalOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000; /* Higher than any other modal */
+        }
+
+        .confirmationModalContent {
+            background-color: #1A1A1A;
+            border-radius: 15px;
+            padding: 25px;
+            width: 90%;
+            max-width: 350px;
+            box-shadow: 0 0 25px rgba(0, 0, 0, 0.7);
+            text-align: center;
+            color: #FFF;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .confirmationModalTitle {
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 10px;
+        }
+
+        .confirmationModalMessage {
+            font-size: 15px;
+            color: #CCC;
+            line-height: 1.5;
+        }
+
+        .confirmationModalButtons {
+            display: flex;
+            justify-content: space-around;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .confirmationButton {
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+            flex-grow: 1;
+        }
+
+        .confirmationButton.confirm {
+            background-color: #008000; /* Green for confirm */
+            color: #FFF;
+        }
+
+        .confirmationButton.confirm:hover {
+            background-color: #006400;
+        }
+
+        .confirmationButton.cancel {
+            background-color: #DC3545; /* Red for cancel */
+            color: #FFF;
+        }
+
+        .confirmationButton.cancel:hover {
+            background-color: #C82333;
+        }
+
+
     </style>
 </head>
 <body>
@@ -2134,6 +2211,7 @@
                             {!isCampaignEnded && campaign.status === 'pending' && <span style={{color: '#FFD700', fontSize: '16px', marginLeft: '10px'}}>(Pending Review)</span>}
                             {!isCampaignEnded && campaign.status === 'rejected' && <span style={{color: '#DC3545', fontSize: '16px', marginLeft: '10px'}}>(Rejected)</span>}
                             {!isCampaignEnded && campaign.status === 'active' && <span style={{color: '#00FF00', fontSize: '16px', marginLeft: '10px'}}>(Active)</span>}
+                            {!isCampaignEnded && campaign.status === 'cancelled' && <span style={{color: '#888', fontSize: '16px', marginLeft: '10px'}}>(Cancelled)</span>}
                         </p>
                         <div className="campaignDetailCreator">
                             <img
@@ -2183,7 +2261,7 @@
                         disabled={!isCampaignActive} // Only active campaigns can be supported
                         style={!isCampaignActive ? { backgroundColor: '#555', cursor: 'not-allowed' } : {}}
                     >
-                        <span className="buttonText">{isCampaignEnded ? 'Campaign Ended' : (campaign.status === 'pending' ? 'Pending Review' : (campaign.status === 'rejected' ? 'Campaign Rejected' : 'Support This Campaign'))}</span>
+                        <span className="buttonText">{isCampaignEnded ? 'Campaign Ended' : (campaign.status === 'pending' ? 'Pending Review' : (campaign.status === 'rejected' ? 'Campaign Rejected' : (campaign.status === 'cancelled' ? 'Campaign Cancelled' : 'Support This Campaign')))}</span>
                     </button>
 
                     {campaign.imageUrl && (
@@ -2260,37 +2338,6 @@
                 };
             }, [showMessage]); // Depend on showMessage to avoid linting warnings
 
-            const handleApproveCampaign = async (campaignId, campaignTitle) => {
-                try {
-                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId);
-                    await updateDoc(campaignDocRef, {
-                        status: 'active',
-                        approvedBy: currentUser.uid,
-                        approvedAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString()
-                    });
-                    showMessage(`Campaign "${campaignTitle}" approved!`);
-                } catch (error) {
-                    console.error("Error approving campaign:", error);
-                    showMessage(`Failed to approve campaign: ${error.message}`);
-                }
-            };
-
-            const handleRejectCampaign = async (campaignId, campaignTitle) => {
-                try {
-                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId);
-                    await updateDoc(campaignDocRef, {
-                        status: 'rejected',
-                        rejectedBy: currentUser.uid,
-                        rejectedAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString()
-                    });
-                    showMessage(`Campaign "${campaignTitle}" rejected.`);
-                } catch (error) {
-                    console.error("Error rejecting campaign:", error);
-                    showMessage(`Failed to reject campaign: ${error.message}`);
-                }
-            };
 
             if (!currentUser) {
                 return (
@@ -2319,7 +2366,7 @@
             return (
                 <div className="screenContainer">
                     <p className="heading">Admin Dashboard</p>
-                    <p className="subHeading">Manage pending crowdfunding campaigns.</p>
+                    <p className="subHeading">Manage crowdfunding campaigns.</p>
 
                     <div className="dashboardSection">
                         <p className="dashboardSectionTitle">Pending Campaigns ({pendingCampaigns.length})</p>
@@ -2341,7 +2388,6 @@
                                             <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
                                             <p style={{ fontSize: '12px', color: '#AAA' }}>Goal: ${campaign.goal}</p>
                                         </div>
-                                        {/* Removed inline buttons, now handled in details screen */}
                                     </div>
                                 ))}
                             </div>
@@ -2387,7 +2433,22 @@
             );
         };
 
-        const AdminCampaignDetailsScreen = ({ showMessage, setActiveScreen, currentUser, selectedAdminCampaignId }) => {
+        const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
+            return (
+                <div className="confirmationModalOverlay">
+                    <div className="confirmationModalContent">
+                        <p className="confirmationModalTitle">{title}</p>
+                        <p className="confirmationModalMessage">{message}</p>
+                        <div className="confirmationModalButtons">
+                            <button className="confirmationButton confirm" onClick={onConfirm}>Confirm</button>
+                            <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminCampaignDetailsScreen = ({ showMessage, setActiveScreen, currentUser, selectedAdminCampaignId, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
             const [campaign, setCampaign] = useState(null);
             const [loading, setLoading] = useState(true);
             const campaignImageRef = useRef(null);
@@ -2422,12 +2483,16 @@
                 fetchCampaignDetails();
             }, [selectedAdminCampaignId, setActiveScreen, showMessage]);
 
+            const confirmApprove = () => {
+                setShowConfirmationModal(true);
+                setConfirmationTitle("Approve Campaign?");
+                setConfirmationMessage(`Are you sure you want to APPROVE campaign "${campaign.title}"?`);
+                setOnConfirmationAction(() => handleApproveCampaign);
+            };
+
             const handleApproveCampaign = async () => {
+                setShowConfirmationModal(false); // Close modal
                 if (!campaign || !currentUser) return;
-                // Add confirmation here
-                if (!confirm(`Are you sure you want to APPROVE campaign "${campaign.title}"?`)) {
-                    return;
-                }
 
                 try {
                     const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
@@ -2445,12 +2510,16 @@
                 }
             };
 
+            const confirmReject = () => {
+                setShowConfirmationModal(true);
+                setConfirmationTitle("Reject Campaign?");
+                setConfirmationMessage(`Are you sure you want to REJECT campaign "${campaign.title}"?`);
+                setOnConfirmationAction(() => handleRejectCampaign);
+            };
+
             const handleRejectCampaign = async () => {
+                setShowConfirmationModal(false); // Close modal
                 if (!campaign || !currentUser) return;
-                // Add confirmation here
-                if (!confirm(`Are you sure you want to REJECT campaign "${campaign.title}"?`)) {
-                    return;
-                }
 
                 try {
                     const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
@@ -2468,12 +2537,16 @@
                 }
             };
 
-            // New: Handle admin ending campaign
+            const confirmEndCampaignByAdmin = () => {
+                setShowConfirmationModal(true);
+                setConfirmationTitle("End Campaign?");
+                setConfirmationMessage(`Are you sure you want to manually END campaign "${campaign.title}"? This will set its status to 'ended'.`);
+                setOnConfirmationAction(() => handleEndCampaignByAdmin);
+            };
+
             const handleEndCampaignByAdmin = async () => {
+                setShowConfirmationModal(false); // Close modal
                 if (!campaign || !currentUser) return;
-                if (!confirm(`Are you sure you want to manually END campaign "${campaign.title}"? This will set its status to 'ended'.`)) {
-                    return;
-                }
 
                 try {
                     const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
@@ -2530,7 +2603,7 @@
                         <p className="dashboardItem">**Description:** {campaign.description}</p>
                         <p className="dashboardItem">**Funding Goal:** ${campaign.goal}</p>
                         <p className="dashboardItem">**Current Raised:** ${campaign.raised}</p>
-                        <p className="dashboardItem">**Status:** <span style={{ color: campaign.status === 'pending' ? '#FFD700' : (campaign.status === 'active' ? '#00FF00' : '#DC3545') }}>{campaign.status}</span></p>
+                        <p className="dashboardItem">**Status:** <span style={{ color: campaign.status === 'pending' ? '#FFD700' : (campaign.status === 'active' ? '#00FF00' : (campaign.status === 'cancelled' ? '#888' : '#DC3545')) }}>{campaign.status}</span></p>
                         <p className="dashboardItem">**Created On:** {createdDate}</p>
                         <p className="dashboardItem">**Ends On:** {endDate}</p>
 
@@ -2560,13 +2633,13 @@
                             <>
                                 <button
                                     className="adminActionButton approve"
-                                    onClick={handleApproveCampaign}
+                                    onClick={confirmApprove}
                                 >
                                     Approve Campaign
                                 </button>
                                 <button
                                     className="adminActionButton reject"
-                                    onClick={handleRejectCampaign}
+                                    onClick={confirmReject}
                                 >
                                     Reject Campaign
                                 </button>
@@ -2575,7 +2648,7 @@
                         {campaign.status === 'active' && ( // Show End button only for active campaigns
                             <button
                                 className="adminActionButton"
-                                onClick={handleEndCampaignByAdmin}
+                                onClick={confirmEndCampaignByAdmin}
                                 style={{ backgroundColor: '#FF8C00' }} // Orange color for 'End Campaign'
                             >
                                 End Campaign
@@ -2612,6 +2685,12 @@
             const [selectedCampaignId, setSelectedCampaignId] = useState(null);
             // New state for admin-selected campaign details
             const [selectedAdminCampaignId, setSelectedAdminCampaignId] = useState(null);
+
+            // New state variables for custom confirmation modal
+            const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+            const [confirmationTitle, setConfirmationTitle] = useState('');
+            const [confirmationMessage, setConfirmationMessage] = useState('');
+            const [onConfirmationAction, setOnConfirmationAction] = useState(null);
 
 
             useEffect(() => {
@@ -3420,7 +3499,7 @@
                 );
             };
 
-            const CreatorDashboardScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, setCreatorProfile, creatorCampaigns }) => {
+            const CreatorDashboardScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, setCreatorProfile, creatorCampaigns, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
                 const [isEditingProfile, setIsEditingProfile] = useState(false);
                 const [editCreatorName, setEditCreatorName] = useState('');
                 const [editBio, setEditBio] = useState('');
@@ -3658,10 +3737,15 @@
                 };
 
                 // Handle creator cancelling their campaign
+                const confirmCancelCampaign = (campaignId, campaignTitle) => {
+                    setShowConfirmationModal(true);
+                    setConfirmationTitle("Cancel Campaign?");
+                    setConfirmationMessage(`Are you sure you want to cancel your campaign "${campaignTitle}"? This action cannot be undone.`);
+                    setOnConfirmationAction(() => () => handleCancelCampaign(campaignId, campaignTitle)); // Wrap in another arrow function to pass args
+                };
+
                 const handleCancelCampaign = async (campaignId, campaignTitle) => {
-                    if (!confirm(`Are you sure you want to cancel your campaign "${campaignTitle}"? This action cannot be undone.`)) {
-                        return;
-                    }
+                    setShowConfirmationModal(false); // Close modal
                     try {
                         const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId);
                         await updateDoc(campaignDocRef, {
@@ -3892,7 +3976,7 @@
                                         {/* New Cancel Button for Creators */}
                                         <button
                                             className="dashboardButton"
-                                            onClick={() => handleCancelCampaign(creatorActiveCampaign.id, creatorActiveCampaign.title)}
+                                            onClick={() => confirmCancelCampaign(creatorActiveCampaign.id, creatorActiveCampaign.title)}
                                             style={{ backgroundColor: '#DC3545', color: '#FFF', marginTop: '10px' }}
                                         >
                                             <span className="buttonText">Cancel My Campaign</span>
@@ -4116,7 +4200,7 @@
             const renderScreen = () => {
                 // If an admin has selected a campaign to review, show AdminCampaignDetailsScreen
                 if (activeScreen === 'AdminCampaignDetails') { // Removed selectedAdminCampaignId check here so it can be passed through to the component regardless for display
-                    return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} />;
+                    return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
                 }
                 // Otherwise, render screens based on activeScreen state
                 switch (activeScreen) {
@@ -4137,7 +4221,7 @@
                     case 'CampaignDetails':
                         return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} />;
                     case 'CreatorDashboard':
-                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} creatorCampaigns={creatorCampaigns} />;
+                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} creatorCampaigns={creatorCampaigns} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
                     case 'CreateCampaign':
                         return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} />;
                     case 'AdminDashboard':
@@ -4194,6 +4278,15 @@
 
                     {showVideoModal && (
                         <VideoPlayerModal videoUrl={currentVideoUrl} onClose={closeVideoModal} />
+                    )}
+
+                    {showConfirmationModal && (
+                        <ConfirmationModal
+                            title={confirmationTitle}
+                            message={confirmationMessage}
+                            onConfirm={onConfirmationAction}
+                            onCancel={() => setShowConfirmationModal(false)}
+                        />
                     )}
                 </div>
             );
