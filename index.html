@@ -14,7 +14,7 @@
     <script type="module" defer>
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 
@@ -59,10 +59,12 @@
         window.query = query; // Expose Firestore query
         window.orderBy = orderBy; // Expose Firestore orderBy
         window.onSnapshot = onSnapshot; // Expose Firestore onSnapshot
-        window.ref = ref; // Expose Storage ref
-        window.uploadBytes = uploadBytes; // Storage uploadBytes function
-        window.getDownloadURL = getDownloadURL; // Storage getDownloadURL function
-        window.appId = appId; // Export appId for use in Firestore paths
+        window.where = where; // Expose Firestore where
+        window.getDocs = getDocs; // Expose Firestore getDocs
+        window.ref = ref;
+        window.uploadBytes = uploadBytes;
+        window.getDownloadURL = getDownloadURL;
+        window.appId = appId;
     </script>
 
     <!-- Google Fonts - Bebas Neue for title, Inter for body -->
@@ -880,7 +882,7 @@
             color: #FFF;
         }
         .videoActions .actionButton:hover {
-            background-color: #FFC400;
+            background-color: #C82333;
         }
         .videoActions .actionButton.remove:hover {
             background-color: #C82333;
@@ -1085,7 +1087,7 @@
             line-height: 1; /* Adjust line height for smaller button */
         }
         .campaignListProjectButton:hover {
-            background-color: #FFD700; /* Solid gold on hover */
+            background-color: #FFC400; /* Solid gold on hover */
         }
 
         .campaignListContent {
@@ -1153,6 +1155,11 @@
             margin-bottom: 15px;
             box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
         }
+        /* Style to hide image if it fails to load */
+        .campaignDetailImage.hidden {
+            display: none;
+        }
+
         .campaignDetailTitle {
             font-size: 22px;
             font-weight: bold;
@@ -1243,6 +1250,8 @@
         const query = window.query;
         const orderBy = window.orderBy;
         const onSnapshot = window.onSnapshot;
+        const where = window.where; // Added where for Firestore queries
+        const getDocs = window.getDocs; // Added getDocs for Firestore queries
         const ref = window.ref;
         const uploadBytes = window.uploadBytes;
         const getDownloadURL = window.getDownloadURL;
@@ -1308,31 +1317,6 @@
             ],
         };
 
-        const staticCreatorCampaigns = [
-            {
-                id: 'cc1',
-                title: 'Fund "The Golden Mango" Short Film',
-                creator: 'Guyana Film Collective',
-                description: 'Help us produce a heartwarming short film about Guyanese traditions and family values.',
-                goal: 5000,
-                raised: 3200,
-                imageUrl: 'https://placehold.co/150x100/FFD700/0A0A0A?text=Film+Project',
-                creatorProfilePictureUrl: 'https://placehold.co/100x100/555/FFF?text=GF',
-                createdAt: '2023-01-15T10:00:00Z'
-            },
-            {
-                id: 'cc2',
-                title: 'New Comedy Series: "Life in GT"',
-                creator: 'Laugh Out Loud Crew',
-                description: 'Support our new web series bringing everyday Guyanese humor to your screens!',
-                goal: 3000,
-                raised: 1800,
-                imageUrl: 'https://placehold.co/150x100/FF6347/FFF?text=Comedy+Series',
-                creatorProfilePictureUrl: 'https://placehold.co/100x100/555/FFF?text=LO',
-                createdAt: '2023-02-01T11:30:00Z'
-            },
-        ];
-
         const getYouTubeEmbedUrl = (youtubeUrl) => {
             const videoIdMatch = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/||shorts\/))([^&?#]+)/);
             if (videoIdMatch && videoIdMatch[1]) {
@@ -1390,7 +1374,7 @@
                 
                 return {
                     x: Math.min(maxX, Math.max(minX, pos.x)),
-                    y: Math.min(maxY, Math.max(minY, pos.y)) // Corrected: changed 'maxY' to 'minY'
+                    y: Math.min(maxY, Math.max(minY, pos.y))
                 };
             };
 
@@ -1741,7 +1725,25 @@
                 }
 
                 try {
+                    // Check if the creator already has an active campaign (endDate in the future)
                     const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
+                    const now = new Date().toISOString();
+                    const q = query(
+                        campaignsCollectionRef,
+                        where('creatorId', '==', currentUser.uid),
+                        where('endDate', '>', now) // Check for active campaigns
+                    );
+                    const querySnapshot = await getDocs(q);
+
+                    if (!querySnapshot.empty) {
+                        showMessage('You can only have one active crowdfunding campaign at a time. Please wait for it to end or manage it.');
+                        return;
+                    }
+
+                    const createdAt = new Date();
+                    const endDate = new Date(createdAt);
+                    endDate.setDate(createdAt.getDate() + 30); // 30 days from creation
+
                     await addDoc(campaignsCollectionRef, {
                         creatorId: currentUser.uid,
                         creatorName: creatorProfile.creatorName || currentUser.email,
@@ -1750,8 +1752,9 @@
                         description: description,
                         goal: parseFloat(goal),
                         raised: 0,
-                        imageUrl: imageUrl || 'https://placehold.co/300x200/2A2A2A/FFD700?text=Campaign+Link',
-                        createdAt: new Date().toISOString()
+                        imageUrl: imageUrl || '', // Now uses empty string instead of placeholder URL if no image is provided
+                        createdAt: createdAt.toISOString(),
+                        endDate: endDate.toISOString() // Save the calculated end date
                     });
 
                     showMessage(`Campaign "${title}" created successfully!`);
@@ -1765,7 +1768,7 @@
             return (
                 <div className="screenContainer">
                     <p className="heading">Create New Campaign</p>
-                    <p className="subHeading">Tell us about your project and your funding goal.</p>
+                    <p className="subHeading">Tell us about your project and your funding goal. Campaign will run for 30 days.</p>
 
                     <form onSubmit={handleSubmit}>
                         <div className="formGroup">
@@ -1877,59 +1880,64 @@
                         <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No campaigns found yet. Be the first to create one!</p>
                     ) : (
                         <div className="allCampaignsList">
-                            {campaigns.map(campaign => (
-                                <div
-                                    key={campaign.id}
-                                    className="allCampaignsListItem"
-                                    onClick={() => {
-                                        setSelectedCampaignId(campaign.id);
-                                        setActiveScreen('CampaignDetails');
-                                    }}
-                                >
+                            {campaigns.map(campaign => {
+                                const isEnded = new Date(campaign.endDate) < new Date();
+                                return (
                                     <div
-                                        className="campaignListImagePlaceholder"
-                                        style={{ backgroundImage: `url(${campaign.imageUrl})` }}
-                                        onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='url(https://placehold.co/150x100/2A2A2A/FFD700?text=Link+Preview)'; }}
+                                        key={campaign.id}
+                                        className="allCampaignsListItem"
+                                        onClick={() => {
+                                            setSelectedCampaignId(campaign.id);
+                                            setActiveScreen('CampaignDetails');
+                                        }}
                                     >
-                                        <button
-                                            className="campaignListProjectButton"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (campaign.imageUrl) {
-                                                    window.open(campaign.imageUrl, '_blank');
-                                                } else {
-                                                    showMessage('No project link provided for this campaign.');
-                                                }
-                                            }}
+                                        <div
+                                            className="campaignListImagePlaceholder"
+                                            style={{ backgroundImage: campaign.imageUrl ? `url(${campaign.imageUrl})` : 'none' }}
+                                            onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='none'; }} /* No background image on error */
                                         >
-                                            View Project
-                                        </button>
+                                            <button
+                                                className="campaignListProjectButton"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (campaign.imageUrl) {
+                                                        window.open(campaign.imageUrl, '_blank');
+                                                    } else {
+                                                        showMessage('No project link provided for this campaign.');
+                                                    }
+                                                }}
+                                            >
+                                                View Project
+                                            </button>
+                                        </div>
+                                        <div className="campaignListContent">
+                                            <p className="campaignListTitle">
+                                                {campaign.title} {isEnded && <span style={{color: '#DC3545', fontSize: '12px'}}>(Ended)</span>}
+                                            </p>
+                                            <div className="campaignListCreator">
+                                                <img
+                                                    src={campaign.creatorProfilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
+                                                    alt={campaign.creatorName}
+                                                    className="campaignListCreatorProfilePic"
+                                                    onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/24x24/555/FFF?text=P'; }}
+                                                />
+                                                <span>by {campaign.creatorName}</span>
+                                            </div>
+                                            <p className="campaignListDescription">{campaign.description}</p>
+                                            <div className="campaignProgressContainer" style={{ height: '8px', marginBottom: '5px' }}>
+                                                <div
+                                                    className="campaignProgressBar"
+                                                    style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}
+                                                ></div>
+                                            </div>
+                                            <div className="campaignListStats">
+                                                <span>Raised: <span className="campaignListRaised">${campaign.raised}</span></span>
+                                                <span>Goal: <span className="campaignListGoal">${campaign.goal}</span></span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="campaignListContent">
-                                        <p className="campaignListTitle">{campaign.title}</p>
-                                        <div className="campaignListCreator">
-                                            <img
-                                                src={campaign.creatorProfilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
-                                                alt={campaign.creatorName}
-                                                className="campaignListCreatorProfilePic"
-                                                onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/24x24/555/FFF?text=P'; }}
-                                            />
-                                            <span>by {campaign.creatorName}</span>
-                                        </div>
-                                        <p className="campaignListDescription">{campaign.description}</p>
-                                        <div className="campaignProgressContainer" style={{ height: '8px', marginBottom: '5px' }}>
-                                            <div
-                                                className="campaignProgressBar"
-                                                style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}
-                                            ></div>
-                                        </div>
-                                        <div className="campaignListStats">
-                                            <span>Raised: <span className="campaignListRaised">${campaign.raised}</span></span>
-                                            <span>Goal: <span className="campaignListGoal">${campaign.goal}</span></span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                     <button
@@ -1946,6 +1954,7 @@
         const CampaignDetailsScreen = ({ showMessage, setActiveScreen, selectedCampaignId }) => {
             const [campaign, setCampaign] = useState(null);
             const [loading, setLoading] = useState(true);
+            const campaignImageRef = useRef(null); // Ref to the image element
 
             useEffect(() => {
                 const fetchCampaignDetails = async () => {
@@ -1977,6 +1986,52 @@
                 fetchCampaignDetails();
             }, [selectedCampaignId, setActiveScreen, showMessage]);
 
+            const handleSupportCampaign = async () => {
+                if (!campaign) return;
+
+                if (!window.firebaseAuth.currentUser) { // Use window.firebaseAuth.currentUser for current user
+                    showMessage("Please log in to support a campaign.");
+                    setActiveScreen('Login'); // Redirect to login if not logged in
+                    return;
+                }
+
+                const isEnded = new Date(campaign.endDate) < new Date();
+                if (isEnded) {
+                    showMessage("This campaign has ended and can no longer receive donations.");
+                    return;
+                }
+
+                const donationAmount = 10; // Simulating a $10 donation for simplicity
+                const newRaisedAmount = (campaign.raised || 0) + donationAmount;
+
+                try {
+                    // Update the campaign's raised amount
+                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
+                    await updateDoc(campaignDocRef, {
+                        raised: newRaisedAmount,
+                        updatedAt: new Date().toISOString()
+                    });
+
+                    // Add a detailed donation record to the campaign's subcollection
+                    const campaignDonationsRef = collection(db, `artifacts/${appId}/public/data/campaigns`, campaign.id, 'donations');
+                    await addDoc(campaignDonationsRef, {
+                        userId: window.firebaseAuth.currentUser.uid, // Use current user's UID
+                        userName: window.firebaseAuth.currentUser.email.split('@')[0], // Use email prefix as donor name
+                        amount: donationAmount,
+                        timestamp: new Date().toISOString(),
+                        campaignTitle: campaign.title,
+                        campaignCreator: campaign.creatorName
+                    });
+
+                    setCampaign(prev => ({ ...prev, raised: newRaisedAmount })); // Optimistically update UI
+                    showMessage(`Thank you for donating $${donationAmount} to "${campaign.title}"!`);
+                } catch (error) {
+                    console.error("Error supporting campaign:", error);
+                    showMessage(`Failed to process donation: ${error.message}. Please try again.`);
+                }
+            };
+
+
             if (loading) {
                 return (
                     <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
@@ -1991,17 +2046,24 @@
             }
 
             const progressPercentage = (campaign.raised / campaign.goal) * 100;
+            const isCampaignEnded = new Date(campaign.endDate) < new Date();
+            const daysRemaining = Math.ceil((new Date(campaign.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+
 
             return (
                 <div className="screenContainer">
                     <div className="campaignDetailHeader">
                         <img
+                            ref={campaignImageRef}
                             src={campaign.imageUrl}
                             alt={campaign.title}
                             className="campaignDetailImage"
-                            onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/350x200/2A2A2A/FFD700?text=Campaign+Link+Preview'; }}
+                            onError={(e) => { e.target.style.display = 'none'; }} /* Hide image if it fails to load */
+                            style={{ display: campaign.imageUrl ? 'block' : 'none' }} /* Initially hide if no imageUrl */
                         />
-                        <p className="campaignDetailTitle">{campaign.title}</p>
+                        <p className="campaignDetailTitle">
+                            {campaign.title} {isCampaignEnded && <span style={{color: '#DC3545', fontSize: '16px'}}>(Ended)</span>}
+                        </p>
                         <div className="campaignDetailCreator">
                             <img
                                 src={campaign.creatorProfilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
@@ -2033,19 +2095,35 @@
                         <div className="campaignDetailProgressBar" style={{ width: `${progressPercentage}%` }}></div>
                     </div>
 
+                    {isCampaignEnded ? (
+                        <p className="smallText" style={{ textAlign: 'center', color: '#DC3545', marginTop: '10px' }}>
+                            This campaign ended on {new Date(campaign.endDate).toLocaleDateString()}.
+                        </p>
+                    ) : (
+                        <p className="smallText" style={{ textAlign: 'center', color: '#FFD700', marginTop: '10px' }}>
+                            {daysRemaining > 0 ? `${daysRemaining} days remaining` : 'Campaign ending soon!'}
+                        </p>
+                    )}
+
 
                     <button
                         className="button"
-                        onClick={() => {
-                            if (campaign.imageUrl) {
-                                window.open(campaign.imageUrl, '_blank');
-                            } else {
-                                showMessage(`Simulating donation to "${campaign.title}". In a real app, this would initiate payment.`);
-                            }
-                        }}
+                        onClick={handleSupportCampaign}
+                        disabled={isCampaignEnded}
+                        style={isCampaignEnded ? { backgroundColor: '#555', cursor: 'not-allowed' } : {}}
                     >
-                        <span className="buttonText">{campaign.imageUrl ? 'Visit Project / Support' : 'Support This Campaign'}</span>
+                        <span className="buttonText">{isCampaignEnded ? 'Campaign Ended' : 'Support This Campaign'}</span>
                     </button>
+
+                    {campaign.imageUrl && (
+                        <button
+                            className="button"
+                            onClick={() => window.open(campaign.imageUrl, '_blank')}
+                            style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '10px' }}
+                        >
+                            <span className="buttonText">Visit Project Link</span>
+                        </button>
+                    )}
 
                     <button
                         className="button"
@@ -2071,6 +2149,7 @@
             const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
             const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
             const [creatorProfile, setCreatorProfile] = useState(null);
+            const [creatorActiveCampaign, setCreatorActiveCampaign] = useState(null); // New state for active campaign
 
             const [selectedCampaignId, setSelectedCampaignId] = useState(null);
 
@@ -2110,6 +2189,40 @@
                 });
                 return () => unsubscribe();
             }, []);
+
+            // New useEffect to fetch creator's active campaign
+            useEffect(() => {
+                let unsubscribe = () => {};
+                if (currentUser) {
+                    const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
+                    const now = new Date().toISOString();
+                    // Query for campaigns by this creator that are still active
+                    const q = query(
+                        campaignsCollectionRef,
+                        where('creatorId', '==', currentUser.uid),
+                        where('endDate', '>', now), // Check for active campaigns
+                        orderBy('endDate', 'asc') // Order by end date just in case there are multiple (shouldn't be with limit)
+                    );
+
+                    unsubscribe = onSnapshot(q, (snapshot) => {
+                        if (!snapshot.empty) {
+                            // Assuming only one active campaign allowed, take the first one
+                            setCreatorActiveCampaign({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+                        } else {
+                            setCreatorActiveCampaign(null);
+                        }
+                    }, (error) => {
+                        console.error("Error fetching creator's active campaigns:", error);
+                        // showMessage("Error loading your campaign data."); // Don't spam messages if no campaigns
+                        setCreatorActiveCampaign(null); // Ensure state is cleared on error
+                    });
+                } else {
+                    setCreatorActiveCampaign(null); // Clear active campaign if no user
+                }
+
+                return () => unsubscribe(); // Cleanup listener
+            }, [currentUser]); // Re-run when currentUser changes
+
 
             const originalCarouselImages = [
                 'https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night',
@@ -2461,7 +2574,6 @@
                     </div>
 
                     <div className="premiumFeatureCard">
-                        <p className="premiumFeatureTitle">5. Downloadable/Offline Viewing (Future)</p>
                         <p className="premiumFeatureDescription">
                             (Coming Soon) Download original content to watch offline, perfect for inconsistent internet.
                         </p>
@@ -2567,87 +2679,6 @@
                     </p>
                 </div>
             );
-
-            const CreatorCampaignsScreen = ({ showMessage, setActiveScreen }) => {
-                const [allCampaigns, setAllCampaigns] = useState([]);
-                const [loadingCampaigns, setLoadingCampaigns] = useState(true);
-
-                useEffect(() => {
-                    const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
-                    const q = query(campaignsCollectionRef, orderBy('createdAt', 'desc'));
-
-                    const unsubscribe = onSnapshot(q, (snapshot) => {
-                        const fetchedCampaigns = snapshot.docs.map(doc => ({
-                            id: doc.id,
-                            ...doc.data()
-                        }));
-                        setAllCampaigns(fetchedCampaigns);
-                        setLoadingCampaigns(false);
-                    }, (error) => {
-                        console.error("Error fetching campaigns:", error);
-                        showMessage("Failed to load campaigns. Please check your internet connection and Firestore rules.");
-                        setLoadingCampaigns(false);
-                    });
-
-                    return () => unsubscribe();
-                }, []);
-
-                if (loadingCampaigns) {
-                    return (
-                        <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
-                            <p className="heading">Loading Campaigns...</p>
-                            <p className="subHeading" style={{ color: '#FFD700' }}>This may take a moment.</p>
-                        </div>
-                    );
-                }
-
-                return (
-                    <div className="screenContainer">
-                        <p className="heading">Active Creator Campaigns</p>
-                        <p className="subHeading">Discover and support projects by Guyanese talent!</p>
-
-                        {allCampaigns.length === 0 ? (
-                            <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No active campaigns found. Be the first to create one!</p>
-                        ) : (
-                            allCampaigns.map((campaign) => (
-                                <div key={campaign.id} className="campaignCard">
-                                    <h3 className="campaignTitle">{campaign.title}</h3>
-                                    <p className="campaignCreator">By: {campaign.creatorName}</p>
-                                    <p className="campaignDescription">{campaign.description}</p>
-                                    <div className="campaignProgressContainer">
-                                        <div
-                                            className="campaignProgressBar"
-                                            style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}
-                                        ></div>
-                                    </div>
-                                    <div className="campaignStats">
-                                        <span>Raised: <span className="campaignRaised">${campaign.raised}</span></span>
-                                        <span>Goal: <span className="campaignGoal">${campaign.goal}</span></span>
-                                    </div>
-                                    <button
-                                        className="campaignButton"
-                                        onClick={() => showMessage(`Simulating support for "${campaign.title}". In a real app, this would lead to payment options.`)}
-                                    >
-                                        Support This Campaign
-                                    </button>
-                                </div>
-                            ))
-                        )}
-
-                        <p className="smallText" style={{ marginTop: '20px' }}>
-                            Don't see your favorite creator? Encourage them to submit their content and campaigns!
-                        </p>
-
-                        <button
-                            className="button"
-                            onClick={() => setActiveScreen('Support')}
-                            style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
-                        >
-                            <span className="buttonText">Back to Support Options</span>
-                        </button>
-                    </div>
-                );
-            };
 
 
             const CreatorSignUpScreen = ({ showMessage, setActiveScreen }) => {
@@ -2928,7 +2959,7 @@
                 );
             };
 
-            const CreatorDashboardScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile }) => {
+            const CreatorDashboardScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, setCreatorProfile, creatorActiveCampaign }) => {
                 const [isEditingProfile, setIsEditingProfile] = useState(false);
                 const [editCreatorName, setEditCreatorName] = useState('');
                 const [editBio, setEditBio] = useState('');
@@ -2943,7 +2974,7 @@
                 });
                 const [youtubeInputLink, setYoutubeInputLink] = useState('');
                 const [facebookInputLink, setFacebookInputLink] = useState('');
-                const [tiktokInputLink, setTiktokInputInputLink] = useState('');
+                const [tiktokInputLink, setTiktokInputLink] = useState(''); // Corrected state variable name
 
                 const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
                 const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
@@ -3136,7 +3167,7 @@
                             showMessage(`${platform} video added successfully!`);
                             if (platform === 'youtube') setYoutubeInputLink('');
                             else if (platform === 'facebook') setFacebookInputLink('');
-                            else if (platform === 'tiktok') setTiktokInputInputLink('');
+                            else if (platform === 'tiktok') setTiktokInputLink(''); // Corrected usage here
                         } catch (error) {
                             console.error(`Error saving ${platform} video to Firestore:`, error);
                             showMessage(`Failed to save ${platform} video. Please check your internet connection and Firestore rules.`);
@@ -3199,6 +3230,10 @@
                     );
                 }
 
+                const hasActiveCampaign = !!creatorActiveCampaign;
+                const activeCampaignDaysRemaining = creatorActiveCampaign ? Math.ceil((new Date(creatorActiveCampaign.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
+
                 return (
                     <>
                         <div className="screenContainer">
@@ -3212,6 +3247,7 @@
                                         src={creatorProfile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
                                         alt="Profile"
                                         style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px' }}
+                                        onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/100x100/555/FFF?text=Profile'; }}
                                     />
                                     <input
                                         type="file"
@@ -3248,7 +3284,7 @@
                                                 id="editBio"
                                                 className="formTextarea"
                                                 value={editBio}
-                                                onChange={(e) => setEditBio(e.target.value)}
+                                                onChange={(e) => setBio(e.target.value)}
                                                 required
                                             ></textarea>
                                         </div>
@@ -3300,26 +3336,81 @@
 
                             <div className="dashboardSection">
                                 <p className="dashboardSectionTitle">My Crowdfunding Campaigns</p>
-                                {staticCreatorCampaigns.filter(c => c.creator === (creatorProfile?.creatorName || currentUser?.email)).length > 0 ? (
-                                    <ul className="dashboardContentList">
-                                        {staticCreatorCampaigns.filter(c => c.creator === (creatorProfile?.creatorName || currentUser?.email)).map(campaign => (
-                                            <li key={campaign.id} className="dashboardContentListItem">
-                                                <span>{campaign.title} (${campaign.raised}/${campaign.goal})</span>
-                                                <button className="actionButton" onClick={() => showMessage(`Viewing details for "${campaign.title}"...`)}>Details</button>
-                                                <button className="actionButton" onClick={() => showMessage(`Editing "${campaign.title}"...`)}>Edit</button>
-                                            </li>
-                                        ))}
-                                    </ul>
+                                {hasActiveCampaign && creatorActiveCampaign ? (
+                                    <>
+                                        <p className="dashboardItem" style={{ color: '#FFD700', fontWeight: 'bold' }}>Active Campaign:</p>
+                                        <div className="allCampaignsListItem" style={{marginBottom: '10px'}}
+                                            onClick={() => {
+                                                setSelectedCampaignId(creatorActiveCampaign.id);
+                                                setActiveScreen('CampaignDetails');
+                                            }}
+                                        >
+                                            <div
+                                                className="campaignListImagePlaceholder"
+                                                style={{ backgroundImage: creatorActiveCampaign.imageUrl ? `url(${creatorActiveCampaign.imageUrl})` : 'none' }}
+                                                onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='none'; }}
+                                            >
+                                                <button
+                                                    className="campaignListProjectButton"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (creatorActiveCampaign.imageUrl) {
+                                                            window.open(creatorActiveCampaign.imageUrl, '_blank');
+                                                        } else {
+                                                            showMessage('No project link provided for this campaign.');
+                                                        }
+                                                    }}
+                                                >
+                                                    View Project
+                                                </button>
+                                            </div>
+                                            <div className="campaignListContent">
+                                                <p className="campaignListTitle">{creatorActiveCampaign.title}</p>
+                                                <p className="campaignListDescription" style={{ WebkitLineClamp: '1' }}>{creatorActiveCampaign.description}</p>
+                                                <div className="campaignProgressContainer" style={{ height: '5px', marginBottom: '5px' }}>
+                                                    <div
+                                                        className="campaignProgressBar"
+                                                        style={{ width: `${(creatorActiveCampaign.raised / creatorActiveCampaign.goal) * 100}%` }}
+                                                    ></div>
+                                                </div>
+                                                <div className="campaignListStats">
+                                                    <span>Raised: <span className="campaignListRaised">${creatorActiveCampaign.raised}</span></span>
+                                                    <span>Goal: <span className="campaignListGoal">${creatorActiveCampaign.goal}</span></span>
+                                                </div>
+                                                <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
+                                                    {activeCampaignDaysRemaining > 0 ? `${activeCampaignDaysRemaining} days remaining` : 'Campaign ending soon!'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <p className="dashboardItem">
+                                            You currently have one active campaign. To create another, please wait for this campaign to end.
+                                        </p>
+                                        <button
+                                            className="dashboardButton"
+                                            onClick={() => {
+                                                setSelectedCampaignId(creatorActiveCampaign.id);
+                                                setActiveScreen('CampaignDetails');
+                                            }}
+                                            style={{ backgroundColor: '#555', cursor: 'pointer' }}
+                                        >
+                                            View Active Campaign
+                                        </button>
+                                    </>
                                 ) : (
-                                    <p className="dashboardItem">You don't have any active campaigns.</p>
+                                    <>
+                                        <p className="dashboardItem">
+                                            You don't have any active campaigns. You can create one below!
+                                        </p>
+                                        <button
+                                            className="dashboardButton"
+                                            onClick={() => setActiveScreen('CreateCampaign')}
+                                        >
+                                            Create New Campaign
+                                        </button>
+                                    </>
                                 )}
-                                <button
-                                    className="dashboardButton"
-                                    onClick={() => setActiveScreen('CreateCampaign')}
-                                >
-                                    Create New Campaign
-                                </button>
                             </div>
+
 
                             <div className="dashboardSection">
                                 <p className="dashboardSectionTitle">My Uploaded Videos</p>
@@ -3392,7 +3483,7 @@
                                             id="tiktokLink"
                                             className="formInput"
                                             value={tiktokInputLink}
-                                            onChange={(e) => setTiktokInputInputLink(e.target.value)}
+                                            onChange={(e) => setTiktokInputLink(e.target.value)} // Corrected usage here
                                             placeholder="e.g., https://www.tiktok.com/@user/video/VIDEO_ID"
                                         />
                                         {uploadedVideos.tiktok ? (
@@ -3465,9 +3556,9 @@
                     case 'AllCampaigns':
                         return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} />;
                     case 'CampaignDetails':
-                        return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} />;
+                        return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} />;
                     case 'CreatorDashboard':
-                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} />;
+                        return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} creatorActiveCampaign={creatorActiveCampaign} />;
                     case 'CreateCampaign':
                         return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} />;
                     case 'About':
@@ -3497,7 +3588,7 @@
                             <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
                         </button>
                         <button className="navButton" onClick={() => setActiveScreen('Categories')}>
-                            <span className={`navButtonText ${activeScreen === 'Categories' ? 'activeNavButtonText' : ''}`}>Categories</span>
+                            <span className={`navButtonText ${activeScreen === 'Categories' ? 'activeCategoryTabText' : ''}`}>Categories</span>
                         </button>
                         <button className="navButton" onClick={() => setActiveScreen('Premium')}>
                             <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
