@@ -814,7 +814,7 @@
             color: #FFF;
         }
         .videoActions .actionButton:hover {
-            background-color: #C82333;
+            background-color: #FFC400;
         }
         .videoActions .actionButton.remove:hover {
             background-color: #C82333;
@@ -1346,8 +1346,8 @@
         window.query = query; // Expose Firestore query
         window.orderBy = orderBy; // Expose Firestore orderBy
         window.onSnapshot = onSnapshot; // Expose Firestore onSnapshot
-        window.where = where; // Expose Firestore where
-        window.getDocs = getDocs; // Expose Firestore getDocs
+        window.where = where; // Expose where for Firestore queries
+        window.getDocs = getDocs; // Expose getDocs for Firestore queries
         window.ref = ref;
         window.uploadBytes = uploadBytes;
         window.getDownloadURL = getDownloadURL;
@@ -4206,7 +4206,7 @@
                 switch (activeScreen) {
                     case 'Home':
                         return <HomeScreen />;
-                    case 'Categories':
+                    case 'Discover': // Updated case name for consistency
                         return <CategoriesScreen />;
                     case 'Login':
                         return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
@@ -4214,9 +4214,9 @@
                         return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'Premium':
                         return <PremiumScreen />;
-                    case 'Support':
+                    case 'Support': // Corresponds to CrowdfundingScreen
                         return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-                    case 'AllCampaigns':
+                    case 'Campaigns': // Updated case name for consistency
                         return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} />;
                     case 'CampaignDetails':
                         return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} />;
@@ -4253,12 +4253,24 @@
                         <button className="navButton" onClick={() => setActiveScreen('Home')}>
                             <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
                         </button>
+                        <button className="navButton" onClick={() => setActiveScreen('Discover')}> {/* Changed to Discover */}
+                            <span className={`navButtonText ${activeScreen === 'Discover' ? 'activeNavButtonText' : ''}`}>Discover</span>
+                        </button>
+                        <button className="navButton" onClick={() => setActiveScreen('Campaigns')}> {/* Changed to Campaigns */}
+                            <span className={`navButtonText ${activeScreen === 'Campaigns' ? 'activeNavButtonText' : ''}`}>Campaigns</span>
+                        </button>
                         <button className="navButton" onClick={() => setActiveScreen('Premium')}>
                             <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
                         </button>
-                        <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
-                            <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
+                        <button className="navButton" onClick={() => setActiveScreen('Support')}> {/* Changed to Support Us */}
+                            <span className={`navButtonText ${activeScreen === 'Support' ? 'activeNavButtonText' : ''}`}>Support Us</span>
                         </button>
+                        {/* Dashboard Button - Only visible if logged in */}
+                        {currentUser && (
+                            <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
+                                <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
+                            </button>
+                        )}
                         {/* Admin Dashboard Button - Only visible to admins */}
                         {currentUser && creatorProfile && creatorProfile.isAdmin && (
                             <button className="navButton" onClick={() => setActiveScreen('AdminDashboard')}>
