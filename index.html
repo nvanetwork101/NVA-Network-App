@@ -1300,7 +1300,7 @@
     <!-- 1. Initialize Firebase SDKs (module type) - Must be loaded before React components that use them -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
         import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
@@ -1352,6 +1352,8 @@
         window.uploadBytes = uploadBytes;
         window.getDownloadURL = getDownloadURL;
         window.appId = appId;
+        window.signInWithCustomToken = signInWithCustomToken; // Expose signInWithCustomToken
+        window.signInAnonymously = signInAnonymously; // Expose signInAnonymously
     </script>
 
     <!-- 2. Load React and ReactDOM (synchronously, no defer) -->
@@ -1497,10 +1499,13 @@
                 const scaledWidth = img.naturalWidth * scale;
                 const scaledHeight = img.naturalHeight * scale;
                 
-                const minX = canvasSize - scaledWidth * 0.75;
-                const maxX = scaledWidth * 0.75 - canvasSize;
-                const minY = canvasSize - scaledHeight * 0.75;
-                const maxY = scaledHeight * 0.75 - canvasSize;
+                // Calculate boundaries for dragging
+                // The image should always cover the circular canvas area.
+                // The center of the image relative to its scaled size should not move outside the canvas boundaries.
+                const minX = canvasSize / 2 - scaledWidth / 2;
+                const maxX = scaledWidth / 2 - canvasSize / 2;
+                const minY = canvasSize / 2 - scaledHeight / 2;
+                const maxY = scaledHeight / 2 - canvasSize / 2;
                 
                 return {
                     x: Math.min(maxX, Math.max(minX, pos.x)),
@@ -1548,7 +1553,7 @@
                 ctx.drawImage(img, drawX, drawY, scaledWidth, scaledHeight);
 
                 ctx.restore();
-            }, [scale, position]);
+            }, [scale, position, canvasSize]);
 
 
             useEffect(() => {
@@ -1570,22 +1575,25 @@
                 img.src = imageUrl;
 
                 img.onload = () => {
-                    const initialScale = Math.max(canvasSize / img.naturalWidth, canvasSize / img.naturalHeight);
-                    
-                    const scaledWidth = img.naturalWidth * initialScale;
-                    const scaledHeight = img.naturalHeight * initialScale;
-                    
-                    if (scaledWidth < canvasSize || scaledHeight < canvasSize) {
-                        const additionalScale = Math.max(
-                            canvasSize / scaledWidth,
-                            canvasSize / scaledHeight
-                        );
-                        setScale(initialScale * additionalScale * 1.05);
+                    // Calculate initial scale to cover the canvas circle
+                    const aspectRatio = img.naturalWidth / img.naturalHeight;
+                    let initialScale;
+                    if (img.naturalWidth < img.naturalHeight) {
+                        initialScale = canvasSize / img.naturalWidth;
                     } else {
-                        setScale(initialScale);
+                        initialScale = canvasSize / img.naturalHeight;
                     }
                     
-                    setPosition({ x: 0, y: 0 });
+                    // Ensure the image always fills the circle, even if it's very narrow/wide
+                    const scaledWidth = img.naturalWidth * initialScale;
+                    const scaledHeight = img.naturalHeight * initialScale;
+
+                    if (scaledWidth < canvasSize || scaledHeight < canvasSize) {
+                        initialScale = Math.max(canvasSize / img.naturalWidth, canvasSize / img.naturalHeight);
+                    }
+
+                    setScale(initialScale);
+                    setPosition({ x: 0, y: 0 }); // Reset position
                     drawImage();
                 };
 
@@ -1682,15 +1690,21 @@
                         const newScale = Math.max(0.1, Math.min(prevScale * zoomFactor, 10));
                         
                         setPosition(prevPos => {
-                            const vectorX = centerPoint.x - canvasSize / 2;
-                            const vectorY = centerPoint.y - canvasSize / 2;
-                            
-                            const newPos = {
-                                x: prevPos.x - vectorX * (zoomFactor - 1),
-                                y: prevPos.y - vectorY * (zoomFactor - 1)
-                            };
-                            
-                            return constrainPosition(newPos);
+                            // Adjust position based on zoom center
+                            const img = imageRef.current;
+                            const currentImgX = (canvasSize / 2) - (img.naturalWidth * prevScale / 2) + prevPos.x;
+                            const currentImgY = (canvasSize / 2) - (img.naturalHeight * prevScale / 2) + prevPos.y;
+
+                            const newImgX = (canvasSize / 2) - (img.naturalWidth * newScale / 2) + prevPos.x;
+                            const newImgY = (canvasSize / 2) - (img.naturalHeight * newScale / 2) + prevPos.y;
+
+                            const deltaX = (centerPoint.x - currentImgX) * (newScale / prevScale - 1);
+                            const deltaY = (centerPoint.y - currentImgY) * (newScale / prevScale - 1);
+
+                            return constrainPosition({
+                                x: prevPos.x - deltaX,
+                                y: prevPos.y - deltaY
+                            });
                         });
                         
                         return newScale;
@@ -1738,16 +1752,12 @@
                 const scaledWidth = img.naturalWidth * scale;
                 const scaledHeight = img.naturalHeight * scale;
 
-                const visibleCenterX = (scaledWidth / 2 - position.x) / scale;
-                const visibleCenterY = (scaledHeight / 2 - position.y) / scale;
-
-                const visibleWidth = canvasSize / scale;
-                const visibleHeight = canvasSize / scale;
-
-                const sourceX = visibleCenterX - visibleWidth / 2;
-                const sourceY = visibleCenterY - visibleHeight / 2;
-                const sourceWidth = visibleWidth;
-                const sourceHeight = visibleHeight;
+                // Calculate the portion of the original image to draw
+                // This is the inverse of the transformations applied to draw on the canvas
+                const sourceX = (canvasSize / 2 - scaledWidth / 2 + position.x) / scale;
+                const sourceY = (canvasSize / 2 - scaledHeight / 2 + position.y) / scale;
+                const sourceWidth = canvasSize / scale;
+                const sourceHeight = canvasSize / scale;
 
                 ctx.drawImage(
                     img,
@@ -1755,10 +1765,10 @@
                     sourceY,
                     sourceWidth,
                     sourceHeight,
-                    0,
-                    0,
-                    profilePicSize,
-                    profilePicSize
+                    0, // Destination x
+                    0, // Destination y
+                    profilePicSize, // Destination width
+                    profilePicSize // Destination height
                 );
 
                 outputCanvas.toBlob((blob) => {
@@ -1802,19 +1812,21 @@
                             onClick={() => {
                                 const img = imageRef.current;
                                 if (img && img.complete) {
-                                    const initialScale = Math.max(canvasSize / img.naturalWidth, canvasSize / img.naturalHeight);
+                                    const aspectRatio = img.naturalWidth / img.naturalHeight;
+                                    let initialScale;
+                                    if (img.naturalWidth < img.naturalHeight) {
+                                        initialScale = canvasSize / img.naturalWidth;
+                                    } else {
+                                        initialScale = canvasSize / img.naturalHeight;
+                                    }
                                     const scaledWidth = img.naturalWidth * initialScale;
                                     const scaledHeight = img.naturalHeight * initialScale;
-                                    
+
                                     if (scaledWidth < canvasSize || scaledHeight < canvasSize) {
-                                        const additionalScale = Math.max(
-                                            canvasSize / scaledWidth,
-                                            canvasSize / scaledHeight
-                                        );
-                                        setScale(initialScale * additionalScale * 1.05);
-                                    } else {
-                                        setScale(initialScale);
+                                        initialScale = Math.max(canvasSize / img.naturalWidth, canvasSize / img.naturalHeight);
                                     }
+
+                                    setScale(initialScale);
                                     setPosition({ x: 0, y: 0 });
                                 }
                             }}
@@ -2126,53 +2138,53 @@
             }, [selectedCampaignId, setActiveScreen, showMessage]);
 
             const handleSupportCampaign = async () => {
-                if (!campaign) return;
+                    if (!campaign) return;
 
-                if (!window.firebaseAuth.currentUser) { // Use window.firebaseAuth.currentUser for current user
-                    showMessage("Please log in to support a campaign.");
-                    setActiveScreen('Login'); // Redirect to login if not logged in
-                    return;
-                }
+                    if (!window.firebaseAuth.currentUser) { // Use window.firebaseAuth.currentUser for current user
+                        showMessage("Please log in to support a campaign.");
+                        setActiveScreen('Login'); // Redirect to login if not logged in
+                        return;
+                    }
 
-                const isEnded = new Date(campaign.endDate) < new Date();
-                if (isEnded) {
-                    showMessage("This campaign has ended and can no longer receive donations.");
-                    return;
-                }
-                if (campaign.status !== 'active') {
-                    showMessage("This campaign is not yet active and cannot receive donations.");
-                    return;
-                }
+                    const isEnded = new Date(campaign.endDate) < new Date();
+                    if (isEnded) {
+                        showMessage("This campaign has ended and can no longer receive donations.");
+                        return;
+                    }
+                    if (campaign.status !== 'active') {
+                        showMessage("This campaign is not yet active and cannot receive donations.");
+                        return;
+                    }
 
-                const donationAmount = 10; // Simulating a $10 donation for simplicity
-                const newRaisedAmount = (campaign.raised || 0) + donationAmount;
+                    const donationAmount = 10; // Simulating a $10 donation for simplicity
+                    const newRaisedAmount = (campaign.raised || 0) + donationAmount;
 
-                try {
-                    // Update the campaign's raised amount
-                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
-                    await updateDoc(campaignDocRef, {
-                        raised: newRaisedAmount,
-                        updatedAt: new Date().toISOString()
-                    });
+                    try {
+                        // Update the campaign's raised amount
+                        const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
+                        await updateDoc(campaignDocRef, {
+                            raised: newRaisedAmount,
+                            updatedAt: new Date().toISOString()
+                        });
 
-                    // Add a detailed donation record to the campaign's subcollection
-                    const campaignDonationsRef = collection(db, `artifacts/${appId}/public/data/campaigns`, campaign.id, 'donations');
-                    await addDoc(campaignDonationsRef, {
-                        userId: window.firebaseAuth.currentUser.uid, // Use current user's UID
-                        userName: window.firebaseAuth.currentUser.email.split('@')[0], // Use email prefix as donor name
-                        amount: donationAmount,
-                        timestamp: new Date().toISOString(),
-                        campaignTitle: campaign.title,
-                        campaignCreator: campaign.creatorName
-                    });
+                        // Add a detailed donation record to the campaign's subcollection
+                        const campaignDonationsRef = collection(db, `artifacts/${appId}/public/data/campaigns`, campaign.id, 'donations');
+                        await addDoc(campaignDonationsRef, {
+                            userId: window.firebaseAuth.currentUser.uid, // Use current user's UID
+                            userName: window.firebaseAuth.currentUser.email.split('@')[0], // Use email prefix as donor name
+                            amount: donationAmount,
+                            timestamp: new Date().toISOString(),
+                            campaignTitle: campaign.title,
+                            campaignCreator: campaign.creatorName
+                        });
 
-                    setCampaign(prev => ({ ...prev, raised: newRaisedAmount })); // Optimistically update UI
-                    showMessage(`Thank you for donating $${donationAmount} to "${campaign.title}"!`);
-                } catch (error) {
-                    console.error("Error supporting campaign:", error);
-                    showMessage(`Failed to process donation: ${error.message}. Please try again.`);
-                }
-            };
+                        setCampaign(prev => ({ ...prev, raised: newRaisedAmount })); // Optimistically update UI
+                        showMessage(`Thank you for donating $${donationAmount} to "${campaign.title}"!`);
+                    } catch (error) {
+                        console.error("Error supporting campaign:", error);
+                        showMessage(`Failed to process donation: ${error.message}. Please try again.`);
+                    }
+                };
 
 
             if (loading) {
@@ -2285,9 +2297,10 @@
             );
         };
 
-        const AdminDashboardScreen = ({ showMessage, setActiveScreen, currentUser, setSelectedAdminCampaignId }) => {
+        const AdminDashboardScreen = ({ showMessage, setActiveScreen, currentUser, setSelectedAdminCampaignId, creatorProfile }) => {
             const [pendingCampaigns, setPendingCampaigns] = useState([]);
             const [activeCampaigns, setActiveCampaigns] = useState([]); // New state for active campaigns
+            const [allUsers, setAllUsers] = useState([]); // State for all users
             const [loading, setLoading] = useState(true);
 
             useEffect(() => {
@@ -2305,11 +2318,9 @@
                         ...doc.data()
                     }));
                     setPendingCampaigns(fetchedCampaigns);
-                    // setLoading(false); // Removed, as we now wait for active campaigns too
                 }, (error) => {
                     console.error("Error fetching pending campaigns for admin:", error);
                     showMessage("Failed to load pending campaigns.");
-                    // setLoading(false); // Removed
                 });
 
                 // Fetch active campaigns
@@ -2324,10 +2335,23 @@
                         ...doc.data()
                     }));
                     setActiveCampaigns(fetchedCampaigns);
-                    setLoading(false); // Set loading to false once all data is fetched
                 }, (error) => {
                     console.error("Error fetching active campaigns for admin:", error);
                     showMessage("Failed to load active campaigns.");
+                });
+
+                // Fetch all users
+                const usersCollectionRef = collection(db, "creators");
+                const unsubscribeUsers = onSnapshot(usersCollectionRef, (snapshot) => {
+                    const fetchedUsers = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    setAllUsers(fetchedUsers);
+                    setLoading(false); // Set loading to false once all data is fetched
+                }, (error) => {
+                    console.error("Error fetching all users for admin:", error);
+                    showMessage("Failed to load user data.");
                     setLoading(false); // Set loading to false on error
                 });
 
@@ -2335,15 +2359,16 @@
                 return () => {
                     unsubscribePending();
                     unsubscribeActive();
+                    unsubscribeUsers();
                 };
             }, [showMessage]); // Depend on showMessage to avoid linting warnings
 
 
-            if (!currentUser) {
+            if (!currentUser || !creatorProfile || (creatorProfile.role !== 'admin' && creatorProfile.role !== 'authority')) {
                 return (
                     <div className="screenContainer">
                         <p className="heading">Access Denied</p>
-                        <p className="subHeading">You must be logged in to view the Admin Dashboard.</p>
+                        <p className="subHeading">You must be an Admin or Authority to view this dashboard.</p>
                         <button
                             className="button"
                             onClick={() => setActiveScreen('Login')}
@@ -2358,15 +2383,81 @@
                 return (
                     <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
                         <p className="heading">Loading Admin Dashboard...</p>
-                        <p className="subHeading" style={{ color: '#FFD700' }}>Checking for pending campaigns.</p>
+                        <p className="subHeading" style={{ color: '#FFD700' }}>Please wait.</p>
                     </div>
                 );
             }
 
+            // Function to toggle ban status
+            const toggleBan = async (userToBan) => {
+                // Prevent an authority from banning an admin
+                if (creatorProfile.role === 'authority' && userToBan.role === 'admin') {
+                    showMessage("Authority users cannot ban Admin accounts.");
+                    return;
+                }
+                // Prevent banning self
+                if (userToBan.id === currentUser.uid) {
+                    showMessage("You cannot ban or unban your own account.");
+                    return;
+                }
+
+                try {
+                    const userDocRef = doc(db, "creators", userToBan.id);
+                    await updateDoc(userDocRef, {
+                        banned: !userToBan.banned,
+                        updatedAt: new Date().toISOString()
+                    });
+                    showMessage(`${userToBan.banned ? 'Unbanned' : 'Banned'} user: ${userToBan.creatorName || userToBan.email}`);
+                } catch (error) {
+                    console.error("Error toggling ban status:", error);
+                    showMessage(`Failed to toggle ban status: ${error.message}`);
+                }
+            };
+
+            // Filter users for display: Admins see all, Authorities see non-admins
+            const usersToDisplay = allUsers.filter(user => {
+                if (creatorProfile.role === 'admin') {
+                    return true; // Admin sees all users
+                } else if (creatorProfile.role === 'authority') {
+                    return user.role !== 'admin'; // Authority sees all except admins
+                }
+                return false; // Should not happen due to initial access check
+            });
+
+
             return (
                 <div className="screenContainer">
                     <p className="heading">Admin Dashboard</p>
-                    <p className="subHeading">Manage crowdfunding campaigns.</p>
+                    <p className="subHeading">Manage users and crowdfunding campaigns.</p>
+
+                    <div className="dashboardSection">
+                        <p className="dashboardSectionTitle">User Management</p>
+                        {usersToDisplay.length === 0 ? (
+                            <p className="dashboardItem">No users to display.</p>
+                        ) : (
+                            <div className="dashboardContentList">
+                                {usersToDisplay.map(user => (
+                                    <div key={user.id} className="adminDashboardItem">
+                                        <div style={{ flexGrow: 1, marginRight: '10px' }}>
+                                            <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p>
+                                            <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p>
+                                            <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p>
+                                            <p style={{ fontSize: '10px', color: '#AAA' }}>Last Login: {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'N/A'}</p>
+                                            <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p> {/* Display full user ID */}
+                                        </div>
+                                        {currentUser.uid !== user.id && ( // Cannot ban self
+                                            <button
+                                                className={`adminActionButton ${user.banned ? 'reject' : 'approve'}`}
+                                                onClick={() => toggleBan(user)}
+                                            >
+                                                {user.banned ? 'Unban' : 'Ban'}
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
 
                     <div className="dashboardSection">
                         <p className="dashboardSectionTitle">Pending Campaigns ({pendingCampaigns.length})</p>
@@ -2433,6 +2524,7 @@
             );
         };
 
+
         const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
             return (
                 <div className="confirmationModalOverlay">
@@ -2448,7 +2540,7 @@
             );
         };
 
-        const AdminCampaignDetailsScreen = ({ showMessage, setActiveScreen, currentUser, selectedAdminCampaignId, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
+        const AdminCampaignDetailsScreen = ({ showMessage, setActiveScreen, currentUser, selectedAdminCampaignId, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile }) => {
             const [campaign, setCampaign] = useState(null);
             const [loading, setLoading] = useState(true);
             const campaignImageRef = useRef(null);
@@ -2484,10 +2576,31 @@
             }, [selectedAdminCampaignId, setActiveScreen, showMessage]);
 
             const confirmApprove = () => {
-                setShowConfirmationModal(true);
-                setConfirmationTitle("Approve Campaign?");
-                setConfirmationMessage(`Are you sure you want to APPROVE campaign "${campaign.title}"?`);
-                setOnConfirmationAction(() => handleApproveCampaign);
+                // Check if current user is an authority and the campaign creator is an admin
+                if (creatorProfile.role === 'authority' && campaign && campaign.creatorId) {
+                    // Fetch the creator's role to check if they are an "admin"
+                    // This is done via a separate getDoc call to respect Firestore rules that might prevent direct read of creator.role from request.resource
+                    const creatorDocRef = doc(db, "creators", campaign.creatorId);
+                    getDoc(creatorDocRef).then(docSnap => {
+                        if (docSnap.exists() && docSnap.data().role === 'admin') {
+                            showMessage("Authority users cannot approve campaigns created by Admin accounts.");
+                            return;
+                        } else {
+                            setShowConfirmationModal(true);
+                            setConfirmationTitle("Approve Campaign?");
+                            setConfirmationMessage(`Are you sure you want to APPROVE campaign "${campaign.title}"?`);
+                            setOnConfirmationAction(() => handleApproveCampaign);
+                        }
+                    }).catch(error => {
+                        console.error("Error fetching creator role:", error);
+                        showMessage("Could not verify campaign creator's role. Please try again.");
+                    });
+                } else {
+                    setShowConfirmationModal(true);
+                    setConfirmationTitle("Approve Campaign?");
+                    setConfirmationMessage(`Are you sure you want to APPROVE campaign "${campaign.title}"?`);
+                            setOnConfirmationAction(() => handleApproveCampaign);
+                }
             };
 
             const handleApproveCampaign = async () => {
@@ -2511,10 +2624,29 @@
             };
 
             const confirmReject = () => {
-                setShowConfirmationModal(true);
-                setConfirmationTitle("Reject Campaign?");
-                setConfirmationMessage(`Are you sure you want to REJECT campaign "${campaign.title}"?`);
-                setOnConfirmationAction(() => handleRejectCampaign);
+                // Check if current user is an authority and the campaign creator is an admin
+                if (creatorProfile.role === 'authority' && campaign && campaign.creatorId) {
+                    const creatorDocRef = doc(db, "creators", campaign.creatorId);
+                    getDoc(creatorDocRef).then(docSnap => {
+                        if (docSnap.exists() && docSnap.data().role === 'admin') {
+                            showMessage("Authority users cannot reject campaigns created by Admin accounts.");
+                            return;
+                        } else {
+                            setShowConfirmationModal(true);
+                            setConfirmationTitle("Reject Campaign?");
+                            setConfirmationMessage(`Are you sure you want to REJECT campaign "${campaign.title}"?`);
+                            setOnConfirmationAction(() => handleRejectCampaign);
+                        }
+                    }).catch(error => {
+                        console.error("Error fetching creator role:", error);
+                        showMessage("Could not verify campaign creator's role. Please try again.");
+                    });
+                } else {
+                    setShowConfirmationModal(true);
+                    setConfirmationTitle("Reject Campaign?");
+                    setConfirmationMessage(`Are you sure you want to REJECT campaign "${campaign.title}"?`);
+                    setOnConfirmationAction(() => handleRejectCampaign);
+                }
             };
 
             const handleRejectCampaign = async () => {
@@ -2538,10 +2670,29 @@
             };
 
             const confirmEndCampaignByAdmin = () => {
-                setShowConfirmationModal(true);
-                setConfirmationTitle("End Campaign?");
-                setConfirmationMessage(`Are you sure you want to manually END campaign "${campaign.title}"? This will set its status to 'ended'.`);
-                setOnConfirmationAction(() => handleEndCampaignByAdmin);
+                // Check if current user is an authority and the campaign creator is an admin
+                if (creatorProfile.role === 'authority' && campaign && campaign.creatorId) {
+                    const creatorDocRef = doc(db, "creators", campaign.creatorId);
+                    getDoc(creatorDocRef).then(docSnap => {
+                        if (docSnap.exists() && docSnap.data().role === 'admin') {
+                            showMessage("Authority users cannot end campaigns created by Admin accounts.");
+                            return;
+                        } else {
+                            setShowConfirmationModal(true);
+                            setConfirmationTitle("End Campaign?");
+                            setConfirmationMessage(`Are you sure you want to manually END campaign "${campaign.title}"? This will set its status to 'ended'.`);
+                            setOnConfirmationAction(() => handleEndCampaignByAdmin);
+                        }
+                    }).catch(error => {
+                        console.error("Error fetching creator role:", error);
+                        showMessage("Could not verify campaign creator's role. Please try again.");
+                    });
+                } else {
+                    setShowConfirmationModal(true);
+                    setConfirmationTitle("End Campaign?");
+                    setConfirmationMessage(`Are you sure you want to manually END campaign "${campaign.title}"? This will set its status to 'ended'.`);
+                    setOnConfirmationAction(() => handleEndCampaignByAdmin);
+                }
             };
 
             const handleEndCampaignByAdmin = async () => {
@@ -2701,9 +2852,21 @@
                             const creatorDocRef = doc(db, "creators", user.uid);
                             const docSnap = await getDoc(creatorDocRef);
                             if (docSnap.exists()) {
-                                setCreatorProfile(docSnap.data());
+                                const profileData = docSnap.data();
+                                // Block banned users
+                                if (profileData.banned) {
+                                    showMessage("Your account has been banned. Please contact support.");
+                                    await signOut(auth);
+                                    setCurrentUser(null);
+                                    setCreatorProfile(null);
+                                    setActiveScreen('Home');
+                                    return;
+                                }
+                                setCreatorProfile(profileData);
+                                // Update lastLogin
+                                await updateDoc(creatorDocRef, { lastLogin: new Date().toISOString() });
                             } else {
-                                // New user, create profile with isAdmin: false by default
+                                // New user, create profile with default role and not banned
                                 await setDoc(creatorDocRef, {
                                     email: user.email,
                                     creatorName: user.email.split('@')[0] || "",
@@ -2713,7 +2876,8 @@
                                     profilePictureUrl: '',
                                     uploadedVideos: { youtube: null, facebook: null, tiktok: null },
                                     createdAt: new Date().toISOString(),
-                                    isAdmin: false // Default new users to not be admin
+                                    role: 'user', // Default new users to 'user' role
+                                    banned: false // Default new users to not be banned
                                 });
                                 const newDocSnap = await getDoc(creatorDocRef);
                                 if(newDocSnap.exists()) {
@@ -2943,7 +3107,7 @@
                 const handleVerticalTouchMove = (e) => {
                     if (!isVerticalDragging) return;
                     e.preventDefault();
-                    const y = e.touches[0].pageY - verticalCarouselRef.current.offsetTop;
+                    const y = e.touches[0].pageY - verticalStartY;
                     const walk = (y - verticalStartY) * 1.5;
                     verticalCarouselRef.current.scrollTop = verticalScrollTop - walk;
                 };
@@ -3109,14 +3273,7 @@
                             Participate in monthly giveaways, exclusive merch drops, coupon codes for local businesses,
                             and priority access to virtual meet & greets.
                         </p>
-                    </div>
-
-                    <div className="premiumFeatureCard">
-                        <p className="premiumFeatureTitle">4. Community & Recognition</p>
-                        <p className="premiumFeatureDescription">
-                            Receive a "VIP badge," vote on featured content, and join private chat rooms with creators.
-                        </p>
-                    </div>
+                    </div> {/* Changed </V> to </div> */}
 
                     <div className="premiumFeatureCard">
                         <p className="premiumFeatureTitle">5. Downloadable/Offline Viewing (Future)</p>
@@ -3273,7 +3430,7 @@
 
                         const creatorRef = doc(db, "creators", user.uid);
                         await setDoc(creatorRef, {
-                            email: email,
+                            email: user.email,
                             creatorName: creatorName,
                             bio: bio,
                             categories: selectedCategories,
@@ -3281,7 +3438,8 @@
                             profilePictureUrl: '',
                             uploadedVideos: { youtube: null, facebook: null, tiktok: null },
                             createdAt: new Date().toISOString(),
-                            isAdmin: false // Default new users to not be admin
+                            role: 'user', // Default new users to 'user' role
+                            banned: false // Default new users to not be banned
                         });
 
                         showMessage(`Creator "${creatorName}" signed up successfully! (User created in Firebase)`);
@@ -3625,7 +3783,7 @@
                 };
 
                 const extractYouTubeId = (url) => {
-                    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^&?#]+)/);
+                    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?#]+)/);
                     return match ? match[1] : null;
                 };
 
@@ -4208,7 +4366,7 @@
             const renderScreen = () => {
                 // If an admin has selected a campaign to review, show AdminCampaignDetailsScreen
                 if (activeScreen === 'AdminCampaignDetails') { // Removed selectedAdminCampaignId check here so it can be passed through to the component regardless for display
-                    return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
+                    return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile} />;
                 }
                 // Otherwise, render screens based on activeScreen state
                 switch (activeScreen) {
@@ -4230,11 +4388,9 @@
                         return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} />;
                     case 'CreatorDashboard':
                         return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} creatorCampaigns={creatorCampaigns} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
-                    case 'CreateCampaign':
-                        return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} />;
                     case 'AdminDashboard':
                         // Pass setSelectedAdminCampaignId to AdminDashboardScreen
-                        return <AdminDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} setSelectedAdminCampaignId={setSelectedAdminCampaignId} />;
+                        return <AdminDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} setSelectedAdminCampaignId={setSelectedAdminCampaignId} creatorProfile={creatorProfile} />;
                     case 'About':
                         return <AboutContactScreen />;
                     default:
@@ -4273,8 +4429,8 @@
                                 <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
                             </button>
                         )}
-                        {/* Admin Dashboard Button - Only visible to admins */}
-                        {currentUser && creatorProfile && creatorProfile.isAdmin && (
+                        {/* Admin Dashboard Button - Only visible to admins or authority */}
+                        {currentUser && creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && (
                             <button className="navButton" onClick={() => setActiveScreen('AdminDashboard')}>
                                 <span className={`navButtonText ${activeScreen === 'AdminDashboard' ? 'activeNavButtonText' : ''}`}>Admin</span>
                             </button>
