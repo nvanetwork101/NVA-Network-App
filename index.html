@@ -888,12 +888,12 @@
             position: relative;
             width: 200px; /* Fixed size for the canvas view */
             height: 200px;
-            border-radius: 50%; /* Circular clipping for the preview */
+            border-radius: 50%;
             overflow: hidden;
-            border: 2px solid #FFD700; /* Gold border for the circle */
-            background-color: #333; /* Fallback background */
+            border: 2px solid #FFD700;
+            background-color: #333;
             margin-bottom: 20px;
-            cursor: grab; /* Indicate draggable */
+            cursor: grab;
         }
 
         .canvasContainer.dragging {
@@ -901,8 +901,8 @@
         }
 
         canvas {
-            display: block; /* Remove extra space below canvas */
-            touch-action: none; /* Prevent default touch actions like scrolling/zooming by OS */
+            display: block;
+            touch-action: none;
         }
 
         .modalButtons {
@@ -2297,7 +2297,26 @@
             );
         };
 
+        // AdminDashboardScreen Component
         const AdminDashboardScreen = ({ showMessage, setActiveScreen, currentUser, setSelectedAdminCampaignId, creatorProfile }) => {
+            // State variables for managing the expanded/collapsed state of each section.
+            // By default, all sections are set to 'true' (expanded) initially.
+            // You can change this to 'false' if you prefer them collapsed on load.
+            const [isUserManagementExpanded, setIsUserManagementExpanded] = useState(true);
+            const [isPendingCampaignsExpanded, setIsPendingCampaignsExpanded] = useState(true);
+            const [isActiveCampaignsExpanded, setIsActiveCampaignsExpanded] = useState(true);
+            // For any future sections you add, you would declare a new state variable here:
+            // const [isFutureSectionExpanded, setIsFutureSectionExpanded] = useState(true);
+
+            /**
+             * Toggles the expanded state of a given section.
+             * @param {function} setterFunction - The useState setter function for the specific section's state.
+             * @param {boolean} currentState - The current boolean state (true for expanded, false for collapsed).
+             */
+            const toggleSection = (setterFunction, currentState) => {
+                setterFunction(!currentState); // Simply reverses the current state
+            };
+
             const [pendingCampaigns, setPendingCampaigns] = useState([]);
             const [activeCampaigns, setActiveCampaigns] = useState([]); // New state for active campaigns
             const [allUsers, setAllUsers] = useState([]); // State for all users
@@ -2430,88 +2449,147 @@
                     <p className="heading">Admin Dashboard</p>
                     <p className="subHeading">Manage users and crowdfunding campaigns.</p>
 
-                    <div className="dashboardSection">
-                        <p className="dashboardSectionTitle">User Management</p>
-                        {usersToDisplay.length === 0 ? (
-                            <p className="dashboardItem">No users to display.</p>
-                        ) : (
-                            <div className="dashboardContentList">
-                                {usersToDisplay.map(user => (
-                                    <div key={user.id} className="adminDashboardItem">
-                                        <div style={{ flexGrow: 1, marginRight: '10px' }}>
-                                            <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p>
-                                            <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p>
-                                            <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p>
-                                            <p style={{ fontSize: '10px', color: '#AAA' }}>Last Login: {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'N/A'}</p>
-                                            <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p> {/* Display full user ID */}
-                                        </div>
-                                        {currentUser.uid !== user.id && ( // Cannot ban self
-                                            <button
-                                                className={`adminActionButton ${user.banned ? 'reject' : 'approve'}`}
-                                                onClick={() => toggleBan(user)}
+                    {/* User Management Section */}
+                    <section className="dashboardSection">
+                        <div
+                            className="flex justify-between items-center cursor-pointer py-2"
+                            onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}
+                            aria-expanded={isUserManagementExpanded}
+                            aria-controls="user-management-content"
+                        >
+                            <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p>
+                            <span className="text-gray-500 text-3xl transition-transform duration-300 transform" style={{ color: '#FFD700', fontSize: '24px' }}>
+                                {isUserManagementExpanded ? '&#9660;' : '&#9658;'}
+                            </span>
+                        </div>
+                        <div
+                            id="user-management-content"
+                            className={`overflow-hidden transition-max-height duration-500 ease-in-out ${
+                                isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'
+                            }`}
+                        >
+                            <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}>
+                                {usersToDisplay.length === 0 ? (
+                                    <p className="dashboardItem">No users to display.</p>
+                                ) : (
+                                    <div className="dashboardContentList">
+                                        {usersToDisplay.map(user => (
+                                            <div key={user.id} className="adminDashboardItem">
+                                                <div style={{ flexGrow: 1, marginRight: '10px' }}>
+                                                    <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p>
+                                                    <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p>
+                                                    <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p>
+                                                    <p style={{ fontSize: '10px', color: '#AAA' }}>Last Login: {user.lastLogin ? new Date(user.lastLogin).toLocaleString() : 'N/A'}</p>
+                                                    <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p> {/* Display full user ID */}
+                                                </div>
+                                                {currentUser.uid !== user.id && ( // Cannot ban self
+                                                    <button
+                                                        className={`adminActionButton ${user.banned ? 'reject' : 'approve'}`}
+                                                        onClick={() => toggleBan(user)}
+                                                    >
+                                                        {user.banned ? 'Unban' : 'Ban'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* Pending Campaigns Section */}
+                    <section className="dashboardSection">
+                        <div
+                            className="flex justify-between items-center cursor-pointer py-2"
+                            onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}
+                            aria-expanded={isPendingCampaignsExpanded}
+                            aria-controls="pending-campaigns-content"
+                        >
+                            <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p>
+                            <span className="text-gray-500 text-3xl transition-transform duration-300 transform" style={{ color: '#FFD700', fontSize: '24px' }}>
+                                {isPendingCampaignsExpanded ? '&#9660;' : '&#9658;'}
+                            </span>
+                        </div>
+                        <div
+                            id="pending-campaigns-content"
+                            className={`overflow-hidden transition-max-height duration-500 ease-in-out ${
+                                isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'
+                            }`}
+                        >
+                            <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}>
+                                {pendingCampaigns.length === 0 ? (
+                                    <p className="dashboardItem">No campaigns currently pending review.</p>
+                                ) : (
+                                    <div className="dashboardContentList">
+                                        {pendingCampaigns.map(campaign => (
+                                            <div
+                                                key={campaign.id}
+                                                className="adminDashboardItem"
+                                                onClick={() => {
+                                                    setSelectedAdminCampaignId(campaign.id);
+                                                    setActiveScreen('AdminCampaignDetails');
+                                                }}
                                             >
-                                                {user.banned ? 'Unban' : 'Ban'}
-                                            </button>
-                                        )}
+                                                <div style={{ flexGrow: 1, marginRight: '10px' }}>
+                                                    <p className="adminDashboardItemTitle">{campaign.title}</p>
+                                                    <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
+                                                    <p style={{ fontSize: '12px', color: '#AAA' }}>Goal: ${campaign.goal}</p>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
+                                )}
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    </section>
 
-                    <div className="dashboardSection">
-                        <p className="dashboardSectionTitle">Pending Campaigns ({pendingCampaigns.length})</p>
-                        {pendingCampaigns.length === 0 ? (
-                            <p className="dashboardItem">No campaigns currently pending review.</p>
-                        ) : (
-                            <div className="dashboardContentList">
-                                {pendingCampaigns.map(campaign => (
-                                    <div
-                                        key={campaign.id}
-                                        className="adminDashboardItem"
-                                        onClick={() => {
-                                            setSelectedAdminCampaignId(campaign.id);
-                                            setActiveScreen('AdminCampaignDetails');
-                                        }}
-                                    >
-                                        <div style={{ flexGrow: 1, marginRight: '10px' }}>
-                                            <p className="adminDashboardItemTitle">{campaign.title}</p>
-                                            <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
-                                            <p style={{ fontSize: '12px', color: '#AAA' }}>Goal: ${campaign.goal}</p>
-                                        </div>
+                    {/* Active Campaigns Section for Admins */}
+                    <section className="dashboardSection">
+                        <div
+                            className="flex justify-between items-center cursor-pointer py-2"
+                            onClick={() => toggleSection(setIsActiveCampaignsExpanded, isActiveCampaignsExpanded)}
+                            aria-expanded={isActiveCampaignsExpanded}
+                            aria-controls="active-campaigns-content"
+                        >
+                            <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p>
+                            <span className="text-gray-500 text-3xl transition-transform duration-300 transform" style={{ color: '#FFD700', fontSize: '24px' }}>
+                                {isActiveCampaignsExpanded ? '&#9660;' : '&#9658;'}
+                            </span>
+                        </div>
+                        <div
+                            id="active-campaigns-content"
+                            className={`overflow-hidden transition-max-height duration-500 ease-in-out ${
+                                isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'
+                            }`}
+                        >
+                            <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}>
+                                {activeCampaigns.length === 0 ? (
+                                    <p className="dashboardItem">No campaigns currently active.</p>
+                                ) : (
+                                    <div className="dashboardContentList">
+                                        {activeCampaigns.map(campaign => (
+                                            <div
+                                                key={campaign.id}
+                                                className="adminDashboardItem"
+                                                onClick={() => {
+                                                    setSelectedAdminCampaignId(campaign.id);
+                                                    setActiveScreen('AdminCampaignDetails');
+                                                }}
+                                            >
+                                                <div style={{ flexGrow: 1, marginRight: '10px' }}>
+                                                    <p className="adminDashboardItemTitle">{campaign.title}</p>
+                                                    <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
+                                                    <p style={{ fontSize: '12px', color: '#AAA' }}>Goal: ${campaign.goal}</p>
+                                                    <p style={{ fontSize: '12px', color: '#00FF00' }}>Status: Active</p> {/* Show active status */}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
+                                )}
                             </div>
-                        )}
-                    </div>
-
-                    {/* New: Active Campaigns Section for Admins */}
-                    <div className="dashboardSection">
-                        <p className="dashboardSectionTitle">Active Campaigns ({activeCampaigns.length})</p>
-                        {activeCampaigns.length === 0 ? (
-                            <p className="dashboardItem">No campaigns currently active.</p>
-                        ) : (
-                            <div className="dashboardContentList">
-                                {activeCampaigns.map(campaign => (
-                                    <div
-                                        key={campaign.id}
-                                        className="adminDashboardItem"
-                                        onClick={() => {
-                                            setSelectedAdminCampaignId(campaign.id);
-                                            setActiveScreen('AdminCampaignDetails');
-                                        }}
-                                    >
-                                        <div style={{ flexGrow: 1, marginRight: '10px' }}>
-                                            <p className="adminDashboardItemTitle">{campaign.title}</p>
-                                            <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
-                                            <p style={{ fontSize: '12px', color: '#AAA' }}>Goal: ${campaign.goal}</p>
-                                            <p style={{ fontSize: '12px', color: '#00FF00' }}>Status: Active</p> {/* Show active status */}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    </section>
 
                     <button
                         className="button"
@@ -3273,8 +3351,7 @@
                             Participate in monthly giveaways, exclusive merch drops, coupon codes for local businesses,
                             and priority access to virtual meet & greets.
                         </p>
-                    </div> {/* Changed </V> to </div> */}
-
+                    </div>
                     <div className="premiumFeatureCard">
                         <p className="premiumFeatureTitle">5. Downloadable/Offline Viewing (Future)</p>
                         <p className="premiumFeatureDescription">
@@ -3378,7 +3455,7 @@
                     </p>
 
                     <p className="smallText" style={{ marginTop: '20px', color: '#888' }}>
-                        *A small platform fee (e.g., 5%) helps NVA Network cover operational costs and continue supporting our creators.
+                        A small platform fee (e.g., 5%) helps NVA Network cover operational costs and continue supporting our creators.
                     </p>
                 </div>
             );
