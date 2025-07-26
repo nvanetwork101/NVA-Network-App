@@ -6,6 +6,8 @@
     <title>NVA Network</title>
     <!-- Google Fonts - Bebas Neue for title, Inter for body -->
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <!-- PWA Enhancements START -->
     <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="/icon-192x192.png">
@@ -70,23 +72,6 @@
             font-family: 'Bebas Neue', sans-serif; /* Applied new font */
             font-size: 38px; /* Slightly larger for impact */
         }
-        .headerLogo {
-            position: absolute; /* Position absolutely to cover the header */
-            top: 0;
-            left: 0;
-            width: 100%; /* Make it cover the full width */
-            height: 100%;
-            object-fit: cover; /* Ensures the image covers the entire area, cropping if necessary */
-            z-index: 1; /* Place at the bottom layer of header content */
-            /* Fallback styles for placeholder/error */
-            background-color: #333; /* Fallback background for logo area */
-            color: #FFF;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 14px;
-            text-align: center;
-        }
         .tagline {
             position: absolute;
             bottom: 15px; /* Position at the bottom left */
@@ -113,7 +98,7 @@
             cursor: pointer;
             transition: background-color 0.3s ease;
             background-color: #FFD700; /* Changed to gold for visibility */
-            box-shadow: 0 4px 5px rgba(0, 0, 0, 0.3); /* Added shadow for consistency */
+            box-shadow: 0 4px 5px rgba(0, 0, 0, 0.3);
             border: none; /* Removed border */
         }
         .navButton:hover {
@@ -1291,6 +1276,28 @@
             background-color: #C82333;
         }
 
+        /* Updated style for the arrow buttons in Admin Dashboard */
+        .admin-toggle-button {
+            background-color: #FFD700; /* Gold background */
+            color: #0A0A0A; /* Black arrow color */
+            padding: 5px 10px; /* Padding for button feel */
+            border-radius: 9999px; /* Fully rounded */
+            font-size: 20px; /* Adjusted font size for new symbols */
+            font-weight: bold;
+            display: flex; /* To center the arrow */
+            justify-content: center;
+            align-items: center;
+            width: 40px; /* Fixed width for consistent circle */
+            height: 40px; /* Fixed height for consistent circle */
+            transition: background-color 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4); /* More prominent shadow for gold button */
+        }
+        .admin-toggle-button:hover {
+            background-color: #FFC400; /* Slightly darker gold on hover */
+            transform: scale(1.05); /* Slight scale effect on hover */
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5); /* Enhanced shadow on hover */
+        }
+
 
     </style>
 </head>
@@ -2458,9 +2465,10 @@
                             aria-controls="user-management-content"
                         >
                             <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p>
-                            <span className="text-gray-500 text-3xl transition-transform duration-300 transform" style={{ color: '#FFD700', fontSize: '24px' }}>
-                                {isUserManagementExpanded ? '&#9660;' : '&#9658;'}
-                            </span>
+                            {/* Applied new class for the toggle button */}
+                            <button className="admin-toggle-button">
+                                {isUserManagementExpanded ? '&#x25BC;' : '&#x25B6;'}
+                            </button>
                         </div>
                         <div
                             id="user-management-content"
@@ -2507,9 +2515,10 @@
                             aria-controls="pending-campaigns-content"
                         >
                             <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p>
-                            <span className="text-gray-500 text-3xl transition-transform duration-300 transform" style={{ color: '#FFD700', fontSize: '24px' }}>
-                                {isPendingCampaignsExpanded ? '&#9660;' : '&#9658;'}
-                            </span>
+                            {/* Applied new class for the toggle button */}
+                            <button className="admin-toggle-button">
+                                {isPendingCampaignsExpanded ? '&#x25BC;' : '&#x25B6;'}
+                            </button>
                         </div>
                         <div
                             id="pending-campaigns-content"
@@ -2553,9 +2562,10 @@
                             aria-controls="active-campaigns-content"
                         >
                             <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p>
-                            <span className="text-gray-500 text-3xl transition-transform duration-300 transform" style={{ color: '#FFD700', fontSize: '24px' }}>
-                                {isActiveCampaignsExpanded ? '&#9660;' : '&#9658;'}
-                            </span>
+                            {/* Applied new class for the toggle button */}
+                            <button className="admin-toggle-button">
+                                {isActiveCampaignsExpanded ? '&#x25BC;' : '&#x25B6;'}
+                            </button>
                         </div>
                         <div
                             id="active-campaigns-content"
