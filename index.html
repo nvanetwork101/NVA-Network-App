@@ -571,7 +571,7 @@
             justify-content: space-between;
             font-size: 12px;
             color: #CCC;
-            margin-bottom: 15px;
+            width: 100%;
         }
         .campaignGoal, .campaignRaised {
             font-weight: bold;
@@ -1055,6 +1055,50 @@
             font-weight: bold;
             color: #FFF;
         }
+        .fee-info-container {
+            position: relative;
+            display: inline-flex; /* To keep icon next to text */
+            align-items: center;
+            margin-left: 5px; /* Space from the "Raised" text */
+        }
+        .fee-info-icon {
+            font-size: 10px; /* Smaller icon */
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background-color: #FFD700;
+            color: #0A0A0A;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .fee-info-tooltip {
+            position: absolute;
+            bottom: 100%; /* Position above the icon */
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.9);
+            color: #FFF;
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 10px;
+            white-space: normal; /* Allow text to wrap */
+            width: 180px; /* Fixed width for tooltip */
+            text-align: left;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            pointer-events: none; /* Allow clicks to pass through */
+            z-index: 10; /* Ensure it's above other elements */
+            margin-bottom: 5px; /* Space between icon and tooltip */
+        }
+        .fee-info-container:hover .fee-info-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+
 
         /* Campaign Details Screen Specific Styles */
         .campaignDetailHeader {
@@ -1395,6 +1439,7 @@
         const uploadBytes = window.uploadBytes;
         const getDownloadURL = window.getDownloadURL;
         const appId = window.appId;
+        const signInAnonymously = window.signInAnonymously; // Import signInAnonymously
 
 
         const featuredContent = [
@@ -1994,6 +2039,7 @@
         const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignId }) => {
             const [campaigns, setCampaigns] = useState([]);
             const [loading, setLoading] = useState(true);
+            const PLATFORM_FEE_PERCENTAGE = 0.07; // Define the platform fee as a constant
 
             useEffect(() => {
                 const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
@@ -2089,7 +2135,15 @@
                                                 ></div>
                                             </div>
                                             <div className="campaignListStats">
-                                                <span>Raised: <span className="campaignListRaised">${campaign.raised}</span></span>
+                                                <span>
+                                                    Raised: <span className="campaignListRaised">${campaign.raised}</span>
+                                                    <div className="fee-info-container">
+                                                        <span className="fee-info-icon">i</span>
+                                                        <div className="fee-info-tooltip">
+                                                            The 'Raised' amount is the total collected. Creator receives {((1 - PLATFORM_FEE_PERCENTAGE) * 100).toFixed(0)}% of this total after the platform fee.
+                                                        </div>
+                                                    </div>
+                                                </span>
                                                 <span>Goal: <span className="campaignListGoal">${campaign.goal}</span></span>
                                             </div>
                                         </div>
@@ -2147,10 +2201,16 @@
             const handleSupportCampaign = async () => {
                     if (!campaign) return;
 
-                    if (!window.firebaseAuth.currentUser) { // Use window.firebaseAuth.currentUser for current user
-                        showMessage("Please log in to support a campaign.");
-                        setActiveScreen('Login'); // Redirect to login if not logged in
-                        return;
+                    // If user is not logged in, sign in anonymously
+                    if (!auth.currentUser) {
+                        try {
+                            await signInAnonymously(auth);
+                            // auth.currentUser will now be set to the anonymous user
+                        } catch (error) {
+                            console.error("Error signing in anonymously:", error);
+                            showMessage(`Failed to sign in for donation: ${error.message}. Please try again.`);
+                            return;
+                        }
                     }
 
                     const isEnded = new Date(campaign.endDate) < new Date();
@@ -2177,8 +2237,8 @@
                         // Add a detailed donation record to the campaign's subcollection
                         const campaignDonationsRef = collection(db, `artifacts/${appId}/public/data/campaigns`, campaign.id, 'donations');
                         await addDoc(campaignDonationsRef, {
-                            userId: window.firebaseAuth.currentUser.uid, // Use current user's UID
-                            userName: window.firebaseAuth.currentUser.email.split('@')[0], // Use email prefix as donor name
+                            userId: auth.currentUser.uid, // Use current user's UID (anonymous or authenticated)
+                            userName: auth.currentUser.isAnonymous ? "Anonymous Donor" : (currentUser.email.split('@')[0] || "Logged In User"),
                             amount: donationAmount,
                             timestamp: new Date().toISOString(),
                             campaignTitle: campaign.title,
@@ -2315,6 +2375,10 @@
             // For any future sections you add, you would declare a new state variable here:
             // const [isFutureSectionExpanded, setIsFutureSectionExpanded] = useState(true);
 
+            // New state for search and filter
+            const [searchTerm, setSearchTerm] = useState('');
+            const [selectedRole, setSelectedRole] = useState('All'); // 'All', 'user', 'creator', 'admin', 'authority'
+
             /**
              * Toggles the expanded state of a given section.
              * @param {function} setterFunction - The useState setter function for the specific section's state.
@@ -2440,14 +2504,22 @@
                 }
             };
 
-            // Filter users for display: Admins see all, Authorities see non-admins
-            const usersToDisplay = allUsers.filter(user => {
-                if (creatorProfile.role === 'admin') {
-                    return true; // Admin sees all users
-                } else if (creatorProfile.role === 'authority') {
-                    return user.role !== 'admin'; // Authority sees all except admins
+            // Filter users for display based on search term and selected role
+            const filteredUsers = allUsers.filter(user => {
+                // Apply role-based access control first
+                if (creatorProfile.role === 'authority' && user.role === 'admin') {
+                    return false; // Authority users cannot see admin accounts
                 }
-                return false; // Should not happen due to initial access check
+
+                // Apply search term filter
+                const matchesSearchTerm = searchTerm === '' ||
+                                          (user.creatorName && user.creatorName.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                                          (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()));
+
+                // Apply role filter
+                const matchesRole = selectedRole === 'All' || user.role === selectedRole;
+
+                return matchesSearchTerm && matchesRole;
             });
 
 
@@ -2467,7 +2539,7 @@
                             <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p>
                             {/* Applied new class for the toggle button */}
                             <button className="admin-toggle-button">
-                                {isUserManagementExpanded ? '&#x25BC;' : '&#x25B6;'}
+                                {isUserManagementExpanded ? '\u25BC' : '\u25B6'}
                             </button>
                         </div>
                         <div
@@ -2477,11 +2549,39 @@
                             }`}
                         >
                             <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}>
-                                {usersToDisplay.length === 0 ? (
-                                    <p className="dashboardItem">No users to display.</p>
+                                {/* Search and Filter Inputs */}
+                                <div className="formGroup" style={{ marginBottom: '15px' }}>
+                                    <label htmlFor="userSearch" className="formLabel">Search Users:</label>
+                                    <input
+                                        type="text"
+                                        id="userSearch"
+                                        className="formInput"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        placeholder="Search by name or email"
+                                    />
+                                </div>
+                                <div className="formGroup" style={{ marginBottom: '15px' }}>
+                                    <label htmlFor="roleFilter" className="formLabel">Filter by Role:</label>
+                                    <select
+                                        id="roleFilter"
+                                        className="formInput"
+                                        value={selectedRole}
+                                        onChange={(e) => setSelectedRole(e.target.value)}
+                                    >
+                                        <option value="All">All Roles</option>
+                                        <option value="user">User</option>
+                                        <option value="creator">Creator</option>
+                                        <option value="admin">Admin</option>
+                                        <option value="authority">Authority</option>
+                                    </select>
+                                </div>
+
+                                {filteredUsers.length === 0 ? (
+                                    <p className="dashboardItem">No users to display matching your criteria.</p>
                                 ) : (
                                     <div className="dashboardContentList">
-                                        {usersToDisplay.map(user => (
+                                        {filteredUsers.map(user => (
                                             <div key={user.id} className="adminDashboardItem">
                                                 <div style={{ flexGrow: 1, marginRight: '10px' }}>
                                                     <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p>
@@ -2517,7 +2617,7 @@
                             <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p>
                             {/* Applied new class for the toggle button */}
                             <button className="admin-toggle-button">
-                                {isPendingCampaignsExpanded ? '&#x25BC;' : '&#x25B6;'}
+                                {isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}
                             </button>
                         </div>
                         <div
@@ -2564,7 +2664,7 @@
                             <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p>
                             {/* Applied new class for the toggle button */}
                             <button className="admin-toggle-button">
-                                {isActiveCampaignsExpanded ? '&#x25BC;' : '&#x25B6;'}
+                                {isActiveCampaignsExpanded ? '\u25BC' : '\u25B6'}
                             </button>
                         </div>
                         <div
@@ -2906,6 +3006,142 @@
             );
         };
 
+        // New UserSignUpScreen component
+        const UserSignUpScreen = ({ showMessage, setActiveScreen }) => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (!agreedToTerms) {
+                    showMessage('Please agree to the Terms & Conditions to sign up.');
+                    return;
+                }
+
+                if (password.length < 8) {
+                    showMessage('Password must be at least 8 characters long.');
+                    return;
+                }
+                if (!/\d/.test(password)) {
+                    showMessage('Password must include at least one number.');
+                    return;
+                }
+                if (!/[A-Z]/.test(password)) {
+                    showMessage('Password must include at least one capital letter.');
+                    return;
+                }
+
+                try {
+                    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    const user = userCredential.user;
+
+                    const creatorRef = doc(db, "creators", user.uid);
+                    await setDoc(creatorRef, {
+                        email: user.email,
+                        creatorName: user.email.split('@')[0] || "", // Default name from email
+                        bio: "",
+                        categories: [],
+                        existingWorkLink: "",
+                        profilePictureUrl: '',
+                        uploadedVideos: { youtube: null, facebook: null, tiktok: null },
+                        createdAt: new Date().toISOString(),
+                        role: 'user', // Explicitly set role to 'user'
+                        banned: false
+                    });
+
+                    showMessage(`Account created successfully for ${email}!`);
+                    setActiveScreen('CreatorDashboard'); // Redirect to the simplified dashboard
+                }
+                catch (error) {
+                    console.error("Error signing up user:", error);
+                    let errorMessage = "Failed to sign up. Please try again.";
+                    if (error.code === 'auth/email-already-in-use') {
+                        errorMessage = "This email is already in use. Please use a different email or sign in.";
+                    } else if (error.code === 'auth/invalid-email') {
+                        errorMessage = "Invalid email address format.";
+                    } else if (error.code === 'auth/weak-password') {
+                        errorMessage = "Password is too weak. Please choose a stronger password.";
+                    } else if (error.code === 'auth/network-request-failed') {
+                        errorMessage = "Network error. Please check your internet connection.";
+                    } else if (error.code === 'auth/operation-not-allowed') {
+                        errorMessage = "Email/Password sign-in is not enabled. Please enable it in Firebase Console.";
+                    } else if (error.code === 'auth/missing-or-invalid-nonce') {
+                        errorMessage = "Sign-up session expired or invalid. Please refresh the page and try again.";
+                    }
+                    showMessage(errorMessage);
+                }
+            };
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Create Your Account</p>
+                    <p className="subHeading">Sign up to access exclusive content and support creators!</p>
+
+                    <form onSubmit={handleSubmit}>
+                        <div className="formGroup">
+                            <label htmlFor="userEmail" className="formLabel">Email:</label>
+                            <input
+                                type="email"
+                                id="userEmail"
+                                className="formInput"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </div>
+
+                        <div className="formGroup">
+                            <label htmlFor="userPassword" className="formLabel">Password:</label>
+                            <input
+                                type="password"
+                                id="userPassword"
+                                className="formInput"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                            />
+                            <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
+                                Password must be at least 8 characters long, include at least one number and one capital letter.
+                            </p>
+                        </div>
+
+                        <div className="formGroup">
+                            <div className="checkboxItem">
+                                <input
+                                    type="checkbox"
+                                    id="agreeUserTerms"
+                                    checked={agreedToTerms}
+                                    onChange={(e) => setAgreedToTerms(e.target.checked)}
+                                    required
+                                />
+                                <label htmlFor="agreeUserTerms">
+                                    I agree to the <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); showMessage('Simulating opening User Terms & Conditions...'); }}>Terms & Conditions</a>.
+                                </label>
+                            </div>
+                        </div>
+
+                        <button type="submit" className="button">
+                            <span className="buttonText">Sign Up</span>
+                        </button>
+                    </form>
+
+                    <p className="smallText" style={{ marginTop: '20px' }}>
+                        Already have an account?{' '}
+                        <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('Login'); }}>Login Here</a>
+                    </p>
+
+                    <button
+                        className="button"
+                        onClick={() => setActiveScreen('Home')}
+                        style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                    >
+                        <span className="buttonText">Back to Home</span>
+                    </button>
+                </div>
+            );
+        };
+
 
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
@@ -3011,7 +3247,6 @@
 
                 return () => unsubscribe(); // Cleanup listener
             }, [currentUser]); // Re-run when currentUser changes
-
 
             const originalCarouselImages = [
                 'https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night',
@@ -3209,7 +3444,7 @@
                 return (
                     <div className="screenContainer">
                         <div className="topRightButtonContainer">
-                            {/* New "Support Us" button */}
+                            {/* "Support Us" button - always visible */}
                             <button
                                 className="topButton"
                                 onClick={() => setActiveScreen('Support')}
@@ -3250,13 +3485,22 @@
 
                         <div className="sectionHeaderWithButton">
                             <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
+                            {/* New User Sign Up button */}
                             {!currentUser && (
-                                <button
-                                    className="sectionHeaderButton"
-                                    onClick={() => setActiveScreen('CreatorSignUp')}
-                                >
-                                    Creator Sign Up
-                                </button>
+                                <div style={{display: 'flex', gap: '10px'}}>
+                                    <button
+                                        className="sectionHeaderButton"
+                                        onClick={() => setActiveScreen('UserSignUp')}
+                                    >
+                                        User Sign Up
+                                    </button>
+                                    <button
+                                        className="sectionHeaderButton"
+                                        onClick={() => setActiveScreen('CreatorSignUp')}
+                                    >
+                                        Creator Sign Up
+                                    </button>
+                                </div>
                             )}
                         </div>
                         <div className="contentGrid">
@@ -3275,9 +3519,12 @@
 
                         <div className="sectionHeaderWithButton"> {/* New container for Live Feed title and Discover button */}
                             <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
-                            <button className="sectionHeaderButton" onClick={() => setActiveScreen('Discover')}>
-                                Discover All
-                            </button>
+                            {/* Discover All button - only visible if logged in */}
+                            {currentUser && (
+                                <button className="sectionHeaderButton" onClick={() => setActiveScreen('Discover')}>
+                                    Discover All
+                                </button>
+                            )}
                         </div>
                         <div
                             className="vertical-carousel-container"
@@ -3421,54 +3668,57 @@
                 </div>
             );
 
-            const CrowdfundingScreen = ({ showMessage, setActiveScreen }) => (
-                <div className="screenContainer">
-                    <p className="heading">Support Guyanese Creators!</p>
-                    <p className="subHeading">Help bring more authentic Guyanese content to life.</p>
+            const CrowdfundingScreen = ({ showMessage, setActiveScreen }) => {
+                const PLATFORM_FEE_PERCENTAGE = 0.07; // Define the platform fee as a constant
+                return (
+                    <div className="screenContainer">
+                        <p className="heading">Support Guyanese Creators!</p>
+                        <p className="subHeading">Help bring more authentic Guyanese content to life.</p>
 
-                    <p className="paragraph">
-                        International crowdfunding platforms often don't support direct bank accounts in Guyana,
-                        making it difficult for our talented creators to receive global support.
-                        At NVA Network, we're committed to finding direct ways for you to contribute!
-                    </p>
+                        <p className="paragraph">
+                            International crowdfunding platforms often don't support direct bank accounts in Guyana,
+                            making it difficult for our talented creators to receive global support.
+                            At NVA Network, we're committed to finding direct ways for you to contribute!
+                        </p>
 
-                    <div className="premiumFeatureCard">
-                        <p className="premiumFeatureTitle">Why Your Support Matters:</p>
-                        <p className="premiumFeatureDescription">
-                            Your contributions directly fund new skits, short films, interviews, and live event coverage.
-                            Every dollar helps cover production costs, equipment, and fair compensation for our artists.
+                        <div className="premiumFeatureCard">
+                            <p className="premiumFeatureTitle">Why Your Support Matters:</p>
+                            <p className="premiumFeatureDescription">
+                                Your contributions directly fund new skits, short films, interviews, and live event coverage.
+                                Every dollar helps cover production costs, equipment, and fair compensation for our artists.
+                            </p>
+                        </div>
+
+                        <p className="sectionTitle">How You Can Contribute Directly:</p>
+                        <p className="paragraph">
+                            We are setting up direct support channels that are accessible within Guyana and for our diaspora.
+                            Please contact us for details on how to send your support via:
+                        </p>
+                        <p className="listItem">• Direct Bank Transfer (Local & International options)</p>
+                        <p className="listItem">• Mobile Money Services (e.g., MMG - Mobile Money Guyana)</p>
+                        <p className="listItem">• Other Local Payment Methods</p>
+
+                        <button
+                            className="button"
+                            onClick={() => setActiveScreen('AllCampaigns')}
+                        >
+                            <span className="buttonText">Browse Creator Campaigns</span>
+                        </button>
+                        <p className="smallText">
+                            (Discover campaigns and support your favorite creators!)
+                        </p>
+
+                        <p className="paragraph" style={{ marginTop: '20px' }}>
+                            Your generosity empowers Guyanese voices and helps us build a stronger, more vibrant content ecosystem.
+                            Thank you for being a part of the NVA Network family!
+                        </p>
+
+                        <p className="smallText" style={{ marginTop: '20px', color: '#888' }}>
+                            A small platform fee (e.g., {(PLATFORM_FEE_PERCENTAGE * 100).toFixed(0)}%) helps NVA Network cover operational costs and continue supporting our creators.
                         </p>
                     </div>
-
-                    <p className="sectionTitle">How You Can Contribute Directly:</p>
-                    <p className="paragraph">
-                        We are setting up direct support channels that are accessible within Guyana and for our diaspora.
-                        Please contact us for details on how to send your support via:
-                    </p>
-                    <p className="listItem">• Direct Bank Transfer (Local & International options)</p>
-                    <p className="listItem">• Mobile Money Services (e.g., MMG - Mobile Money Guyana)</p>
-                    <p className="listItem">• Other Local Payment Methods</p>
-
-                    <button
-                        className="button"
-                        onClick={() => setActiveScreen('AllCampaigns')}
-                    >
-                        <span className="buttonText">Browse Creator Campaigns</span>
-                    </button>
-                    <p className="smallText">
-                        (Discover campaigns and support your favorite creators!)
-                    </p>
-
-                    <p className="paragraph" style={{ marginTop: '20px' }}>
-                        Your generosity empowers Guyanese voices and helps us build a stronger, more vibrant content ecosystem.
-                        Thank you for being a part of the NVA Network family!
-                    </p>
-
-                    <p className="smallText" style={{ marginTop: '20px', color: '#888' }}>
-                        A small platform fee (e.g., 5%) helps NVA Network cover operational costs and continue supporting our creators.
-                    </p>
-                </div>
-            );
+                );
+            };
 
 
             const CreatorSignUpScreen = ({ showMessage, setActiveScreen }) => {
@@ -3525,7 +3775,7 @@
                             profilePictureUrl: '',
                             uploadedVideos: { youtube: null, facebook: null, tiktok: null },
                             createdAt: new Date().toISOString(),
-                            role: 'user', // Default new users to 'user' role
+                            role: 'creator', // Explicitly set role to 'creator' for this signup flow
                             banned: false // Default new users to not be banned
                         });
 
@@ -4010,7 +4260,7 @@
                         showMessage(`Campaign "${campaignTitle}" has been cancelled.`);
                         // onSnapshot will automatically update the list
                     } catch (error) {
-                        console.error("Error cancelling campaign:", error);
+                        console.error(`Error cancelling campaign:`, error);
                         showMessage(`Failed to cancel campaign: ${error.message}`);
                     }
                 };
@@ -4066,7 +4316,7 @@
                 return (
                     <>
                         <div className="screenContainer">
-                            <p className="heading">Creator Dashboard</p>
+                            <p className="heading">Dashboard</p> {/* Simplified title */}
                             <p className="subHeading">Welcome, {creatorProfile.creatorName || currentUser.email}!</p>
 
                             <div className="dashboardSection">
@@ -4097,7 +4347,7 @@
                                 {isEditingProfile ? (
                                     <>
                                         <div className="formGroup">
-                                            <label htmlFor="editCreatorName" className="formLabel">Creator Name (Public):</label>
+                                            <label htmlFor="editCreatorName" className="formLabel">Name (Public):</label> {/* Simplified label */}
                                             <input
                                                 type="text"
                                                 id="editCreatorName"
@@ -4117,32 +4367,37 @@
                                                 required
                                             ></textarea>
                                         </div>
-                                        <div className="checkboxGroup">
-                                            <p className="checkboxLabel">Content Categories:</p>
-                                            {['Skits', 'Short Films', 'Interviews', 'Live Premieres', 'Music', 'Documentary', 'Other'].map((cat) => (
-                                                <div key={cat} className="checkboxItem">
-                                                    <input
-                                                        type="checkbox"
-                                                        id={`edit-cat-${cat}`}
-                                                        value={cat}
-                                                        checked={editCategories.includes(cat)}
-                                                        onChange={handleProfileCategoryChange}
-                                                    />
-                                                    <label htmlFor={`edit-cat-${cat}`}>{cat}</label>
+                                        {/* Categories and Existing Work Link only for creators */}
+                                        {creatorProfile.role !== 'user' && (
+                                            <>
+                                                <div className="checkboxGroup">
+                                                    <p className="checkboxLabel">Content Categories:</p>
+                                                    {['Skits', 'Short Films', 'Interviews', 'Live Premieres', 'Music', 'Documentary', 'Other'].map((cat) => (
+                                                        <div key={cat} className="checkboxItem">
+                                                            <input
+                                                                type="checkbox"
+                                                                id={`edit-cat-${cat}`}
+                                                                value={cat}
+                                                                checked={editCategories.includes(cat)}
+                                                                onChange={handleProfileCategoryChange}
+                                                            />
+                                                            <label htmlFor={`edit-cat-${cat}`}>{cat}</label>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                            ))}
-                                        </div>
-                                        <div className="formGroup">
-                                            <label htmlFor="editExistingWork" className="formLabel">Link to Existing Work:</label>
-                                            <input
-                                                type="url"
-                                                id="editExistingWork"
-                                                className="formInput"
-                                                value={editExistingWorkLink}
-                                                onChange={(e) => setEditExistingWorkLink(e.target.value)}
-                                                placeholder="e.g., YouTube channel, Instagram profile"
-                                            />
-                                        </div>
+                                                <div className="formGroup">
+                                                    <label htmlFor="editExistingWork" className="formLabel">Link to Existing Work:</label>
+                                                    <input
+                                                        type="url"
+                                                        id="editExistingWork"
+                                                        className="formInput"
+                                                        value={editExistingWorkLink}
+                                                        onChange={(e) => setEditExistingWorkLink(e.target.value)}
+                                                        placeholder="e.g., YouTube channel, Instagram profile"
+                                                    />
+                                                </div>
+                                            </>
+                                        )}
                                         <button className="dashboardButton" onClick={handleSaveProfile}>Save Changes</button>
                                         <button className="dashboardButton" onClick={handleCancelEdit} style={{ backgroundColor: '#555' }}>Cancel</button>
                                     </>
@@ -4151,8 +4406,12 @@
                                         <p className="dashboardItem">{creatorProfile.creatorName}</p>
                                         <p className="dashboardItem">{creatorProfile.email}</p>
                                         <p className="dashboardItem">{creatorProfile.bio || 'No bio provided.'}</p>
-                                        <p className="dashboardItem">{(creatorProfile.categories && creatorProfile.categories.length > 0) ? creatorProfile.categories.join(', ') : 'No categories selected.'}</p>
-                                        {creatorProfile.existingWorkLink && <p className="dashboardItem"><a href={creatorProfile.existingWorkLink} target="_blank" style={{ color: '#FFD700', textDecoration: 'none' }}>{creatorProfile.existingWorkLink}</a></p>}
+                                        {creatorProfile.role !== 'user' && (
+                                            <>
+                                                <p className="dashboardItem">{(creatorProfile.categories && creatorProfile.categories.length > 0) ? creatorProfile.categories.join(', ') : 'No categories selected.'}</p>
+                                                {creatorProfile.existingWorkLink && <p className="dashboardItem"><a href={creatorProfile.existingWorkLink} target="_blank" style={{ color: '#FFD700', textDecoration: 'none' }}>{creatorProfile.existingWorkLink}</a></p>}
+                                            </>
+                                        )}
                                         <button
                                             className="dashboardButton"
                                             onClick={() => setIsEditingProfile(true)}
@@ -4163,271 +4422,279 @@
                                 )}
                             </div>
 
-                            <div className="dashboardSection">
-                                <p className="dashboardSectionTitle">My Crowdfunding Campaigns</p>
-                                {hasActiveCampaign && creatorActiveCampaign ? (
-                                    <>
-                                        <p className="dashboardItem" style={{ color: '#00FF00', fontWeight: 'bold' }}>Active Campaign:</p>
-                                        <div className="allCampaignsListItem" style={{marginBottom: '10px'}}
-                                            onClick={() => {
-                                                setSelectedCampaignId(creatorActiveCampaign.id);
-                                                setActiveScreen('CampaignDetails');
-                                            }}
-                                        >
-                                            <div
-                                                className="campaignListImagePlaceholder"
-                                                style={{ backgroundImage: creatorActiveCampaign.imageUrl ? `url(${creatorActiveCampaign.imageUrl})` : 'none' }}
-                                                onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='none'; }}
+                            {/* My Crowdfunding Campaigns - Only visible if not a 'user' role */}
+                            {creatorProfile.role !== 'user' && (
+                                <div className="dashboardSection">
+                                    <p className="dashboardSectionTitle">My Crowdfunding Campaigns</p>
+                                    {hasActiveCampaign && creatorActiveCampaign ? (
+                                        <>
+                                            <p className="dashboardItem" style={{ color: '#00FF00', fontWeight: 'bold' }}>Active Campaign:</p>
+                                            <div className="allCampaignsListItem" style={{marginBottom: '10px'}}
+                                                onClick={() => {
+                                                    setSelectedCampaignId(creatorActiveCampaign.id);
+                                                    setActiveScreen('CampaignDetails');
+                                                }}
                                             >
-                                                <button
-                                                    className="campaignListProjectButton"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (creatorActiveCampaign.imageUrl) {
-                                                            window.open(creatorActiveCampaign.imageUrl, '_blank');
-                                                        } else {
-                                                            showMessage('No project link provided for this campaign.');
-                                                        }
-                                                    }}
+                                                <div
+                                                    className="campaignListImagePlaceholder"
+                                                    style={{ backgroundImage: creatorActiveCampaign.imageUrl ? `url(${creatorActiveCampaign.imageUrl})` : 'none' }}
+                                                    onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='none'; }}
                                                 >
-                                                    View Project
-                                                </button>
-                                            </div>
-                                            <div className="campaignListContent">
-                                                <p className="campaignListTitle">
-                                                    {creatorActiveCampaign.title}
-                                                </p>
-                                                <p className="campaignListDescription" style={{ WebkitLineClamp: '1' }}>{creatorActiveCampaign.description}</p>
-                                                <div className="campaignProgressContainer" style={{ height: '5px', marginBottom: '5px' }}>
-                                                    <div
-                                                        className="campaignProgressBar"
-                                                        style={{ width: `${(creatorActiveCampaign.raised / creatorActiveCampaign.goal) * 100}%` }}
-                                                    ></div>
+                                                    <button
+                                                        className="campaignListProjectButton"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (creatorActiveCampaign.imageUrl) {
+                                                                window.open(creatorActiveCampaign.imageUrl, '_blank');
+                                                            } else {
+                                                                showMessage('No project link provided for this campaign.');
+                                                            }
+                                                        }}
+                                                    >
+                                                        View Project
+                                                    </button>
                                                 </div>
-                                                <div className="campaignListStats">
-                                                    <span>Raised: <span className="campaignListRaised">${creatorActiveCampaign.raised}</span></span>
-                                                    <span>Goal: <span className="campaignListGoal">${creatorActiveCampaign.goal}</span></span>
+                                                <div className="campaignListContent">
+                                                    <p className="campaignListTitle">
+                                                        {creatorActiveCampaign.title}
+                                                    </p>
+                                                    <p className="campaignListDescription" style={{ WebkitLineClamp: '1' }}>{creatorActiveCampaign.description}</p>
+                                                    <div className="campaignProgressContainer" style={{ height: '5px', marginBottom: '5px' }}>
+                                                        <div
+                                                            className="campaignProgressBar"
+                                                            style={{ width: `${(creatorActiveCampaign.raised / creatorActiveCampaign.goal) * 100}%` }}
+                                                        ></div>
+                                                    </div>
+                                                    <div className="campaignListStats">
+                                                        <span>Raised: <span className="campaignListRaised">${creatorActiveCampaign.raised}</span></span>
+                                                        <span>Goal: <span className="campaignListGoal">${creatorActiveCampaign.goal}</span></span>
+                                                    </div>
+                                                    <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
+                                                        {activeCampaignDaysRemaining > 0 ? `${activeCampaignDaysRemaining} days remaining` : 'Campaign ending soon!'}
+                                                    </p>
                                                 </div>
-                                                <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
-                                                    {activeCampaignDaysRemaining > 0 ? `${activeCampaignDaysRemaining} days remaining` : 'Campaign ending soon!'}
-                                                </p>
                                             </div>
+                                            <p className="dashboardItem">
+                                                You currently have one active campaign. To create another, please wait for this campaign to end.
+                                            </p>
+                                            <button
+                                                className="dashboardButton"
+                                                onClick={() => {
+                                                    setSelectedCampaignId(creatorActiveCampaign.id);
+                                                    setActiveScreen('CampaignDetails');
+                                                }}
+                                                style={{ backgroundColor: '#555', cursor: 'pointer' }}
+                                            >
+                                                View Active Campaign
+                                            </button>
+                                            {/* New Cancel Button for Creators */}
+                                            <button
+                                                className="dashboardButton"
+                                                onClick={() => confirmCancelCampaign(creatorActiveCampaign.id, creatorActiveCampaign.title)}
+                                                style={{ backgroundColor: '#DC3545', color: '#FFF', marginTop: '10px' }}
+                                            >
+                                                <span className="buttonText">Cancel My Campaign</span>
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="dashboardItem">
+                                                You don't have any active campaigns. You can create one below!
+                                            </p>
+                                            <button
+                                                className="dashboardButton"
+                                                onClick={() => setActiveScreen('CreateCampaign')}
+                                            >
+                                                Create New Campaign
+                                            </button>
+                                        </>
+                                    )}
+
+                                    {pendingCampaigns.length > 0 && (
+                                        <>
+                                            <p className="dashboardItem" style={{ color: '#FFD700', fontWeight: 'bold', marginTop: '20px' }}>Pending Campaigns:</p>
+                                            <div className="dashboardContentList">
+                                                {pendingCampaigns.map(campaign => (
+                                                    <div key={campaign.id} className="dashboardContentListItem"
+                                                        onClick={() => {
+                                                            setSelectedCampaignId(campaign.id);
+                                                            setActiveScreen('CampaignDetails');
+                                                        }}>
+                                                        <span>{campaign.title}</span>
+                                                        <span style={{color: '#FFD700', fontSize: '12px', marginLeft: '10px'}}>(Pending)</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {rejectedCampaigns.length > 0 && (
+                                        <>
+                                            <p className="dashboardItem" style={{ color: '#DC3545', fontWeight: 'bold', marginTop: '20px' }}>Rejected Campaigns:</p>
+                                            <div className="dashboardContentList">
+                                                {rejectedCampaigns.map(campaign => (
+                                                    <div key={campaign.id} className="dashboardContentListItem"
+                                                        onClick={() => {
+                                                            setSelectedCampaignId(campaign.id);
+                                                            setActiveScreen('CampaignDetails');
+                                                        }}>
+                                                        <span>{campaign.title}</span>
+                                                        <span style={{color: '#DC3545', fontSize: '12px', marginLeft: '10px'}}>(Rejected)</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {cancelledCampaigns.length > 0 && (
+                                        <>
+                                            <p className="dashboardItem" style={{ color: '#888', fontWeight: 'bold', marginTop: '20px' }}>Cancelled Campaigns:</p>
+                                            <div className="dashboardContentList">
+                                                {cancelledCampaigns.map(campaign => (
+                                                    <div key={campaign.id} className="dashboardContentListItem"
+                                                        onClick={() => {
+                                                            setSelectedCampaignId(campaign.id);
+                                                            setActiveScreen('CampaignDetails');
+                                                        }}>
+                                                        <span>{campaign.title}</span>
+                                                        <span style={{color: '#888', fontSize: '12px', marginLeft: '10px'}}>(Cancelled)</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {endedCampaigns.length > 0 && (
+                                        <>
+                                            <p className="dashboardItem" style={{ color: '#CCC', fontWeight: 'bold', marginTop: '20px' }}>Ended Campaigns:</p>
+                                            <div className="dashboardContentList">
+                                                {endedCampaigns.map(campaign => (
+                                                    <div key={campaign.id} className="dashboardContentListItem"
+                                                        onClick={() => {
+                                                            setSelectedCampaignId(campaign.id);
+                                                            setActiveScreen('CampaignDetails');
+                                                        }}>
+                                                        <span>{campaign.title}</span>
+                                                        <span style={{color: '#DC3545', fontSize: '12px', marginLeft: '10px'}}>(Ended)</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* My Uploaded Videos - Only visible if not a 'user' role */}
+                            {creatorProfile.role !== 'user' && (
+                                <div className="dashboardSection">
+                                    <p className="dashboardSectionTitle">My Uploaded Videos</p>
+                                    <div className="videoLinkSection">
+                                        <label htmlFor="youtubeLink" className="formLabel">YouTube Video Link:</label>
+                                        <div className="videoInputContainer">
+                                            <input
+                                                type="url"
+                                                id="youtubeLink"
+                                                className="formInput"
+                                                value={youtubeInputLink}
+                                                onChange={(e) => setYoutubeInputLink(e.target.value)}
+                                                placeholder="e.g., https://www.youtube.com/watch?v=VIDEO_ID"
+                                            />
+                                            {uploadedVideos.youtube ? (
+                                                <button className="actionButton remove" onClick={() => handleRemoveVideo('youtube')}>Remove</button>
+                                            ) : (
+                                                <button className="actionButton" onClick={() => handleAddOrUpdateVideo('youtube', youtubeInputLink)}>Add</button>
+                                            )}
                                         </div>
-                                        <p className="dashboardItem">
-                                            You currently have one active campaign. To create another, please wait for this campaign to end.
+                                        {uploadedVideos.youtube && (
+                                            <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.youtube.embedUrl)}>
+                                                <img src={uploadedVideos.youtube.thumbnailUrl} alt="YouTube Thumbnail" className="videoThumbnail" />
+                                                <div className="videoThumbnailOverlay">
+                                                    <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
+                                                        <path d="M8 5v14l11-7z"/>
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="videoLinkSection">
+                                        <label htmlFor="facebookLink" className="formLabel">Facebook Video Link:</label>
+                                        <div className="videoInputContainer">
+                                            <input
+                                                type="url"
+                                                id="facebookLink"
+                                                className="formInput"
+                                                value={facebookInputLink}
+                                                onChange={(e) => setFacebookInputLink(e.target.value)}
+                                                placeholder="e.g., https://www.facebook.com/video.php?v=VIDEO_ID or https://fb.watch/..."
+                                            />
+                                            {uploadedVideos.facebook ? (
+                                                <button className="actionButton remove" onClick={() => handleRemoveVideo('facebook')}>Remove</button>
+                                            ) : (
+                                                <button className="actionButton" onClick={() => handleAddOrUpdateVideo('facebook', facebookInputLink)}>Add</button>
+                                            )}
+                                        </div>
+                                        {uploadedVideos.facebook && (
+                                            <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.facebook.embedUrl)}>
+                                                <img src={uploadedVideos.facebook.thumbnailUrl} alt="Facebook Thumbnail" className="videoThumbnail" />
+                                                <div className="videoThumbnailOverlay">
+                                                    <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
+                                                        <path d="M8 5v14l11-7z"/>
+                                                    </svg>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
+                                            Note: Facebook video embedding can be temperamental due to privacy settings. Not all links may play in-app.
                                         </p>
-                                        <button
-                                            className="dashboardButton"
-                                            onClick={() => {
-                                                setSelectedCampaignId(creatorActiveCampaign.id);
-                                                setActiveScreen('CampaignDetails');
-                                            }}
-                                            style={{ backgroundColor: '#555', cursor: 'pointer' }}
-                                        >
-                                            View Active Campaign
-                                        </button>
-                                        {/* New Cancel Button for Creators */}
-                                        <button
-                                            className="dashboardButton"
-                                            onClick={() => confirmCancelCampaign(creatorActiveCampaign.id, creatorActiveCampaign.title)}
-                                            style={{ backgroundColor: '#DC3545', color: '#FFF', marginTop: '10px' }}
-                                        >
-                                            <span className="buttonText">Cancel My Campaign</span>
-                                        </button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p className="dashboardItem">
-                                            You don't have any active campaigns. You can create one below!
-                                        </p>
-                                        <button
-                                            className="dashboardButton"
-                                            onClick={() => setActiveScreen('CreateCampaign')}
-                                        >
-                                            Create New Campaign
-                                        </button>
-                                    </>
-                                )}
+                                    </div>
 
-                                {pendingCampaigns.length > 0 && (
-                                    <>
-                                        <p className="dashboardItem" style={{ color: '#FFD700', fontWeight: 'bold', marginTop: '20px' }}>Pending Campaigns:</p>
-                                        <div className="dashboardContentList">
-                                            {pendingCampaigns.map(campaign => (
-                                                <div key={campaign.id} className="dashboardContentListItem"
-                                                    onClick={() => {
-                                                        setSelectedCampaignId(campaign.id);
-                                                        setActiveScreen('CampaignDetails');
-                                                    }}>
-                                                    <span>{campaign.title}</span>
-                                                    <span style={{color: '#FFD700', fontSize: '12px', marginLeft: '10px'}}>(Pending)</span>
-                                                </div>
-                                            ))}
+                                    <div className="videoLinkSection">
+                                        <label htmlFor="tiktokLink" className="formLabel">TikTok Video Link:</label>
+                                        <div className="videoInputContainer">
+                                            <input
+                                                type="url"
+                                                id="tiktokLink"
+                                                className="formInput"
+                                                value={tiktokInputLink}
+                                                onChange={(e) => setTiktokInputLink(e.target.value)}
+                                                placeholder="e.g., https://www.tiktok.com/@user/video/VIDEO_ID"
+                                            />
+                                            {uploadedVideos.tiktok ? (
+                                                <button className="actionButton remove" onClick={() => handleRemoveVideo('tiktok')}>Remove</button>
+                                            ) : (
+                                                <button className="actionButton" onClick={() => handleAddOrUpdateVideo('tiktok', tiktokInputLink)}>Add</button>
+                                            )}
                                         </div>
-                                    </>
-                                )}
-
-                                {rejectedCampaigns.length > 0 && (
-                                    <>
-                                        <p className="dashboardItem" style={{ color: '#DC3545', fontWeight: 'bold', marginTop: '20px' }}>Rejected Campaigns:</p>
-                                        <div className="dashboardContentList">
-                                            {rejectedCampaigns.map(campaign => (
-                                                <div key={campaign.id} className="dashboardContentListItem"
-                                                    onClick={() => {
-                                                        setSelectedCampaignId(campaign.id);
-                                                        setActiveScreen('CampaignDetails');
-                                                    }}>
-                                                    <span>{campaign.title}</span>
-                                                    <span style={{color: '#DC3545', fontSize: '12px', marginLeft: '10px'}}>(Rejected)</span>
+                                        {uploadedVideos.tiktok && (
+                                            <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.tiktok.embedUrl)}>
+                                                <img src={uploadedVideos.tiktok.thumbnailUrl} alt="TikTok Thumbnail" className="videoThumbnail" />
+                                                <div className="videoThumbnailOverlay">
+                                                    <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
+                                                        <path d="M8 5v14l11-7z"/>
+                                                    </svg>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    </>
-                                )}
-
-                                {cancelledCampaigns.length > 0 && (
-                                    <>
-                                        <p className="dashboardItem" style={{ color: '#888', fontWeight: 'bold', marginTop: '20px' }}>Cancelled Campaigns:</p>
-                                        <div className="dashboardContentList">
-                                            {cancelledCampaigns.map(campaign => (
-                                                <div key={campaign.id} className="dashboardContentListItem"
-                                                    onClick={() => {
-                                                        setSelectedCampaignId(campaign.id);
-                                                        setActiveScreen('CampaignDetails');
-                                                    }}>
-                                                    <span>{campaign.title}</span>
-                                                    <span style={{color: '#888', fontSize: '12px', marginLeft: '10px'}}>(Cancelled)</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </>
-                                )}
-
-                                {endedCampaigns.length > 0 && (
-                                    <>
-                                        <p className="dashboardItem" style={{ color: '#CCC', fontWeight: 'bold', marginTop: '20px' }}>Ended Campaigns:</p>
-                                        <div className="dashboardContentList">
-                                            {endedCampaigns.map(campaign => (
-                                                <div key={campaign.id} className="dashboardContentListItem"
-                                                    onClick={() => {
-                                                        setSelectedCampaignId(campaign.id);
-                                                        setActiveScreen('CampaignDetails');
-                                                    }}>
-                                                    <span>{campaign.title}</span>
-                                                    <span style={{color: '#DC3545', fontSize: '12px', marginLeft: '10px'}}>(Ended)</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-
-
-                            <div className="dashboardSection">
-                                <p className="dashboardSectionTitle">My Uploaded Videos</p>
-                                <div className="videoLinkSection">
-                                    <label htmlFor="youtubeLink" className="formLabel">YouTube Video Link:</label>
-                                    <div className="videoInputContainer">
-                                        <input
-                                            type="url"
-                                            id="youtubeLink"
-                                            className="formInput"
-                                            value={youtubeInputLink}
-                                            onChange={(e) => setYoutubeInputLink(e.target.value)}
-                                            placeholder="e.g., https://www.youtube.com/watch?v=VIDEO_ID"
-                                        />
-                                        {uploadedVideos.youtube ? (
-                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('youtube')}>Remove</button>
-                                        ) : (
-                                            <button className="actionButton" onClick={() => handleAddOrUpdateVideo('youtube', youtubeInputLink)}>Add</button>
+                                            </div>
                                         )}
                                     </div>
-                                    {uploadedVideos.youtube && (
-                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.youtube.embedUrl)}>
-                                            <img src={uploadedVideos.youtube.thumbnailUrl} alt="YouTube Thumbnail" className="videoThumbnail" />
-                                            <div className="videoThumbnailOverlay">
-                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
-                                                    <path d="M8 5v14l11-7z"/>
-                                                </svg>
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
+                            )}
 
-                                <div className="videoLinkSection">
-                                    <label htmlFor="facebookLink" className="formLabel">Facebook Video Link:</label>
-                                    <div className="videoInputContainer">
-                                        <input
-                                            type="url"
-                                            id="facebookLink"
-                                            className="formInput"
-                                            value={facebookInputLink}
-                                            onChange={(e) => setFacebookInputLink(e.target.value)}
-                                            placeholder="e.g., https://www.facebook.com/video.php?v=VIDEO_ID or https://fb.watch/..."
-                                        />
-                                        {uploadedVideos.facebook ? (
-                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('facebook')}>Remove</button>
-                                        ) : (
-                                            <button className="actionButton" onClick={() => handleAddOrUpdateVideo('facebook', facebookInputLink)}>Add</button>
-                                        )}
-                                    </div>
-                                    {uploadedVideos.facebook && (
-                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.facebook.embedUrl)}>
-                                            <img src={uploadedVideos.facebook.thumbnailUrl} alt="Facebook Thumbnail" className="videoThumbnail" />
-                                            <div className="videoThumbnailOverlay">
-                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
-                                                    <path d="M8 5v14l11-7z"/>
-                                                </svg>
-                                            </div>
-                                        </div>
-                                    )}
-                                    <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
-                                        Note: Facebook video embedding can be temperamental due to privacy settings. Not all links may play in-app.
-                                    </p>
+                            {/* Analytics Overview - Only visible if not a 'user' role */}
+                            {creatorProfile.role !== 'user' && (
+                                <div className="dashboardSection">
+                                    <p className="dashboardSectionTitle">Analytics Overview</p>
+                                    <p className="dashboardItem">Total Views: 15,450 (Last 30 days)</p>
+                                    <p className="dashboardItem">Total Crowdfunding Raised: $3,450</p>
+                                    <p className="dashboardItem">Audience Engagement: High</p>
+                                    <button
+                                        className="dashboardButton"
+                                        onClick={() => showMessage('Detailed analytics report functionality coming soon!')}
+                                    >
+                                        View Full Analytics
+                                    </button>
                                 </div>
-
-                                <div className="videoLinkSection">
-                                    <label htmlFor="tiktokLink" className="formLabel">TikTok Video Link:</label>
-                                    <div className="videoInputContainer">
-                                        <input
-                                            type="url"
-                                            id="tiktokLink"
-                                            className="formInput"
-                                            value={tiktokInputLink}
-                                            onChange={(e) => setTiktokInputLink(e.target.value)}
-                                            placeholder="e.g., https://www.tiktok.com/@user/video/VIDEO_ID"
-                                        />
-                                        {uploadedVideos.tiktok ? (
-                                            <button className="actionButton remove" onClick={() => handleRemoveVideo('tiktok')}>Remove</button>
-                                        ) : (
-                                            <button className="actionButton" onClick={() => handleAddOrUpdateVideo('tiktok', tiktokInputLink)}>Add</button>
-                                        )}
-                                    </div>
-                                    {uploadedVideos.tiktok && (
-                                        <div className="videoThumbnailContainer" onClick={() => handleVideoPress(uploadedVideos.tiktok.embedUrl)}>
-                                            <img src={uploadedVideos.tiktok.thumbnailUrl} alt="TikTok Thumbnail" className="videoThumbnail" />
-                                            <div className="videoThumbnailOverlay">
-                                                <svg className="thumbnailPlayIcon" viewBox="0 0 24 24">
-                                                    <path d="M8 5v14l11-7z"/>
-                                                </svg>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="dashboardSection">
-                                <p className="dashboardSectionTitle">Analytics Overview</p>
-                                <p className="dashboardItem">Total Views: 15,450 (Last 30 days)</p>
-                                <p className="dashboardItem">Total Crowdfunding Raised: $3,450</p>
-                                <p className="dashboardItem">Audience Engagement: High</p>
-                                <button
-                                    className="dashboardButton"
-                                    onClick={() => showMessage('Detailed analytics report functionality coming soon!')}
-                                >
-                                    View Full Analytics
-                                </button>
-                            </div>
+                            )}
 
                             <button
                                 className="button"
@@ -4459,19 +4726,34 @@
                 switch (activeScreen) {
                     case 'Home':
                         return <HomeScreen />;
-                    case 'Discover': // Updated case name for consistency
+                    case 'Discover':
+                        // Only allow access to Discover if logged in
+                        if (!currentUser) {
+                            showMessage("Please log in to discover all content.");
+                            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        }
                         return <CategoriesScreen />;
                     case 'Login':
                         return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                    case 'UserSignUp': // New case for User Sign Up
+                        return <UserSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'CreatorSignUp':
                         return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'Premium':
+                        // Only allow access to Premium if logged in
+                        if (!currentUser) {
+                            showMessage("Please log in to access Premium features.");
+                            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        }
                         return <PremiumScreen />;
                     case 'Support': // Corresponds to CrowdfundingScreen
+                        // Support screen is now always accessible
                         return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                     case 'AllCampaigns': // This screen is now only accessible via "Browse Creator Campaigns" button
+                        // AllCampaigns is now always accessible
                         return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} />;
                     case 'CampaignDetails':
+                        // CampaignDetails is now always accessible
                         return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} />;
                     case 'CreatorDashboard':
                         return <CreatorDashboardScreen showVideoModal={showVideoModal} setShowVideoModal={setShowVideoModal} currentVideoUrl={currentVideoUrl} setCurrentVideoUrl={setCurrentVideoUrl} showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} creatorCampaigns={creatorCampaigns} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
@@ -4504,12 +4786,12 @@
                         <button className="navButton" onClick={() => setActiveScreen('Home')}>
                             <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
                         </button>
-                        {/* Removed Discover button from here, it's now on Home screen */}
-                        {/* Removed "Support Us" button from here as it's now on the top right of the Home screen */}
-                        {/* Removed "Campaigns" button from here */}
-                        <button className="navButton" onClick={() => setActiveScreen('Premium')}>
-                            <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
-                        </button>
+                        {/* Premium button - only visible if logged in */}
+                        {currentUser && (
+                            <button className="navButton" onClick={() => setActiveScreen('Premium')}>
+                                <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
+                            </button>
+                        )}
                         {/* Dashboard Button - Only visible if logged in */}
                         {currentUser && (
                             <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
