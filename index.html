@@ -479,6 +479,16 @@
             height: 100%;
             border: none;
         }
+        .videoModalContent.vertical {
+            max-width: 450px; /* Optimal width for phone-like vertical view */
+            height: 100vh;
+            max-height: 100vh; /* Ensure it takes full viewport height */
+            justify-content: center; /* Center the iframe vertically */
+        }
+
+        .videoIframeContainer.vertical {
+            padding-bottom: 177.77%; /* 9:16 aspect ratio (16 / 9 * 100) */
+        }
         .closeButton {
             position: absolute;
             top: 10px;
@@ -1425,6 +1435,62 @@
         .status-ended { color: #888; }
         .status-cancelled { color: #AAA; }
 
+         /* START: New Carousel Navigation Button Styles */
+        .carousel-wrapper {
+            position: relative; /* Establishes a positioning context for the buttons */
+            width: 100%;
+        }
+
+        .carousel-nav-btn {
+            position: absolute;
+            z-index: 10;
+            background-color: rgba(10, 10, 10, 0.6); /* Semi-transparent dark background */
+            color: #FFD700; /* Gold icon color */
+            border: 1px solid #FFD700;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            font-size: 20px; /* Adjust size of arrow characters */
+            line-height: 1; /* Ensure vertical centering of arrows */
+        }
+
+        .carousel-nav-btn:hover {
+            background-color: rgba(255, 215, 0, 0.8); /* Semi-transparent gold on hover */
+            color: #0A0A0A; /* Dark icon color on hover */
+            transform: scale(1.1);
+        }
+
+        /* Positioning for Horizontal Carousel Buttons */
+        .carousel-nav-btn.prev-horizontal {
+            top: 50%;
+            left: 5px;
+            transform: translateY(-50%);
+        }
+
+        .carousel-nav-btn.next-horizontal {
+            top: 50%;
+            right: 5px;
+            transform: translateY(-50%);
+        }
+
+        /* Positioning for Vertical Carousel Buttons */
+        .carousel-nav-btn.prev-vertical {
+            left: 50%;
+            top: 5px;
+            transform: translateX(-50%);
+        }
+
+        .carousel-nav-btn.next-vertical {
+            left: 50%;
+            bottom: 5px;
+            transform: translateX(-50%);
+        }
+        /* END: New Carousel Navigation Button Styles */
 
     </style>
 </head>
@@ -1564,18 +1630,24 @@
         const VideoPlayerModal = ({ videoUrl, onClose }) => {
             if (!videoUrl) return null;
 
-            const embedUrl = getYouTubeEmbedUrl(videoUrl);
+            // Use the new, more powerful helper function
+            const { embedUrl, isVertical } = extractVideoInfo(videoUrl);
+
+            // Fallback for URLs that cannot be parsed into an embed link
+            const finalEmbedUrl = embedUrl || (videoUrl.includes('?') ? `${videoUrl}&autoplay=1` : `${videoUrl}?autoplay=1`);
 
             return (
                 <div className="videoModalOverlay">
-                    <div className="videoModalContent">
-                        <button className="closeButton" onClick={onClose}>&times;</button>
-                        <div className="videoIframeContainer">
+                    {/* Conditionally add the 'vertical' class for vertical videos */}
+                    <div className={`videoModalContent ${isVertical ? 'vertical' : ''}`}>
+                        <button className="closeButton" onClick={onClose}>×</button>
+                        {/* Also add the 'vertical' class to the iframe container */}
+                        <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
                             <iframe
-                                src={embedUrl}
+                                src={finalEmbedUrl}
                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                                 allowFullScreen
-                                title="Embedded YouTube video"
+                                title="Embedded Video Content"
                             ></iframe>
                         </div>
                     </div>
@@ -3074,26 +3146,29 @@ const AdminDashboardScreen = ({
         };
 
         // Helper function for extracting video IDs and creating embed/thumbnail URLs
+                // Helper function for extracting video IDs and creating embed/thumbnail URLs
         const extractVideoInfo = (url) => {
             let videoId = null;
             let thumbnailUrl = '';
             let embedUrl = '';
             let platform = 'generic';
+            let isVertical = false; // Flag for vertical videos like Shorts or TikToks
 
-            // YouTube
-            let match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/||shorts\/))([^&?#]+)/);
+            // YouTube (Now includes /shorts/)
+            let match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?#]+)/);
             if (match && match[1]) {
                 videoId = match[1];
                 thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
                 embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
                 platform = 'youtube';
+                if (url.includes('/shorts/')) {
+                    isVertical = true;
+                }
             } else {
                 // Facebook
                 match = url.match(/(?:facebook\.com\/(?:video.php\?v=|watch\/\?v=)|fb\.watch\/|facebook\.com\/[^\/]+\/videos\/)([0-9]+)/);
                 if (match && match[1]) {
                     videoId = match[1];
-                    // Facebook thumbnails are tricky to get directly without their API.
-                    // We'll use a placeholder or rely on custom thumbnail for better visuals.
                     thumbnailUrl = `https://placehold.co/150x100/4267B2/FFFFFF?text=Facebook`;
                     embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=0&width=560&autoplay=1`;
                     platform = 'facebook';
@@ -3102,7 +3177,7 @@ const AdminDashboardScreen = ({
                     match = url.match(/(?:tiktok\.com\/@(?:[a-zA-Z0-9._]+)\/video\/|vm\.tiktok\.com\/|tiktok\.com\/embed\/)([0-9]+)/);
                     if (match && match[1]) {
                         videoId = match[1];
-                        // TikTok thumbnails also require their API/embed code for reliable fetching.
+                        isVertical = true; // TikTok videos are vertical
                         thumbnailUrl = `https://placehold.co/150x100/69C9D0/FFFFFF?text=TikTok`;
                         embedUrl = `https://www.tiktok.com/embed/${videoId}`;
                         platform = 'tiktok';
@@ -3110,7 +3185,7 @@ const AdminDashboardScreen = ({
                 }
             }
 
-            return { videoId, thumbnailUrl, embedUrl, platform };
+            return { videoId, thumbnailUrl, embedUrl, platform, isVertical };
         };
 
 
@@ -3763,7 +3838,7 @@ const AdminContentManagerScreen = ({
                 }
             };
 
-            const HomeScreen = () => {
+                         const HomeScreen = () => {
                 // --- State for fetched data ---
                 const [featured, setFeatured] = useState([]);
                 const [trending, setTrending] = useState([]);
@@ -3911,6 +3986,28 @@ const AdminContentManagerScreen = ({
                     };
                 }, [loading, featured, liveFeed]);
 
+                // --- START: New handler functions for manual scrolling ---
+                const handleHorizontalScroll = (direction) => {
+                    const carousel = horizontalCarouselRef.current;
+                    if (carousel) {
+                        // Calculate the width of one item including its margin
+                        const itemWidth = carousel.children[0]?.clientWidth + 15;
+                        const scrollAmount = direction === 'prev' ? -itemWidth : itemWidth;
+                        carousel.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+                    }
+                };
+
+                const handleVerticalScroll = (direction) => {
+                    const carousel = verticalCarouselRef.current;
+                    if (carousel) {
+                        // Calculate the height of one item including its margin
+                        const itemHeight = carousel.children[0]?.clientHeight + 15;
+                        const scrollAmount = direction === 'up' ? -itemHeight : itemHeight;
+                        carousel.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+                    }
+                };
+                // --- END: New handler functions for manual scrolling ---
+
 
                 return (
                     <div className="screenContainer">
@@ -3924,22 +4021,33 @@ const AdminContentManagerScreen = ({
                         </div>
 
                         <p className="sectionTitle">Featured Highlights</p>
-                        <div
-                            className="horizontal-carousel-container"
-                            ref={horizontalCarouselRef}
-                        >
-                            {loading ? (
-                                [1, 2, 3, 4, 5].map(i => (
-                                    <div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>
-                                ))
-                            ) : (
-                                displayFeatured.map((item, index) => (
-                                    <div key={`${item.id}-${index}`} className="horizontal-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl)}>
-                                        <img src={item.customThumbnailUrl} alt={item.title} className="carousel-image" />
-                                    </div>
-                                ))
+                        {/* START: Modified JSX for Featured Highlights */}
+                        <div className="carousel-wrapper">
+                            {displayFeatured.length > 3 && (
+                                <>
+                                    <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button>
+                                    <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button>
+                                </>
                             )}
+                            <div
+                                className="horizontal-carousel-container"
+                                ref={horizontalCarouselRef}
+                            >
+                                {loading ? (
+                                    [1, 2, 3, 4, 5].map(i => (
+                                        <div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>
+                                    ))
+                                ) : (
+                                    displayFeatured.map((item, index) => (
+                                        <div key={`${item.id}-${index}`} className="horizontal-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl)}>
+                                            <img src={item.customThumbnailUrl} alt={item.title} className="carousel-image" />
+                                        </div>
+                                    ))
+                                )}
+                            </div>
                         </div>
+                        {/* END: Modified JSX for Featured Highlights */}
+
 
                         <div className="sectionHeaderWithButton">
                             <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
@@ -3974,24 +4082,35 @@ const AdminContentManagerScreen = ({
                             )}
                         </div>
                         {loading ? <p>Loading live feed...</p> : (
-                             <div
-                                className="vertical-carousel-container"
-                                ref={verticalCarouselRef}
-                            >
-                                {displayLiveFeed.map((item, index) => (
-                                    <button key={`${item.id}-${index}`} className="vertical-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl)}>
-                                        <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
-                                        <div className="liveFeedContent">
-                                            <p className="liveFeedTitle">{item.title}</p>
-                                            <p className="liveFeedCreator">by {item.creatorName}</p>
-                                        </div>
-                                    </button>
-                                ))}
+                            /* START: Modified JSX for Live Feed */
+                             <div className="carousel-wrapper">
+                                {displayLiveFeed.length > 2 && (
+                                    <>
+                                        <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button>
+                                        <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button>
+                                    </>
+                                )}
+                                <div
+                                    className="vertical-carousel-container"
+                                    ref={verticalCarouselRef}
+                                >
+                                    {displayLiveFeed.map((item, index) => (
+                                        <button key={`${item.id}-${index}`} className="vertical-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl)}>
+                                            <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
+                                            <div className="liveFeedContent">
+                                                <p className="liveFeedTitle">{item.title}</p>
+                                                <p className="liveFeedCreator">by {item.creatorName}</p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
+                            /* END: Modified JSX for Live Feed */
                         )}
                     </div>
                 );
             };
+
 
             const PremiumScreen = () => (
                 <div className="screenContainer">
