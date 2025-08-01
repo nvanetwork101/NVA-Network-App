@@ -15,32 +15,26 @@
     <!-- PWA Enhancements END -->
     <style>
         html, body {
-            height: 100%; /* Ensure html and body take full height */
+            height: 100%;
             margin: 0;
             padding: 0;
+            background-color: #0A0A0A; /* Set the body background to match the app */
         }
         body {
-            font-family: 'Inter', sans-serif; /* Using Inter font as per instructions */
-            background-color: #0A0A0A;
+            font-family: 'Inter', sans-serif;
             color: #FFF;
             display: flex;
-            justify-content: center;
-            align-items: flex-start; /* Align to top to allow scrolling from the top */
-            min-height: 100vh; /* Ensure body is at least viewport height */
-            overflow-y: auto; /* Allow vertical scrolling for the entire body */
-            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            justify-content: center; /* This centers the app on larger screens */
+            -webkit-overflow-scrolling: touch;
         }
         #root {
             width: 100%;
-            max-width: 450px; /* Typical mobile width constraint */
-            /* Removed height: 100vh; to allow it to expand with content */
+            min-height: 100vh; /* Use min-height to ensure it fills the screen */
             background-color: #0A0A0A;
             display: flex;
             flex-direction: column;
-            border-radius: 15px; /* Rounded corners for the main app container */
-            /* Removed overflow: hidden; to allow content to push height */
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-            min-height: 100vh; /* Ensure #root is at least viewport height */
+            max-width: 450px; /* Constrain width on desktops/large tablets */
         }
         .container {
             flex: 1;
@@ -1492,6 +1486,7 @@
         }
         /* END: New Carousel Navigation Button Styles */
 
+        
     </style>
 </head>
 <body>
