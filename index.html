@@ -1546,10 +1546,10 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs, deleteDoc, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs, deleteDoc, limit, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
-
+        import { getAnalytics, logEvent, setUserId, setUserProperties } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+        
         // Global Firebase variables (provided by Canvas environment)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -1571,6 +1571,10 @@
         const db = getFirestore(app);
         const storage = getStorage(app); // Initialize Storage
         const analytics = getAnalytics(app);
+        window.firebaseAnalytics = analytics; // Export the instance
+        window.logEvent = logEvent; // Export the function
+        window.setUserId = setUserId; // Export the function
+        window.setUserProperties = setUserProperties; // Export the function
 
         // Export for use in React component
         window.firebaseApp = app;
@@ -1594,6 +1598,7 @@
         window.where = where; // Expose where for Firestore queries
         window.getDocs = getDocs; // Expose getDocs for Firestore queries
         window.deleteDoc = deleteDoc; // Expose deleteDoc for Firestore
+        window.increment = increment; // Expose the increment function
         window.ref = ref;
         window.uploadBytes = uploadBytes;
         window.getDownloadURL = getDownloadURL;
@@ -1616,9 +1621,12 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
+                // --- CORRECTED AND CONSOLIDATED CONSTANTS ---
         const auth = window.firebaseAuth;
         const db = window.firebaseDb;
+        const increment = window.increment;
         const storage = window.firebaseStorage;
+        const analytics = window.firebaseAnalytics; // Get analytics instance
         const createUserWithEmailAndPassword = window.createUserWithEmailAndPassword;
         const signInWithEmailAndPassword = window.signInWithEmailAndPassword;
         const signOut = window.signOut;
@@ -1632,17 +1640,39 @@
         const query = window.query;
         const orderBy = window.orderBy;
         const onSnapshot = window.onSnapshot;
-        const where = window.where; // Added where for Firestore queries
-        const getDocs = window.getDocs; // Added getDocs for Firestore queries
-        const deleteDoc = window.deleteDoc; // Added deleteDoc for Firestore
+        const where = window.where;
+        const getDocs = window.getDocs;
+        const deleteDoc = window.deleteDoc;
         const ref = window.ref;
         const uploadBytes = window.uploadBytes;
         const getDownloadURL = window.getDownloadURL;
         const appId = window.appId;
-        const signInAnonymously = window.signInAnonymously; // Import signInAnonymously
-
-
+        const signInAnonymously = window.signInAnonymously;
         const limit = window.limit;
+        
+        // --- Get the Analytics functions we exposed in Step 1 ---
+        const logEvent = window.logEvent;
+        const setUserId = window.setUserId;
+        const setUserProperties = window.setUserProperties;
+
+
+        // --- NEW: Analytics Helper Function ---
+        /**
+         * Logs a click on a creator's featured link to Firebase Analytics.
+         * @param {string} creatorId - The UID of the creator whose link was clicked.
+         * @param {string} creatorName - The name of the creator.
+         */
+        const logFeaturedLinkClick = (creatorId, creatorName) => {
+            // Check if analytics and logEvent are available before using them
+            if (analytics && logEvent) {
+                logEvent(analytics, 'featured_link_click', {
+                    content_creator_id: creatorId,
+                    content_creator_name: creatorName,
+                });
+            } else {
+                console.log("Analytics not ready, click was not logged.");
+            }
+        };
         
 
         // Hardcoded content - these will eventually be replaced by dynamic data from Firestore
@@ -1886,7 +1916,7 @@
                                 <div 
                                     className="vertical-carousel-item" 
                                     style={{cursor: 'pointer'}} 
-                                    onClick={() => handleVideoPress(profile.featuredVideoLink.embedUrl || profile.featuredVideoLink.url)}
+                                onClick={() => handleVideoPress(profile.featuredVideoLink.embedUrl || profile.featuredVideoLink.url, profile)}
                                 >
                                     <img src={profile.featuredVideoLink.thumbnailUrl || 'https://placehold.co/80x60/3A3A3A/FFF?text=Video'} alt="Featured Video" className="liveFeedThumbnail" />
                                     <div className="liveFeedContent">
@@ -2833,17 +2863,22 @@ const handleDenyBanRequest = async (request) => {
             <p className="heading">Admin Dashboard</p>
             <p className="subHeading">Manage users and crowdfunding campaigns.</p>
 
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginBottom: '20px' }}>
-    <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
+            // REPLACE THE OLD BLOCK WITH THIS COMPLETE ONE
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginBottom: '20px' }}>
+        <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
         <span className="buttonText">Dashboard Overview</span>
-    </button>
-    <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
+        </button>
+        <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
         <span className="buttonText">Manage Content</span>
-    </button>
-    {/* --- THIS IS THE NEW BUTTON YOU ARE ADDING --- */}
-    <button className="button" onClick={() => setSelectedAdminSubScreen('ManageCategories')} style={{ backgroundColor: selectedAdminSubScreen === 'ManageCategories' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ManageCategories' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
+        </button>
+        <button className="button" onClick={() => setSelectedAdminSubScreen('ManageCategories')} style={{ backgroundColor: selectedAdminSubScreen === 'ManageCategories' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ManageCategories' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
         <span className="buttonText">Manage Categories</span>
-    </button>
+        </button>
+    
+            {/* --- THIS IS THE NEW BUTTON YOU ARE ADDING --- */}
+        <button className="button" onClick={() => setActiveScreen('AnalyticsDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
+        <span className="buttonText">View Analytics</span>
+        </button>
     </div>
 
             {selectedAdminSubScreen === 'Overview' && (
@@ -3604,7 +3639,6 @@ const AdminContentManagerScreen = ({
                     </div>
                 )}
             </div>
-            <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}><span className="buttonText">Back to Admin Dashboard</span></button>
         </div>
     );
 };
@@ -4140,6 +4174,114 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
             );
         };
 
+            // --- PASTE THIS ENTIRE NEW COMPONENT INTO YOUR SCRIPT TAG ---
+// ======================================================================
+
+const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
+    const [creatorAnalytics, setCreatorAnalytics] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [expandedCreator, setExpandedCreator] = useState(null);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                // Fetch all creators and all content items
+                const creatorsQuery = query(collection(db, "creators"), where('role', '==', 'creator'));
+                const contentQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`));
+
+                const [creatorsSnapshot, contentSnapshot] = await Promise.all([
+                    getDocs(creatorsQuery),
+                    getDocs(contentQuery)
+                ]);
+
+                const allCreators = creatorsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                const allContent = contentSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+                // Process the data to match content to creators
+                const analyticsData = allCreators.map(creator => {
+                    const creatorContent = allContent.filter(item => item.creatorId === creator.id);
+                    const totalClicks = creatorContent.reduce((sum, item) => sum + (item.clickCount || 0), 0);
+                    return {
+                        ...creator,
+                        content: creatorContent,
+                        totalClicks: totalClicks,
+                    };
+                });
+                
+                // Sort by total clicks, descending
+                analyticsData.sort((a, b) => b.totalClicks - a.totalClicks);
+
+                setCreatorAnalytics(analyticsData);
+            } catch (error) {
+                console.error("Error fetching analytics data:", error);
+                showMessage("Failed to load analytics data.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, []);
+    
+    const toggleCreator = (creatorId) => {
+        setExpandedCreator(expandedCreator === creatorId ? null : creatorId);
+    };
+
+    if (loading) {
+        return <div className="screenContainer"><p className="heading">Loading Analytics...</p></div>;
+    }
+
+    return (
+        <div className="screenContainer">
+            <p className="heading">Creator Content Analytics</p>
+            <p className="subHeading">Real-time click counts on featured links.</p>
+
+            <div className="dashboardSection">
+                <p className="dashboardSectionTitle">Performance by Creator</p>
+                {creatorAnalytics.length === 0 ? (
+                    <p className="dashboardItem">No creator data found.</p>
+                ) : (
+                    creatorAnalytics.map(creator => (
+                        <div key={creator.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
+                            <div className="flex justify-between items-center w-full cursor-pointer" onClick={() => toggleCreator(creator.id)}>
+                                <div className="flex items-center">
+                                     <img src={creator.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} alt={creator.creatorName} style={{width: '40px', height: '40px', borderRadius: '50%', marginRight: '15px'}}/>
+                                     <p className="adminDashboardItemTitle">{creator.creatorName}</p>
+                                </div>
+                                <p className="font-bold text-lg" style={{color: '#FFD700'}}>{creator.totalClicks} Total Clicks</p>
+                            </div>
+                            
+                            {expandedCreator === creator.id && (
+                                <div className="pt-4 mt-4 border-t border-gray-600">
+                                    {creator.content.length > 0 ? (
+                                        creator.content.map(item => (
+                                            <div key={item.id} className="flex justify-between items-center p-2 bg-gray-700 rounded-md mb-2">
+                                                <span>{item.title}</span>
+                                                <span style={{color: '#FFD700'}}>{item.clickCount || 0} Clicks</span>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <p className="text-gray-400">This creator has no tracked content items.</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    ))
+                )}
+            </div>
+            
+            <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}>
+                <span className="buttonText">Back to Admin Dashboard</span>
+            </button>
+        </div>
+    );
+};
+
+
+// ======================================================================
+// --- Your App component should start on the very next line ---
+// ======================================================================
+
 
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
@@ -4174,15 +4316,18 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
             const [countdownText, setCountdownText] = useState('');
             const [liveThumbnail, setLiveThumbnail] = useState('');
 
+             // REPLACE THE OLD useEffect WITH THIS ENTIRE BLOCK
             useEffect(() => {
                 const unsubscribe = onAuthStateChanged(auth, async (user) => {
                     setCurrentUser(user);
                     if (user) {
                         try {
                             const creatorDocRef = doc(db, "creators", user.uid);
-                            const docSnap = await getDoc(creatorDocRef);
-                            if (docSnap.exists()) {
+                            const docSnap = await getDoc(creatorDocRef); // 'docSnap' is created here
+
+                            if (docSnap.exists()) { // NOW it's safe to check if it exists
                                 const profileData = docSnap.data();
+                                
                                 // Block banned users
                                 if (profileData.banned) {
                                     showMessage("Your account has been banned. Please contact support.");
@@ -4193,10 +4338,19 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                                     return;
                                 }
                                 setCreatorProfile(profileData);
+                                
                                 // Update lastLogin
                                 await updateDoc(creatorDocRef, { lastLogin: new Date().toISOString() });
+
+                                // --- NEW ANALYTICS CODE (in the correct place) ---
+                                if (analytics && setUserId && setUserProperties) {
+                                    setUserId(analytics, user.uid);
+                                    setUserProperties(analytics, { user_role: profileData.role });
+                                }
+                                // --- END OF NEW CODE ---
+
                             } else {
-                                // New user, create profile with default role and not banned
+                                // This is the logic for a brand new user
                                 await setDoc(creatorDocRef, {
                                     email: user.email,
                                     creatorName: user.email.split('@')[0] || "",
@@ -4206,12 +4360,20 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                                     profilePictureUrl: '',
                                     uploadedVideos: { youtube: null, facebook: null, tiktok: null },
                                     createdAt: new Date().toISOString(),
-                                    role: 'user', // Default new users to 'user' role
-                                    banned: false // Default new users to not be banned
+                                    role: 'user', 
+                                    banned: false 
                                 });
                                 const newDocSnap = await getDoc(creatorDocRef);
                                 if(newDocSnap.exists()) {
-                                    setCreatorProfile(newDocSnap.data());
+                                    const newProfileData = newDocSnap.data();
+                                    setCreatorProfile(newProfileData);
+
+                                    // --- NEW ANALYTICS CODE (for new users) ---
+                                    if (analytics && setUserId && setUserProperties) {
+                                        setUserId(analytics, user.uid);
+                                        setUserProperties(analytics, { user_role: newProfileData.role });
+                                    }
+                                    // --- END OF NEW CODE ---
                                 }
                             }
                         } catch (error) {
@@ -4219,11 +4381,17 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                             showMessage("Error loading profile data.");
                         }
                     } else {
+                        // This runs when the user logs out
                         setCreatorProfile(null);
+                        
+                        // --- CORRECTED: Clear User ID on Logout ---
+                        if (analytics && setUserId) {
+                           setUserId(analytics, null);
+                        }
                     }
                 });
                 return () => unsubscribe();
-            }, []);
+            }, []); // This dependency array should be empty to run only once.
 
             // New useEffect to fetch ALL of creator's campaigns for dashboard
             useEffect(() => {
@@ -4340,10 +4508,28 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                 setTimeout(() => setMessage(''), 3000);
             };
 
-            const handleVideoPress = (url) => {
-                setCurrentVideoUrl(url);
-                setShowVideoModal(true);
-            };
+            const handleVideoPress = (url, creatorProfileForAnalytics) => {
+            // --- 1. Log to Firebase Analytics (as before) ---
+            if (creatorProfileForAnalytics) {
+            logFeaturedLinkClick(selectedUserId, creatorProfileForAnalytics.creatorName);
+                }
+            
+             // --- 2. NEW: Increment the counter in Firestore ---
+    if (creatorProfileForAnalytics && creatorProfileForAnalytics.featuredVideoLink && creatorProfileForAnalytics.featuredVideoLink.liveFeedContentId) {
+        const contentId = creatorProfileForAnalytics.featuredVideoLink.liveFeedContentId;
+        const contentDocRef = doc(db, `artifacts/${appId}/public/data/content_items`, contentId);
+        
+        updateDoc(contentDocRef, {
+            clickCount: increment(1)
+        }).catch(error => {
+            console.error("Failed to increment click count:", error);
+        });
+    }
+
+    // --- 3. Open the video modal (as before) ---
+    setCurrentVideoUrl(url);
+    setShowVideoModal(true);
+    };
 
             const closeVideoModal = () => {
                 setShowVideoModal(false);
@@ -4361,13 +4547,14 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                 }
             };
 
-                const HomeScreen = () => { // MODIFIED: Receive props
+                            const HomeScreen = () => { // MODIFIED: Receive props
                 const [featured, setFeatured] = useState([]);
                 const [trending, setTrending] = useState([]);
                 const [liveFeed, setLiveFeed] = useState([]);
                 const [loading, setLoading] = useState(true);
-                const [displayFeatured, setDisplayFeatured] = useState([]);
-                const [displayLiveFeed, setDisplayLiveFeed] = useState([]);
+                // Modified: Ensure enough clones for seamless loop
+                const [displayFeatured, setDisplayFeatured] = useState([]); 
+                const [displayLiveFeed, setDisplayLiveFeed] = useState([]); 
                 const horizontalCarouselRef = useRef(null);
                 const verticalCarouselRef = useRef(null);
 
@@ -4380,7 +4567,13 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                             const featuredSnapshot = await getDocs(featuredQuery);
                             const featuredData = featuredSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                             setFeatured(featuredData);
-                            setDisplayFeatured(featuredData.length > 3 ? [...featuredData, ...featuredData.slice(0, 3)] : featuredData);
+                            // Updated cloning for continuous loop: append copies of the first few items
+                            const numFeaturedClones = 3; // Number of items visible in the carousel
+                            if (featuredData.length > numFeaturedClones) {
+                                setDisplayFeatured([...featuredData, ...featuredData.slice(0, numFeaturedClones)]);
+                            } else {
+                                setDisplayFeatured(featuredData); // No cloning if not enough items
+                            }
 
                             const trendingQuery = query(contentCollectionRef, where('contentType', '==', 'Trending'), where('isActive', '==', true), orderBy('createdAt', 'desc'), limit(6));
                             const trendingSnapshot = await getDocs(trendingQuery);
@@ -4390,7 +4583,13 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                             const liveFeedSnapshot = await getDocs(liveFeedQuery);
                             const liveFeedData = liveFeedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                             setLiveFeed(liveFeedData);
-                            setDisplayLiveFeed(liveFeedData.length > 2 ? [...liveFeedData, ...liveFeedData.slice(0, 2)] : liveFeedData);
+                            // Updated cloning for continuous loop: append copies of the first few items
+                            const numLiveFeedClones = 2; // Number of items visible in the carousel
+                            if (liveFeedData.length > numLiveFeedClones) {
+                                setDisplayLiveFeed([...liveFeedData, ...liveFeedData.slice(0, numLiveFeedClones)]);
+                            } else {
+                                setDisplayLiveFeed(liveFeedData); // No cloning if not enough items
+                            }
 
                         } catch (error) {
                             console.error("Error fetching home screen content:", error);
@@ -4401,15 +4600,83 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                     };
                     fetchContent();
                 }, []);
-                
+
                 useEffect(() => {
-                    // Carousel autoscroll logic here (remains the same)
-                }, [loading, featured, liveFeed]);
+                    const horizontalCarousel = horizontalCarouselRef.current;
+                    const verticalCarousel = verticalCarouselRef.current;
+
+                    let horizontalInterval;
+                    let verticalInterval;
+
+                    const startHorizontalAutoscroll = () => {
+                        // Only start if carousel exists and there are more items than visible clones
+                        if (!horizontalCarousel || displayFeatured.length <= 3) {
+                            clearInterval(horizontalInterval);
+                            return;
+                        }
+
+                        // Calculate item width including margin-right (15px)
+                        // Use clientWidth to get the visible width of the first child, then add the margin.
+                        // We use `offsetWidth` for actual element width including padding/border, then add the `margin-right`.
+                        const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15; 
+                        
+                        // Calculate the point where the original content ends and clones begin
+                        const originalContentWidth = (displayFeatured.length - 3) * itemWidth; 
+
+                        horizontalInterval = setInterval(() => {
+                            // If we're about to scroll into the cloned section, instantly jump back to the start of the original content
+                            // Check if current scroll position is at or past the point where the original content ends
+                            if (horizontalCarousel.scrollLeft >= originalContentWidth - (horizontalCarousel.clientWidth / 2)) { // Adjusted threshold for smoother wrap
+                                horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
+                            }
+                            horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
+                        }, 3000); // Scroll every 3 seconds
+                    };
+
+                    const startVerticalAutoscroll = () => {
+                        // Only start if carousel exists and there are more items than visible clones
+                        if (!verticalCarousel || displayLiveFeed.length <= 2) {
+                            clearInterval(verticalInterval);
+                            return;
+                        }
+
+                        // Calculate item height including margin-bottom (15px)
+                        const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15; 
+                        
+                        // Calculate the point where the original content ends and clones begin
+                        const originalContentHeight = (displayLiveFeed.length - 2) * itemHeight; 
+
+                        verticalInterval = setInterval(() => {
+                            // If we're about to scroll into the cloned section, instantly jump back to the start of the original content
+                            // Check if current scroll position is at or past the point where the original content ends
+                            if (verticalCarousel.scrollTop >= originalContentHeight - (verticalCarousel.clientHeight / 2)) { // Adjusted threshold for smoother wrap
+                                verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
+                            }
+                            verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
+                        }, 3000); // Scroll every 3 seconds
+                    };
+
+                    // Clear existing intervals before starting new ones or returning
+                    clearInterval(horizontalInterval);
+                    clearInterval(verticalInterval);
+
+                    // Start autoscroll when content is loaded and available
+                    if (!loading) {
+                        startHorizontalAutoscroll();
+                        startVerticalAutoscroll();
+                    }
+
+                    // Cleanup function for when component unmounts or dependencies change
+                    return () => {
+                        clearInterval(horizontalInterval);
+                        clearInterval(verticalInterval);
+                    };
+                }, [loading, displayFeatured, displayLiveFeed]); // Re-run effect when these dependencies change
 
                 const handleHorizontalScroll = (direction) => {
                     const carousel = horizontalCarouselRef.current;
                     if (carousel) {
-                        const itemWidth = carousel.children[0]?.clientWidth + 15;
+                        const itemWidth = carousel.children[0]?.offsetWidth + 15; // Ensure offsetWidth is used for accurate width
                         carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' });
                     }
                 };
@@ -4417,7 +4684,7 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                 const handleVerticalScroll = (direction) => {
                     const carousel = verticalCarouselRef.current;
                     if (carousel) {
-                        const itemHeight = carousel.children[0]?.clientHeight + 15;
+                        const itemHeight = carousel.children[0]?.offsetHeight + 15; // Ensure offsetHeight is used for accurate height
                         carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' });
                     }
                 };
@@ -4433,12 +4700,9 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                             )}
                         </div>
                         
-                        {/* --- MODIFIED: Added countdown message on HomeScreen --- */}
-                        
-
                         <p className="sectionTitle">Featured Highlights</p>
                         <div className="carousel-wrapper">
-                            {displayFeatured.length > 3 && (
+                            {displayFeatured.length > 3 && ( // Only show buttons if there's enough content to scroll
                                 <>
                                     <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button>
                                     <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button>
@@ -4446,17 +4710,19 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                             )}
                             <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
                                 {loading ? (
-                                    [1, 2, 3, 4, 5].map(i => (<div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>))
+                                    // Placeholder items for loading state
+                                    Array.from({ length: 5 }).map((_, i) => (<div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>))
                                 ) : (
                                     displayFeatured.map((item, index) => (
-                                        <div key={`${item.id}-${index}`} className="horizontal-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl)}>
-                                            <img src={item.customThumbnailUrl} alt={item.title} className="carousel-image" />
+                                        // Use a unique key that accounts for cloned items if necessary, e.g., `${item.id}-${index}`
+                                        <div key={`${item.id}-${index}`} className="horizontal-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}
+                                        >
+                                        <img src={item.customThumbnailUrl} alt={item.title} className="carousel-image" />
                                         </div>
                                     ))
                                 )}
                             </div>
                         </div>
-
 
                         <div className="sectionHeaderWithButton">
                             <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
@@ -4490,7 +4756,7 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                         </div>
                         {loading ? <p>Loading live feed...</p> : (
                              <div className="carousel-wrapper">
-                                {displayLiveFeed.length > 2 && (
+                                {displayLiveFeed.length > 2 && ( // Only show buttons if there's enough content to scroll
                                     <>
                                         <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button>
                                         <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button>
@@ -4498,7 +4764,9 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                                 )}
                                 <div className="vertical-carousel-container" ref={verticalCarouselRef}>
                                     {displayLiveFeed.map((item, index) => (
-                                        <button key={`${item.id}-${index}`} className="vertical-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl)}>
+                                        // Use a unique key that accounts for cloned items if necessary, e.g., `${item.id}-${index}`
+                                        <button key={`${item.id}-${index}`} className="vertical-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}
+                                        >
                                             <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
                                             <div className="liveFeedContent">
                                                 <p className="liveFeedTitle">{item.title}</p>
@@ -5276,6 +5544,9 @@ case 'Discover':
                     
                     case 'AdminCampaignDetails': 
                         return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile} />;
+                    
+                    case 'AnalyticsDashboard':
+                        return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
 
                     default:
                         return <HomeScreen isLive={isLive} countdownText={countdownText} />;
