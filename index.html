@@ -4422,6 +4422,7 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
              // REPLACE THE OLD useEffect WITH THIS ENTIRE BLOCK
             useEffect(() => {
                 const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                console.log('%cAuth State Changed:', 'color: orange; font-weight: bold;', user ? `User UID: ${user.uid}` : 'User is null');
                     setCurrentUser(user);
                     if (user) {
                         try {
@@ -4532,6 +4533,7 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
     let countdownInterval = null;
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
+    console.log('%cLive Premieres data updated in Firestore.', 'color: cyan; font-weight: bold;');
         clearInterval(countdownInterval);
 
         if (snapshot.empty) {
