@@ -1534,8 +1534,77 @@
     70% { box-shadow: 0 0 10px 10px rgba(220, 53, 69, 0); }
     100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
 }
-        /* END: New Carousel Navigation Button Styles */
-
+       /* START: New Leaderboard Styles */
+        .leaderboard-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 10px;
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            border-left: 5px solid transparent;
+            transition: background-color 0.3s;
+        }
+        .leaderboard-item.rank-1 {
+            background-color: rgba(255, 215, 0, 0.15);
+            border-left-color: #FFD700;
+        }
+        .leaderboard-item.rank-2 {
+            background-color: rgba(192, 192, 192, 0.15);
+            border-left-color: #C0C0C0;
+        }
+        .leaderboard-item.rank-3 {
+            background-color: rgba(205, 127, 50, 0.15);
+            border-left-color: #CD7F32;
+        }
+        .leaderboard-rank {
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFF;
+            width: 40px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .leaderboard-pfp {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #555;
+        }
+        .leaderboard-info {
+            flex-grow: 1;
+        }
+        .leaderboard-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #FFF;
+        }
+        .leaderboard-clicks-container {
+            text-align: right;
+        }
+        .leaderboard-clicks {
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFD700;
+        }
+        .leaderboard-clicks-label {
+            font-size: 12px;
+            color: #AAA;
+        }
+        .leaderboard-tabs {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        /* END: New Leaderboard Styles */
         
     </style>
 </head>
@@ -2863,7 +2932,6 @@ const handleDenyBanRequest = async (request) => {
             <p className="heading">Admin Dashboard</p>
             <p className="subHeading">Manage users and crowdfunding campaigns.</p>
 
-            // REPLACE THE OLD BLOCK WITH THIS COMPLETE ONE
         <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginBottom: '20px' }}>
         <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
         <span className="buttonText">Dashboard Overview</span>
@@ -4174,114 +4242,149 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
             );
         };
 
-            // --- PASTE THIS ENTIRE NEW COMPONENT INTO YOUR SCRIPT TAG ---
+
+        // --- NEW LEADERBOARD SCREEN ---
+        const CreatorLeaderboardScreen = ({ showMessage, setActiveScreen }) => {
+            const [leaderboardData, setLeaderboardData] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const leaderboardDocRef = doc(db, "leaderboard", "weekly");
+                const unsubscribe = onSnapshot(leaderboardDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setLeaderboardData(docSnap.data().creators || []);
+                    } else {
+                        showMessage("Leaderboard data is being generated. Please check back soon.");
+                        setLeaderboardData([]);
+                    }
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Error fetching leaderboard:", error);
+                    showMessage("Could not load leaderboard data.");
+                    setLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, []);
+
+            if (loading) {
+                return (
+                    <div className="screenContainer">
+                        <p className="heading">Loading Top Creators...</p>
+                        <div className="leaderboard-list">
+                            {Array.from({ length: 5 }).map((_, index) => (
+                                <div key={index} className="leaderboard-item" style={{ backgroundColor: '#2A2A2A', opacity: 0.5 }}>
+                                    <div className="leaderboard-rank">--</div>
+                                    <div className="leaderboard-pfp" style={{ backgroundColor: '#444' }}></div>
+                                    <div className="leaderboard-info" style={{ height: '40px', backgroundColor: '#444', borderRadius: '5px' }}></div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Top Creators</p>
+                    <p className="subHeading">Rankings are based on total content clicks this week.</p>
+                    
+                    {leaderboardData.length === 0 ? (
+                        <p className="paragraph" style={{ textAlign: 'center' }}>The competition is just getting started! Check back soon to see who takes the lead.</p>
+                    ) : (
+                        <div className="leaderboard-list">
+                            {leaderboardData.map((creator, index) => (
+                                <div key={creator.id} className={`leaderboard-item rank-${index + 1}`}>
+                                    <div className="leaderboard-rank">
+                                        {index + 1}
+                                        {index < 5 && ' 🔥'}
+                                    </div>
+                                    <img src={creator.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} alt={creator.name} className="leaderboard-pfp" />
+                                    <div className="leaderboard-info">
+                                        <p className="leaderboard-name">{creator.name}</p>
+                                    </div>
+                                    <div className="leaderboard-clicks-container">
+                                        <p className="leaderboard-clicks">{creator.weeklyClicks}</p>
+                                        <p className="leaderboard-clicks-label">Clicks This Week</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        };
 // ======================================================================
 
-const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
-    const [creatorAnalytics, setCreatorAnalytics] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [expandedCreator, setExpandedCreator] = useState(null);
+// --- UPDATED ANALYTICS DASHBOARD ---
+        const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
+            const [creators, setCreators] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [timeframe, setTimeframe] = useState('weekly'); // 'daily', 'weekly', 'lifetime'
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                // Fetch all creators and all content items
+            useEffect(() => {
                 const creatorsQuery = query(collection(db, "creators"), where('role', '==', 'creator'));
-                const contentQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`));
-
-                const [creatorsSnapshot, contentSnapshot] = await Promise.all([
-                    getDocs(creatorsQuery),
-                    getDocs(contentQuery)
-                ]);
-
-                const allCreators = creatorsSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                const allContent = contentSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-
-                // Process the data to match content to creators
-                const analyticsData = allCreators.map(creator => {
-                    const creatorContent = allContent.filter(item => item.creatorId === creator.id);
-                    const totalClicks = creatorContent.reduce((sum, item) => sum + (item.clickCount || 0), 0);
-                    return {
-                        ...creator,
-                        content: creatorContent,
-                        totalClicks: totalClicks,
-                    };
+                const unsubscribe = onSnapshot(creatorsQuery, (snapshot) => {
+                    const creatorsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    setCreators(creatorsData);
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Error fetching creator analytics:", error);
+                    showMessage("Failed to load analytics data.");
+                    setLoading(false);
                 });
-                
-                // Sort by total clicks, descending
-                analyticsData.sort((a, b) => b.totalClicks - a.totalClicks);
+                return () => unsubscribe();
+            }, []);
 
-                setCreatorAnalytics(analyticsData);
-            } catch (error) {
-                console.error("Error fetching analytics data:", error);
-                showMessage("Failed to load analytics data.");
-            } finally {
-                setLoading(false);
-            }
+            const getClickCount = (creator) => {
+                if (timeframe === 'daily') return creator.dailyClickTotal || 0;
+                if (timeframe === 'weekly') return creator.weeklyClickTotal || 0;
+                return creator.lifetimeClickTotal || 0;
+            };
+
+            const sortedCreators = [...creators].sort((a, b) => getClickCount(b) - getClickCount(a));
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Creator Analytics</p>
+                    <p className="subHeading">Aggregated click counts automatically updated by the backend.</p>
+
+                    <div className="leaderboard-tabs">
+                        <button className="button" onClick={() => setTimeframe('daily')} style={{backgroundColor: timeframe === 'daily' ? '#FFD700' : '#3A3A3A', color: timeframe === 'daily' ? '#0A0A0A' : '#FFF'}}>Daily</button>
+                        <button className="button" onClick={() => setTimeframe('weekly')} style={{backgroundColor: timeframe === 'weekly' ? '#FFD700' : '#3A3A3A', color: timeframe === 'weekly' ? '#0A0A0A' : '#FFF'}}>Weekly</button>
+                        <button className="button" onClick={() => setTimeframe('lifetime')} style={{backgroundColor: timeframe === 'lifetime' ? '#FFD700' : '#3A3A3A', color: timeframe === 'lifetime' ? '#0A0A0A' : '#FFF'}}>Lifetime</button>
+                    </div>
+
+                    <div className="dashboardSection">
+                        <p className="dashboardSectionTitle">Performance ({timeframe.charAt(0).toUpperCase() + timeframe.slice(1)})</p>
+                        {loading ? <p>Loading...</p> : (
+                            sortedCreators.map(creator => (
+                                <div key={creator.id} className="leaderboard-item" style={{backgroundColor: '#3A3A3A'}}>
+                                    <img src={creator.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} alt={creator.creatorName} className="leaderboard-pfp" />
+                                    <div className="leaderboard-info">
+                                        <p className="leaderboard-name">{creator.creatorName}</p>
+                                    </div>
+                                    <div className="leaderboard-clicks-container">
+                                        <p className="leaderboard-clicks">{getClickCount(creator)}</p>
+                                        <p className="leaderboard-clicks-label">Total Clicks</p>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                    
+                    <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#555', marginTop: '30px' }}>
+                        <span className="buttonText">Back to Admin Dashboard</span>
+                    </button>
+                </div>
+            );
         };
-
-        fetchData();
-    }, []);
-    
-    const toggleCreator = (creatorId) => {
-        setExpandedCreator(expandedCreator === creatorId ? null : creatorId);
-    };
-
-    if (loading) {
-        return <div className="screenContainer"><p className="heading">Loading Analytics...</p></div>;
-    }
-
-    return (
-        <div className="screenContainer">
-            <p className="heading">Creator Content Analytics</p>
-            <p className="subHeading">Real-time click counts on featured links.</p>
-
-            <div className="dashboardSection">
-                <p className="dashboardSectionTitle">Performance by Creator</p>
-                {creatorAnalytics.length === 0 ? (
-                    <p className="dashboardItem">No creator data found.</p>
-                ) : (
-                    creatorAnalytics.map(creator => (
-                        <div key={creator.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
-                            <div className="flex justify-between items-center w-full cursor-pointer" onClick={() => toggleCreator(creator.id)}>
-                                <div className="flex items-center">
-                                     <img src={creator.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} alt={creator.creatorName} style={{width: '40px', height: '40px', borderRadius: '50%', marginRight: '15px'}}/>
-                                     <p className="adminDashboardItemTitle">{creator.creatorName}</p>
-                                </div>
-                                <p className="font-bold text-lg" style={{color: '#FFD700'}}>{creator.totalClicks} Total Clicks</p>
-                            </div>
-                            
-                            {expandedCreator === creator.id && (
-                                <div className="pt-4 mt-4 border-t border-gray-600">
-                                    {creator.content.length > 0 ? (
-                                        creator.content.map(item => (
-                                            <div key={item.id} className="flex justify-between items-center p-2 bg-gray-700 rounded-md mb-2">
-                                                <span>{item.title}</span>
-                                                <span style={{color: '#FFD700'}}>{item.clickCount || 0} Clicks</span>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <p className="text-gray-400">This creator has no tracked content items.</p>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    ))
-                )}
-            </div>
-            
-            <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}>
-                <span className="buttonText">Back to Admin Dashboard</span>
-            </button>
-        </div>
-    );
-};
 
 
 // ======================================================================
 // --- Your App component should start on the very next line ---
 // ======================================================================
-
+        
 
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
@@ -4508,29 +4611,46 @@ const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
                 setTimeout(() => setMessage(''), 3000);
             };
 
-            const handleVideoPress = (url, creatorProfileForAnalytics) => {
-            // --- 1. Log to Firebase Analytics (as before) ---
-            if (creatorProfileForAnalytics) {
-            logFeaturedLinkClick(selectedUserId, creatorProfileForAnalytics.creatorName);
+                        // --- UPDATED CLICK HANDLING LOGIC ---
+            const handleVideoPress = async (url, contentItem) => {
+                if (!currentUser) {
+                    showMessage("Please sign up or log in to engage with content!");
+                    return;
                 }
-            
-             // --- 2. NEW: Increment the counter in Firestore ---
-    if (creatorProfileForAnalytics && creatorProfileForAnalytics.featuredVideoLink && creatorProfileForAnalytics.featuredVideoLink.liveFeedContentId) {
-        const contentId = creatorProfileForAnalytics.featuredVideoLink.liveFeedContentId;
-        const contentDocRef = doc(db, `artifacts/${appId}/public/data/content_items`, contentId);
-        
-        updateDoc(contentDocRef, {
-            clickCount: increment(1)
-        }).catch(error => {
-            console.error("Failed to increment click count:", error);
-        });
-    }
 
-    // --- 3. Open the video modal (as before) ---
-    setCurrentVideoUrl(url);
-    setShowVideoModal(true);
-    };
+                // Silently open the video without counting if the creator clicks their own link.
+                if (currentUser.uid === contentItem.createdBy) {
+                    setCurrentVideoUrl(url);
+                    setShowVideoModal(true);
+                    return;
+                }
+                
+                // Log the event to Google Analytics for long-term trend analysis.
+                logFeaturedLinkClick(contentItem.creatorId, contentItem.creatorName);
+                
+                // Get today's date in YYYY-MM-DD format.
+                const today = new Date().toISOString().slice(0, 10);
+                
+                // Define the path to today's click-tracking document.
+                const dailyClickRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentItem.id}/daily_clicks`, today);
 
+                try {
+                    // This command creates the subcollection and document if they don't exist,
+                    // and then safely increments the count.
+                    await setDoc(dailyClickRef, {
+                        count: increment(1),
+                        creatorId: contentItem.createdBy // IMPORTANT: We store this for the cloud function.
+                    }, { merge: true });
+
+                } catch (error) {
+                    console.error("Failed to record click in Firestore:", error);
+                    // The user still gets to see the video even if the click fails to record.
+                }
+
+                // Open the video modal for the user.
+                setCurrentVideoUrl(url);
+                setShowVideoModal(true);
+            };
             const closeVideoModal = () => {
                 setShowVideoModal(false);
                 setCurrentVideoUrl('');
@@ -4563,6 +4683,7 @@ const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
                         try {
                             const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
                             
+
                             const featuredQuery = query(contentCollectionRef, where('contentType', '==', 'Featured'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
                             const featuredSnapshot = await getDocs(featuredQuery);
                             const featuredData = featuredSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -4692,6 +4813,9 @@ const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
                 return (
                     <div className="screenContainer">
                         <div className="topRightButtonContainer">
+                         {currentUser && (
+                         <button className="topButton" onClick={() => setActiveScreen('CreatorLeaderboard')}>Top Creators</button>
+                            )}
                             <button className="topButton" onClick={() => setActiveScreen('Support')}>Support Us</button>
                             {currentUser ? (
                                 <button className="topButton" onClick={handleLogout}>Logout</button>
@@ -5545,6 +5669,14 @@ case 'Discover':
                     case 'AdminCampaignDetails': 
                         return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile} />;
                     
+                    case 'CreatorLeaderboard':
+                        if (!currentUser) {
+                            showMessage("Please log in to view the leaderboard.");
+                            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                            }
+                            return <CreatorLeaderboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+
+
                     case 'AnalyticsDashboard':
                         return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
 
