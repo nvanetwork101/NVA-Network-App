@@ -1640,7 +1640,39 @@
             font-size: 12px;
             color: #AAA;
         }
-        /* END: New Follow System Styles */
+        .video-player-actions {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 11; /* Ensures it's above the close button */
+            display: flex;
+            gap: 10px;
+        }
+        .like-button {
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background-color 0.2s, color 0.2s, transform 0.1s ease;
+        }
+        .like-button:active {
+            transform: scale(0.95);
+        }
+        .like-button.liked {
+            background-color: #FFD700;
+            color: #0A0A0A;
+        }
+        .like-button.not-liked {
+            background-color: rgba(58, 58, 58, 0.8);
+            color: #FFF;
+            border: 1px solid #555;
+        }
+              /* END: New Follow System Styles */
         
     </style>
 </head>
@@ -1807,34 +1839,81 @@
             return youtubeUrl;
         };
 
-        const VideoPlayerModal = ({ videoUrl, onClose }) => {
-            if (!videoUrl) return null;
+        // ======================================================================
+// --- 1. REPLACE your VideoPlayerModal component with this ---
+// ======================================================================
+const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMessage }) => {
+    if (!videoUrl || !contentItem) return null;
 
-            // Use the new, more powerful helper function
-            const { embedUrl, isVertical } = extractVideoInfo(videoUrl);
+    const [isLiked, setIsLiked] = useState(false);
+    const [likeCount, setLikeCount] = useState(contentItem.likeCount || 0);
 
-            // Fallback for URLs that cannot be parsed into an embed link
-            const finalEmbedUrl = embedUrl || (videoUrl.includes('?') ? `${videoUrl}&autoplay=1` : `${videoUrl}?autoplay=1`);
+    // This effect checks the like status when the modal opens and listens for real-time count updates
+    useEffect(() => {
+        if (!currentUser) return;
+        
+        // 1. Check if the current user has already liked this specific video
+        const likeDocRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentItem.id}/likes`, currentUser.uid);
+        getDoc(likeDocRef).then(docSnap => {
+            if (docSnap.exists()) {
+                setIsLiked(true);
+            }
+        });
+        
+        // 2. Listen for real-time updates to the like count on the main content item
+        const contentDocRef = doc(db, `artifacts/${appId}/public/data/content_items`, contentItem.id);
+        const unsubscribe = onSnapshot(contentDocRef, (doc) => {
+            if (doc.exists()) {
+                setLikeCount(doc.data().likeCount || 0);
+            }
+        });
 
-            return (
-                <div className="videoModalOverlay">
-                    {/* Conditionally add the 'vertical' class for vertical videos */}
-                    <div className={`videoModalContent ${isVertical ? 'vertical' : ''}`}>
-                        <button className="closeButton" onClick={onClose}>×</button>
-                        {/* Also add the 'vertical' class to the iframe container */}
-                        <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
-                            <iframe
-                                src={finalEmbedUrl}
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                                allowFullScreen
-                                title="Embedded Video Content"
-                            ></iframe>
-                        </div>
-                    </div>
+        return () => unsubscribe(); // This cleans up the listener when the modal closes
+    }, [contentItem.id, currentUser]);
+
+    const handleLikeToggle = async () => {
+        if (!currentUser) {
+            showMessage("Please log in to like content!");
+            return;
+        }
+        
+        const likeDocRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentItem.id}/likes`, currentUser.uid);
+
+        if (isLiked) {
+            // If it's already liked, we UNLIKE it by deleting the document
+            await deleteDoc(likeDocRef);
+            setIsLiked(false);
+        } else {
+            // If it's not liked, we LIKE it by creating the document
+            await setDoc(likeDocRef, { createdAt: new Date().toISOString() });
+            setIsLiked(true);
+        }
+    };
+
+    const { embedUrl, isVertical } = extractVideoInfo(videoUrl);
+    const finalEmbedUrl = embedUrl || (videoUrl.includes('?') ? `${videoUrl}&autoplay=1` : `${videoUrl}?autoplay=1`);
+
+    return (
+        <div className="videoModalOverlay">
+            <div className={`videoModalContent ${isVertical ? 'vertical' : ''}`}>
+                <div className="video-player-actions">
+                    <button onClick={handleLikeToggle} className={`like-button ${isLiked ? 'liked' : 'not-liked'}`}>
+                        👍 <span>{likeCount}</span>
+                    </button>
                 </div>
-            );
-        };
-
+                <button className="closeButton" onClick={onClose}>×</button>
+                <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
+                    <iframe
+                        src={finalEmbedUrl}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        title="Embedded Video Content"
+                    ></iframe>
+                </div>
+            </div>
+        </div>
+    );
+};
 
                 // --- START OF NEW COMPONENT ---
         // --- START: REPLACEMENT FOR DiscoverUsersScreen ---
@@ -4117,14 +4196,12 @@ const AdminContentManagerScreen = ({
             );
         };
         
-        const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail }) => {
+    const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, handleVideoPress }) => {
     const [categories, setCategories] = useState([]);
     const [activeCategory, setActiveCategory] = useState('Live Premieres');
     const [content, setContent] = useState([]);
     const [loadingCategories, setLoadingCategories] = useState(true);
     const [loadingContent, setLoadingContent] = useState(false);
-    const [showVideoModal, setShowVideoModal] = useState(false);
-    const [currentVideoUrl, setCurrentVideoUrl] = useState('');
     const [liveStreamUrl, setLiveStreamUrl] = useState('');
 
     useEffect(() => {
@@ -4142,7 +4219,9 @@ const AdminContentManagerScreen = ({
 
     useEffect(() => {
         if (!activeCategory || activeCategory === 'Live Premieres') {
-            setContent([]); setLoadingContent(false); return;
+            setContent([]);
+            setLoadingContent(false);
+            return;
         }
         setLoadingContent(true);
         const contentRef = collection(db, `artifacts/${appId}/public/data/content_items`);
@@ -4153,71 +4232,9 @@ const AdminContentManagerScreen = ({
         });
         return () => unsubscribe();
     }, [activeCategory]);
-
-    const handleVideoPress = (url) => { setCurrentVideoUrl(url); setShowVideoModal(true); };
-    const closeVideoModal = () => { setShowVideoModal(false); setCurrentVideoUrl(''); };
-
-    const LiveStreamPlayer = () => {
-        if (isLive) {
-            const { embedUrl, isVertical } = extractVideoInfo(liveStreamUrl);
-            const finalEmbedUrl = embedUrl || `${liveStreamUrl}?autoplay=1`;
-            return (
-                // This wrapper will center the live video player
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <div className={`videoModalContent`} style={{position: 'relative', width: '100%', maxWidth: '900px', height: 'calc(100vh - 300px)', minHeight: '400px', boxShadow: 'none', background: 'transparent'}}>
-                        <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`} style={{height: '100%', paddingBottom: 0}}>
-                            <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-        
-        if (countdownText) {
-            return (
-                <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}>
-                    {liveThumbnail ? (
-                        <img 
-                            src={liveThumbnail} 
-                            alt="Coming Soon" 
-                            style={{
-                                display: 'block', 
-                                margin: '0 auto', 
-                                width: '100%', 
-                                maxWidth: '480px', 
-                                borderRadius: '10px', 
-                                boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
-                            }} 
-                        />
-                    ) : (
-                        <div style={{
-                            margin: '0 auto', // Center the placeholder box
-                            width: '100%', 
-                            maxWidth: '480px', // Give it a matching max-width
-                            height: '250px', 
-                            backgroundColor: '#2A2A2A', 
-                            borderRadius: '10px', 
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center'
-                        }}>
-                             <p className="heading">Coming Soon</p>
-                        </div>
-                    )}
-                    <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p>
-                    <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p>
-                </div>
-            );
-        }
-
-        return (
-            <div style={{textAlign: 'center', paddingTop: '50px'}}>
-                <p className="heading">Stream Offline</p>
-                <p className="subHeading">No live premiere is currently scheduled.</p>
-            </div>
-        );
-    };
-
+    
+    // --- FIX: The LiveStreamPlayer logic is now directly part of the return statement ---
+    
     return (
         <div className="screenContainer">
             <p className="sectionTitle">Discover Content</p>
@@ -4232,7 +4249,53 @@ const AdminContentManagerScreen = ({
             )}
             
             <div className="categoryContent">
-                {activeCategory === 'Live Premieres' ? <LiveStreamPlayer /> : <p>Other category content goes here.</p>}
+                {activeCategory === 'Live Premieres' ? (
+                    <>
+                        {isLive ? (
+                            (() => {
+                                const { embedUrl, isVertical } = extractVideoInfo(liveStreamUrl);
+                                const finalEmbedUrl = embedUrl || `${liveStreamUrl}?autoplay=1`;
+                                return (
+                                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                        <div className={`videoModalContent`} style={{position: 'relative', width: '100%', maxWidth: '900px', height: 'calc(100vh - 300px)', minHeight: '400px', boxShadow: 'none', background: 'transparent'}}>
+                                            <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`} style={{height: '100%', paddingBottom: 0}}>
+                                                <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()
+                        ) : countdownText ? (
+                            <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}>
+                                {liveThumbnail ? (
+                                    <img src={liveThumbnail} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'}} />
+                                ) : (
+                                    <div style={{ margin: '0 auto', width: '100%', maxWidth: '480px', height: '250px', backgroundColor: '#2A2A2A', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                         <p className="heading">Coming Soon</p>
+                                    </div>
+                                )}
+                                <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p>
+                                <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p>
+                            </div>
+                        ) : (
+                            <div style={{textAlign: 'center', paddingTop: '50px'}}>
+                                <p className="heading">Stream Offline</p>
+                                <p className="subHeading">No live premiere is currently scheduled.</p>
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <div className="contentGrid">
+                        {loadingContent ? <p>Loading...</p> : content.map(item => (
+                            <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                                <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center'}}>
+                                    <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                </div>
+                                <p className="contentTitle">{item.title}</p>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -4935,8 +4998,9 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                 setShowVideoModal(true);
             };
             const closeVideoModal = () => {
-                setShowVideoModal(false);
-                setCurrentVideoUrl('');
+            setShowVideoModal(false);
+            setCurrentVideoUrl('');
+            setCurrentContentItem(null); // This new line is important!
             };
 
             const handleLogout = async () => {
@@ -6075,9 +6139,8 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                         </div>
                     )}
 
-                    {showVideoModal && (
-                        <VideoPlayerModal videoUrl={currentVideoUrl} onClose={closeVideoModal} />
-                    )}
+                    {showVideoModal && <VideoPlayerModal videoUrl={currentVideoUrl} onClose={closeVideoModal} 
+                    contentItem={currentContentItem} currentUser={currentUser} showMessage={showMessage} />}
 
                     {showConfirmationModal && (
                         <ConfirmationModal
