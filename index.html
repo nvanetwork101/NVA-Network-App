@@ -1874,6 +1874,116 @@
     );
 };
 
+                const LikeButton = ({ contentItem, currentUser, showMessage }) => {
+    const [isLiked, setIsLiked] = useState(false);
+    const [likeCount, setLikeCount] = useState(contentItem.likeCount || 0);
+    const [isLoading, setIsLoading] = useState(true); // Start in a loading state
+
+    // Determine the correct ID for the original content item
+    const contentDocId = contentItem.originalContentId || contentItem.id;
+    
+    // This useEffect hook runs once to check if the user has already liked this post.
+    useEffect(() => {
+        if (!currentUser || !contentDocId) {
+            setIsLoading(false);
+            return;
+        }
+        
+        const likeRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}/likes`, currentUser.uid);
+        
+        const unsubscribe = onSnapshot(likeRef, (docSnap) => {
+            setIsLiked(docSnap.exists());
+            setIsLoading(false);
+        });
+
+        return () => unsubscribe(); // Cleanup the listener
+    }, [contentDocId, currentUser]);
+    
+    // This useEffect hook keeps the public like count in sync with the database.
+    useEffect(() => {
+        if (!contentDocId) return;
+
+        const contentRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}`);
+        
+        const unsubscribe = onSnapshot(contentRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setLikeCount(docSnap.data().likeCount || 0);
+            }
+        });
+
+        return () => unsubscribe();
+    }, [contentDocId]);
+
+
+    const handleLike = async (e) => {
+        e.stopPropagation(); // Stop the click from opening the video player.
+        
+        if (!currentUser) {
+            showMessage("Please log in to like content.");
+            return;
+        }
+        if (isLoading) return; // Prevent clicks while loading initial state
+
+        const contentRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}`);
+        const likeRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}/likes`, currentUser.uid);
+
+        // Optimistically update the UI for a fast user experience.
+        const newLikedState = !isLiked;
+        const newLikeCount = newLikedState ? likeCount + 1 : likeCount - 1;
+        setIsLiked(newLikedState);
+        setLikeCount(newLikeCount);
+
+        try {
+            if (newLikedState) {
+                // User is LIKING the post
+                await setDoc(likeRef, { likedAt: new Date().toISOString() });
+                await updateDoc(contentRef, { likeCount: increment(1) });
+            } else {
+                // User is UNLIKING the post
+                await deleteDoc(likeRef);
+                await updateDoc(contentRef, { likeCount: increment(-1) });
+            }
+        } catch (error) {
+            console.error("Error updating like status:", error);
+            showMessage("An error occurred. Please try again.");
+            // If the database update fails, revert the optimistic UI changes.
+            setIsLiked(!newLikedState);
+            setLikeCount(likeCount);
+        }
+    };
+
+    const heartIconPath = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
+
+    return (
+        <button
+            onClick={handleLike}
+            disabled={isLoading} // Disable button until we know the like status
+            style={{
+                position: 'absolute',
+                bottom: '8px',
+                right: '8px',
+                backgroundColor: 'rgba(10, 10, 10, 0.7)',
+                border: '1px solid #FFD700',
+                borderRadius: '50%',
+                width: 'auto',
+                minWidth: '32px',
+                height: '32px',
+                padding: '0 8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                gap: '4px',
+                transition: 'transform 0.2s'
+            }}
+        >
+            <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: isLiked ? '#FFD700' : '#FFF' }}>
+                <path d={heartIconPath}></path>
+            </svg>
+            <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>{likeCount}</span>
+        </button>
+    );
+};
 
                 // --- START OF NEW COMPONENT ---
         // --- START: REPLACEMENT FOR DiscoverUsersScreen ---
@@ -4595,14 +4705,16 @@ useEffect(() => {
             <p className="heading">Following</p>
             <div className="vertical-carousel-container" style={{ height: 'auto', maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', scrollSnapType: 'none' }}>
                 {feedItems.map((item) => (
-                    <button key={item.id} className="vertical-carousel-item" onClick={() => handleVideoPress(item.embedUrl, item)}>
+                    <button key={item.id} className="vertical-carousel-item" style={{position: 'relative'}} onClick={() => handleVideoPress(item.embedUrl, item)}>
                         <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
-                        <div className="liveFeedContent">
-                            <p className="liveFeedTitle">{item.title}</p>
-                            <p className="liveFeedCreator">by {item.creatorName}</p>
-                        </div>
-                    </button>
-                ))}
+                            <div className="liveFeedContent">
+                        <p className="liveFeedTitle">{item.title}</p>
+                    <p className="liveFeedCreator">by {item.creatorName}</p>
+                </div>
+                {/* --- ADD THIS LINE --- */}
+            <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />
+            </button>
+            ))}
             </div>
         </div>
     );
@@ -4781,8 +4893,8 @@ useEffect(() => {
              // REPLACE THE OLD useEffect WITH THIS ENTIRE BLOCK
             // REPLACE THE OLD useEffect WITH THIS ENTIRE BLOCK
             useEffect(() => {
-            console.log("CURRENT APP ID:", appId);
-                let unsubscribeProfile = () => {};
+           
+                           let unsubscribeProfile = () => {};
                 const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
                     setCurrentUser(user);
                     unsubscribeProfile(); // Important: Unsubscribe from any previous user's profile listener
@@ -5177,16 +5289,19 @@ useEffect(() => {
                             )}
                         </div>
                         {loading ? <p>Loading trending...</p> : (
-                            <div className="contentGrid">
-                                {trending.map((item) => (
-                                    <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl)}>
-                                        <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center'}}>
-                                            <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                        </div>
-                                        <p className="contentTitle">{item.title}</p>
-                                    </button>
-                                ))}
+                            // Inside HomeScreen...
+                <div className="contentGrid">
+                    {trending.map((item) => (
+                        <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                            <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
+                                <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                            {/* --- ADD THIS LINE --- */}
+                                <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />
                             </div>
+                        <p className="contentTitle">{item.title}</p>
+                    </button>
+                    ))}
+                </div>
                         )}
                         <div className="sectionHeaderWithButton">
                             <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
@@ -5205,17 +5320,17 @@ useEffect(() => {
                                         <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button>
                                     </>
                                 )}
-                                <div className="vertical-carousel-container" ref={verticalCarouselRef}>
-                                    {displayLiveFeed.map((item, index) => (
-                                        // Use a unique key that accounts for cloned items if necessary, e.g., `${item.id}-${index}`
-                                        <button key={`${item.id}-${index}`} className="vertical-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}
-                                        >
-                                            <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
-                                            <div className="liveFeedContent">
-                                                <p className="liveFeedTitle">{item.title}</p>
-                                                <p className="liveFeedCreator">by {item.creatorName}</p>
-                                            </div>
-                                        </button>
+                                    <div className="vertical-carousel-container" ref={verticalCarouselRef}>
+                                        {displayLiveFeed.map((item, index) => (
+                                            <button key={`${item.id}-${index}`} className="vertical-carousel-item" style={{position: 'relative'}} onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                                                <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
+                                                    <div className="liveFeedContent">
+                                                        <p className="liveFeedTitle">{item.title}</p>
+                                                    <p className="liveFeedCreator">by {item.creatorName}</p>
+                                                </div>
+                                            {/* --- THIS IS THE ADDED LINE --- */}
+                                        {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                    </button>
                                     ))}
                                 </div>
                             </div>
@@ -5694,11 +5809,15 @@ const CreatorDashboardScreen = ({
 };
         // --- END OF REPLACEMENT COMPONENT ---
 
-const renderScreen = () => {
+    const renderScreen = () => {
                 switch (activeScreen) {
-case 'Home':
-    return <HomeScreen />;
-case 'Discover':
+    case 'Home':
+    return <HomeScreen
+        currentUser={currentUser}
+        showMessage={showMessage}
+        handleVideoPress={handleVideoPress}
+        />;
+    case 'Discover':
     if (!currentUser) { /* ... */ }
     return <CategoriesScreen showMessage={showMessage} isLive={isLive} countdownText={countdownText} liveThumbnail={liveThumbnail} />;;
                     
