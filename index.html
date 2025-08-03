@@ -5813,26 +5813,76 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                 showMessage('Your featured link has been set!');
                 setIsPublishing(false);
             };
-            const handleRemoveVideo = () => {
-                const videoToRemove = creatorProfile.featuredVideoLink;
-                if (!videoToRemove) return;
-                const deletionLogic = async () => {
-                    setIsPublishing(true);
-                    if (videoToRemove.liveFeedContentId) {
-                        await deleteDoc(doc(db, `artifacts/${appId}/public/data/content_items`, videoToRemove.liveFeedContentId));
+            // --- START: REPLACE YOUR ENTIRE FUNCTION WITH THIS ---
+
+const handleRemoveVideo = () => {
+    const videoToRemove = creatorProfile.featuredVideoLink;
+    if (!videoToRemove) {
+        console.error("Remove button clicked, but no videoToRemove link data was found in the profile.");
+        return;
+    }
+
+    const deletionLogic = async () => {
+        setIsPublishing(true);
+        console.log("--- Starting Deletion Process ---");
+        console.log("User UID:", currentUser?.uid);
+        console.log("Content ID to delete:", videoToRemove?.liveFeedContentId);
+
+        try {
+            // First, ensure there is a public post to delete.
+            if (videoToRemove.liveFeedContentId) {
+                const docRef = doc(db, `artifacts/${appId}/public/data/content_items`, videoToRemove.liveFeedContentId);
+
+                // --- THE SAFETY CHECK ---
+                console.log("Step 1: Attempting to GET the document to verify ownership...");
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const docData = docSnap.data();
+                    console.log("Document exists. Owner in database is:", docData.createdBy);
+                    
+                    // Verify that the current user is the owner.
+                    if (docData.createdBy === currentUser.uid) {
+                        console.log("Ownership confirmed. Proceeding with deletion.");
+                        await deleteDoc(docRef); // This will now succeed.
+                        console.log("Step 2: Public content item successfully deleted.");
+                    } else {
+                        // If not the owner, block the action.
+                        throw new Error(`Permission Denied: User (${currentUser.uid}) is not the creator (${docData.createdBy}).`);
                     }
-                    await updateDoc(doc(db, "creators", currentUser.uid), { featuredVideoLink: null, updatedAt: new Date().toISOString() });
-                    setVideoLinkInput('');
-                    setCustomThumbnailFile(null);
-                    setCustomThumbnailPreview('');
-                    setAutoThumbnailPreview('');
-                    setIsPublishing(false);
-                };
-                setShowConfirmationModal(true);
-                setConfirmationTitle("Remove Featured Link?");
-                setConfirmationMessage("Are you sure? This will remove the link and delete the post from the public Live Feed.");
-                setOnConfirmationAction(() => deletionLogic);
-            };
+                } else {
+                    console.warn("Document in content_items not found. It might have been deleted already.");
+                }
+            }
+
+            // Step 3: Remove the link from the creator's profile.
+            console.log("Step 3: Removing featured link from creator's profile.");
+            await updateDoc(doc(db, "creators", currentUser.uid), { featuredVideoLink: null, updatedAt: new Date().toISOString() });
+            console.log("Step 4: Creator profile updated successfully.");
+
+            // Reset UI fields
+            setVideoLinkInput('');
+            setCustomThumbnailFile(null);
+            setCustomThumbnailPreview('');
+            setAutoThumbnailPreview('');
+
+        } catch (error) {
+            console.error("--- DELETION FAILED ---");
+            console.error("The error occurred during the process:", error);
+            alert("An error occurred. Please check the console for details.");
+        } finally {
+            setIsPublishing(false);
+            console.log("--- Deletion Process Finished ---");
+        }
+    };
+
+    setShowConfirmationModal(true);
+    setConfirmationTitle("Remove Featured Link?");
+    setConfirmationMessage("Are you sure? This will remove the link and delete the post from the public Live Feed.");
+    setOnConfirmationAction(() => deletionLogic);
+};
+
+// --- END OF REPLACEMENT BLOCK ---
             
             if (!creatorProfile) { return (<div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Your Dashboard...</p></div>); }
             
