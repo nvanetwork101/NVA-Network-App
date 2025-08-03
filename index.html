@@ -1943,95 +1943,97 @@
             setActiveScreen('DiscoverUsers');
             return;
         }
+        setLoading(true);
 
-        const fetchProfileData = async () => {
-            setLoading(true);
-            try {
-                // Fetch user profile document
-                const userDocRef = doc(db, "creators", selectedUserId);
-                const userDocSnap = await getDoc(userDocRef);
-                
-                if (userDocSnap.exists()) {
-                    setProfile({ id: userDocSnap.id, ...userDocSnap.data() });
-                } else {
-                    showMessage("This user profile could not be found.");
-                    setActiveScreen('DiscoverUsers');
-                    return;
-                }
-
-                // Fetch user's active campaigns
-                const campaignsRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
-                const q = query(campaignsRef, where('creatorId', '==', selectedUserId), where('status', '==', 'active'));
-                const campaignSnapshot = await getDocs(q);
-                setCampaigns(campaignSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-                // Check if the current user is already following this profile
-                if (currentUser) {
-                    const followDocRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
-                    const followDocSnap = await getDoc(followDocRef);
-                    setIsFollowing(followDocSnap.exists());
-                }
-
-            } catch (error) {
-                console.error("Error fetching user profile:", error);
-                showMessage("Failed to load user profile.");
+        // --- Real-time listener for the viewed profile ---
+        const userDocRef = doc(db, "creators", selectedUserId);
+        const unsubscribeProfile = onSnapshot(userDocRef, (userDocSnap) => {
+            if (userDocSnap.exists()) {
+                setProfile({ id: userDocSnap.id, ...userDocSnap.data() });
+            } else {
+                showMessage("This user profile could not be found.");
                 setActiveScreen('DiscoverUsers');
-            } finally {
-                setLoading(false);
             }
-        };
+        }, (error) => {
+            console.error("Error fetching user profile:", error);
+            showMessage("Failed to load user profile.");
+            setActiveScreen('DiscoverUsers');
+        });
 
-        fetchProfileData();
+        // --- Real-time listener for active campaigns ---
+        const campaignsRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
+        const q = query(campaignsRef, where('creatorId', '==', selectedUserId), where('status', '==', 'active'));
+        const unsubscribeCampaigns = onSnapshot(q, (campaignSnapshot) => {
+            setCampaigns(campaignSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setLoading(false); // Set loading to false after campaigns are also loaded
+        });
+
+        // --- Real-time listener for the follow status ---
+        let unsubscribeFollow = () => {};
+        if (currentUser) {
+            const followDocRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
+            unsubscribeFollow = onSnapshot(followDocRef, (followDocSnap) => {
+                setIsFollowing(followDocSnap.exists());
+            });
+        }
+
+        // --- Cleanup all listeners on unmount ---
+        return () => {
+            unsubscribeProfile();
+            unsubscribeCampaigns();
+            unsubscribeFollow();
+        };
     }, [selectedUserId, currentUser]);
 
     // --- Function to handle the follow/unfollow action ---
     const handleFollowToggle = async () => {
-        if (!currentUser) {
-            showMessage("Please log in to follow creators.");
-            setActiveScreen('Login');
-            return;
-        }
-        if (currentUser.uid === selectedUserId) {
-            showMessage("You cannot follow yourself.");
-            return;
-        }
-        setIsFollowLoading(true);
+    if (!currentUser) {
+        showMessage("Please log in to follow creators.");
+        setActiveScreen('Login');
+        return;
+    }
+    if (currentUser.uid === selectedUserId) {
+        showMessage("You cannot follow yourself.");
+        return;
+    }
+    setIsFollowLoading(true);
 
-        const targetUserRef = doc(db, "creators", selectedUserId);
-        const currentUserRef = doc(db, "creators", currentUser.uid);
-        
-        const targetFollowersRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
-        const currentUserFollowingRef = doc(db, "creators", currentUser.uid, "following", selectedUserId);
+    // These document references are correct.
+    const targetFollowersRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
+    const currentUserFollowingRef = doc(db, "creators", currentUser.uid, "following", selectedUserId);
 
-        try {
-            if (isFollowing) {
-                // UNFOLLOW LOGIC
-                await deleteDoc(targetFollowersRef);
-                await deleteDoc(currentUserFollowingRef);
-                await updateDoc(targetUserRef, { followerCount: increment(-1) });
-                await updateDoc(currentUserRef, { followingCount: increment(-1) });
-                
-                setProfile(p => ({...p, followerCount: (p.followerCount || 1) - 1}));
-                setIsFollowing(false);
-                showMessage(`Unfollowed ${profile.creatorName}.`);
-            } else {
-                // FOLLOW LOGIC
-                await setDoc(targetFollowersRef, { followedAt: new Date().toISOString() });
-                await setDoc(currentUserFollowingRef, { followingSince: new Date().toISOString() });
-                await updateDoc(targetUserRef, { followerCount: increment(1) });
-                await updateDoc(currentUserRef, { followingCount: increment(1) });
-                
-                setProfile(p => ({...p, followerCount: (p.followerCount || 0) + 1}));
-                setIsFollowing(true);
-                showMessage(`You are now following ${profile.creatorName}!`);
-            }
-        } catch (error) {
-            console.error("Error toggling follow:", error);
-            showMessage("Something went wrong. Please try again.");
-        } finally {
-            setIsFollowLoading(false);
+    try {
+        if (isFollowing) {
+            // UNFOLLOW LOGIC
+            await deleteDoc(targetFollowersRef);
+            await deleteDoc(currentUserFollowingRef);
+            
+            // The lines that caused the error have been removed.
+            
+            // Optimistic UI update (this is safe)
+            setProfile(p => ({...p, followerCount: (p.followerCount || 1) - 1}));
+            setIsFollowing(false);
+            showMessage(`Unfollowed ${profile.creatorName}.`);
+        } else {
+            // FOLLOW LOGIC
+            await setDoc(targetFollowersRef, { followedAt: new Date().toISOString() });
+            await setDoc(currentUserFollowingRef, { followingSince: new Date().toISOString() });
+
+            // The lines that caused the error have been removed.
+
+            // Optimistic UI update (this is safe)
+            setProfile(p => ({...p, followerCount: (p.followerCount || 0) + 1}));
+            setIsFollowing(true);
+            showMessage(`You are now following ${profile.creatorName}!`);
         }
-    };
+    } catch (error) {
+        console.error("Error toggling follow:", error);
+        // The error message will now be more specific if it happens.
+        showMessage(`Follow action failed: ${error.message}`);
+    } finally {
+        setIsFollowLoading(false);
+    }
+};
 
     const handleVideoPress = (url) => {
         setCurrentVideoUrl(url);
@@ -4578,41 +4580,35 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
             const [liveThumbnail, setLiveThumbnail] = useState('');
 
              // REPLACE THE OLD useEffect WITH THIS ENTIRE BLOCK
+            // REPLACE THE OLD useEffect WITH THIS ENTIRE BLOCK
             useEffect(() => {
-                const unsubscribe = onAuthStateChanged(auth, async (user) => {
-                console.log('%cAuth State Changed:', 'color: orange; font-weight: bold;', user ? `User UID: ${user.uid}` : 'User is null');
+                let unsubscribeProfile = () => {};
+                const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
                     setCurrentUser(user);
-                    if (user) {
-                        try {
-                            const creatorDocRef = doc(db, "creators", user.uid);
-                            const docSnap = await getDoc(creatorDocRef); // 'docSnap' is created here
+                    unsubscribeProfile(); // Important: Unsubscribe from any previous user's profile listener
 
-                            if (docSnap.exists()) { // NOW it's safe to check if it exists
+                    if (user) {
+                        const creatorDocRef = doc(db, "creators", user.uid);
+                        
+                        // Set up a new real-time listener for the logged-in user's profile
+                        unsubscribeProfile = onSnapshot(creatorDocRef, async (docSnap) => {
+                            if (docSnap.exists()) {
                                 const profileData = docSnap.data();
                                 
-                                // Block banned users
                                 if (profileData.banned) {
                                     showMessage("Your account has been banned. Please contact support.");
                                     await signOut(auth);
-                                    setCurrentUser(null);
-                                    setCreatorProfile(null);
-                                    setActiveScreen('Home');
-                                    return;
+                                    return; // The auth listener will clear state
                                 }
                                 setCreatorProfile(profileData);
-                                
-                                // Update lastLogin
-                                await updateDoc(creatorDocRef, { lastLogin: new Date().toISOString() });
 
-                                // --- NEW ANALYTICS CODE (in the correct place) ---
                                 if (analytics && setUserId && setUserProperties) {
                                     setUserId(analytics, user.uid);
                                     setUserProperties(analytics, { user_role: profileData.role });
                                 }
-                                // --- END OF NEW CODE ---
-
                             } else {
-                                // This is the logic for a brand new user
+                                // This block runs ONLY if the user exists in Auth but not in Firestore (i.e., a new signup).
+                                // It creates the document, and the onSnapshot listener will automatically fire again with the new data.
                                 await setDoc(creatorDocRef, {
                                     email: user.email,
                                     creatorName: user.email.split('@')[0] || "",
@@ -4622,39 +4618,31 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                                     profilePictureUrl: '',
                                     uploadedVideos: { youtube: null, facebook: null, tiktok: null },
                                     createdAt: new Date().toISOString(),
-                                    role: 'user', 
-                                    banned: false 
+                                    role: 'user',
+                                    banned: false,
+                                    followerCount: 0, // Initialize count
+                                    followingCount: 0 // Initialize count
                                 });
-                                const newDocSnap = await getDoc(creatorDocRef);
-                                if(newDocSnap.exists()) {
-                                    const newProfileData = newDocSnap.data();
-                                    setCreatorProfile(newProfileData);
-
-                                    // --- NEW ANALYTICS CODE (for new users) ---
-                                    if (analytics && setUserId && setUserProperties) {
-                                        setUserId(analytics, user.uid);
-                                        setUserProperties(analytics, { user_role: newProfileData.role });
-                                    }
-                                    // --- END OF NEW CODE ---
-                                }
                             }
-                        } catch (error) {
-                            console.error("Error fetching/creating creator profile on auth state change:", error);
-                            showMessage("Error loading profile data.");
-                        }
+                        }, (error) => {
+                            console.error("Error listening to user profile:", error);
+                            showMessage("Could not load your profile data.");
+                        });
                     } else {
-                        // This runs when the user logs out
+                        // User is signed out, clear the profile
                         setCreatorProfile(null);
-                        
-                        // --- CORRECTED: Clear User ID on Logout ---
                         if (analytics && setUserId) {
                            setUserId(analytics, null);
                         }
                     }
                     setAuthLoading(false);
                 });
-                return () => unsubscribe();
-            }, []); // This dependency array should be empty to run only once.
+
+                return () => {
+                    unsubscribeAuth();
+                    unsubscribeProfile();
+                };
+            }, []); // This effect runs once on component mount 
 
             // New useEffect to fetch ALL of creator's campaigns for dashboard
             useEffect(() => {
@@ -5710,6 +5698,8 @@ case 'Discover':
                 </div>
             );
         }
+
+         // --- END OF CORRECTED BLOCK ---
 
         window.onload = function() {
             if (
