@@ -6010,7 +6010,8 @@ const handleRemoveVideo = () => {
                             <span className="buttonText">Back to Home</span>
                         </button>
                     </div>
-                     {showImageAdjustModal && (<ProfilePictureAdjustModal imageUrl={URL.createObjectURL(imageFileToAdjust)} onSave={handleSaveAdjustedProfilePicture} onCancel={handleCancelAdjust} showMessage={showMessage} />)}
+                     {showImageAdjustModal && (<ProfilePictureAdjustModal imageUrl={imageFileToAdjust} onSave={handleSaveAdjustedProfilePicture} 
+                     onCancel={handleCancelAdjust} showMessage={showMessage} />)}
                 </>
             );
         };
