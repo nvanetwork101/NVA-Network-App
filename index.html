@@ -4638,83 +4638,54 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
             );
         };
 
-        // FINAL VERSION of FollowingFeedScreen component
+        // REPLACE THE ENTIRE FollowingFeedScreen COMPONENT
 
 const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handleVideoPress }) => {
     const [loading, setLoading] = useState(true);
     const [feedItems, setFeedItems] = useState([]);
 
-useEffect(() => {
+    useEffect(() => {
         if (!currentUser) return;
-
-        // --- Step 1: Set up the real-time listener for the personal feed. ---
         const feedRef = collection(db, "creators", currentUser.uid, "feed");
         const q = query(feedRef, orderBy("createdAt", "desc"), limit(50));
-        
         const unsubscribeFeed = onSnapshot(q, (feedSnapshot) => {
             const rawFeedItems = feedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            // --- Step 2: Get the CURRENT list of followed creators. ---
             const followingRef = collection(db, "creators", currentUser.uid, "following");
             getDocs(followingRef).then(followingSnapshot => {
-                // Create a Set for instant lookups (much faster than an array).
                 const followedIds = new Set(followingSnapshot.docs.map(doc => doc.id));
-                
-                // --- Step 3: Filter the raw feed. ---
-                // An item is only shown if its creatorId is in the set of followed IDs.
+                // ALSO include the user's own ID in the set so they see their own posts.
+                followedIds.add(currentUser.uid);
                 const filteredItems = rawFeedItems.filter(item => followedIds.has(item.creatorId));
-                
                 setFeedItems(filteredItems);
                 setLoading(false);
             });
-
         }, (error) => {
             console.error("Error fetching following feed: ", error);
             showMessage("Could not load your feed. Please try again.");
             setLoading(false);
         });
-
-        // This cleans up the listener when the user navigates away.
         return () => unsubscribeFeed();
-    }, [currentUser]); // The effect re-runs if the user logs out and back in.
+    }, [currentUser]);
 
-    if (loading) {
-        return (
-            <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
-                <p className="heading">Loading Your Feed...</p>
-            </div>
-        );
-    }
+    if (loading) { return <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Your Feed...</p></div>; }
     
-    // The "Empty State" - now driven by real data.
-    if (feedItems.length === 0) {
-        return (
-            <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
-                <p className="heading">Your Feed is Empty</p>
-                <p className="subHeading">Follow creators to see their latest content here.</p>
-                <button className="button" onClick={() => setActiveScreen('DiscoverUsers')}>
-                    <span className="buttonText">Discover Creators</span>
-                </button>
-            </div>
-        );
-    }
+    if (feedItems.length === 0) { return ( <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Your Feed is Empty</p><p className="subHeading">Follow creators to see their latest content here.</p><button className="button" onClick={() => setActiveScreen('DiscoverUsers')}><span className="buttonText">Discover Creators</span></button></div> ); }
 
-    // This renders the list of feed items.
     return (
         <div className="screenContainer">
             <p className="heading">Following</p>
             <div className="vertical-carousel-container" style={{ height: 'auto', maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', scrollSnapType: 'none' }}>
                 {feedItems.map((item) => (
-                    <button key={item.id} className="vertical-carousel-item" style={{position: 'relative'}} onClick={() => handleVideoPress(item.embedUrl, item)}>
+                    // --- THIS IS THE FIX: Changed from <button> to <div> ---
+                    <div key={item.id} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleVideoPress(item.embedUrl, item)}>
                         <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
-                            <div className="liveFeedContent">
-                        <p className="liveFeedTitle">{item.title}</p>
-                    <p className="liveFeedCreator">by {item.creatorName}</p>
-                </div>
-                {/* --- ADD THIS LINE --- */}
-            <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />
-            </button>
-            ))}
+                        <div className="liveFeedContent">
+                            <p className="liveFeedTitle">{item.title}</p>
+                            <p className="liveFeedCreator">by {item.creatorName}</p>
+                        </div>
+                        {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                    </div>
+                ))}
             </div>
         </div>
     );
