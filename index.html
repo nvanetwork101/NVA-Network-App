@@ -5597,7 +5597,84 @@ const CreatorDashboardScreen = ({
     const handleCancelAdjust = () => { setImageFileToAdjust(null); setShowImageAdjustModal(false); };
     const handleCancelCampaign = async (campaignId, campaignTitle) => { try { const campaignRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId); await updateDoc(campaignRef, { status: 'cancelled', updatedAt: new Date().toISOString(), statusChangedAt: new Date().toISOString() }); showMessage(`Campaign "${campaignTitle}" has been cancelled.`); } catch (error) { showMessage(`Failed to cancel campaign: ${error.message}`); } };
     const confirmCancelCampaign = (campaignId, campaignTitle) => { setConfirmationTitle("Cancel Campaign?"); setConfirmationMessage(`Are you sure you want to cancel your campaign "${campaignTitle}"? This cannot be undone.`); setOnConfirmationAction(() => () => handleCancelCampaign(campaignId, campaignTitle)); setShowConfirmationModal(true); };
-    const handleAddOrUpdateVideo = async () => { if (!videoLinkInput) { showMessage('Please paste a URL first.'); return; } setIsPublishing(true); const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput); if (!videoId) { showMessage('Invalid or unsupported URL.'); setIsPublishing(false); return; } let finalThumbnailUrl = autoThumbnailUrl; if (customThumbnailFile) { showMessage('Uploading custom thumbnail...'); try { const fileName = `thumb_${currentUser.uid}_${Date.now()}`; const storageRefPath = ref(storage, `creator_uploads/${currentUser.uid}/${fileName}`); await uploadBytes(storageRefPath, customThumbnailFile); finalThumbnailUrl = await getDownloadURL(storageRefPath); showMessage('Custom thumbnail uploaded successfully!'); } catch (error) { showMessage(`Thumbnail upload failed: ${error.message}`); setIsPublishing(false); return; } } let newContentRef; try { const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`); newContentRef = await addDoc(contentCollectionRef, { title: `New from ${creatorProfile.creatorName}`, description: `Check out the latest from ${creatorProfile.creatorName}.`, mainUrl: videoLinkInput, customThumbnailUrl: finalThumbnailUrl, embedUrl, videoPlatform: platform, creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, contentType: 'Live Feed', orderIndex: Date.now(), isActive: true, createdAt: new Date().toISOString(), createdBy: currentUser.uid, }); showMessage('Published to the Live Feed!'); } catch (error) { showMessage(`Failed to publish to Live Feed: ${error.message}`); setIsPublishing(false); return; } const videoData = { url: videoLinkInput, thumbnailUrl: finalThumbnailUrl, embedUrl, platform, liveFeedContentId: newContentRef.id }; try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: videoData, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: videoData })); showMessage('Your featured link has been set!'); } catch (error) { showMessage(`Failed to update your profile: ${error.message}`); } finally { setIsPublishing(false); } };
+   // REPLACE THIS ENTIRE FUNCTION
+
+const handleAddOrUpdateVideo = async () => {
+    if (!videoLinkInput) {
+        showMessage('Please paste a URL first.');
+        return;
+    }
+    setIsPublishing(true);
+    const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput);
+    if (!videoId) {
+        showMessage('Invalid or unsupported URL.');
+        setIsPublishing(false);
+        return;
+    }
+    let finalThumbnailUrl = autoThumbnailUrl;
+    if (customThumbnailFile) {
+        showMessage('Uploading custom thumbnail...');
+        try {
+            const fileName = `thumb_${currentUser.uid}_${Date.now()}`;
+            const storageRefPath = ref(storage, `creator_uploads/${currentUser.uid}/${fileName}`);
+            await uploadBytes(storageRefPath, customThumbnailFile);
+            finalThumbnailUrl = await getDownloadURL(storageRefPath);
+            showMessage('Custom thumbnail uploaded successfully!');
+        } catch (error) {
+            showMessage(`Thumbnail upload failed: ${error.message}`);
+            setIsPublishing(false);
+            return;
+        }
+    }
+    let newContentRef;
+    try {
+        const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
+        // --- THIS IS THE SURGICAL FIX ---
+        // We are adding the two new fields to the document creation.
+        newContentRef = await addDoc(contentCollectionRef, {
+            title: `New from ${creatorProfile.creatorName}`,
+            description: `Check out the latest from ${creatorProfile.creatorName}.`,
+            mainUrl: videoLinkInput,
+            customThumbnailUrl: finalThumbnailUrl,
+            embedUrl,
+            videoPlatform: platform,
+            creatorId: currentUser.uid,
+            creatorName: creatorProfile.creatorName,
+            contentType: 'Live Feed',
+            orderIndex: Date.now(),
+            isActive: true,
+            createdAt: new Date().toISOString(),
+            createdBy: currentUser.uid,
+            viewCount: 0, // <-- ADD THIS LINE
+            likeCount: 0  // <-- ADD THIS LINE
+        });
+        showMessage('Published to the Live Feed!');
+    } catch (error) {
+        showMessage(`Failed to publish to Live Feed: ${error.message}`);
+        setIsPublishing(false);
+        return;
+    }
+    const videoData = {
+        url: videoLinkInput,
+        thumbnailUrl: finalThumbnailUrl,
+        embedUrl,
+        platform,
+        liveFeedContentId: newContentRef.id
+    };
+    try {
+        const creatorRef = doc(db, "creators", currentUser.uid);
+        await updateDoc(creatorRef, {
+            featuredVideoLink: videoData,
+            updatedAt: new Date().toISOString()
+        });
+        setCreatorProfile(prev => ({ ...prev, featuredVideoLink: videoData }));
+        showMessage('Your featured link has been set!');
+    } catch (error) {
+        showMessage(`Failed to update your profile: ${error.message}`);
+    } finally {
+        setIsPublishing(false);
+    }
+};
     const handleRemoveVideo = () => { const videoToRemove = creatorProfile.featuredVideoLink; if (!videoToRemove) return; const deletionLogic = async () => { setIsPublishing(true); if (videoToRemove.liveFeedContentId) { try { const contentDocRef = doc(db, `artifacts/${appId}/public/data/content_items`, videoToRemove.liveFeedContentId); await deleteDoc(contentDocRef); showMessage('Post removed from Live Feed.'); } catch (error) { console.error("Error deleting from live feed:", error); showMessage(`Could not remove from feed: ${error.message}`); } } try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: null, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: null })); setVideoLinkInput(''); setCustomThumbnailFile(null); setCustomThumbnailPreview(''); setAutoThumbnailPreview(''); showMessage('Featured link removed from your profile.'); } catch (error) { console.error("Error removing featured video:", error); showMessage(`Failed to remove link: ${error.message}`); } finally { setIsPublishing(false); } }; setShowConfirmationModal(true); setConfirmationTitle("Remove Featured Link?"); setConfirmationMessage("Are you sure? This will remove the link and delete the post from the public Live Feed."); setOnConfirmationAction(() => deletionLogic); };
 
     if (!creatorProfile) { return (<div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Your Dashboard...</p></div>); }
