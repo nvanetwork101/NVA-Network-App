@@ -1653,7 +1653,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs, deleteDoc, limit, increment } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs, deleteDoc, limit, increment, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
         import { getAnalytics, logEvent, setUserId, setUserProperties } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         
@@ -1706,6 +1706,9 @@
         window.getDocs = getDocs; // Expose getDocs for Firestore queries
         window.deleteDoc = deleteDoc; // Expose deleteDoc for Firestore
         window.increment = increment; // Expose the increment function
+        window.runTransaction = runTransaction; // Expose the Transaction function
+        window.ref = ref;
+        window.uploadBytes = uploadBytes;
         window.ref = ref;
         window.uploadBytes = uploadBytes;
         window.getDownloadURL = getDownloadURL;
@@ -1750,6 +1753,7 @@
         const where = window.where;
         const getDocs = window.getDocs;
         const deleteDoc = window.deleteDoc;
+        const runTransaction = window.runTransaction;
         const ref = window.ref;
         const uploadBytes = window.uploadBytes;
         const getDownloadURL = window.getDownloadURL;
@@ -1985,56 +1989,65 @@
         };
     }, [selectedUserId, currentUser]);
 
-    // --- Function to handle the follow/unfollow action ---
+        // --- Function to handle the follow/unfollow action ---
     const handleFollowToggle = async () => {
-    if (!currentUser) {
-        showMessage("Please log in to follow creators.");
-        setActiveScreen('Login');
-        return;
-    }
-    if (currentUser.uid === selectedUserId) {
-        showMessage("You cannot follow yourself.");
-        return;
-    }
-    setIsFollowLoading(true);
-
-    // These document references are correct.
-    const targetFollowersRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
-    const currentUserFollowingRef = doc(db, "creators", currentUser.uid, "following", selectedUserId);
-
-    try {
-        if (isFollowing) {
-            // UNFOLLOW LOGIC
-            await deleteDoc(targetFollowersRef);
-            await deleteDoc(currentUserFollowingRef);
-            
-            // The lines that caused the error have been removed.
-            
-            // Optimistic UI update (this is safe)
-            setProfile(p => ({...p, followerCount: (p.followerCount || 1) - 1}));
-            setIsFollowing(false);
-            showMessage(`Unfollowed ${profile.creatorName}.`);
-        } else {
-            // FOLLOW LOGIC
-            await setDoc(targetFollowersRef, { followedAt: new Date().toISOString() });
-            await setDoc(currentUserFollowingRef, { followingSince: new Date().toISOString() });
-
-            // The lines that caused the error have been removed.
-
-            // Optimistic UI update (this is safe)
-            setProfile(p => ({...p, followerCount: (p.followerCount || 0) + 1}));
-            setIsFollowing(true);
-            showMessage(`You are now following ${profile.creatorName}!`);
+        if (!currentUser) {
+            showMessage("Please log in to follow creators.");
+            setActiveScreen('Login');
+            return;
         }
-    } catch (error) {
-        console.error("Error toggling follow:", error);
-        // The error message will now be more specific if it happens.
-        showMessage(`Follow action failed: ${error.message}`);
-    } finally {
-        setIsFollowLoading(false);
-    }
-};
+        if (currentUser.uid === selectedUserId) {
+            showMessage("You cannot follow yourself.");
+            return;
+        }
+        setIsFollowLoading(true);
 
+        const targetUserRef = doc(db, "creators", selectedUserId);
+        const currentUserRef = doc(db, "creators", currentUser.uid);
+        const targetFollowersRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
+        const currentUserFollowingRef = doc(db, "creators", currentUser.uid, "following", selectedUserId);
+
+        try {
+            await window.runTransaction(db, async (transaction) => {
+                const targetUserDoc = await transaction.get(targetUserRef);
+                const currentUserDoc = await transaction.get(currentUserRef);
+
+                if (!targetUserDoc.exists() || !currentUserDoc.exists()) {
+                    throw "A user document is missing, cannot update follow counts.";
+                }
+
+                if (isFollowing) {
+                    // UNFOLLOW LOGIC
+                    const currentFollowerCount = targetUserDoc.data().followerCount || 0;
+                    const newFollowerCount = Math.max(0, currentFollowerCount - 1); // Prevents going below 0
+
+                    const currentFollowingCount = currentUserDoc.data().followingCount || 0;
+                    const newFollowingCount = Math.max(0, currentFollowingCount - 1); // Safety check for our own count
+
+                    transaction.delete(targetFollowersRef);
+                    transaction.delete(currentUserFollowingRef);
+                    transaction.update(targetUserRef, { followerCount: newFollowerCount });
+                    transaction.update(currentUserRef, { followingCount: newFollowingCount });
+
+                } else {
+                    // FOLLOW LOGIC (no change needed here, but kept for clarity)
+                    transaction.set(targetFollowersRef, { followedAt: new Date().toISOString() });
+                    transaction.set(currentUserFollowingRef, { followingSince: new Date().toISOString() });
+                    transaction.update(targetUserRef, { followerCount: increment(1) });
+                    transaction.update(currentUserRef, { followingCount: increment(1) });
+                }
+            });
+            showMessage(isFollowing ? `Unfollowed ${profile.creatorName}` : `You are now following ${profile.creatorName}!`);
+        } catch (error) {
+            console.error("Error in follow/unfollow transaction:", error);
+            showMessage("Something went wrong. Please try again.");
+        } finally {
+            setIsFollowLoading(false);
+        }
+    };
+
+// --- Function to handle the follow/unfollow action ---
+    
     const handleVideoPress = (url) => {
         setCurrentVideoUrl(url);
         setShowVideoModal(true);
@@ -2793,6 +2806,88 @@
             );
         };
 
+const DataCorrectionTool = ({ showMessage }) => {
+    const [isScanning, setIsScanning] = useState(false);
+    const [scanResults, setScanResults] = useState('');
+
+    const runCountCorrection = async () => {
+        setIsScanning(true);
+        setScanResults('Starting scan... This may take a moment.');
+        showMessage('Starting data integrity scan...');
+
+        try {
+            const creatorsRef = collection(db, "creators");
+            const querySnapshot = await getDocs(creatorsRef);
+            let followersCorrected = 0;
+            let followingCorrected = 0;
+            let usersScanned = 0;
+
+            for (const userDoc of querySnapshot.docs) {
+                const userData = userDoc.data();
+                const userId = userDoc.id;
+                
+                // 1. Check Followers
+                const followersRef = collection(db, "creators", userId, "followers");
+                const followersSnapshot = await getDocs(followersRef);
+                const actualFollowerCount = followersSnapshot.size;
+                const storedFollowerCount = userData.followerCount || 0;
+
+                if (actualFollowerCount !== storedFollowerCount) {
+                    await updateDoc(doc(db, "creators", userId), { followerCount: actualFollowerCount });
+                    followersCorrected++;
+                }
+                
+                // 2. Check Following
+                const followingRef = collection(db, "creators", userId, "following");
+                const followingSnapshot = await getDocs(followingRef);
+                const actualFollowingCount = followingSnapshot.size;
+                const storedFollowingCount = userData.followingCount || 0;
+                
+                if (actualFollowingCount !== storedFollowingCount) {
+                    await updateDoc(doc(db, "creators", userId), { followingCount: actualFollowingCount });
+                    followingCorrected++;
+                }
+                
+                usersScanned++;
+            }
+
+            const resultsMessage = `Scan Complete. Scanned ${usersScanned} users. Corrected ${followersCorrected} follower counts and ${followingCorrected} following counts.`;
+            setScanResults(resultsMessage);
+            showMessage('Scan complete!');
+
+        } catch (error) {
+            console.error("Error during count correction:", error);
+            const errorMessage = `An error occurred: ${error.message}`;
+            setScanResults(errorMessage);
+            showMessage(errorMessage);
+        } finally {
+            setIsScanning(false);
+        }
+    };
+
+    return (
+        <div className="dashboardSection" style={{ border: '2px solid #DC3545', marginTop: '20px' }}>
+            <p className="dashboardSectionTitle">Data Correction Tools</p>
+            <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '15px' }}>
+                Use this tool if you suspect that follower or following counts are incorrect for some users.
+            </p>
+            <button
+                className="button"
+                onClick={runCountCorrection}
+                disabled={isScanning}
+                style={{ backgroundColor: '#FF8C00' }}
+            >
+                <span className="buttonText">{isScanning ? 'Scanning...' : 'Recalculate All Follow Counts'}</span>
+            </button>
+            {scanResults && (
+                <p className="paragraph" style={{ marginTop: '15px', backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px' }}>
+                    {scanResults}
+                </p>
+            )}
+        </div>
+    );
+};
+
 // AdminDashboardScreen Component
 const AdminDashboardScreen = ({
     showMessage,
@@ -2807,13 +2902,13 @@ const AdminDashboardScreen = ({
     setConfirmationMessage,
     setOnConfirmationAction
 }) => {
+    // ... all of your existing state and functions inside this component remain exactly the same ...
+    // (changeUserRoleLogic, confirmRecalculate, useEffect, etc. are all still here)
     const [isUserManagementExpanded, setIsUserManagementExpanded] = useState(true);
     const [isPendingCampaignsExpanded, setIsPendingCampaignsExpanded] = useState(true);
     const [isActiveCampaignsExpanded, setIsActiveCampaignsExpanded] = useState(true);
-
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedRole, setSelectedRole] = useState('All');
-
     const [pendingCampaigns, setPendingCampaigns] = useState([]);
     const [activeCampaigns, setActiveCampaigns] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
@@ -2821,332 +2916,52 @@ const AdminDashboardScreen = ({
     const [isUpdatingRole, setIsUpdatingRole] = useState(null);
     const [banRequests, setBanRequests] = useState([]);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(null);
-
-    // --- START OF FIX: Confirmation Modal Logic ---
-    // This function contains the core logic for changing a user's role.
-    const changeUserRoleLogic = async (targetUser, newRole) => {
-        setIsUpdatingRole(targetUser.id);
-        showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`);
-
-        try {
-            // NOTE: This client-side approach to changing roles is insecure.
-            // In a production app, this should be handled by a Cloud Function invoked by an authorized admin.
-            // For this project, we directly update Firestore.
-            const userDocRef = doc(db, "creators", targetUser.id);
-            await updateDoc(userDocRef, {
-                role: newRole
-            });
-
-            showMessage(`Success! ${targetUser.creatorName || targetUser.email} is now a(n) ${newRole}.`);
-        } catch (error) {
-            console.error("Error changing user role:", error);
-            showMessage(`Error: ${error.message}`);
-        } finally {
-            setIsUpdatingRole(null);
-        }
-    };
-    
-    // This function triggers the confirmation modal for role changes.
-    const confirmChangeUserRole = (targetUser, newRole) => {
-        setConfirmationTitle("Change User Role?");
-        setConfirmationMessage(`Are you sure you want to change ${targetUser.creatorName || targetUser.email}'s role to "${newRole}"?`);
-        // The onConfirm action now calls the logic function.
-        setOnConfirmationAction(() => () => changeUserRoleLogic(targetUser, newRole));
-        setShowConfirmationModal(true);
-    };
-
-    const toggleBanLogic = async (userToBan) => {
-    if (userToBan.id === currentUser.uid) {
-        showMessage("You cannot ban your own account.");
-        return;
-    }
-
-    // SCENARIO 1: An Authority requests to ban another Authority
-    if (creatorProfile.role === 'authority' && userToBan.role === 'authority') {
-        setIsSubmittingRequest(userToBan.id);
-        try {
-            const banRequestRef = collection(db, "banRequests");
-            await addDoc(banRequestRef, {
-                requesterId: currentUser.uid,
-                requesterName: creatorProfile.creatorName,
-                targetUserId: userToBan.id,
-                targetUserName: userToBan.creatorName || userToBan.email,
-                status: 'pending',
-                timestamp: new Date().toISOString()
-            });
-            showMessage(`Ban request for ${userToBan.creatorName || userToBan.email} has been submitted for Admin approval.`);
-        } catch (error) {
-            console.error("Error submitting ban request:", error);
-            showMessage(`Failed to submit ban request: ${error.message}`);
-        } finally {
-            setIsSubmittingRequest(null);
-        }
-        return;
-    }
-
-    // SCENARIO 2: An Admin or an Authority banning a non-authority/admin
-    if (creatorProfile.role === 'authority' && userToBan.role === 'admin') {
-        showMessage("Authority users cannot ban Admin accounts.");
-        return;
-    }
-    try {
-        const userDocRef = doc(db, "creators", userToBan.id);
-        await updateDoc(userDocRef, { banned: !userToBan.banned, updatedAt: new Date().toISOString() });
-        showMessage(`${userToBan.banned ? 'Unbanned' : 'Banned'} user: ${userToBan.creatorName || userToBan.email}`);
-    } catch (error) {
-        console.error("Error toggling ban status:", error);
-        showMessage(`Failed to toggle ban status: ${error.message}`);
-    }
-};
-
-// MODIFIED: Confirmation message is now dynamic
-const confirmToggleBan = (userToBan) => {
-    const action = userToBan.banned ? 'Unban' : 'Ban';
-    const targetUserText = userToBan.creatorName || userToBan.email;
-
-    if (creatorProfile.role === 'authority' && userToBan.role === 'authority') {
-        setConfirmationTitle('Request Authority Ban?');
-        setConfirmationMessage(`This will submit a request for an Admin to ban ${targetUserText}. Proceed?`);
-    } else {
-        setConfirmationTitle(`${action} User?`);
-        setConfirmationMessage(`Are you sure you want to ${action.toLowerCase()} user ${targetUserText}?`);
-    }
-    setOnConfirmationAction(() => () => toggleBanLogic(userToBan));
-    setShowConfirmationModal(true);
-};
-    // --- NEW: Functions for Admins to handle ban requests ---
-const handleApproveBanRequest = async (request) => {
-    try {
-        const userToBanRef = doc(db, "creators", request.targetUserId);
-        const requestRef = doc(db, "banRequests", request.id);
-        await updateDoc(userToBanRef, { banned: true });
-        await deleteDoc(requestRef);
-        showMessage(`Request approved. User ${request.targetUserName} has been banned.`);
-    } catch (error) {
-        console.error("Error approving ban request:", error);
-        showMessage(`Failed to approve ban request: ${error.message}`);
-    }
-};
-
-const handleDenyBanRequest = async (request) => {
-    try {
-        await deleteDoc(doc(db, "banRequests", request.id));
-        showMessage(`Request to ban ${request.targetUserName} has been denied.`);
-    } catch (error) {
-        console.error("Error denying ban request:", error);
-        showMessage(`Failed to deny ban request: ${error.message}`);
-    }
-};
-    // --- END OF FIX ---
-
-
-    const toggleSection = (setterFunction, currentState) => {
-        setterFunction(!currentState);
-    };
-
-    useEffect(() => {
-        const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
-
-        const qPending = query(campaignsCollectionRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc'));
-        const unsubscribePending = onSnapshot(qPending, (snapshot) => {
-            setPendingCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        });
-
-        const qActive = query(campaignsCollectionRef, where('status', '==', 'active'), orderBy('createdAt', 'desc'));
-        const unsubscribeActive = onSnapshot(qActive, (snapshot) => {
-            setActiveCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        });
-
-        const usersCollectionRef = collection(db, "creators");
-        const unsubscribeUsers = onSnapshot(usersCollectionRef, (snapshot) => {
-            setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-            setLoading(false);
-        });
-        
-        let unsubscribeBanRequests = () => {};
-    if (creatorProfile && creatorProfile.role === 'admin') {
-    const banRequestsRef = collection(db, "banRequests");
-    const q = query(banRequestsRef, where('status', '==', 'pending'));
-    unsubscribeBanRequests = onSnapshot(q, (snapshot) => {
-        setBanRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    }
-        return () => {
-            unsubscribePending();
-            unsubscribeActive();
-            unsubscribeUsers();
-            unsubscribeBanRequests(); // <-- ADD THIS LINE
-        };
-    }, [creatorProfile]); // <-- ALSO, MAKE SURE YOU ADD 'creatorProfile' HERE
-
-    if (!currentUser || !creatorProfile || (creatorProfile.role !== 'admin' && creatorProfile.role !== 'authority')) {
-        return (
-            <div className="screenContainer">
-                <p className="heading">Access Denied</p>
-                <p className="subHeading">You must be an Admin or Authority to view this dashboard.</p>
-                <button className="button" onClick={() => setActiveScreen('Login')}><span className="buttonText">Go to Login</span></button>
-            </div>
-        );
-    }
-
-    if (loading) {
-        return (
-            <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
-                <p className="heading">Loading Admin Dashboard...</p>
-                <p className="subHeading" style={{ color: '#FFD700' }}>Please wait.</p>
-            </div>
-        );
-    }
-
-    const filteredUsers = allUsers.filter(user => {
-        if (creatorProfile.role === 'authority' && user.role === 'admin') {
-            return false;
-        }
-        const matchesSearchTerm = searchTerm === '' || (user.creatorName && user.creatorName.toLowerCase().includes(searchTerm.toLowerCase())) || (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()));
-        const matchesRole = selectedRole === 'All' || user.role === selectedRole;
-        return matchesSearchTerm && matchesRole;
-    });
+    const [isCorrectingCount, setIsCorrectingCount] = useState(null);
+    const changeUserRoleLogic = async (targetUser, newRole) => { setIsUpdatingRole(targetUser.id); showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`); try { const userDocRef = doc(db, "creators", targetUser.id); await updateDoc(userDocRef, { role: newRole }); showMessage(`Success! ${targetUser.creatorName || targetUser.email} is now a(n) ${newRole}.`); } catch (error) { console.error("Error changing user role:", error); showMessage(`Error: ${error.message}`); } finally { setIsUpdatingRole(null); } };
+    const confirmChangeUserRole = (targetUser, newRole) => { setConfirmationTitle("Change User Role?"); setConfirmationMessage(`Are you sure you want to change ${targetUser.creatorName || targetUser.email}'s role to "${newRole}"?`); setOnConfirmationAction(() => () => changeUserRoleLogic(targetUser, newRole)); setShowConfirmationModal(true); };
+    const toggleBanLogic = async (userToBan) => { if (userToBan.id === currentUser.uid) { showMessage("You cannot ban your own account."); return; } if (creatorProfile.role === 'authority' && userToBan.role === 'authority') { setIsSubmittingRequest(userToBan.id); try { const banRequestRef = collection(db, "banRequests"); await addDoc(banRequestRef, { requesterId: currentUser.uid, requesterName: creatorProfile.creatorName, targetUserId: userToBan.id, targetUserName: userToBan.creatorName || userToBan.email, status: 'pending', timestamp: new Date().toISOString() }); showMessage(`Ban request for ${userToBan.creatorName || userToBan.email} has been submitted for Admin approval.`); } catch (error) { console.error("Error submitting ban request:", error); showMessage(`Failed to submit ban request: ${error.message}`); } finally { setIsSubmittingRequest(null); } return; } if (creatorProfile.role === 'authority' && userToBan.role === 'admin') { showMessage("Authority users cannot ban Admin accounts."); return; } try { const userDocRef = doc(db, "creators", userToBan.id); await updateDoc(userDocRef, { banned: !userToBan.banned, updatedAt: new Date().toISOString() }); showMessage(`${userToBan.banned ? 'Unbanned' : 'Banned'} user: ${userToBan.creatorName || userToBan.email}`); } catch (error) { console.error("Error toggling ban status:", error); showMessage(`Failed to toggle ban status: ${error.message}`); } };
+    const confirmToggleBan = (userToBan) => { const action = userToBan.banned ? 'Unban' : 'Ban'; const targetUserText = userToBan.creatorName || userToBan.email; if (creatorProfile.role === 'authority' && userToBan.role === 'authority') { setConfirmationTitle('Request Authority Ban?'); setConfirmationMessage(`This will submit a request for an Admin to ban ${targetUserText}. Proceed?`); } else { setConfirmationTitle(`${action} User?`); setConfirmationMessage(`Are you sure you want to ${action.toLowerCase()} user ${targetUserText}?`); } setOnConfirmationAction(() => () => toggleBanLogic(userToBan)); setShowConfirmationModal(true); };
+    const handleApproveBanRequest = async (request) => { try { const userToBanRef = doc(db, "creators", request.targetUserId); const requestRef = doc(db, "banRequests", request.id); await updateDoc(userToBanRef, { banned: true }); await deleteDoc(requestRef); showMessage(`Request approved. User ${request.targetUserName} has been banned.`); } catch (error) { console.error("Error approving ban request:", error); showMessage(`Failed to approve ban request: ${error.message}`); } };
+    const handleDenyBanRequest = async (request) => { try { await deleteDoc(doc(db, "banRequests", request.id)); showMessage(`Request to ban ${request.targetUserName} has been denied.`); } catch (error) { console.error("Error denying ban request:", error); showMessage(`Failed to deny ban request: ${error.message}`); } };
+    const toggleSection = (setterFunction, currentState) => { setterFunction(!currentState); };
+    const recalculateCountsForUser = async (userToFix) => { setIsCorrectingCount(userToFix.id); showMessage(`Recalculating counts for ${userToFix.creatorName || userToFix.email}...`); try { const followersRef = collection(db, "creators", userToFix.id, "followers"); const followersSnapshot = await getDocs(followersRef); const actualFollowerCount = followersSnapshot.size; const followingRef = collection(db, "creators", userToFix.id, "following"); const followingSnapshot = await getDocs(followingRef); const actualFollowingCount = followingSnapshot.size; await updateDoc(doc(db, "creators", userToFix.id), { followerCount: actualFollowerCount, followingCount: actualFollowingCount }); showMessage(`Counts for ${userToFix.creatorName || userToFix.email} have been corrected.`); } catch (error) { console.error("Error during single-user count correction:", error); showMessage(`Error correcting counts: ${error.message}`); } finally { setIsCorrectingCount(null); } };
+    const confirmRecalculate = (userToFix) => { setConfirmationTitle("Recalculate Counts?"); setConfirmationMessage(`This will manually recount followers and following for "${userToFix.creatorName || userToFix.email}" and update their profile. Proceed?`); setOnConfirmationAction(() => () => recalculateCountsForUser(userToFix)); setShowConfirmationModal(true); };
+    useEffect(() => { const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`); const qPending = query(campaignsCollectionRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc')); const unsubscribePending = onSnapshot(qPending, (snapshot) => { setPendingCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const qActive = query(campaignsCollectionRef, where('status', '==', 'active'), orderBy('createdAt', 'desc')); const unsubscribeActive = onSnapshot(qActive, (snapshot) => { setActiveCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const usersCollectionRef = collection(db, "creators"); const unsubscribeUsers = onSnapshot(usersCollectionRef, (snapshot) => { setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setLoading(false); }); let unsubscribeBanRequests = () => {}; if (creatorProfile && creatorProfile.role === 'admin') { const banRequestsRef = collection(db, "banRequests"); const q = query(banRequestsRef, where('status', '==', 'pending')); unsubscribeBanRequests = onSnapshot(q, (snapshot) => { setBanRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); } return () => { unsubscribePending(); unsubscribeActive(); unsubscribeUsers(); unsubscribeBanRequests(); }; }, [creatorProfile]);
+    if (!currentUser || !creatorProfile || (creatorProfile.role !== 'admin' && creatorProfile.role !== 'authority')) { return ( <div className="screenContainer"> <p className="heading">Access Denied</p> <p className="subHeading">You must be an Admin or Authority to view this dashboard.</p> <button className="button" onClick={() => setActiveScreen('Login')}><span className="buttonText">Go to Login</span></button> </div> ); }
+    if (loading) { return ( <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}> <p className="heading">Loading Admin Dashboard...</p> <p className="subHeading" style={{ color: '#FFD700' }}>Please wait.</p> </div> ); }
+    const filteredUsers = allUsers.filter(user => { if (creatorProfile.role === 'authority' && user.role === 'admin') { return false; } const matchesSearchTerm = searchTerm === '' || (user.creatorName && user.creatorName.toLowerCase().includes(searchTerm.toLowerCase())) || (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase())); const matchesRole = selectedRole === 'All' || user.role === selectedRole; return matchesSearchTerm && matchesRole; });
 
     return (
         <div className="screenContainer">
             <p className="heading">Admin Dashboard</p>
             <p className="subHeading">Manage users and crowdfunding campaigns.</p>
 
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '15px', marginBottom: '20px' }}>
-        <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
-        <span className="buttonText">Dashboard Overview</span>
-        </button>
-        <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
-        <span className="buttonText">Manage Content</span>
-        </button>
-        <button className="button" onClick={() => setSelectedAdminSubScreen('ManageCategories')} style={{ backgroundColor: selectedAdminSubScreen === 'ManageCategories' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ManageCategories' ? '#0A0A0A' : '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
-        <span className="buttonText">Manage Categories</span>
-        </button>
-    
-            {/* --- THIS IS THE NEW BUTTON YOU ARE ADDING --- */}
-        <button className="button" onClick={() => setActiveScreen('AnalyticsDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', padding: '10px 20px', borderRadius: '25px' }}>
-        <span className="buttonText">View Analytics</span>
-        </button>
-    </div>
+            {/* --- CHANGE #1: ADD THE "SITE MANAGEMENT" BUTTON --- */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF' }}>
+                    <span className="buttonText">Overview</span>
+                </button>
+                <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF' }}>
+                    <span className="buttonText">Content</span>
+                </button>
+                <button className="button" onClick={() => setSelectedAdminSubScreen('ManageCategories')} style={{ backgroundColor: selectedAdminSubScreen === 'ManageCategories' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ManageCategories' ? '#0A0A0A' : '#FFF' }}>
+                    <span className="buttonText">Categories</span>
+                </button>
+                <button className="button" onClick={() => setSelectedAdminSubScreen('SiteManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'SiteManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'SiteManagement' ? '#0A0A0A' : '#FFF' }}>
+                    <span className="buttonText">Site Management</span>
+                </button>
+                <button className="button" onClick={() => setActiveScreen('AnalyticsDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF' }}>
+                    <span className="buttonText">Analytics</span>
+                </button>
+            </div>
 
             {selectedAdminSubScreen === 'Overview' && (
                 <>
-                {creatorProfile.role === 'admin' && banRequests.length > 0 && (
-    <section className="dashboardSection" style={{ border: '2px solid #FFD700' }}>
-        <p className="dashboardSectionTitle">Pending Authority Ban Requests ({banRequests.length})</p>
-        <div className="dashboardContentList">
-            {banRequests.map(req => (
-                <div key={req.id} className="adminDashboardItem">
-                    <div style={{ flexGrow: 1 }}>
-                        <p className="adminDashboardItemTitle">Target: {req.targetUserName}</p>
-                        <p style={{ fontSize: '12px', color: '#CCC' }}>Requested by: {req.requesterName}</p>
-                    </div>
-                    <button className="adminActionButton approve" onClick={() => handleApproveBanRequest(req)}>Approve Ban</button>
-                    <button className="adminActionButton reject" onClick={() => handleDenyBanRequest(req)}>Deny Request</button>
-                </div>
-            ))}
-        </div>
-    </section>
-    )}
-                    <section className="dashboardSection">
-                        <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}>
-                            <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p>
-                            <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button>
-                        </div>
-                        <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}>
-                            <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}>
-                                <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div>
-                                <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div>
-                                {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> :
-                                    <div className="dashboardContentList">
-                                        {filteredUsers.map(user => (
-                                            <div key={user.id} className="adminDashboardItem" style={{alignItems: 'flex-start'}}>
-                                                <div style={{ flexGrow: 1, marginRight: '10px' }}>
-                                                    <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p>
-                                                    <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p>
-                                                    <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p>
-                                                    <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p>
-                                                </div>
-                                                <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}>
-                                                    {/* --- FIX: Call confirmation function --- */}
-                                                    {currentUser.uid !== user.id && <button 
-    className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} 
-    onClick={() => confirmToggleBan(user)}
-    disabled={isSubmittingRequest === user.id}
-    >
-    {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')}
-</button>}
-                                                    <div className="formGroup" style={{marginBottom: 0}}>
-                                                        <select
-                                                            className="formInput"
-                                                            value={user.role}
-                                                            // --- FIX: Call confirmation function ---
-                                                            onChange={(e) => confirmChangeUserRole(user, e.target.value)}
-                                                            disabled={isUpdatingRole === user.id || user.id === currentUser.uid || (creatorProfile.role === 'authority' && user.role === 'admin')}
-                                                            style={{padding: '5px', fontSize: '12px', width: '120px'}}
-                                                        >
-                                                            <option value="user">User</option>
-                                                            <option value="creator">Creator</option>
-                                                            <option value="authority">Authority</option>
-                                                            {creatorProfile.role === 'admin' && <option value="admin">Admin</option>}
-                                                        </select>
-                                                        {isUpdatingRole === user.id && <p style={{fontSize: '10px', color: '#FFD700', textAlign: 'right'}}>Updating...</p>}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    </section>
-                    
-                    <section className="dashboardSection">
-                        <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}>
-                            <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p>
-                            <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button>
-                        </div>
-                        <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}>
-                            <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}>
-                                {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> :
-                                    <div className="dashboardContentList">
-                                        {pendingCampaigns.map(campaign => (
-                                            <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}>
-                                                <div style={{ flexGrow: 1, marginRight: '10px' }}>
-                                                    <p className="adminDashboardItemTitle">{campaign.title}</p>
-                                                    <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    </section>
-
-                    <section className="dashboardSection">
-                        <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsActiveCampaignsExpanded, isActiveCampaignsExpanded)}>
-                            <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p>
-                            <button className="admin-toggle-button">{isActiveCampaignsExpanded ? '\u25BC' : '\u25B6'}</button>
-                        </div>
-                        <div id="active-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}>
-                            <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}>
-                                {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> :
-                                    <div className="dashboardContentList">
-                                        {activeCampaigns.map(campaign => (
-                                            <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}>
-                                                <div style={{ flexGrow: 1, marginRight: '10px' }}>
-                                                    <p className="adminDashboardItemTitle">{campaign.title}</p>
-                                                    <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    </section>
-
+                    {/* ... The entire Overview section remains unchanged ... */}
+                    {creatorProfile.role === 'admin' && banRequests.length > 0 && ( <section className="dashboardSection" style={{ border: '2px solid #FFD700' }}> <p className="dashboardSectionTitle">Pending Authority Ban Requests ({banRequests.length})</p> <div className="dashboardContentList"> {banRequests.map(req => ( <div key={req.id} className="adminDashboardItem"> <div style={{ flexGrow: 1 }}> <p className="adminDashboardItemTitle">Target: {req.targetUserName}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Requested by: {req.requesterName}</p> </div> <button className="adminActionButton approve" onClick={() => handleApproveBanRequest(req)}>Approve Ban</button> <button className="adminActionButton reject" onClick={() => handleDenyBanRequest(req)}>Deny Request</button> </div> ))} </div> </section> )}
+                    <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList"> {filteredUsers.map(user => ( <div key={user.id} className="adminDashboardItem" style={{alignItems: 'flex-start'}}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p> <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p> <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p> </div> <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}> {currentUser.uid !== user.id && <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} onClick={() => confirmToggleBan(user)} disabled={isSubmittingRequest === user.id}> {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')} </button>} <div className="formGroup" style={{marginBottom: 0}}> <select className="formInput" value={user.role} onChange={(e) => confirmChangeUserRole(user, e.target.value)} disabled={isUpdatingRole === user.id || user.id === currentUser.uid || (creatorProfile.role === 'authority' && user.role === 'admin')} style={{padding: '5px', fontSize: '12px', width: '120px'}}> <option value="user">User</option> <option value="creator">Creator</option> <option value="authority">Authority</option> {creatorProfile.role === 'admin' && <option value="admin">Admin</option>} </select> {isUpdatingRole === user.id && <p style={{fontSize: '10px', color: '#FFD700', textAlign: 'right'}}>Updating...</p>} </div> <button className="adminActionButton" onClick={() => confirmRecalculate(user)} disabled={isCorrectingCount === user.id} style={{ backgroundColor: '#FF8C00' }}> {isCorrectingCount === user.id ? 'Recalculating...' : 'Recalculate Counts'} </button> </div> </div> ))} </div> } </div> </div> </section>
+                    <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p> <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> : <div className="dashboardContentList"> {pendingCampaigns.map(campaign => ( <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{campaign.title}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p> </div> </div> ))} </div> } </div> </div> </section>
+                    <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsActiveCampaignsExpanded, isActiveCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p> <button className="admin-toggle-button">{isActiveCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="active-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : <div className="dashboardContentList"> {activeCampaigns.map(campaign => ( <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{campaign.title}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p> </div> </div> ))} </div> } </div> </div> </section>
                     <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}><span className="buttonText">Back to Home</span></button>
                 </>
             )}
@@ -3157,7 +2972,6 @@ const handleDenyBanRequest = async (request) => {
                     setActiveScreen={setActiveScreen}
                     currentUser={currentUser}
                     creatorProfile={creatorProfile}
-                    // --- Pass the modal props down ---
                     setShowConfirmationModal={setShowConfirmationModal}
                     setConfirmationTitle={setConfirmationTitle}
                     setConfirmationMessage={setConfirmationMessage}
@@ -3175,11 +2989,18 @@ const handleDenyBanRequest = async (request) => {
                     setOnConfirmationAction={setOnConfirmationAction}
                 />
             )}
+            
+            {/* --- CHANGE #2: ADD THE ROUTER LOGIC FOR THE NEW SCREEN --- */}
+            {selectedAdminSubScreen === 'SiteManagement' && (
+                <AdminSiteManagerScreen
+                    showMessage={showMessage}
+                    setActiveScreen={setActiveScreen}
+                />
+            )}
 
         </div>
     );
 };
-
 
         const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
             return (
@@ -3551,7 +3372,7 @@ const AdminContentManagerScreen = ({
 
     const thumbnailFileInputRef = useRef(null);
     const availableContentCategories = ['Trending', 'Featured', 'Live Feed', 'Skits', 'Short Films', 'Interviews', 'Live Premieres', 'Music', 'Documentary', 'Other'];
-
+    
     useEffect(() => {
         if (creatorProfile) {
             if (creatorProfile.role === 'authority') {
@@ -3790,6 +3611,33 @@ const AdminContentManagerScreen = ({
         </div>
     );
 };
+
+                    const AdminSiteManagerScreen = ({ showMessage, setActiveScreen }) => {
+    
+    // In the next steps, we will add logic here to manage social links and view submissions.
+    
+    return (
+        <div className="screenContainer">
+            <p className="heading">Site Management</p>
+            <p className="subHeading">Manage social media links and user feedback.</p>
+            
+            {/* Placeholder for the Social Links Manager */}
+            <div className="dashboardSection">
+                <p className="dashboardSectionTitle">Social Links Manager</p>
+                <p className="dashboardItem">Management interface will be built here.</p>
+            </div>
+            
+            {/* Placeholder for the Contact Submissions Inbox */}
+            <div className="dashboardSection">
+                <p className="dashboardSectionTitle">Contact Form Submissions</p>
+                <p className="dashboardItem">Inbox for user messages will be built here.</p>
+            </div>
+        </div>
+    );
+};
+
+
+
 // =================== END: REPLACE THIS ENTIRE COMPONENT ===================
 
         // REPLACE THE ENTIRE AdminCategoryManagerScreen COMPONENT WITH THIS FINAL VERSION
@@ -4481,6 +4329,8 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
             const [loading, setLoading] = useState(true);
             const [timeframe, setTimeframe] = useState('weekly'); // 'daily', 'weekly', 'lifetime'
 
+            // ADD THIS ENTIRE NEW COMPONENT
+
             useEffect(() => {
                 const creatorsQuery = query(collection(db, "creators"), where('role', '==', 'creator'));
                 const unsubscribe = onSnapshot(creatorsQuery, (snapshot) => {
@@ -4539,6 +4389,87 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
             );
         };
 
+        // FINAL VERSION of FollowingFeedScreen component
+
+const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handleVideoPress }) => {
+    const [loading, setLoading] = useState(true);
+    const [feedItems, setFeedItems] = useState([]);
+
+useEffect(() => {
+        if (!currentUser) return;
+
+        // --- Step 1: Set up the real-time listener for the personal feed. ---
+        const feedRef = collection(db, "creators", currentUser.uid, "feed");
+        const q = query(feedRef, orderBy("createdAt", "desc"), limit(50));
+        
+        const unsubscribeFeed = onSnapshot(q, (feedSnapshot) => {
+            const rawFeedItems = feedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // --- Step 2: Get the CURRENT list of followed creators. ---
+            const followingRef = collection(db, "creators", currentUser.uid, "following");
+            getDocs(followingRef).then(followingSnapshot => {
+                // Create a Set for instant lookups (much faster than an array).
+                const followedIds = new Set(followingSnapshot.docs.map(doc => doc.id));
+                
+                // --- Step 3: Filter the raw feed. ---
+                // An item is only shown if its creatorId is in the set of followed IDs.
+                const filteredItems = rawFeedItems.filter(item => followedIds.has(item.creatorId));
+                
+                setFeedItems(filteredItems);
+                setLoading(false);
+            });
+
+        }, (error) => {
+            console.error("Error fetching following feed: ", error);
+            showMessage("Could not load your feed. Please try again.");
+            setLoading(false);
+        });
+
+        // This cleans up the listener when the user navigates away.
+        return () => unsubscribeFeed();
+    }, [currentUser]); // The effect re-runs if the user logs out and back in.
+
+    if (loading) {
+        return (
+            <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                <p className="heading">Loading Your Feed...</p>
+            </div>
+        );
+    }
+    
+    // The "Empty State" - now driven by real data.
+    if (feedItems.length === 0) {
+        return (
+            <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                <p className="heading">Your Feed is Empty</p>
+                <p className="subHeading">Follow creators to see their latest content here.</p>
+                <button className="button" onClick={() => setActiveScreen('DiscoverUsers')}>
+                    <span className="buttonText">Discover Creators</span>
+                </button>
+            </div>
+        );
+    }
+
+    // This renders the list of feed items.
+    return (
+        <div className="screenContainer">
+            <p className="heading">Following</p>
+            <div className="vertical-carousel-container" style={{ height: 'auto', maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', scrollSnapType: 'none' }}>
+                {feedItems.map((item) => (
+                    <button key={item.id} className="vertical-carousel-item" onClick={() => handleVideoPress(item.embedUrl, item)}>
+                        <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
+                        <div className="liveFeedContent">
+                            <p className="liveFeedTitle">{item.title}</p>
+                            <p className="liveFeedCreator">by {item.creatorName}</p>
+                        </div>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+// --- END OF NEW COMPONENT DEFINITIONS ---
+
 
 // ======================================================================
 // --- Your App component should start on the very next line ---
@@ -4548,7 +4479,7 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
             const [activeScreen, setActiveScreen] = useState('Home');
-
+            const [showMoreMenu, setShowMoreMenu] = useState(false);
             const [activeCategory, setActiveCategory] = useState('Skits');
             const [message, setMessage] = useState('');
             const [showVideoModal, setShowVideoModal] = useState(false);
@@ -4760,43 +4691,42 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
                 setTimeout(() => setMessage(''), 3000);
             };
 
-                        // --- UPDATED CLICK HANDLING LOGIC ---
+          // --- UPDATED CLICK HANDLING LOGIC ---
             const handleVideoPress = async (url, contentItem) => {
                 if (!currentUser) {
                     showMessage("Please sign up or log in to engage with content!");
                     return;
                 }
 
-                // Silently open the video without counting if the creator clicks their own link.
-                if (currentUser.uid === contentItem.createdBy) {
+                // The creator's ID can be in one of two fields depending on the object type.
+                const authorId = contentItem.creatorId || contentItem.createdBy;
+                const contentDocId = contentItem.originalContentId || contentItem.id;
+
+                if (currentUser.uid === authorId) {
                     setCurrentVideoUrl(url);
                     setShowVideoModal(true);
                     return;
                 }
                 
-                // Log the event to Google Analytics for long-term trend analysis.
-                logFeaturedLinkClick(contentItem.creatorId, contentItem.creatorName);
+                logFeaturedLinkClick(authorId, contentItem.creatorName);
                 
-                // Get today's date in YYYY-MM-DD format.
                 const today = new Date().toISOString().slice(0, 10);
                 
-                // Define the path to today's click-tracking document.
-                const dailyClickRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentItem.id}/daily_clicks`, today);
+                // Use the correct content ID.
+                const dailyClickRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}/daily_clicks`, today);
 
                 try {
-                    // This command creates the subcollection and document if they don't exist,
-                    // and then safely increments the count.
                     await setDoc(dailyClickRef, {
                         count: increment(1),
-                        creatorId: contentItem.createdBy // IMPORTANT: We store this for the cloud function.
+                        creatorId: authorId // Use the corrected authorId variable.
                     }, { merge: true });
 
                 } catch (error) {
                     console.error("Failed to record click in Firestore:", error);
-                    // The user still gets to see the video even if the click fails to record.
+                    // Provide a more specific error message in the console.
+                    console.error("Error details:", error.message);
                 }
 
-                // Open the video modal for the user.
                 setCurrentVideoUrl(url);
                 setShowVideoModal(true);
             };
@@ -5532,6 +5462,17 @@ case 'Discover':
     if (!currentUser) { /* ... */ }
     return <CategoriesScreen showMessage={showMessage} isLive={isLive} countdownText={countdownText} liveThumbnail={liveThumbnail} />;;
                     
+                    // ADD THESE TWO NEW CASES
+        case 'FollowingFeed':
+            if (!currentUser) {
+                showMessage("Please log in to see your feed.");
+                return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+            }
+            return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={setActiveScreen} showMessage={showMessage} handleVideoPress={handleVideoPress} />;
+        
+        case 'Contact':
+            return <ContactScreen setActiveScreen={setActiveScreen} />;
+
                     case 'DiscoverUsers':
                         return <DiscoverUsersScreen
                             showMessage={showMessage}
@@ -5653,29 +5594,62 @@ case 'Discover':
 
                     {renderScreen()}
 
-                    <div className="navigationBar">
-                        <button className="navButton" onClick={() => setActiveScreen('Home')}>
-                            <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
-                        </button>
-                        {currentUser && (
-                            <button className="navButton" onClick={() => setActiveScreen('Premium')}>
-                                <span className={`navButtonText ${activeScreen === 'Premium' ? 'activeNavButtonText' : ''}`}>Premium</span>
-                            </button>
-                        )}
-                        {currentUser && (
-                            <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
-                                <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
-                            </button>
-                        )}
-                        {currentUser && creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && (
-                            <button className="navButton" onClick={() => setActiveScreen('AdminDashboard')}>
-                                <span className={`navButtonText ${activeScreen === 'AdminDashboard' ? 'activeNavButtonText' : ''}`}>Admin</span>
-                            </button>
-                        )}
-                        <button className="navButton" onClick={() => setActiveScreen('About')}>
-                            <span className={`navButtonText ${activeScreen === 'About' ? 'activeNavButtonText' : ''}`}>About</span>
-                        </button>
-                    </div>
+                    <div className="navigationBar" style={{ position: 'relative' }}>
+    <button className="navButton" onClick={() => setActiveScreen('Home')}>
+        <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
+    </button>
+    
+    {currentUser && (
+        <button className="navButton" onClick={() => setActiveScreen('FollowingFeed')} style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
+            <span className="navButtonText" style={{ color: '#FFD700' }}>Following</span>
+        </button>
+    )}
+
+    {currentUser && (
+        <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
+            <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
+        </button>
+    )}
+    
+    {currentUser && creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && (
+        <button className="navButton" onClick={() => setActiveScreen('AdminDashboard')}>
+            <span className={`navButtonText ${activeScreen === 'AdminDashboard' ? 'activeNavButtonText' : ''}`}>Admin</span>
+        </button>
+    )}
+
+    <button className="navButton" onClick={() => setShowMoreMenu(!showMoreMenu)}>
+        <span className="navButtonText">More</span>
+    </button>
+
+    {showMoreMenu && (
+        <div style={{
+            position: 'absolute',
+            bottom: '60px',
+            right: '15px',
+            backgroundColor: '#1A1A1A',
+            borderRadius: '10px',
+            boxShadow: '0 -2px 10px rgba(0,0,0,0.5)',
+            border: '1px solid #333',
+            zIndex: 1100,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '5px',
+            padding: '10px'
+        }}>
+            {currentUser && (
+                <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('Premium'); setShowMoreMenu(false); }}>
+                    <span className="navButtonText">Premium</span>
+                </button>
+            )}
+            <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('About'); setShowMoreMenu(false); }}>
+                <span className="navButtonText">About</span>
+            </button>
+            <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('Contact'); setShowMoreMenu(false); }}>
+                <span className="navButtonText">Contact</span>
+            </button>
+        </div>
+    )}
+</div>
 
                     {message && (
                         <div className="messageBox">
