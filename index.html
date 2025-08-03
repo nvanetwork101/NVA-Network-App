@@ -3763,12 +3763,12 @@ const AdminContentManagerScreen = ({
 
     // FINAL VERSION of AdminSiteManagerScreen (with Inbox)
 
-const AdminSiteManagerScreen = ({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
+        const AdminSiteManagerScreen = ({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
     const [socialLinks, setSocialLinks] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
-    
+    const [isLeaderboardEnabled, setIsLeaderboardEnabled] = useState(false);
     const [submissions, setSubmissions] = useState([]);
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
     const [selectedSubmission, setSelectedSubmission] = useState(null);
@@ -3777,8 +3777,27 @@ const AdminSiteManagerScreen = ({ showMessage, setActiveScreen, setShowConfirmat
     useEffect(() => {
         const socialLinksDocRef = doc(db, "settings", "socialLinks");
         const unsubscribe = onSnapshot(socialLinksDocRef, (docSnap) => {
-            if (docSnap.exists()) { const data = docSnap.data(); if (data && Array.isArray(data.links)) { const sortedLinks = [...data.links].sort((a, b) => a.name.localeCompare(b.name)); setSocialLinks(sortedLinks); } else { setSocialLinks([]); } } else { setSocialLinks([]); }
-            setIsLoading(false);
+           if (docSnap.exists()) {
+    const data = docSnap.data();
+    // Handle social links array
+    if (data && Array.isArray(data.links)) {
+        const sortedLinks = [...data.links].sort((a, b) => a.name.localeCompare(b.name));
+        setSocialLinks(sortedLinks);
+    } else {
+        setSocialLinks([]);
+    }
+
+    // --- NEW: Handle the leaderboard toggle ---
+    if (data && typeof data.isLeaderboardEnabled === 'boolean') {
+        setIsLeaderboardEnabled(data.isLeaderboardEnabled);
+    } else {
+        setIsLeaderboardEnabled(false); // Default to false if not set
+    }
+} else {
+    setSocialLinks([]);
+    setIsLeaderboardEnabled(false); // Default to false if doc doesn't exist
+}
+setIsLoading(false);
         });
         return () => unsubscribe();
     }, []);
@@ -3794,8 +3813,21 @@ const AdminSiteManagerScreen = ({ showMessage, setActiveScreen, setShowConfirmat
     }, []);
 
     // handleUpdateLink and handleSaveChanges remain unchanged
-    const handleUpdateLink = (index, field, value) => { const updatedLinks = [...socialLinks]; updatedLinks[index][field] = value; setSocialLinks(updatedLinks); setHasChanges(true); };
-    const handleSaveChanges = async () => { if (!hasChanges) return; setIsSaving(true); showMessage("Saving changes..."); try { const socialLinksDocRef = doc(db, "settings", "socialLinks"); await setDoc(socialLinksDocRef, { links: socialLinks }); showMessage("Changes saved successfully!"); setHasChanges(false); } catch (error) { showMessage(`Error saving changes: ${error.message}`); } finally { setIsSaving(false); } };
+    const handleUpdateField = (fieldName, value) => {
+    if (fieldName === 'isLeaderboardEnabled') {
+        setIsLeaderboardEnabled(value);
+    } else {
+        const [index, field] = fieldName.split('-');
+        const updatedLinks = [...socialLinks];
+        updatedLinks[parseInt(index)][field] = value;
+        setSocialLinks(updatedLinks);
+    }
+    setHasChanges(true);
+};
+    const handleSaveChanges = async () => { if (!hasChanges) return; setIsSaving(true); showMessage("Saving changes..."); try { const socialLinksDocRef = doc(db, "settings", "socialLinks"); await setDoc(socialLinksDocRef, { 
+    links: socialLinks, 
+    isLeaderboardEnabled: isLeaderboardEnabled 
+}, { merge: true }); showMessage("Changes saved successfully!"); setHasChanges(false); } catch (error) { showMessage(`Error saving changes: ${error.message}`); } finally { setIsSaving(false); } };
 
     // handleViewSubmission remains unchanged
     const handleViewSubmission = async (submission) => {
@@ -3842,12 +3874,32 @@ const AdminSiteManagerScreen = ({ showMessage, setActiveScreen, setShowConfirmat
                 <div className="dashboardContentList">
                     {socialLinks.map((link, index) => (
                         <div key={link.name || index} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
-                            <div className="flex justify-between items-center"><p className="adminDashboardItemTitle">{link.name}</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{link.isEnabled ? 'Visible' : 'Hidden'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={link.isEnabled} onChange={(e) => handleUpdateLink(index, 'isEnabled', e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${link.isEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${link.isEnabled ? 'transform translate-x-6' : ''}`}></div></div></label></div>
-                            <div className="formGroup" style={{marginBottom: 0}}><label className="formLabel" style={{fontSize: '12px', color: '#AAA'}}>URL:</label><input type="url" className="formInput" value={link.url} onChange={(e) => handleUpdateLink(index, 'url', e.target.value)} placeholder={`Enter full URL for ${link.name}`} /></div>
+                            <div className="flex justify-between items-center"><p className="adminDashboardItemTitle">{link.name}</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{link.isEnabled ? 'Visible' : 'Hidden'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={link.isEnabled} onChange={(e) => handleUpdateField(`${index}-isEnabled`, e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${link.isEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${link.isEnabled ? 'transform translate-x-6' : ''}`}></div></div></label></div>
+                            <div className="formGroup" style={{marginBottom: 0}}><label className="formLabel" style={{fontSize: '12px', color: '#AAA'}}>URL:</label><input type="url" className="formInput" value={link.url} onChange={(e) => handleUpdateField(`${index}-url`, e.target.value)} placeholder={`Enter full URL for ${link.name}`} /></div>
                         </div>
                     ))}
                 </div>
             </div>
+
+            <div className="dashboardSection">
+    <p className="dashboardSectionTitle">Feature Toggles</p>
+    <div className="adminDashboardItem">
+        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Enable Top Performers Screen</p>
+        <label className="flex items-center cursor-pointer">
+            <span className="mr-3 text-sm font-medium text-gray-300">{isLeaderboardEnabled ? 'Enabled' : 'Disabled'}</span>
+            <div className="relative">
+                <input 
+                    type="checkbox" 
+                    className="sr-only" 
+                    checked={isLeaderboardEnabled} 
+                    onChange={(e) => handleUpdateField('isLeaderboardEnabled', e.target.checked)} 
+                />
+                <div className={`block w-14 h-8 rounded-full ${isLeaderboardEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isLeaderboardEnabled ? 'transform translate-x-6' : ''}`}></div>
+            </div>
+        </label>
+    </div>
+</div>
 
             <div className="dashboardSection" style={{marginTop: '20px'}}>
                 <p className="dashboardSectionTitle">Contact Form Submissions</p>
