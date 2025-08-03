@@ -4783,6 +4783,8 @@ useEffect(() => {
             useEffect(() => {
                 let unsubscribeProfile = () => {};
                 const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+                console.log("Forcing index creation query...");
+                getDocs(query(collection(db, `artifacts/${appId}/public/data/content_items`), orderBy("createdAt", "desc")));
                     setCurrentUser(user);
                     unsubscribeProfile(); // Important: Unsubscribe from any previous user's profile listener
 
