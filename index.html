@@ -5069,246 +5069,124 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                 }
             };
 
-                            const HomeScreen = () => { // MODIFIED: Receive props
-                const [featured, setFeatured] = useState([]);
-                const [trending, setTrending] = useState([]);
-                const [liveFeed, setLiveFeed] = useState([]);
-                const [loading, setLoading] = useState(true);
-                // Modified: Ensure enough clones for seamless loop
-                const [displayFeatured, setDisplayFeatured] = useState([]); 
-                const [displayLiveFeed, setDisplayLiveFeed] = useState([]); 
-                const horizontalCarouselRef = useRef(null);
-                const verticalCarouselRef = useRef(null);
+                // REPLACE THE ENTIRE HomeScreen COMPONENT
 
-                useEffect(() => {
-                    const fetchContent = async () => {
-                        try {
-                            const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
-                            
+    const HomeScreen = ({ currentUser, showMessage, handleVideoPress }) => {
+    const [featured, setFeatured] = useState([]);
+    const [trending, setTrending] = useState([]);
+    const [liveFeed, setLiveFeed] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [displayFeatured, setDisplayFeatured] = useState([]); 
+    const [displayLiveFeed, setDisplayLiveFeed] = useState([]); 
+    const horizontalCarouselRef = useRef(null);
+    const verticalCarouselRef = useRef(null);
 
-                            const featuredQuery = query(contentCollectionRef, where('contentType', '==', 'Featured'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
-                            const featuredSnapshot = await getDocs(featuredQuery);
-                            const featuredData = featuredSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                            setFeatured(featuredData);
-                            // Updated cloning for continuous loop: append copies of the first few items
-                            const numFeaturedClones = 3; // Number of items visible in the carousel
-                            if (featuredData.length > numFeaturedClones) {
-                                setDisplayFeatured([...featuredData, ...featuredData.slice(0, numFeaturedClones)]);
-                            } else {
-                                setDisplayFeatured(featuredData); // No cloning if not enough items
-                            }
+    // ... All of your useEffect hooks for fetching and scrolling content remain unchanged ...
+    useEffect(() => {
+        const fetchContent = async () => {
+            try {
+                const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
+                const featuredQuery = query(contentCollectionRef, where('contentType', '==', 'Featured'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
+                const featuredSnapshot = await getDocs(featuredQuery);
+                const featuredData = featuredSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setFeatured(featuredData);
+                const numFeaturedClones = 3;
+                if (featuredData.length > numFeaturedClones) { setDisplayFeatured([...featuredData, ...featuredData.slice(0, numFeaturedClones)]); } else { setDisplayFeatured(featuredData); }
+                const trendingQuery = query(contentCollectionRef, where('contentType', '==', 'Trending'), where('isActive', '==', true), orderBy('createdAt', 'desc'), limit(6));
+                const trendingSnapshot = await getDocs(trendingQuery);
+                setTrending(trendingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                const liveFeedQuery = query(contentCollectionRef, where('contentType', '==', 'Live Feed'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
+                const liveFeedSnapshot = await getDocs(liveFeedQuery);
+                const liveFeedData = liveFeedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setLiveFeed(liveFeedData);
+                const numLiveFeedClones = 2;
+                if (liveFeedData.length > numLiveFeedClones) { setDisplayLiveFeed([...liveFeedData, ...liveFeedData.slice(0, numLiveFeedClones)]); } else { setDisplayLiveFeed(liveFeedData); }
+            } catch (error) { console.error("Error fetching home screen content:", error); showMessage("Failed to load content. Check connection."); }
+            finally { setLoading(false); }
+        };
+        fetchContent();
+    }, []);
+    useEffect(() => {
+        const horizontalCarousel = horizontalCarouselRef.current;
+        const verticalCarousel = verticalCarouselRef.current;
+        let horizontalInterval;
+        let verticalInterval;
+        const startHorizontalAutoscroll = () => { if (!horizontalCarousel || displayFeatured.length <= 3) { clearInterval(horizontalInterval); return; } const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15; const originalContentWidth = (displayFeatured.length - 3) * itemWidth; horizontalInterval = setInterval(() => { if (horizontalCarousel.scrollLeft >= originalContentWidth - (horizontalCarousel.clientWidth / 2)) { horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' }); } horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' }); }, 3000); };
+        const startVerticalAutoscroll = () => { if (!verticalCarousel || displayLiveFeed.length <= 2) { clearInterval(verticalInterval); return; } const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15; const originalContentHeight = (displayLiveFeed.length - 2) * itemHeight; verticalInterval = setInterval(() => { if (verticalCarousel.scrollTop >= originalContentHeight - (verticalCarousel.clientHeight / 2)) { verticalCarousel.scrollTo({ top: 0, behavior: 'instant' }); } verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' }); }, 3000); };
+        clearInterval(horizontalInterval); clearInterval(verticalInterval);
+        if (!loading) { startHorizontalAutoscroll(); startVerticalAutoscroll(); }
+        return () => { clearInterval(horizontalInterval); clearInterval(verticalInterval); };
+    }, [loading, displayFeatured, displayLiveFeed]);
 
-                            const trendingQuery = query(contentCollectionRef, where('contentType', '==', 'Trending'), where('isActive', '==', true), orderBy('createdAt', 'desc'), limit(6));
-                            const trendingSnapshot = await getDocs(trendingQuery);
-                            setTrending(trendingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                            
-                            const liveFeedQuery = query(contentCollectionRef, where('contentType', '==', 'Live Feed'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
-                            const liveFeedSnapshot = await getDocs(liveFeedQuery);
-                            const liveFeedData = liveFeedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                            setLiveFeed(liveFeedData);
-                            // Updated cloning for continuous loop: append copies of the first few items
-                            const numLiveFeedClones = 2; // Number of items visible in the carousel
-                            if (liveFeedData.length > numLiveFeedClones) {
-                                setDisplayLiveFeed([...liveFeedData, ...liveFeedData.slice(0, numLiveFeedClones)]);
-                            } else {
-                                setDisplayLiveFeed(liveFeedData); // No cloning if not enough items
-                            }
+    const handleHorizontalScroll = (direction) => { const carousel = horizontalCarouselRef.current; if (carousel) { const itemWidth = carousel.children[0]?.offsetWidth + 15; carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' }); } };
+    const handleVerticalScroll = (direction) => { const carousel = verticalCarouselRef.current; if (carousel) { const itemHeight = carousel.children[0]?.offsetHeight + 15; carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' }); } };
 
-                        } catch (error) {
-                            console.error("Error fetching home screen content:", error);
-                            showMessage("Failed to load content. Check connection.");
-                        } finally {
-                            setLoading(false);
-                        }
-                    };
-                    fetchContent();
-                }, []);
-
-                useEffect(() => {
-                    const horizontalCarousel = horizontalCarouselRef.current;
-                    const verticalCarousel = verticalCarouselRef.current;
-
-                    let horizontalInterval;
-                    let verticalInterval;
-
-                    const startHorizontalAutoscroll = () => {
-                        // Only start if carousel exists and there are more items than visible clones
-                        if (!horizontalCarousel || displayFeatured.length <= 3) {
-                            clearInterval(horizontalInterval);
-                            return;
-                        }
-
-                        // Calculate item width including margin-right (15px)
-                        // Use clientWidth to get the visible width of the first child, then add the margin.
-                        // We use `offsetWidth` for actual element width including padding/border, then add the `margin-right`.
-                        const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15; 
-                        
-                        // Calculate the point where the original content ends and clones begin
-                        const originalContentWidth = (displayFeatured.length - 3) * itemWidth; 
-
-                        horizontalInterval = setInterval(() => {
-                            // If we're about to scroll into the cloned section, instantly jump back to the start of the original content
-                            // Check if current scroll position is at or past the point where the original content ends
-                            if (horizontalCarousel.scrollLeft >= originalContentWidth - (horizontalCarousel.clientWidth / 2)) { // Adjusted threshold for smoother wrap
-                                horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
-                            }
-                            horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
-                        }, 3000); // Scroll every 3 seconds
-                    };
-
-                    const startVerticalAutoscroll = () => {
-                        // Only start if carousel exists and there are more items than visible clones
-                        if (!verticalCarousel || displayLiveFeed.length <= 2) {
-                            clearInterval(verticalInterval);
-                            return;
-                        }
-
-                        // Calculate item height including margin-bottom (15px)
-                        const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15; 
-                        
-                        // Calculate the point where the original content ends and clones begin
-                        const originalContentHeight = (displayLiveFeed.length - 2) * itemHeight; 
-
-                        verticalInterval = setInterval(() => {
-                            // If we're about to scroll into the cloned section, instantly jump back to the start of the original content
-                            // Check if current scroll position is at or past the point where the original content ends
-                            if (verticalCarousel.scrollTop >= originalContentHeight - (verticalCarousel.clientHeight / 2)) { // Adjusted threshold for smoother wrap
-                                verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
-                            }
-                            verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
-                        }, 3000); // Scroll every 3 seconds
-                    };
-
-                    // Clear existing intervals before starting new ones or returning
-                    clearInterval(horizontalInterval);
-                    clearInterval(verticalInterval);
-
-                    // Start autoscroll when content is loaded and available
-                    if (!loading) {
-                        startHorizontalAutoscroll();
-                        startVerticalAutoscroll();
-                    }
-
-                    // Cleanup function for when component unmounts or dependencies change
-                    return () => {
-                        clearInterval(horizontalInterval);
-                        clearInterval(verticalInterval);
-                    };
-                }, [loading, displayFeatured, displayLiveFeed]); // Re-run effect when these dependencies change
-
-                const handleHorizontalScroll = (direction) => {
-                    const carousel = horizontalCarouselRef.current;
-                    if (carousel) {
-                        const itemWidth = carousel.children[0]?.offsetWidth + 15; // Ensure offsetWidth is used for accurate width
-                        carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' });
-                    }
-                };
-
-                const handleVerticalScroll = (direction) => {
-                    const carousel = verticalCarouselRef.current;
-                    if (carousel) {
-                        const itemHeight = carousel.children[0]?.offsetHeight + 15; // Ensure offsetHeight is used for accurate height
-                        carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' });
-                    }
-                };
-
-                return (
-                    <div className="screenContainer">
-                        <div className="topRightButtonContainer">
-                         {currentUser && (
-                         <button className="topButton" onClick={() => setActiveScreen('CreatorLeaderboard')}>Top Creators</button>
-                            )}
-                            <button className="topButton" onClick={() => setActiveScreen('Support')}>Support Us</button>
-                            {currentUser ? (
-                                <button className="topButton" onClick={handleLogout}>Logout</button>
-                            ) : (
-                                <button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>
-                            )}
-                        </div>
-                        
-                        <p className="sectionTitle">Featured Highlights</p>
-                        <div className="carousel-wrapper">
-                            {displayFeatured.length > 3 && ( // Only show buttons if there's enough content to scroll
-                                <>
-                                    <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button>
-                                    <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button>
-                                </>
-                            )}
-                            <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
-                                {loading ? (
-                                    // Placeholder items for loading state
-                                    Array.from({ length: 5 }).map((_, i) => (<div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>))
-                                ) : (
-                                    displayFeatured.map((item, index) => (
-                                        // Use a unique key that accounts for cloned items if necessary, e.g., `${item.id}-${index}`
-                                        <div key={`${item.id}-${index}`} className="horizontal-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}
-                                        >
-                                        <img src={item.customThumbnailUrl} alt={item.title} className="carousel-image" />
-                                        </div>
-                                    ))
-                                )}
+    return (
+        <div className="screenContainer">
+            <div className="topRightButtonContainer">
+                {currentUser && (<button className="topButton" onClick={() => setActiveScreen('CreatorLeaderboard')}>Top Creators</button>)}
+                <button className="topButton" onClick={() => setActiveScreen('Support')}>Support Us</button>
+                {currentUser ? (<button className="topButton" onClick={handleLogout}>Logout</button>) : (<button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>)}
+            </div>
+            
+            <p className="sectionTitle">Featured Highlights</p>
+            <div className="carousel-wrapper">
+                {displayFeatured.length > 3 && ( <> <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button> <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button> </> )}
+                <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
+                    {loading ? ( Array.from({ length: 5 }).map((_, i) => (<div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>)) ) : (
+                        displayFeatured.map((item, index) => (
+                            <div key={`${item.id}-${index}`} className="horizontal-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)} style={{cursor: 'pointer'}}>
+                                <img src={item.customThumbnailUrl} alt={item.title} className="carousel-image" />
                             </div>
-                        </div>
+                        ))
+                    )}
+                </div>
+            </div>
 
-                        <div className="sectionHeaderWithButton">
-                            <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
-                            {!currentUser && (
-                                <div style={{display: 'flex', gap: '10px'}}>
-                                    <button className="sectionHeaderButton" onClick={() => setActiveScreen('UserSignUp')}>User Sign Up</button>
-                                    <button className="sectionHeaderButton" onClick={() => setActiveScreen('CreatorSignUp')}>Creator Sign Up</button>
-                                </div>
-                            )}
-                        </div>
-                        {loading ? <p>Loading trending...</p> : (
-                            // Inside HomeScreen...
+            <div className="sectionHeaderWithButton">
+                <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
+                {!currentUser && ( <div style={{display: 'flex', gap: '10px'}}> <button className="sectionHeaderButton" onClick={() => setActiveScreen('UserSignUp')}>User Sign Up</button> <button className="sectionHeaderButton" onClick={() => setActiveScreen('CreatorSignUp')}>Creator Sign Up</button> </div> )}
+            </div>
+            {loading ? <p>Loading trending...</p> : (
                 <div className="contentGrid">
                     {trending.map((item) => (
-                        <button key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                        // --- THIS IS THE FIX: Changed from <button> to <div> ---
+                        <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
                             <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
                                 <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                            {/* --- ADD THIS LINE --- */}
-                                <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />
+                                {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
                             </div>
-                        <p className="contentTitle">{item.title}</p>
-                    </button>
+                            <p className="contentTitle">{item.title}</p>
+                        </div>
                     ))}
                 </div>
-                        )}
-                        <div className="sectionHeaderWithButton">
-                            <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
-                            {currentUser && (
-                                <div style={{display: 'flex', gap: '10px'}}>
-                                    <button className="sectionHeaderButton" onClick={() => setActiveScreen('DiscoverUsers')}>Find Creators</button>
-                                    <button className="sectionHeaderButton" onClick={() => setActiveScreen('Discover')}>Discover All</button>
+            )}
+            
+            <div className="sectionHeaderWithButton">
+                <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
+                {currentUser && ( <div style={{display: 'flex', gap: '10px'}}> <button className="sectionHeaderButton" onClick={() => setActiveScreen('DiscoverUsers')}>Find Creators</button> <button className="sectionHeaderButton" onClick={() => setActiveScreen('Discover')}>Discover All</button> </div> )}
+            </div>
+            {loading ? <p>Loading live feed...</p> : (
+                 <div className="carousel-wrapper">
+                    {displayLiveFeed.length > 2 && ( <> <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button> <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button> </> )}
+                    <div className="vertical-carousel-container" ref={verticalCarouselRef}>
+                        {displayLiveFeed.map((item, index) => (
+                            // --- THIS IS THE FIX: Changed from <button> to <div> ---
+                            <div key={`${item.id}-${index}`} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                                <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
+                                <div className="liveFeedContent">
+                                    <p className="liveFeedTitle">{item.title}</p>
+                                    <p className="liveFeedCreator">by {item.creatorName}</p>
                                 </div>
-                            )}
-                        </div>
-                        {loading ? <p>Loading live feed...</p> : (
-                             <div className="carousel-wrapper">
-                                {displayLiveFeed.length > 2 && ( // Only show buttons if there's enough content to scroll
-                                    <>
-                                        <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button>
-                                        <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button>
-                                    </>
-                                )}
-                                    <div className="vertical-carousel-container" ref={verticalCarouselRef}>
-                                        {displayLiveFeed.map((item, index) => (
-                                            <button key={`${item.id}-${index}`} className="vertical-carousel-item" style={{position: 'relative'}} onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
-                                                <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
-                                                    <div className="liveFeedContent">
-                                                        <p className="liveFeedTitle">{item.title}</p>
-                                                    <p className="liveFeedCreator">by {item.creatorName}</p>
-                                                </div>
-                                            {/* --- THIS IS THE ADDED LINE --- */}
-                                        {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
-                                    </button>
-                                    ))}
-                                </div>
+                                {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
                             </div>
-                        )}
+                        ))}
                     </div>
-                );
-            };
+                </div>
+            )}
+        </div>
+    );
+};
 
 
             const PremiumScreen = () => (
