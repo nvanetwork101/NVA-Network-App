@@ -4781,6 +4781,7 @@ useEffect(() => {
              // REPLACE THE OLD useEffect WITH THIS ENTIRE BLOCK
             // REPLACE THE OLD useEffect WITH THIS ENTIRE BLOCK
             useEffect(() => {
+            console.log("CURRENT APP ID:", appId);
                 let unsubscribeProfile = () => {};
                 const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
                     setCurrentUser(user);
