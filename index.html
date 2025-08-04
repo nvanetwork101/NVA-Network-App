@@ -3035,6 +3035,7 @@ const DataCorrectionTool = ({ showMessage }) => {
 const AdminDashboardScreen = ({
     showMessage,
     setActiveScreen,
+    featuredContentSlots,
     currentUser,
     setSelectedAdminCampaignId,
     creatorProfile,
@@ -3112,6 +3113,7 @@ const AdminDashboardScreen = ({
             {selectedAdminSubScreen === 'ContentManagement' && (
                 <AdminContentManagerScreen
                     showMessage={showMessage}
+                    featuredContentSlots={featuredContentSlots}
                     setActiveScreen={setActiveScreen}
                     currentUser={currentUser}
                     creatorProfile={creatorProfile}
@@ -3492,10 +3494,183 @@ const AdminDashboardScreen = ({
         };
 
 
+        const ContentSelectorModal = ({ onSelect, onCancel, showMessage }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [results, setResults] = useState([]);
+    const [loading, setLoading] = useState(false);
+
+    const handleSearch = async (e) => {
+        e.preventDefault();
+        if (!searchTerm.trim()) return;
+        setLoading(true);
+        try {
+            const contentRef = collection(db, `artifacts/${appId}/public/data/content_items`);
+            const q = query(contentRef, where('isActive', '==', true));
+            const snapshot = await getDocs(q);
+            const allContent = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
+            const filtered = allContent.filter(item => 
+                item.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                item.creatorName.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            setResults(filtered);
+        } catch (error) {
+            showMessage("Error searching content: " + error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="confirmationModalOverlay" style={{zIndex: 2500}}>
+            <div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '600px'}}>
+                <p className="confirmationModalTitle">Select Content</p>
+                <form onSubmit={handleSearch}>
+                    <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="formInput" placeholder="Search by title or creator..."/>
+                    <button type="submit" className="button" style={{width: '100%', marginTop: '10px'}}>{loading ? 'Searching...' : 'Search'}</button>
+                </form>
+                <div className="dashboardContentList" style={{marginTop: '15px', maxHeight: '300px', overflowY: 'auto'}}>
+                    {results.map(item => (
+                        <div key={item.id} className="adminDashboardItem" onClick={() => onSelect(item)} style={{cursor: 'pointer'}}>
+                            <img src={item.customThumbnailUrl} alt={item.title} style={{width: '50px', height: '30px', objectFit: 'cover', borderRadius: '4px'}}/>
+                            <div style={{flexGrow: 1, marginLeft: '10px'}}>
+                                <p className="adminDashboardItemTitle" style={{fontSize: '14px'}}>{item.title}</p>
+                                <p style={{fontSize: '12px', color: '#AAA'}}>by {item.creatorName}</p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <div className="confirmationModalButtons" style={{marginTop: '20px'}}>
+                    <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const AdminFeaturedContentManager = ({ featuredContentSlots, showMessage }) => {
+    const [showModal, setShowModal] = useState(false);
+    const [editingSlot, setEditingSlot] = useState(null);
+    const [isSaving, setIsSaving] = useState(null);
+
+    const handleUnlock = async (slotKey) => {
+    setIsSaving(slotKey);
+    showMessage("Unlocking and recalculating slot...");
+    try {
+        const slotNumber = parseInt(slotKey.split('_')[1], 10);
+        
+        // 1. Get the current leaderboard
+        const leaderboardDocRef = doc(db, "leaderboard", "topPerformers");
+        const leaderboardDoc = await getDoc(leaderboardDocRef);
+        if (!leaderboardDoc.exists() || !leaderboardDoc.data().creators) {
+            throw new Error("Leaderboard data not found.");
+        }
+        const topCreators = leaderboardDoc.data().creators;
+        const targetCreator = topCreators[slotNumber - 1];
+
+        let newContent = null;
+        if (targetCreator) {
+            // 2. Find the best weekly content for that creator
+            const contentQuery = query(
+                collection(db, `artifacts/${appId}/public/data/content_items`), 
+                where('creatorId', '==', targetCreator.id),
+                where('isActive', '==', true),
+                orderBy('createdAt', 'desc'),
+                limit(20)
+            );
+            const contentSnapshot = await getDocs(contentQuery);
+            let bestScore = -1;
+            
+            contentSnapshot.forEach(docSnap => {
+                const content = docSnap.data();
+                const score = (content.viewCount || 0) + ((content.likeCount || 0) * 5);
+                if (score > bestScore) {
+                    bestScore = score;
+                    newContent = {id: docSnap.id, ...content};
+                }
+            });
+        }
+        
+        // 3. Update the slot with the new content and unlock it
+        const slotsDocRef = doc(db, "settings", "featuredContentSlots");
+        await updateDoc(slotsDocRef, {
+            [`${slotKey}.isLocked`]: false,
+            [`${slotKey}.content`]: newContent
+        });
+
+        showMessage(`Slot #${slotNumber} unlocked and reverted to automatic selection.`);
+
+    } catch (error) {
+        showMessage("Error unlocking slot: " + error.message);
+        console.error("Unlock error:", error);
+    } finally {
+        setIsSaving(null);
+    }
+};
+
+    const handleSelectContent = async (selectedContent) => {
+        if (!editingSlot) return;
+        setIsSaving(editingSlot);
+        setShowModal(false);
+        try {
+            const slotsDocRef = doc(db, "settings", "featuredContentSlots");
+            await updateDoc(slotsDocRef, {
+                [`${editingSlot}.content`]: selectedContent,
+                [`${editingSlot}.isLocked`]: true
+            });
+            showMessage(`Slot #${editingSlot.split('_')[1]} has been manually updated.`);
+        } catch (error) {
+            showMessage("Error updating slot: " + error.message);
+        } finally {
+            setIsSaving(null);
+            setEditingSlot(null);
+        }
+    };
+
+    const slots = featuredContentSlots ? [
+        { key: 'slot_1', data: featuredContentSlots.slot_1 },
+        { key: 'slot_2', data: featuredContentSlots.slot_2 },
+        { key: 'slot_3', data: featuredContentSlots.slot_3 }
+    ] : [];
+
+    return (
+        <div className="dashboardSection" style={{border: '2px solid #FFD700'}}>
+            <p className="dashboardSectionTitle">Top Creators Content Slots</p>
+            <p className="dashboardItem" style={{color: '#AAA', marginBottom: '15px'}}>Manually override the content featured on the "Top Creators" screen.</p>
+            
+            <div className="dashboardContentList">
+                {slots.map((slot, index) => (
+                    <div key={slot.key} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'flex-start', gap: '10px'}}>
+                        <p className="adminDashboardItemTitle">Slot #{index + 1} <span style={{fontSize: '12px', color: slot.data?.isLocked ? '#00FF00' : '#FFD700'}}>({slot.data?.isLocked ? 'Locked' : 'Automatic'})</span></p>
+                        {slot.data?.content ? (
+                            <div style={{display: 'flex', width: '100%', alignItems: 'center'}}>
+                                <img src={slot.data.content.customThumbnailUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
+                                <div style={{marginLeft: '10px', flexGrow: 1}}>
+                                    <p style={{fontWeight: 'bold'}}>{slot.data.content.title}</p>
+                                    <p style={{fontSize: '12px', color: '#CCC'}}>by {slot.data.content.creatorName}</p>
+                                </div>
+                                <div style={{display: 'flex', gap: '10px'}}>
+                                    {isSaving === slot.key ? <p>Saving...</p> : <>
+                                        {slot.data.isLocked && <button className="adminActionButton" onClick={() => handleUnlock(slot.key)}>Unlock</button>}
+                                        <button className="adminActionButton approve" onClick={() => { setEditingSlot(slot.key); setShowModal(true); }}>Change</button>
+                                    </>}
+                                </div>
+                            </div>
+                        ) : <p className="dashboardItem">This slot is currently empty.</p>}
+                    </div>
+                ))}
+            </div>
+
+            {showModal && <ContentSelectorModal onSelect={handleSelectContent} onCancel={() => setShowModal(false)} showMessage={showMessage} />}
+        </div>
+    );
+};
+
+
 const AdminContentManagerScreen = ({
     showMessage,
     setActiveScreen,
     currentUser,
+    featuredContentSlots,
     creatorProfile,
     setShowConfirmationModal,
     setConfirmationTitle,
@@ -3697,6 +3872,7 @@ const AdminContentManagerScreen = ({
         <div className="screenContainer">
             <p className="heading">Manage Content</p>
             <p className="subHeading">Add and review content items for Featured, Live Feed, and Categories.</p>
+            <AdminFeaturedContentManager featuredContentSlots={featuredContentSlots} showMessage={showMessage} />
             <div className="dashboardSection">
                 <p className="dashboardSectionTitle">Add New Content Item</p>
                 <form onSubmit={handleAddContent}>
@@ -4473,76 +4649,64 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
 
 
         // --- NEW LEADERBOARD SCREEN ---
-        const CreatorLeaderboardScreen = ({ showMessage, setActiveScreen }) => {
-            const [leaderboardData, setLeaderboardData] = useState([]);
-            const [loading, setLoading] = useState(true);
+        const TopCreatorsScreen = ({ featuredContentSlots, handleVideoPress, setActiveScreen, currentUser, showMessage }) => {
+    if (!featuredContentSlots) {
+        return (
+            <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                <p className="heading">Loading Top Creators...</p>
+            </div>
+        );
+    }
 
-            useEffect(() => {
-                const leaderboardDocRef = doc(db, "leaderboard", "weekly");
-                const unsubscribe = onSnapshot(leaderboardDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        setLeaderboardData(docSnap.data().creators || []);
-                    } else {
-                        showMessage("Leaderboard data is being generated. Please check back soon.");
-                        setLeaderboardData([]);
+    const slots = [
+        featuredContentSlots.slot_1,
+        featuredContentSlots.slot_2,
+        featuredContentSlots.slot_3
+    ];
+
+    return (
+        <div className="screenContainer">
+            <p className="heading">Top Creators</p>
+            <p className="subHeading">The most engaging content from our top creators this week.</p>
+            
+            <div className="allCampaignsList">
+                {slots.map((slot, index) => {
+                    if (!slot || !slot.content) {
+                        return (
+                            <div key={index} className="allCampaignsListItem" style={{justifyContent: 'center', alignItems: 'center', minHeight: '120px'}}>
+                                <p className="dashboardItem">Slot #{index + 1} is currently empty.</p>
+                            </div>
+                        );
                     }
-                    setLoading(false);
-                }, (error) => {
-                    console.error("Error fetching leaderboard:", error);
-                    showMessage("Could not load leaderboard data.");
-                    setLoading(false);
-                });
-
-                return () => unsubscribe();
-            }, []);
-
-            if (loading) {
-                return (
-                    <div className="screenContainer">
-                        <p className="heading">Loading Top Creators...</p>
-                        <div className="leaderboard-list">
-                            {Array.from({ length: 5 }).map((_, index) => (
-                                <div key={index} className="leaderboard-item" style={{ backgroundColor: '#2A2A2A', opacity: 0.5 }}>
-                                    <div className="leaderboard-rank">--</div>
-                                    <div className="leaderboard-pfp" style={{ backgroundColor: '#444' }}></div>
-                                    <div className="leaderboard-info" style={{ height: '40px', backgroundColor: '#444', borderRadius: '5px' }}></div>
+                    const item = slot.content;
+                    return (
+                        <div key={item.id} className="allCampaignsListItem" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)} style={{borderLeft: '5px solid #FFD700', position: 'relative'}}>
+                            <div style={{position: 'absolute', top: '-1px', left: '-1px', backgroundColor: '#FFD700', color: '#0A0A0A', padding: '5px 10px', borderTopLeftRadius: '8px', borderBottomRightRadius: '8px', fontWeight: 'bold'}}>
+                                #{index + 1}
+                            </div>
+                            <img src={item.customThumbnailUrl} alt={item.title} className="creator-campaign-thumbnail" style={{width: '120px', height: '70px'}}/>
+                            <div className="campaignListContent">
+                                <p className="campaignListTitle" style={{color: '#FFF'}}>{item.title}</p>
+                                <div className="campaignListCreator">
+                                    <img src={item.creatorProfilePictureUrl || 'https://placehold.co/24x24/555/FFF?text=P'} alt={item.creatorName} className="campaignListCreatorProfilePic"/>
+                                    <span>by {item.creatorName}</span>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
-                );
-            }
-
-            return (
-                <div className="screenContainer">
-                    <p className="heading">Top Creators</p>
-                    <p className="subHeading">Rankings are based on total content clicks this week.</p>
-                    
-                    {leaderboardData.length === 0 ? (
-                        <p className="paragraph" style={{ textAlign: 'center' }}>The competition is just getting started! Check back soon to see who takes the lead.</p>
-                    ) : (
-                        <div className="leaderboard-list">
-                            {leaderboardData.map((creator, index) => (
-                                <div key={creator.id} className={`leaderboard-item rank-${index + 1}`}>
-                                    <div className="leaderboard-rank">
-                                        {index + 1}
-                                        {index < 5 && ' 🔥'}
-                                    </div>
-                                    <img src={creator.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} alt={creator.name} className="leaderboard-pfp" />
-                                    <div className="leaderboard-info">
-                                        <p className="leaderboard-name">{creator.name}</p>
-                                    </div>
-                                    <div className="leaderboard-clicks-container">
-                                        <p className="leaderboard-clicks">{creator.weeklyClicks}</p>
-                                        <p className="leaderboard-clicks-label">Clicks This Week</p>
-                                    </div>
+                                <div className="campaignListStats">
+                                    <span>Views: <span className="campaignListRaised">{item.viewCount || 0}</span></span>
+                                    <span>Likes: <span className="campaignListGoal">{item.likeCount || 0}</span></span>
                                 </div>
-                            ))}
+                            </div>
                         </div>
-                    )}
-                </div>
-            );
-        };
+                    );
+                })}
+            </div>
+            
+            <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}>
+                <span className="buttonText">Back to Home</span>
+            </button>
+        </div>
+    );
+};
 // ======================================================================
 
         // --- NEW: My Follows Screen ---
@@ -4626,70 +4790,89 @@ const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
 
 // --- UPDATED ANALYTICS DASHBOARD ---
         const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
-            const [creators, setCreators] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [timeframe, setTimeframe] = useState('weekly'); // 'daily', 'weekly', 'lifetime'
+    const [creators, setCreators] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [timeframe, setTimeframe] = useState('weekly'); // 'daily', 'weekly', 'lifetime'
+    const [sortBy, setSortBy] = useState('views'); // 'views', 'likes'
 
-            // ADD THIS ENTIRE NEW COMPONENT
+    useEffect(() => {
+        // Use a real-time listener to keep the dashboard live
+        const creatorsQuery = query(collection(db, "creators"));
+        const unsubscribe = onSnapshot(creatorsQuery, (snapshot) => {
+            const creatorsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            setCreators(creatorsData);
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching creator analytics:", error);
+            showMessage("Failed to load analytics data.");
+            setLoading(false);
+        });
+        return () => unsubscribe(); // Cleanup listener on component unmount
+    }, []);
 
-            useEffect(() => {
-                const creatorsQuery = query(collection(db, "creators"), where('role', '==', 'creator'));
-                const unsubscribe = onSnapshot(creatorsQuery, (snapshot) => {
-                    const creatorsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    setCreators(creatorsData);
-                    setLoading(false);
-                }, (error) => {
-                    console.error("Error fetching creator analytics:", error);
-                    showMessage("Failed to load analytics data.");
-                    setLoading(false);
-                });
-                return () => unsubscribe();
-            }, []);
+    const getMetric = (creator, metric) => {
+        const field = `${timeframe}${metric.charAt(0).toUpperCase() + metric.slice(1)}`;
+        return creator[field] || 0;
+    };
 
-            const getClickCount = (creator) => {
-                if (timeframe === 'daily') return creator.dailyClickTotal || 0;
-                if (timeframe === 'weekly') return creator.weeklyClickTotal || 0;
-                return creator.lifetimeClickTotal || 0;
-            };
+    const sortedCreators = [...creators].sort((a, b) => {
+        const metricA = getMetric(a, sortBy);
+        const metricB = getMetric(b, sortBy);
+        return metricB - metricA;
+    });
 
-            const sortedCreators = [...creators].sort((a, b) => getClickCount(b) - getClickCount(a));
+    const renderMetricHeader = (metric) => (
+        <th onClick={() => setSortBy(metric)} style={{cursor: 'pointer', textAlign: 'right'}}>
+            {metric.charAt(0).toUpperCase() + metric.slice(1)} {sortBy === metric ? '▼' : ''}
+        </th>
+    );
+    
+    return (
+        <div className="screenContainer">
+            <p className="heading">Creator Analytics</p>
+            <p className="subHeading">Real-time engagement metrics for all creators.</p>
 
-            return (
-                <div className="screenContainer">
-                    <p className="heading">Creator Analytics</p>
-                    <p className="subHeading">Aggregated click counts automatically updated by the backend.</p>
-
-                    <div className="leaderboard-tabs">
-                        <button className="button" onClick={() => setTimeframe('daily')} style={{backgroundColor: timeframe === 'daily' ? '#FFD700' : '#3A3A3A', color: timeframe === 'daily' ? '#0A0A0A' : '#FFF'}}>Daily</button>
-                        <button className="button" onClick={() => setTimeframe('weekly')} style={{backgroundColor: timeframe === 'weekly' ? '#FFD700' : '#3A3A3A', color: timeframe === 'weekly' ? '#0A0A0A' : '#FFF'}}>Weekly</button>
-                        <button className="button" onClick={() => setTimeframe('lifetime')} style={{backgroundColor: timeframe === 'lifetime' ? '#FFD700' : '#3A3A3A', color: timeframe === 'lifetime' ? '#0A0A0A' : '#FFF'}}>Lifetime</button>
-                    </div>
-
-                    <div className="dashboardSection">
-                        <p className="dashboardSectionTitle">Performance ({timeframe.charAt(0).toUpperCase() + timeframe.slice(1)})</p>
-                        {loading ? <p>Loading...</p> : (
-                            sortedCreators.map(creator => (
-                                <div key={creator.id} className="leaderboard-item" style={{backgroundColor: '#3A3A3A'}}>
-                                    <img src={creator.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} alt={creator.creatorName} className="leaderboard-pfp" />
-                                    <div className="leaderboard-info">
-                                        <p className="leaderboard-name">{creator.creatorName}</p>
-                                    </div>
-                                    <div className="leaderboard-clicks-container">
-                                        <p className="leaderboard-clicks">{getClickCount(creator)}</p>
-                                        <p className="leaderboard-clicks-label">Total Clicks</p>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                    
-                    <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#555', marginTop: '30px' }}>
-                        <span className="buttonText">Back to Admin Dashboard</span>
-                    </button>
+            <div className="leaderboard-tabs" style={{justifyContent: 'space-between', marginBottom: '25px'}}>
+                <div style={{display: 'flex', gap: '10px'}}>
+                    <p style={{alignSelf: 'center', color: '#AAA'}}>Timeframe:</p>
+                    <button className="button" onClick={() => setTimeframe('daily')} style={{backgroundColor: timeframe === 'daily' ? '#FFD700' : '#3A3A3A', color: timeframe === 'daily' ? '#0A0A0A' : '#FFF'}}>Daily</button>
+                    <button className="button" onClick={() => setTimeframe('weekly')} style={{backgroundColor: timeframe === 'weekly' ? '#FFD700' : '#3A3A3A', color: timeframe === 'weekly' ? '#0A0A0A' : '#FFF'}}>Weekly</button>
+                    <button className="button" onClick={() => setTimeframe('lifetime')} style={{backgroundColor: timeframe === 'lifetime' ? '#FFD700' : '#3A3A3A', color: timeframe === 'lifetime' ? '#0A0A0A' : '#FFF'}}>Lifetime</button>
                 </div>
-            );
-        };
+                 <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{margin: 0, backgroundColor: '#555'}}>
+                    <span className="buttonText">Back to Admin</span>
+                </button>
+            </div>
 
+            <div className="dashboardSection">
+                <p className="dashboardSectionTitle">Performance ({timeframe.charAt(0).toUpperCase() + timeframe.slice(1)})</p>
+                {loading ? <p>Loading analytics...</p> : (
+                    <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                        <thead>
+                            <tr style={{borderBottom: '1px solid #FFD700'}}>
+                                <th style={{textAlign: 'left', paddingBottom: '10px'}}>Creator</th>
+                                {renderMetricHeader('views')}
+                                {renderMetricHeader('likes')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sortedCreators.map(creator => (
+                                <tr key={creator.id} style={{borderBottom: '1px solid #3A3A3A'}}>
+                                    <td style={{padding: '10px 0', display: 'flex', alignItems: 'center', gap: '10px'}}>
+                                        <img src={creator.profilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} alt={creator.creatorName} style={{width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover'}} />
+                                        <span style={{fontWeight: 'bold'}}>{creator.creatorName}</span>
+                                    </td>
+                                    <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'views' ? '#FFD700' : '#FFF'}}>{getMetric(creator, 'views').toLocaleString()}</td>
+                                    <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'likes' ? '#FFD700' : '#FFF'}}>{getMetric(creator, 'likes').toLocaleString()}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+        </div>
+    );
+};
         // REPLACE THE ENTIRE FollowingFeedScreen COMPONENT
 
 const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handleVideoPress }) => {
@@ -4907,7 +5090,7 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
             const [confirmationTitle, setConfirmationTitle] = useState('');
             const [confirmationMessage, setConfirmationMessage] = useState('');
             const [onConfirmationAction, setOnConfirmationAction] = useState(null);
-            
+            const [featuredContentSlots, setFeaturedContentSlots] = useState(null);
             // --- MOVED FROM CategoriesScreen to App (GLOBAL STATE) ---
             const [isLive, setIsLive] = useState(false);
             const [countdownText, setCountdownText] = useState('');
@@ -4978,6 +5161,18 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                     unsubscribeProfile();
                 };
             }, []); // This effect runs once on component mount 
+
+            useEffect(() => {
+            const slotsDocRef = doc(db, "settings", "featuredContentSlots");
+            const unsubscribe = onSnapshot(slotsDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+            setFeaturedContentSlots(docSnap.data());
+                } else {
+            setFeaturedContentSlots(null);
+                }
+                });
+            return () => unsubscribe(); // Cleanup listener
+            }, []);
 
             // New useEffect to fetch ALL of creator's campaigns for dashboard
             useEffect(() => {
@@ -5176,7 +5371,7 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
     return (
         <div className="screenContainer">
             <div className="topRightButtonContainer">
-                {currentUser && (<button className="topButton" onClick={() => setActiveScreen('CreatorLeaderboard')}>Top Creators</button>)}
+                {currentUser && (<button className="topButton" onClick={() => setActiveScreen('TopCreators')}>Top Creators</button>)}
                 <button className="topButton" onClick={() => setActiveScreen('Support')}>Support Us</button>
                 {currentUser ? (<button className="topButton" onClick={handleLogout}>Logout</button>) : (<button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>)}
             </div>
@@ -5875,18 +6070,30 @@ const handleAddOrUpdateVideo = async () => {
                         />;
                     
                     case 'AdminDashboard':
-                        return <AdminDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} setSelectedAdminCampaignId={setSelectedAdminCampaignId} creatorProfile={creatorProfile} selectedAdminSubScreen={selectedAdminSubScreen} setSelectedAdminSubScreen={setSelectedAdminSubScreen} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
+                        return <AdminDashboardScreen 
+                        showMessage={showMessage} 
+                        featuredContentSlots={featuredContentSlots}
+                        setActiveScreen={setActiveScreen} 
+                        currentUser={currentUser} 
+                        setSelectedAdminCampaignId={setSelectedAdminCampaignId} 
+                        creatorProfile={creatorProfile} 
+                        selectedAdminSubScreen={selectedAdminSubScreen} 
+                        setSelectedAdminSubScreen={setSelectedAdminSubScreen} 
+                        setShowConfirmationModal={setShowConfirmationModal} 
+                        setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} 
+                        setOnConfirmationAction={setOnConfirmationAction} />;
                     
                     case 'AdminCampaignDetails': 
                         return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile} />;
                     
-                    case 'CreatorLeaderboard':
-                        if (!currentUser) {
-                            showMessage("Please log in to view the leaderboard.");
-                            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-                            }
-                            return <CreatorLeaderboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-
+                    case 'TopCreators':
+                            return <TopCreatorsScreen
+                            featuredContentSlots={featuredContentSlots}
+                            handleVideoPress={handleVideoPress}
+                            setActiveScreen={setActiveScreen}
+                            currentUser={currentUser}
+                            showMessage={showMessage}
+                        />;
 
                     case 'AnalyticsDashboard':
                         return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
