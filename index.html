@@ -5671,6 +5671,9 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
             if (layout === null || liveFeed === null || featuredContentSlots === null) return;
 
             const processData = async () => {
+                console.log("%c---[DIAGNOSTIC START] processData triggered ---", "color: #FFD700; font-weight: bold;");
+                console.log("1. Raw data from listeners:", { layout, liveFeed, featuredContentSlots });
+
                 const manualTrending = layout.trendingItems || [];
                 const autoSlots = [featuredContentSlots.slot_1, featuredContentSlots.slot_2, featuredContentSlots.slot_3]
                     .filter(slot => slot && slot.content).map(slot => ({ type: 'internal', contentId: slot.content.id, isAuto: true, orderIndex: -1 }));
@@ -5679,10 +5682,15 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                 const combinedTrending = [...uniqueAutoSlots, ...manualTrending];
 
                 const manualLiveFeed = layout.liveFeedItems || [];
-                const autoSlotIds = new Set(autoSlots.map(slot => slot.contentId));
+                console.log("2. Manual Live Feed (from layout):", manualLiveFeed);
+
                 const manualLiveFeedIds = new Set(manualLiveFeed.filter(i => i.type === 'internal').map(i => i.contentId));
+                
                 const uniqueAutoLiveFeed = liveFeed.filter(item => !manualLiveFeedIds.has(item.id));
+                console.log("3. Unique Auto Live Feed (after filtering manual duplicates):", uniqueAutoLiveFeed);
+
                 const combinedLiveFeed = [...manualLiveFeed, ...uniqueAutoLiveFeed];
+                console.log("4. Combined Live Feed (before enriching):", combinedLiveFeed);
 
                 const allItems = { featured: layout.featuredItems || [], trending: combinedTrending, liveFeed: combinedLiveFeed };
                 const contentIds = [...new Set(Object.values(allItems).flat().filter(i => i.type === 'internal' && i.contentId).map(i => i.contentId))];
@@ -5707,6 +5715,9 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                     trending: enrich(allItems.trending),
                     liveFeed: enrich(allItems.liveFeed)
                 };
+                console.log("5. Final Enriched Layout (set to state):", finalLayout);
+                console.log("%c---[DIAGNOSTIC END] ---", "color: #FFD700; font-weight: bold;");
+
                 setEnrichedLayout(finalLayout);
 
                 const numFeaturedClones = 3;
