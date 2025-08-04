@@ -1869,33 +1869,20 @@
                         title="Embedded Video Content"
                     ></iframe>
                 </div>
-                {/* --- START: MODIFICATION --- */}
-                {currentUser && contentItem && (
-                    <LikeButton
-                        contentItem={contentItem}
-                        currentUser={currentUser}
-                        showMessage={showMessage}
-                        positionStyle={{
-                            bottom: '20px',
-                            left: '20px',
-                            right: 'auto', // Explicitly unset right positioning
-                            zIndex: 15
-                        }}
-                    />
-                )}
-                {/* --- END: MODIFICATION --- */}
             </div>
         </div>
     );
 };
 
-const LikeButton = ({ contentItem, currentUser, showMessage, positionStyle }) => {
+                const LikeButton = ({ contentItem, currentUser, showMessage }) => {
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(contentItem.likeCount || 0);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(true); // Start in a loading state
 
+    // Determine the correct ID for the original content item
     const contentDocId = contentItem.originalContentId || contentItem.id;
-
+    
+    // This useEffect hook runs once to check if the user has already liked this post.
     useEffect(() => {
         if (!currentUser || !contentDocId) {
             setIsLoading(false);
@@ -1909,9 +1896,10 @@ const LikeButton = ({ contentItem, currentUser, showMessage, positionStyle }) =>
             setIsLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => unsubscribe(); // Cleanup the listener
     }, [contentDocId, currentUser]);
     
+    // This useEffect hook keeps the public like count in sync with the database.
     useEffect(() => {
         if (!contentDocId) return;
 
@@ -1926,18 +1914,20 @@ const LikeButton = ({ contentItem, currentUser, showMessage, positionStyle }) =>
         return () => unsubscribe();
     }, [contentDocId]);
 
+
     const handleLike = async (e) => {
-        e.stopPropagation();
+        e.stopPropagation(); // Stop the click from opening the video player.
         
         if (!currentUser) {
             showMessage("Please log in to like content.");
             return;
         }
-        if (isLoading) return;
+        if (isLoading) return; // Prevent clicks while loading initial state
 
         const contentRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}`);
         const likeRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}/likes`, currentUser.uid);
 
+        // Optimistically update the UI for a fast user experience.
         const newLikedState = !isLiked;
         const newLikeCount = newLikedState ? likeCount + 1 : likeCount - 1;
         setIsLiked(newLikedState);
@@ -1945,15 +1935,18 @@ const LikeButton = ({ contentItem, currentUser, showMessage, positionStyle }) =>
 
         try {
             if (newLikedState) {
+                // User is LIKING the post
                 await setDoc(likeRef, { likedAt: new Date().toISOString() });
                 await updateDoc(contentRef, { likeCount: increment(1) });
             } else {
+                // User is UNLIKING the post
                 await deleteDoc(likeRef);
                 await updateDoc(contentRef, { likeCount: increment(-1) });
             }
         } catch (error) {
             console.error("Error updating like status:", error);
             showMessage("An error occurred. Please try again.");
+            // If the database update fails, revert the optimistic UI changes.
             setIsLiked(!newLikedState);
             setLikeCount(likeCount);
         }
@@ -1961,37 +1954,28 @@ const LikeButton = ({ contentItem, currentUser, showMessage, positionStyle }) =>
 
     const heartIconPath = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
 
-    // --- START: MODIFICATION ---
-    const defaultPosition = {
-        position: 'absolute',
-        bottom: '8px',
-        right: '8px',
-    };
-
-    const buttonStyle = {
-        ...defaultPosition,
-        ...(positionStyle || {}), // Merge with passed in style, overwriting defaults
-        backgroundColor: 'rgba(10, 10, 10, 0.7)',
-        border: '1px solid #FFD700',
-        borderRadius: '50%',
-        width: 'auto',
-        minWidth: '32px',
-        height: '32px',
-        padding: '0 8px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        cursor: 'pointer',
-        gap: '4px',
-        transition: 'transform 0.2s'
-    };
-    // --- END: MODIFICATION ---
-
     return (
         <button
             onClick={handleLike}
-            disabled={isLoading}
-            style={buttonStyle} // Use the combined style object
+            disabled={isLoading} // Disable button until we know the like status
+            style={{
+                position: 'absolute',
+                bottom: '8px',
+                right: '8px',
+                backgroundColor: 'rgba(10, 10, 10, 0.7)',
+                border: '1px solid #FFD700',
+                borderRadius: '50%',
+                width: 'auto',
+                minWidth: '32px',
+                height: '32px',
+                padding: '0 8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                gap: '4px',
+                transition: 'transform 0.2s'
+            }}
         >
             <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: isLiked ? '#FFD700' : '#FFF' }}>
                 <path d={heartIconPath}></path>
@@ -2294,7 +2278,7 @@ const LikeButton = ({ contentItem, currentUser, showMessage, positionStyle }) =>
 
 
         // --- START: COMPLETE AND CORRECTED ProfilePictureAdjustModal ---
-        const ProfilePictureAdjustModal = ({ imageUrl, onSave, onCancel, showMessage }) => {
+            const ProfilePictureAdjustModal = ({ isUploading, imageUrl, onSave, onCancel, showMessage }) => {
             const canvasRef = useRef(null);
             const imageRef = useRef(new Image());
             const [scale, setScale] = useState(1);
@@ -2456,8 +2440,10 @@ const LikeButton = ({ contentItem, currentUser, showMessage, positionStyle }) =>
                             <canvas ref={canvasRef}></canvas>
                         </div>
                         <div className="modalButtons">
-                            <button className="modalButton" onClick={saveCroppedImage}>Save</button>
-                            <button className="modalButton cancel" onClick={onCancel}>Cancel</button>
+                            <button className="modalButton" onClick={saveCroppedImage} disabled={isUploading}>
+                                {isUploading ? 'Uploading...' : 'Save'}
+                            </button>
+                            <button className="modalButton cancel" onClick={onCancel} disabled={isUploading}>Cancel</button>
                         </div>
                     </div>
                 </div>
@@ -3563,6 +3549,267 @@ const AdminDashboardScreen = ({
     );
 };
 
+                    // --- START: NEW COMPONENT ---
+        const AddExternalAdModal = ({ showMessage, onSave, onCancel }) => {
+            const [title, setTitle] = useState('');
+            const [externalLink, setExternalLink] = useState('');
+            const [imageUrlInput, setImageUrlInput] = useState('');
+            const [imageFile, setImageFile] = useState(null);
+            const [imagePreview, setImagePreview] = useState('');
+            const [isUploading, setIsUploading] = useState(false);
+            const fileInputRef = useRef(null);
+
+            useEffect(() => {
+                if (!imageUrlInput) {
+                    setImagePreview('');
+                    return;
+                }
+                const videoInfo = extractVideoInfo(imageUrlInput);
+                if (videoInfo && videoInfo.thumbnailUrl) {
+                    setImagePreview(videoInfo.thumbnailUrl);
+                } else {
+                    setImagePreview(imageUrlInput);
+                }
+            }, [imageUrlInput]);
+
+            const handleFileChange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setImageFile(file);
+                    setImagePreview(URL.createObjectURL(file));
+                    setImageUrlInput('');
+                }
+            };
+
+            const handleSave = async () => {
+                if (!title || (!imagePreview && !imageFile)) {
+                    showMessage("Title and an Image (from URL or Upload) are required.");
+                    return;
+                }
+                let finalImageUrl = imagePreview;
+                if (imageFile) {
+                    setIsUploading(true);
+                    showMessage("Uploading image...");
+                    try {
+                        const filePath = `external_ads/${Date.now()}_${imageFile.name}`;
+                        const storageRef = ref(storage, filePath);
+                        const snapshot = await uploadBytes(storageRef, imageFile);
+                        finalImageUrl = await getDownloadURL(snapshot.ref);
+                        showMessage("Image uploaded successfully!");
+                    } catch (error) {
+                        showMessage(`Image upload failed: ${error.message}`);
+                        setIsUploading(false);
+                        return;
+                    }
+                }
+                if (!finalImageUrl) {
+                    showMessage("Could not determine a valid image URL to save.");
+                    return;
+                }
+                onSave({
+                    type: 'external',
+                    title,
+                    externalLink: externalLink || imageUrlInput,
+                    imageUrl: finalImageUrl,
+                    orderIndex: Date.now()
+                });
+                setIsUploading(false);
+                onCancel();
+            };
+
+            return (
+                <div className="confirmationModalOverlay" style={{ zIndex: 3000 }}>
+                    <div className="confirmationModalContent" style={{ textAlign: 'left', maxWidth: '500px' }}>
+                        <p className="confirmationModalTitle">Add External Ad/Promotion</p>
+                        <div className="formGroup">
+                            <label className="formLabel">Ad Title:</label>
+                            <input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Monster Energy Deal" required/>
+                        </div>
+                        <div className="formGroup">
+                            <label className="formLabel">Click-Through Link (Optional):</label>
+                            <input type="url" className="formInput" value={externalLink} onChange={(e) => setExternalLink(e.target.value)} placeholder="https://www.sponsorwebsite.com" />
+                             <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>If empty, clicking the ad will go to the Image/Video URL.</p>
+                        </div>
+                        <hr style={{borderColor: '#333', margin: '15px 0'}}/>
+                        <div className="formGroup">
+                            <label className="formLabel">Image/Video URL:</label>
+                            <input type="url" className="formInput" value={imageUrlInput} onChange={(e) => { setImageUrlInput(e.target.value); setImageFile(null); }} placeholder="Paste direct image or YouTube link" required/>
+                        </div>
+                        <p className="smallText" style={{ textAlign: 'center' }}>OR</p>
+                        <div className="formGroup">
+                            <label className="formLabel">Upload Custom Image:</label>
+                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" style={{ display: 'none' }} />
+                            <button type="button" className="button" onClick={() => fileInputRef.current.click()} style={{ width: '100%', backgroundColor: '#3A3A3A' }}>
+                                <span className="buttonText">Choose Image File</span>
+                            </button>
+                            {imagePreview && (
+                                <div style={{marginTop: '15px'}}>
+                                    <p className="formLabel">Preview:</p>
+                                    <img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '5px' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/200x120/DC3545/FFF?text=Invalid+Image'; }} />
+                                </div>
+                            )}
+                        </div>
+                        <div className="confirmationModalButtons">
+                            <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
+                            <button className="confirmationButton confirm" onClick={handleSave} disabled={isUploading}>
+                                {isUploading ? 'Uploading...' : 'Save Ad'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        // --- END: NEW COMPONENT ---
+
+        // --- START: NEW COMPONENT ---
+        const AdminCurationModal = ({ curationTarget, showMessage, onCancel, contentItems }) => {
+            const [curatedItems, setCuratedItems] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [isSaving, setIsSaving] = useState(false);
+            const [showContentSelector, setShowContentSelector] = useState(false);
+            const [showExternalAdModal, setShowExternalAdModal] = useState(false);
+
+            const targetField = `${curationTarget.toLowerCase().replace(' ', '')}Items`;
+
+            useEffect(() => {
+                const layoutDocRef = doc(db, "settings", "homeScreenLayout");
+                const unsubscribe = onSnapshot(layoutDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const layoutData = docSnap.data();
+                        const itemsFromDB = layoutData[targetField] || [];
+                        
+                        const enrichedItems = itemsFromDB.map(item => {
+                            if (item.type === 'internal') {
+                                const fullContent = contentItems.find(ci => ci.id === item.contentId);
+                                return fullContent ? { ...item, ...fullContent } : null;
+                            }
+                            return item;
+                        }).filter(item => item);
+                        setCuratedItems(enrichedItems);
+                    } else {
+                        setCuratedItems([]);
+                    }
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, [curationTarget, contentItems]);
+
+            const handleMove = (index, direction) => {
+                const newItems = [...curatedItems];
+                const item = newItems[index];
+                const newIndex = index + direction;
+                if (newIndex < 0 || newIndex >= newItems.length) return;
+                newItems.splice(index, 1);
+                newItems.splice(newIndex, 0, item);
+                setCuratedItems(newItems);
+            };
+
+            const handleRemove = (index) => {
+                const newItems = [...curatedItems];
+                newItems.splice(index, 1);
+                setCuratedItems(newItems);
+            };
+
+            const handleSelectInternalContent = (selectedContent) => {
+                const isAlreadyInList = curatedItems.some(item => item.type === 'internal' && item.contentId === selectedContent.id);
+                if (isAlreadyInList) {
+                    showMessage("This content is already in the list.");
+                    return;
+                }
+                const newItem = {
+                    type: 'internal',
+                    contentId: selectedContent.id,
+                    orderIndex: curatedItems.length
+                };
+                setCuratedItems(prev => [...prev, { ...newItem, ...selectedContent }]);
+                setShowContentSelector(false);
+            };
+            
+            const handleSaveExternalAd = (newAd) => {
+                 setCuratedItems(prev => [...prev, newAd]);
+                 setShowExternalAdModal(false);
+            };
+
+            const handleSaveChanges = async () => {
+                setIsSaving(true);
+                showMessage("Saving changes...");
+                
+                const itemsToSave = curatedItems.map((item, index) => {
+                    const baseItem = {
+                        type: item.type,
+                        orderIndex: index
+                    };
+                    if (item.type === 'internal') {
+                        baseItem.contentId = item.contentId;
+                    } else {
+                        baseItem.title = item.title;
+                        baseItem.imageUrl = item.imageUrl;
+                        baseItem.externalLink = item.externalLink;
+                    }
+                    return baseItem;
+                });
+
+                try {
+                    const layoutDocRef = doc(db, "settings", "homeScreenLayout");
+                    await setDoc(layoutDocRef, { [targetField]: itemsToSave }, { merge: true });
+                    showMessage("Curation saved successfully!");
+                    onCancel();
+                } catch (error) {
+                    showMessage(`Error saving: ${error.message}`);
+                } finally {
+                    setIsSaving(false);
+                }
+            };
+
+            return (
+                <div className="confirmationModalOverlay" style={{ zIndex: 2500 }}>
+                    <div className="confirmationModalContent" style={{ maxWidth: '700px', textAlign: 'left' }}>
+                        <p className="confirmationModalTitle">Manage {curationTarget} Section</p>
+                        
+                        <div className="dashboardContentList" style={{ maxHeight: '40vh', overflowY: 'auto', marginBottom: '20px' }}>
+                            {loading ? <p>Loading...</p> : (
+                                curatedItems.length === 0 ? <p className="dashboardItem">This section is empty.</p> :
+                                curatedItems.map((item, index) => (
+                                    <div key={item.id || item.title + index} className="adminDashboardItem">
+                                        <img src={item.customThumbnailUrl || item.imageUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
+                                        <div style={{flexGrow: 1, marginLeft: '10px'}}>
+                                            <p className="adminDashboardItemTitle">{item.title}</p>
+                                            <p style={{fontSize: '12px', color: '#AAA'}}>{item.type === 'internal' ? `by ${item.creatorName || '...loading'}` : 'External Ad'}</p>
+                                        </div>
+                                        <div style={{display: 'flex', gap: '5px'}}>
+                                            <button onClick={() => handleMove(index, -1)} disabled={index === 0} className="adminActionButton" style={{width: '30px'}}>▲</button>
+                                            <button onClick={() => handleMove(index, 1)} disabled={index === curatedItems.length - 1} className="adminActionButton" style={{width: '30px'}}>▼</button>
+                                            <button onClick={() => handleRemove(index)} className="adminActionButton reject">Remove</button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        <div className="flex justify-around gap-4 my-4">
+                            <button className="button" onClick={() => setShowContentSelector(true)}>
+                                <span className="buttonText">Add from Library</span>
+                            </button>
+                             <button className="button" onClick={() => setShowExternalAdModal(true)}>
+                                <span className="buttonText">Add External Ad</span>
+                            </button>
+                        </div>
+
+                        <div className="confirmationModalButtons">
+                            <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
+                            <button className="confirmationButton confirm" onClick={handleSaveChanges} disabled={isSaving}>
+                                {isSaving ? 'Saving...' : 'Save Changes'}
+                            </button>
+                        </div>
+
+                        {showContentSelector && <ContentSelectorModal showMessage={showMessage} onSelect={handleSelectInternalContent} onCancel={() => setShowContentSelector(false)} />}
+                        {showExternalAdModal && <AddExternalAdModal showMessage={showMessage} onSave={handleSaveExternalAd} onCancel={() => setShowExternalAdModal(false)} />}
+                    </div>
+                </div>
+            );
+        };
+        // --- END: NEW COMPONENT ---
+
 const AdminFeaturedContentManager = ({ featuredContentSlots, showMessage }) => {
     const [showModal, setShowModal] = useState(false);
     const [editingSlot, setEditingSlot] = useState(null);
@@ -3720,6 +3967,14 @@ const AdminContentManagerScreen = ({
      // --- START: PASTE THE NEW CODE BLOCK HERE ---
     
     const [availableCategories, setAvailableCategories] = useState([]);
+
+            const [showCurationModal, setShowCurationModal] = useState(false);
+    const [curationTarget, setCurationTarget] = useState('');
+
+    const openCurationModal = (target) => {
+        setCurationTarget(target);
+        setShowCurationModal(true);
+    };
 
     // This useEffect hook fetches the dynamic categories from Firestore.
     useEffect(() => {
@@ -3970,34 +4225,23 @@ const AdminContentManagerScreen = ({
                     <div className="formGroup"><label htmlFor="contentDescription" className="formLabel">Description:</label><textarea id="contentDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description for the content item"></textarea></div>
                     <div className="formGroup"><label htmlFor="mainUrl" className="formLabel">Main Content URL (Video/Project Link):</label><input type="url" id="mainUrl" className="formInput" value={mainUrl} onChange={(e) => setMainUrl(e.target.value)} placeholder="e.g., YouTube link, Facebook video" required /><p className="smallText" 
                     style={{textAlign: 'left', marginTop: '5px', color: '#AAA'}}>We'll try to extract a thumbnail from this link.</p></div>
-                    <div className="dashboardSection" style={{marginTop: '30px', border: '1px solid #00FF00'}}>
-    <p className="dashboardSectionTitle">Home Screen Curation</p>
-    <p className="dashboardItem" style={{color: '#AAA', marginBottom: '15px'}}>Select a content item and then promote it to a special Home Screen category.</p>
-
-    <div className="adminDashboardItem" style={{backgroundColor: '#1A1A1A'}}>
-        <div style={{flexGrow: 1}}>
-            <p className="adminDashboardItemTitle" style={{fontSize: '14px'}}>
-                Selected: {contentToPromote ? `"${contentToPromote.title}"` : 'None'}
-            </p>
-            {contentToPromote && <p style={{fontSize: '12px', color: '#CCC'}}>by {contentToPromote.creatorName}</p>}
-        </div>
-        <button className="adminActionButton" onClick={() => setShowPromotionModal(true)}>
-            {contentToPromote ? 'Change Selection' : 'Select Content'}
-        </button>
-    </div>
-
-    <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '15px'}}>
-        <button className="button" disabled={!contentToPromote} onClick={() => handlePromote('Featured')} style={{margin: 0}}>
-            <span className="buttonText">Promote to Featured</span>
-        </button>
-        <button className="button" disabled={!contentToPromote} onClick={() => handlePromote('Trending')} style={{margin: 0}}>
-            <span className="buttonText">Add to Trending</span>
-        </button>
-        <button className="button" disabled={!contentToPromote} onClick={() => handlePromote('Live Feed')} style={{margin: 0}}>
-            <span className="buttonText">Add to Live Feed</span>
-        </button>
-    </div>
-</div>
+            <div className="dashboardSection" style={{marginTop: '30px', border: '1px solid #00FF00'}}>
+                <p className="dashboardSectionTitle">Home Screen Curation</p>
+                <p className="dashboardItem" style={{color: '#AAA', marginBottom: '15px'}}>
+                    Manually add, remove, and reorder content for the main sections on the Home screen.
+                </p>
+                <div style={{display: 'flex', justifyContent: 'space-around', gap: '10px', marginTop: '15px'}}>
+                    <button className="button" onClick={() => openCurationModal('Featured')} style={{margin: 0}}>
+                        <span className="buttonText">Manage Featured</span>
+                    </button>
+                    <button className="button" onClick={() => openCurationModal('Trending')} style={{margin: 0}}>
+                        <span className="buttonText">Manage Trending</span>
+                    </button>
+                    <button className="button" onClick={() => openCurationModal('Live Feed')} style={{margin: 0}}>
+                        <span className="buttonText">Manage Live Feed</span>
+                    </button>
+                </div>
+            </div>
                     {/* --- FIX: Display the thumbnail preview --- */}
                     {currentPreview && (
                         <div style={{ marginTop: '10px' }}>
@@ -4058,7 +4302,15 @@ const AdminContentManagerScreen = ({
                     </div>
                 )}
             </div>
-            {showPromotionModal && <ContentSelectorModal onSelect={handleSelectForPromotion} onCancel={() => setShowPromotionModal(false)} showMessage={showMessage} />}
+            
+            {showCurationModal && (
+                <AdminCurationModal 
+                    curationTarget={curationTarget}
+                    showMessage={showMessage}
+                    onCancel={() => setShowCurationModal(false)}
+                    contentItems={contentItems}
+                />
+            )}
         </div>
     );
 };
@@ -5201,6 +5453,7 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
             const [currentContentItem, setCurrentContentItem] = useState(null);
             const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
             const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
+            const [isUploadingPFP, setIsUploadingPFP] = useState(false);    
             const [creatorProfile, setCreatorProfile] = useState(null);
             const [authLoading, setAuthLoading] = useState(true);
             
@@ -6001,7 +6254,30 @@ const CreatorDashboardScreen = ({
     const handleCancelEdit = () => { if (creatorProfile) { setEditCreatorName(creatorProfile.creatorName || ''); setEditBio(creatorProfile.bio || ''); setEditCategories(creatorProfile.categories || []); setEditExistingWorkLink(creatorProfile.existingWorkLink || ''); } setIsEditingProfile(false); };
     const handleProfileCategoryChange = (e) => { const { value, checked } = e.target; setEditCategories(prev => checked ? [...prev, value] : prev.filter(cat => cat !== value)); };
     const triggerProfilePictureUpload = (e) => { const file = e.target.files[0]; if (file) { setImageFileToAdjust(file); setShowImageAdjustModal(true); } };
-    const handleSaveAdjustedProfilePicture = async (adjustedBlob) => { if (!currentUser || !adjustedBlob) return; showMessage("Uploading new profile picture..."); try { const filePath = `profile_pictures/${currentUser.uid}/profile_${Date.now()}.png`; const storageRefPath = ref(storage, filePath); const snapshot = await uploadBytes(storageRefPath, adjustedBlob); const downloadURL = await getDownloadURL(snapshot.ref); const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { profilePictureUrl: downloadURL }); setCreatorProfile(prev => ({ ...prev, profilePictureUrl: downloadURL })); setShowImageAdjustModal(false); showMessage("Profile picture updated successfully!"); } catch (error) { console.error("Error updating profile picture:", error); showMessage(`Failed to update profile picture: ${error.message}`); } finally { if (profilePictureInputRef.current) { profilePictureInputRef.current.value = null; } } };
+        const handleSaveAdjustedProfilePicture = async (adjustedBlob) => {
+        if (!currentUser || !adjustedBlob) return;
+        setIsUploadingPFP(true); // --- CHANGE: Set loading state to true
+        showMessage("Uploading new profile picture...");
+        try {
+            const filePath = `profile_pictures/${currentUser.uid}/profile_${Date.now()}.png`;
+            const storageRefPath = ref(storage, filePath);
+            const snapshot = await uploadBytes(storageRefPath, adjustedBlob);
+            const downloadURL = await getDownloadURL(snapshot.ref);
+            const creatorRef = doc(db, "creators", currentUser.uid);
+            await updateDoc(creatorRef, { profilePictureUrl: downloadURL });
+            setCreatorProfile(prev => ({ ...prev, profilePictureUrl: downloadURL }));
+            setShowImageAdjustModal(false);
+            showMessage("Profile picture updated successfully!");
+        } catch (error) {
+            console.error("Error updating profile picture:", error);
+            showMessage(`Failed to update profile picture: ${error.message}`);
+        } finally {
+            if (profilePictureInputRef.current) {
+                profilePictureInputRef.current.value = null;
+            }
+            setIsUploadingPFP(false); // --- CHANGE: Set loading state to false
+        }
+    };
     const handleCancelAdjust = () => { setImageFileToAdjust(null); setShowImageAdjustModal(false); };
     const handleCancelCampaign = async (campaignId, campaignTitle) => { try { const campaignRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId); await updateDoc(campaignRef, { status: 'cancelled', updatedAt: new Date().toISOString(), statusChangedAt: new Date().toISOString() }); showMessage(`Campaign "${campaignTitle}" has been cancelled.`); } catch (error) { showMessage(`Failed to cancel campaign: ${error.message}`); } };
     const confirmCancelCampaign = (campaignId, campaignTitle) => { setConfirmationTitle("Cancel Campaign?"); setConfirmationMessage(`Are you sure you want to cancel your campaign "${campaignTitle}"? This cannot be undone.`); setOnConfirmationAction(() => () => handleCancelCampaign(campaignId, campaignTitle)); setShowConfirmationModal(true); };
@@ -6137,7 +6413,7 @@ const handleAddOrUpdateVideo = async () => {
                 <div className="videoActions" style={{marginTop: '20px', justifyContent: 'flex-start'}}>{!creatorProfile.featuredVideoLink ? ( <button className="adminActionButton approve" onClick={handleAddOrUpdateVideo} disabled={isPublishing} style={{padding: '10px 20px', fontSize: '14px', cursor: isPublishing ? 'not-allowed' : 'pointer', opacity: isPublishing ? 0.6 : 1}}>{isPublishing ? 'Publishing...' : 'Publish URL'}</button> ) : ( <button className="adminActionButton reject" onClick={handleRemoveVideo} disabled={isPublishing} style={{padding: '10px 20px', fontSize: '14px', cursor: isPublishing ? 'not-allowed' : 'pointer', opacity: isPublishing ? 0.6 : 1}}>{isPublishing ? 'Removing...' : 'Remove Link'}</button> )}</div></div></div>)}
                 <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}><span className="buttonText">Back to Home</span></button>
             </div>
-             {showImageAdjustModal && imageFileToAdjust && (<ProfilePictureAdjustModal imageUrl={URL.createObjectURL(imageFileToAdjust)} onSave={handleSaveAdjustedProfilePicture} onCancel={handleCancelAdjust} showMessage={showMessage} />)}
+                {showImageAdjustModal && imageFileToAdjust && (<ProfilePictureAdjustModal isUploading={isUploadingPFP} imageUrl={URL.createObjectURL(imageFileToAdjust)} onSave={handleSaveAdjustedProfilePicture} onCancel={handleCancelAdjust} showMessage={showMessage} />)}
         </>
     );
 };
