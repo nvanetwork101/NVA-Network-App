@@ -1869,20 +1869,33 @@
                         title="Embedded Video Content"
                     ></iframe>
                 </div>
+                {/* --- START: MODIFICATION --- */}
+                {currentUser && contentItem && (
+                    <LikeButton
+                        contentItem={contentItem}
+                        currentUser={currentUser}
+                        showMessage={showMessage}
+                        positionStyle={{
+                            bottom: '20px',
+                            left: '20px',
+                            right: 'auto', // Explicitly unset right positioning
+                            zIndex: 15
+                        }}
+                    />
+                )}
+                {/* --- END: MODIFICATION --- */}
             </div>
         </div>
     );
 };
 
-                const LikeButton = ({ contentItem, currentUser, showMessage }) => {
+const LikeButton = ({ contentItem, currentUser, showMessage, positionStyle }) => {
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(contentItem.likeCount || 0);
-    const [isLoading, setIsLoading] = useState(true); // Start in a loading state
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Determine the correct ID for the original content item
     const contentDocId = contentItem.originalContentId || contentItem.id;
-    
-    // This useEffect hook runs once to check if the user has already liked this post.
+
     useEffect(() => {
         if (!currentUser || !contentDocId) {
             setIsLoading(false);
@@ -1896,10 +1909,9 @@
             setIsLoading(false);
         });
 
-        return () => unsubscribe(); // Cleanup the listener
+        return () => unsubscribe();
     }, [contentDocId, currentUser]);
     
-    // This useEffect hook keeps the public like count in sync with the database.
     useEffect(() => {
         if (!contentDocId) return;
 
@@ -1914,20 +1926,18 @@
         return () => unsubscribe();
     }, [contentDocId]);
 
-
     const handleLike = async (e) => {
-        e.stopPropagation(); // Stop the click from opening the video player.
+        e.stopPropagation();
         
         if (!currentUser) {
             showMessage("Please log in to like content.");
             return;
         }
-        if (isLoading) return; // Prevent clicks while loading initial state
+        if (isLoading) return;
 
         const contentRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}`);
         const likeRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}/likes`, currentUser.uid);
 
-        // Optimistically update the UI for a fast user experience.
         const newLikedState = !isLiked;
         const newLikeCount = newLikedState ? likeCount + 1 : likeCount - 1;
         setIsLiked(newLikedState);
@@ -1935,18 +1945,15 @@
 
         try {
             if (newLikedState) {
-                // User is LIKING the post
                 await setDoc(likeRef, { likedAt: new Date().toISOString() });
                 await updateDoc(contentRef, { likeCount: increment(1) });
             } else {
-                // User is UNLIKING the post
                 await deleteDoc(likeRef);
                 await updateDoc(contentRef, { likeCount: increment(-1) });
             }
         } catch (error) {
             console.error("Error updating like status:", error);
             showMessage("An error occurred. Please try again.");
-            // If the database update fails, revert the optimistic UI changes.
             setIsLiked(!newLikedState);
             setLikeCount(likeCount);
         }
@@ -1954,28 +1961,37 @@
 
     const heartIconPath = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
 
+    // --- START: MODIFICATION ---
+    const defaultPosition = {
+        position: 'absolute',
+        bottom: '8px',
+        right: '8px',
+    };
+
+    const buttonStyle = {
+        ...defaultPosition,
+        ...(positionStyle || {}), // Merge with passed in style, overwriting defaults
+        backgroundColor: 'rgba(10, 10, 10, 0.7)',
+        border: '1px solid #FFD700',
+        borderRadius: '50%',
+        width: 'auto',
+        minWidth: '32px',
+        height: '32px',
+        padding: '0 8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        gap: '4px',
+        transition: 'transform 0.2s'
+    };
+    // --- END: MODIFICATION ---
+
     return (
         <button
             onClick={handleLike}
-            disabled={isLoading} // Disable button until we know the like status
-            style={{
-                position: 'absolute',
-                bottom: '8px',
-                right: '8px',
-                backgroundColor: 'rgba(10, 10, 10, 0.7)',
-                border: '1px solid #FFD700',
-                borderRadius: '50%',
-                width: 'auto',
-                minWidth: '32px',
-                height: '32px',
-                padding: '0 8px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                gap: '4px',
-                transition: 'transform 0.2s'
-            }}
+            disabled={isLoading}
+            style={buttonStyle} // Use the combined style object
         >
             <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: isLiked ? '#FFD700' : '#FFF' }}>
                 <path d={heartIconPath}></path>
@@ -3641,21 +3657,28 @@ const AdminFeaturedContentManager = ({ featuredContentSlots, showMessage }) => {
                 {slots.map((slot, index) => (
                     <div key={slot.key} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'flex-start', gap: '10px'}}>
                         <p className="adminDashboardItemTitle">Slot #{index + 1} <span style={{fontSize: '12px', color: slot.data?.isLocked ? '#00FF00' : '#FFD700'}}>({slot.data?.isLocked ? 'Locked' : 'Automatic'})</span></p>
-                        {slot.data?.content ? (
-                            <div style={{display: 'flex', width: '100%', alignItems: 'center'}}>
-                                <img src={slot.data.content.customThumbnailUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
-                                <div style={{marginLeft: '10px', flexGrow: 1}}>
-                                    <p style={{fontWeight: 'bold'}}>{slot.data.content.title}</p>
-                                    <p style={{fontSize: '12px', color: '#CCC'}}>by {slot.data.content.creatorName}</p>
-                                </div>
-                                <div style={{display: 'flex', gap: '10px'}}>
-                                    {isSaving === slot.key ? <p>Saving...</p> : <>
-                                        {slot.data.isLocked && <button className="adminActionButton" onClick={() => handleUnlock(slot.key)}>Unlock</button>}
-                                        <button className="adminActionButton approve" onClick={() => { setEditingSlot(slot.key); setShowModal(true); }}>Change</button>
-                                    </>}
-                                </div>
-                            </div>
-                        ) : <p className="dashboardItem">This slot is currently empty.</p>}
+                       <div style={{display: 'flex', width: '100%', alignItems: 'center', gap: '10px'}}>
+    {/* This part now ONLY renders the content details, or a message if empty */}
+    <div style={{flexGrow: 1, display: 'flex', alignItems: 'center', gap: '10px'}}>
+        {slot.data?.content ? (
+            <>
+                <img src={slot.data.content.customThumbnailUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
+                <div>
+                    <p style={{fontWeight: 'bold'}}>{slot.data.content.title}</p>
+                    <p style={{fontSize: '12px', color: '#CCC'}}>by {slot.data.content.creatorName}</p>
+                </div>
+            </>
+        ) : <p className="dashboardItem">This slot is currently empty.</p>}
+    </div>
+    
+    {/* This part now ONLY renders the buttons, which are always visible */}
+    <div style={{display: 'flex', gap: '10px'}}>
+        {isSaving === slot.key ? <p>Saving...</p> : <>
+            {slot.data?.isLocked && <button className="adminActionButton" onClick={() => handleUnlock(slot.key)}>Unlock</button>}
+            <button className="adminActionButton approve" onClick={() => { setEditingSlot(slot.key); setShowModal(true); }}>Change</button>
+        </>}
+    </div>
+</div>
                     </div>
                 ))}
             </div>
@@ -3693,8 +3716,75 @@ const AdminContentManagerScreen = ({
     const [description, setDescription] = useState('');
 
     const thumbnailFileInputRef = useRef(null);
-    const availableContentCategories = ['Trending', 'Featured', 'Live Feed', 'Skits', 'Short Films', 'Interviews', 'Live Premieres', 'Music', 'Documentary', 'Other'];
+
+     // --- START: PASTE THE NEW CODE BLOCK HERE ---
     
+    const [availableCategories, setAvailableCategories] = useState([]);
+
+    // This useEffect hook fetches the dynamic categories from Firestore.
+    useEffect(() => {
+        const categoriesRef = collection(db, "content_categories");
+        // These are system-level categories that should not be manually assigned.
+        const systemCategories = ['Featured', 'Trending', 'Live Feed']; 
+        
+        const q = query(
+            categoriesRef, 
+            where("isActive", "==", true), 
+            orderBy("orderIndex", "asc")
+        );
+        
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedCategories = snapshot.docs
+                .map(doc => doc.data().name)
+                .filter(name => !systemCategories.includes(name)); // Filter out the system categories
+            
+            setAvailableCategories(fetchedCategories);
+        });
+        
+        return () => unsubscribe(); // Cleanup listener
+    }, []);
+
+    // This second useEffect ensures the default selection is always a valid, available category.
+    useEffect(() => {
+        if (availableCategories.length > 0 && !availableCategories.includes(contentType)) {
+            setContentType(availableCategories[0]);
+        }
+    }, [availableCategories]);
+
+    // --- END: PASTE THE NEW CODE BLOCK HERE
+
+          const [contentToPromote, setContentToPromote] = useState(null);
+    const [showPromotionModal, setShowPromotionModal] = useState(false);
+
+    const handleSelectForPromotion = (content) => {
+        setContentToPromote(content);
+        setShowPromotionModal(false);
+    };
+
+    const handlePromote = async (targetCategory) => {
+        if (!contentToPromote) {
+            showMessage("Please select a content item first.");
+            return;
+        }
+        showMessage(`Promoting "${contentToPromote.title}" to ${targetCategory}...`);
+        try {
+            const contentRef = doc(db, `artifacts/${appId}/public/data/content_items`, contentToPromote.id);
+            await updateDoc(contentRef, {
+                contentType: targetCategory,
+                // When promoting to Featured, also set a high orderIndex to appear first
+                ...(targetCategory === 'Featured' && { orderIndex: 0 })
+            });
+            showMessage("Promotion successful!");
+            setContentToPromote(null); // Clear selection after promoting
+        } catch (error) {
+            showMessage("Error promoting content: " + error.message);
+            console.error("Promotion error:", error);
+        }
+    };
+    
+    // --- END: PASTE THE NEW CODE BLOCK HERE ---
+
+
     useEffect(() => {
         if (creatorProfile) {
             if (creatorProfile.role === 'authority') {
@@ -3878,8 +3968,36 @@ const AdminContentManagerScreen = ({
                 <form onSubmit={handleAddContent}>
                     <div className="formGroup"><label htmlFor="contentTitle" className="formLabel">Title:</label><input type="text" id="contentTitle" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} required /></div>
                     <div className="formGroup"><label htmlFor="contentDescription" className="formLabel">Description:</label><textarea id="contentDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description for the content item"></textarea></div>
-                    <div className="formGroup"><label htmlFor="mainUrl" className="formLabel">Main Content URL (Video/Project Link):</label><input type="url" id="mainUrl" className="formInput" value={mainUrl} onChange={(e) => setMainUrl(e.target.value)} placeholder="e.g., YouTube link, Facebook video" required /><p className="smallText" style={{textAlign: 'left', marginTop: '5px', color: '#AAA'}}>We'll try to extract a thumbnail from this link.</p></div>
-                    
+                    <div className="formGroup"><label htmlFor="mainUrl" className="formLabel">Main Content URL (Video/Project Link):</label><input type="url" id="mainUrl" className="formInput" value={mainUrl} onChange={(e) => setMainUrl(e.target.value)} placeholder="e.g., YouTube link, Facebook video" required /><p className="smallText" 
+                    style={{textAlign: 'left', marginTop: '5px', color: '#AAA'}}>We'll try to extract a thumbnail from this link.</p></div>
+                    <div className="dashboardSection" style={{marginTop: '30px', border: '1px solid #00FF00'}}>
+    <p className="dashboardSectionTitle">Home Screen Curation</p>
+    <p className="dashboardItem" style={{color: '#AAA', marginBottom: '15px'}}>Select a content item and then promote it to a special Home Screen category.</p>
+
+    <div className="adminDashboardItem" style={{backgroundColor: '#1A1A1A'}}>
+        <div style={{flexGrow: 1}}>
+            <p className="adminDashboardItemTitle" style={{fontSize: '14px'}}>
+                Selected: {contentToPromote ? `"${contentToPromote.title}"` : 'None'}
+            </p>
+            {contentToPromote && <p style={{fontSize: '12px', color: '#CCC'}}>by {contentToPromote.creatorName}</p>}
+        </div>
+        <button className="adminActionButton" onClick={() => setShowPromotionModal(true)}>
+            {contentToPromote ? 'Change Selection' : 'Select Content'}
+        </button>
+    </div>
+
+    <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '15px'}}>
+        <button className="button" disabled={!contentToPromote} onClick={() => handlePromote('Featured')} style={{margin: 0}}>
+            <span className="buttonText">Promote to Featured</span>
+        </button>
+        <button className="button" disabled={!contentToPromote} onClick={() => handlePromote('Trending')} style={{margin: 0}}>
+            <span className="buttonText">Add to Trending</span>
+        </button>
+        <button className="button" disabled={!contentToPromote} onClick={() => handlePromote('Live Feed')} style={{margin: 0}}>
+            <span className="buttonText">Add to Live Feed</span>
+        </button>
+    </div>
+</div>
                     {/* --- FIX: Display the thumbnail preview --- */}
                     {currentPreview && (
                         <div style={{ marginTop: '10px' }}>
@@ -3904,7 +4022,16 @@ const AdminContentManagerScreen = ({
                         />
                     </div>
 
-                    <div className="formGroup"><label htmlFor="contentType" className="formLabel">Content Type:</label><select id="contentType" className="formInput" value={contentType} onChange={(e) => setContentType(e.target.value)} required>{availableContentCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select></div>
+                    <div className="formGroup">
+    <label htmlFor="contentType" className="formLabel">Content Type:</label>
+    <select id="contentType" className="formInput" value={contentType} onChange={(e) => setContentType(e.target.value)} required>
+        {availableCategories.length === 0 ? (
+            <option>Loading categories...</option>
+        ) : (
+            availableCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))
+        )}
+    </select>
+</div>
                     <div className="formGroup"><label htmlFor="orderIndex" className="formLabel">Display Order Index (Lower numbers appear first):</label><input type="number" id="orderIndex" className="formInput" value={orderIndex} onChange={(e) => setOrderIndex(e.target.value)} min="0" /></div>
                     <div className="formGroup"><div className="checkboxItem"><input type="checkbox" id="isActive" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /><label htmlFor="isActive">Is Active (Show on public pages)</label></div></div>
                     <button type="submit" className="button"><span className="buttonText">Add Content Item</span></button>
@@ -3931,6 +4058,7 @@ const AdminContentManagerScreen = ({
                     </div>
                 )}
             </div>
+            {showPromotionModal && <ContentSelectorModal onSelect={handleSelectForPromotion} onCancel={() => setShowPromotionModal(false)} showMessage={showMessage} />}
         </div>
     );
 };
@@ -5075,8 +5203,7 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
             const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
             const [creatorProfile, setCreatorProfile] = useState(null);
             const [authLoading, setAuthLoading] = useState(true);
-            const [creatorCampaigns, setCreatorCampaigns] = useState([]); // State for all creator's campaigns
-
+            
             const [selectedCampaignId, setSelectedCampaignId] = useState(null);
             const [selectedUserId, setSelectedUserId] = useState(null);
 
@@ -5173,36 +5300,7 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                 });
             return () => unsubscribe(); // Cleanup listener
             }, []);
-
-            // New useEffect to fetch ALL of creator's campaigns for dashboard
-            useEffect(() => {
-                let unsubscribe = () => {};
-                if (currentUser) {
-                    const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
-                    // Fetch all campaigns by this creator, ordered by creation date
-                    const q = query(
-                        campaignsCollectionRef,
-                        where('creatorId', '==', currentUser.uid),
-                        orderBy('createdAt', 'desc')
-                    );
-
-                    unsubscribe = onSnapshot(q, (snapshot) => {
-                        const fetchedCampaigns = snapshot.docs.map(doc => ({
-                            id: doc.id,
-                            ...doc.data()
-                        }));
-                        setCreatorCampaigns(fetchedCampaigns);
-                    }, (error) => {
-                        console.error("Error fetching creator's campaigns:", error);
-                        setCreatorCampaigns([]); // Clear campaigns on error
-                    });
-                } else {
-                    setCreatorCampaigns([]); // Clear campaigns if no user
-                }
-
-                return () => unsubscribe(); // Cleanup listener
-            }, [currentUser]); // Re-run when currentUser changes
-            
+           
             // --- NEW GLOBAL useEffect for Countdown Logic ---
             useEffect(() => {
     const categoriesRef = collection(db, "content_categories");
@@ -5318,9 +5416,9 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
 
                 // REPLACE THE ENTIRE HomeScreen COMPONENT
 
-    const HomeScreen = ({ currentUser, showMessage, handleVideoPress }) => {
+    const HomeScreen = ({ currentUser, showMessage, handleVideoPress, featuredContentSlots }) => {
     const [featured, setFeatured] = useState([]);
-    const [trending, setTrending] = useState([]);
+    const [finalTrendingList, setFinalTrendingList] = useState([]);
     const [liveFeed, setLiveFeed] = useState([]);
     const [loading, setLoading] = useState(true);
     const [displayFeatured, setDisplayFeatured] = useState([]); 
@@ -5329,30 +5427,61 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
     const verticalCarouselRef = useRef(null);
 
     // ... All of your useEffect hooks for fetching and scrolling content remain unchanged ...
-    useEffect(() => {
-        const fetchContent = async () => {
-            try {
-                const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
-                const featuredQuery = query(contentCollectionRef, where('contentType', '==', 'Featured'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
-                const featuredSnapshot = await getDocs(featuredQuery);
-                const featuredData = featuredSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                setFeatured(featuredData);
-                const numFeaturedClones = 3;
-                if (featuredData.length > numFeaturedClones) { setDisplayFeatured([...featuredData, ...featuredData.slice(0, numFeaturedClones)]); } else { setDisplayFeatured(featuredData); }
-                const trendingQuery = query(contentCollectionRef, where('contentType', '==', 'Trending'), where('isActive', '==', true), orderBy('createdAt', 'desc'), limit(6));
-                const trendingSnapshot = await getDocs(trendingQuery);
-                setTrending(trendingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                const liveFeedQuery = query(contentCollectionRef, where('contentType', '==', 'Live Feed'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
-                const liveFeedSnapshot = await getDocs(liveFeedQuery);
-                const liveFeedData = liveFeedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                setLiveFeed(liveFeedData);
-                const numLiveFeedClones = 2;
-                if (liveFeedData.length > numLiveFeedClones) { setDisplayLiveFeed([...liveFeedData, ...liveFeedData.slice(0, numLiveFeedClones)]); } else { setDisplayLiveFeed(liveFeedData); }
-            } catch (error) { console.error("Error fetching home screen content:", error); showMessage("Failed to load content. Check connection."); }
-            finally { setLoading(false); }
-        };
-        fetchContent();
-    }, []);
+    const [displayTrending, setDisplayTrending] = useState([]); 
+
+useEffect(() => {
+    // This effect now combines the two sources of truth
+    const topSlots = (featuredContentSlots ? [
+        featuredContentSlots.slot_1?.content,
+        featuredContentSlots.slot_2?.content,
+        featuredContentSlots.slot_3?.content
+    ] : []).filter(Boolean); // Get the top 3, filtering out any empty slots
+
+    const topSlotIds = new Set(topSlots.map(item => item.id));
+
+    // Fetch the "generic" trending items to fill the remaining spots
+    const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
+    const trendingQuery = query(
+        contentCollectionRef, 
+        where('contentType', '==', 'Trending'), 
+        where('isActive', '==', true), 
+        orderBy('createdAt', 'desc'), 
+        limit(6) // Fetch 6 to have backups
+    );
+
+    const unsubscribe = onSnapshot(trendingQuery, (snapshot) => {
+        const genericTrending = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Filter out any generic items that are already featured in the top slots
+        const remainingTrending = genericTrending.filter(item => !topSlotIds.has(item.id));
+        
+        // Combine the lists and ensure it's no more than 6 items total
+        const finalTrendingList = [...topSlots, ...remainingTrending].slice(0, 6);
+        
+        setFinalTrendingList(finalTrendingList);
+        setLoading(false); // Assuming setLoading is from your original component
+    });
+
+    // Also fetch Featured and Live Feed content (logic from your original component)
+    const featuredQuery = query(contentCollectionRef, where('contentType', '==', 'Featured'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
+    getDocs(featuredQuery).then(featuredSnapshot => {
+        const featuredData = featuredSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setFeatured(featuredData);
+        // This logic for infinite scroll can be simplified or kept as is
+        const numFeaturedClones = 3;
+        if (featuredData.length > numFeaturedClones) { setDisplayFeatured([...featuredData, ...featuredData.slice(0, numFeaturedClones)]); } else { setDisplayFeatured(featuredData); }
+    });
+
+    const liveFeedQuery = query(contentCollectionRef, where('contentType', '==', 'Live Feed'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
+    getDocs(liveFeedQuery).then(liveFeedSnapshot => {
+        const liveFeedData = liveFeedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setLiveFeed(liveFeedData);
+        const numLiveFeedClones = 2;
+        if (liveFeedData.length > numLiveFeedClones) { setDisplayLiveFeed([...liveFeedData, ...liveFeedData.slice(0, numLiveFeedClones)]); } else { setDisplayLiveFeed(liveFeedData); }
+    });
+
+    return () => unsubscribe(); // Cleanup the listener
+}, [featuredContentSlots]); // Re-run this logic whenever the featured slots change
     useEffect(() => {
         const horizontalCarousel = horizontalCarouselRef.current;
         const verticalCarousel = verticalCarouselRef.current;
@@ -5396,7 +5525,7 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
             </div>
             {loading ? <p>Loading trending...</p> : (
                 <div className="contentGrid">
-                    {trending.map((item) => (
+                    {finalTrendingList.map((item) => (
                         // --- THIS IS THE FIX: Changed from <button> to <div> ---
                         <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
                             <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
@@ -5794,13 +5923,45 @@ const CreatorDashboardScreen = ({
     currentUser,
     creatorProfile,
     setCreatorProfile,
-    creatorCampaigns,
+    
     setSelectedCampaignId,
     setShowConfirmationModal,
     setConfirmationTitle,
     setConfirmationMessage,
     setOnConfirmationAction
 }) => {
+     const [creatorCampaigns, setCreatorCampaigns] = useState([]);
+
+     // New useEffect to fetch ALL of creator's campaigns for dashboard
+    useEffect(() => {
+        let unsubscribe = () => {};
+        if (currentUser) {
+            const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
+            // Fetch all campaigns by this creator, ordered by creation date
+            const q = query(
+                campaignsCollectionRef,
+                where('creatorId', '==', currentUser.uid),
+                orderBy('createdAt', 'desc')
+            );
+
+            unsubscribe = onSnapshot(q, (snapshot) => {
+                const fetchedCampaigns = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                setCreatorCampaigns(fetchedCampaigns);
+            }, (error) => {
+                console.error("Error fetching creator's campaigns:", error);
+                setCreatorCampaigns([]); // Clear campaigns on error
+            });
+        } else {
+            setCreatorCampaigns([]); // Clear campaigns if no user
+        }
+
+        return () => unsubscribe(); // Cleanup listener
+    }, [currentUser]); // Re-run when currentUser changes
+    // --- END: PASTE THE TWO BLOCKS HERE
+
     // ... (all the state and functions for the dashboard remain the same) ...
     const [isEditingProfile, setIsEditingProfile] = useState(false);
     const [editCreatorName, setEditCreatorName] = useState('');
@@ -5989,6 +6150,7 @@ const handleAddOrUpdateVideo = async () => {
         currentUser={currentUser}
         showMessage={showMessage}
         handleVideoPress={handleVideoPress}
+        featuredContentSlots={featuredContentSlots}
         />;
     case 'Discover':
     if (!currentUser) { /* ... */ }
@@ -6051,7 +6213,17 @@ const handleAddOrUpdateVideo = async () => {
                     case 'CampaignDetails':
                         return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} />;
                     case 'CreatorDashboard':
-                        return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} creatorCampaigns={creatorCampaigns} setSelectedCampaignId={setSelectedCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
+                        return <CreatorDashboardScreen 
+                        showMessage={showMessage} 
+                        setActiveScreen={setActiveScreen} 
+                        currentUser={currentUser} 
+                        creatorProfile={creatorProfile} 
+                        setCreatorProfile={setCreatorProfile} 
+                        setSelectedCampaignId={setSelectedCampaignId} 
+                        setShowConfirmationModal={setShowConfirmationModal} 
+                        setConfirmationTitle={setConfirmationTitle} 
+                        setConfirmationMessage={setConfirmationMessage} 
+                        setOnConfirmationAction={setOnConfirmationAction} />;
                     
                     case 'MyFollows':
                 return <MyFollowsScreen
