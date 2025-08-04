@@ -2278,7 +2278,7 @@
 
 
         // --- START: COMPLETE AND CORRECTED ProfilePictureAdjustModal ---
-            const ProfilePictureAdjustModal = ({ isUploading, imageUrl, onSave, onCancel, showMessage }) => {
+    const ProfilePictureAdjustModal = ({ isUploading, imageUrl, onSave, onCancel, showMessage }) => {
             const canvasRef = useRef(null);
             const imageRef = useRef(new Image());
             const [scale, setScale] = useState(1);
@@ -2440,10 +2440,8 @@
                             <canvas ref={canvasRef}></canvas>
                         </div>
                         <div className="modalButtons">
-                            <button className="modalButton" onClick={saveCroppedImage} disabled={isUploading}>
-                                {isUploading ? 'Uploading...' : 'Save'}
-                            </button>
-                            <button className="modalButton cancel" onClick={onCancel} disabled={isUploading}>Cancel</button>
+                            <button className="modalButton" onClick={saveCroppedImage}>Save</button>
+                            <button className="modalButton cancel" onClick={onCancel}>Cancel</button>
                         </div>
                     </div>
                 </div>
@@ -3552,69 +3550,81 @@ const AdminDashboardScreen = ({
                     // --- START: NEW COMPONENT ---
         const AddExternalAdModal = ({ showMessage, onSave, onCancel }) => {
             const [title, setTitle] = useState('');
-            const [externalLink, setExternalLink] = useState('');
-            const [imageUrlInput, setImageUrlInput] = useState('');
+            const [destinationUrl, setDestinationUrl] = useState('');
             const [imageFile, setImageFile] = useState(null);
             const [imagePreview, setImagePreview] = useState('');
             const [isUploading, setIsUploading] = useState(false);
             const fileInputRef = useRef(null);
 
             useEffect(() => {
-                if (!imageUrlInput) {
+                if (imageFile) return;
+                if (!destinationUrl) {
                     setImagePreview('');
                     return;
                 }
-                const videoInfo = extractVideoInfo(imageUrlInput);
+                const videoInfo = extractVideoInfo(destinationUrl);
                 if (videoInfo && videoInfo.thumbnailUrl) {
                     setImagePreview(videoInfo.thumbnailUrl);
                 } else {
-                    setImagePreview(imageUrlInput);
+                    setImagePreview(destinationUrl);
                 }
-            }, [imageUrlInput]);
+            }, [destinationUrl, imageFile]);
 
             const handleFileChange = (e) => {
                 const file = e.target.files[0];
                 if (file) {
                     setImageFile(file);
                     setImagePreview(URL.createObjectURL(file));
-                    setImageUrlInput('');
                 }
             };
 
             const handleSave = async () => {
-                if (!title || (!imagePreview && !imageFile)) {
-                    showMessage("Title and an Image (from URL or Upload) are required.");
+                if (!title || !destinationUrl) {
+                    showMessage("A Title and Destination URL are required.");
                     return;
                 }
-                let finalImageUrl = imagePreview;
+
+                // If a custom file was uploaded, handle that path first.
                 if (imageFile) {
                     setIsUploading(true);
-                    showMessage("Uploading image...");
+                    showMessage("Uploading custom image...");
                     try {
                         const filePath = `external_ads/${Date.now()}_${imageFile.name}`;
                         const storageRef = ref(storage, filePath);
                         const snapshot = await uploadBytes(storageRef, imageFile);
-                        finalImageUrl = await getDownloadURL(snapshot.ref);
+                        const finalImageUrl = await getDownloadURL(snapshot.ref);
                         showMessage("Image uploaded successfully!");
+                        
+                        // --- CRITICAL FIX: onSave is called *inside* the successful async block ---
+                        onSave({
+                            type: 'external',
+                            title,
+                            externalLink: destinationUrl,
+                            imageUrl: finalImageUrl,
+                            orderIndex: Date.now()
+                        });
+                        setIsUploading(false);
+                        onCancel(); // Close the modal
+
                     } catch (error) {
                         showMessage(`Image upload failed: ${error.message}`);
                         setIsUploading(false);
+                    }
+                } else {
+                    // This is the path for URL-based images
+                    if (!imagePreview) {
+                        showMessage("Could not find a valid image preview. Please upload one.");
                         return;
                     }
+                    onSave({
+                        type: 'external',
+                        title,
+                        externalLink: destinationUrl,
+                        imageUrl: imagePreview,
+                        orderIndex: Date.now()
+                    });
+                    onCancel(); // Close the modal
                 }
-                if (!finalImageUrl) {
-                    showMessage("Could not determine a valid image URL to save.");
-                    return;
-                }
-                onSave({
-                    type: 'external',
-                    title,
-                    externalLink: externalLink || imageUrlInput,
-                    imageUrl: finalImageUrl,
-                    orderIndex: Date.now()
-                });
-                setIsUploading(false);
-                onCancel();
             };
 
             return (
@@ -3626,26 +3636,21 @@ const AdminDashboardScreen = ({
                             <input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Monster Energy Deal" required/>
                         </div>
                         <div className="formGroup">
-                            <label className="formLabel">Click-Through Link (Optional):</label>
-                            <input type="url" className="formInput" value={externalLink} onChange={(e) => setExternalLink(e.target.value)} placeholder="https://www.sponsorwebsite.com" />
-                             <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>If empty, clicking the ad will go to the Image/Video URL.</p>
+                            <label className="formLabel">Destination URL:</label>
+                            <input type="url" className="formInput" value={destinationUrl} onChange={(e) => { setDestinationUrl(e.target.value); setImageFile(null); }} placeholder="https://www.sponsor.com/deal" required/>
+                            <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>The app will try to fetch a preview from this link.</p>
                         </div>
                         <hr style={{borderColor: '#333', margin: '15px 0'}}/>
                         <div className="formGroup">
-                            <label className="formLabel">Image/Video URL:</label>
-                            <input type="url" className="formInput" value={imageUrlInput} onChange={(e) => { setImageUrlInput(e.target.value); setImageFile(null); }} placeholder="Paste direct image or YouTube link" required/>
-                        </div>
-                        <p className="smallText" style={{ textAlign: 'center' }}>OR</p>
-                        <div className="formGroup">
-                            <label className="formLabel">Upload Custom Image:</label>
+                            <label className="formLabel">Upload Custom Image (Overrides Preview):</label>
                             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" style={{ display: 'none' }} />
                             <button type="button" className="button" onClick={() => fileInputRef.current.click()} style={{ width: '100%', backgroundColor: '#3A3A3A' }}>
                                 <span className="buttonText">Choose Image File</span>
                             </button>
                             {imagePreview && (
                                 <div style={{marginTop: '15px'}}>
-                                    <p className="formLabel">Preview:</p>
-                                    <img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '5px' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/200x120/DC3545/FFF?text=Invalid+Image'; }} />
+                                    <p className="formLabel">Final Preview:</p>
+                                    <img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '5px' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/200x120/555/FFF?text=No+Preview'; }} />
                                 </div>
                             )}
                         </div>
@@ -3672,27 +3677,36 @@ const AdminDashboardScreen = ({
             const targetField = `${curationTarget.toLowerCase().replace(' ', '')}Items`;
 
             useEffect(() => {
-                const layoutDocRef = doc(db, "settings", "homeScreenLayout");
-                const unsubscribe = onSnapshot(layoutDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const layoutData = docSnap.data();
-                        const itemsFromDB = layoutData[targetField] || [];
-                        
-                        const enrichedItems = itemsFromDB.map(item => {
-                            if (item.type === 'internal') {
-                                const fullContent = contentItems.find(ci => ci.id === item.contentId);
-                                return fullContent ? { ...item, ...fullContent } : null;
-                            }
-                            return item;
-                        }).filter(item => item);
-                        setCuratedItems(enrichedItems);
-                    } else {
+                const fetchInitialData = async () => {
+                    setLoading(true);
+                    const layoutDocRef = doc(db, "settings", "homeScreenLayout");
+                    try {
+                        const docSnap = await getDoc(layoutDocRef);
+                        if (docSnap.exists()) {
+                            const layoutData = docSnap.data();
+                            const itemsFromDB = layoutData[targetField] || [];
+                            
+                            const enrichedItems = itemsFromDB.map(item => {
+                                if (item.type === 'internal') {
+                                    const fullContent = contentItems.find(ci => ci.id === item.contentId);
+                                    return fullContent ? { ...item, ...fullContent } : null;
+                                }
+                                return item;
+                            }).filter(Boolean); // Filter out nulls for deleted content
+                            setCuratedItems(enrichedItems);
+                        } else {
+                            setCuratedItems([]);
+                        }
+                    } catch (error) {
+                        showMessage("Error fetching curation data: " + error.message);
                         setCuratedItems([]);
+                    } finally {
+                        setLoading(false);
                     }
-                    setLoading(false);
-                });
-                return () => unsubscribe();
-            }, [curationTarget, contentItems]);
+                };
+                
+                fetchInitialData();
+            }, [curationTarget]); // This hook now only re-runs if the target section changes
 
             const handleMove = (index, direction) => {
                 const newItems = [...curatedItems];
@@ -3954,7 +3968,6 @@ const AdminContentManagerScreen = ({
     const [mainUrl, setMainUrl] = useState('');
     const [customThumbnailFile, setCustomThumbnailFile] = useState(null);
     const [customThumbnailUrlPreview, setCustomThumbnailUrlPreview] = useState('');
-    // --- FIX: Added state for the auto-fetched thumbnail ---
     const [autoThumbnailPreview, setAutoThumbnailPreview] = useState('');
     const [creatorName, setCreatorName] = useState('');
     const [contentType, setContentType] = useState('Skits');
@@ -3963,12 +3976,11 @@ const AdminContentManagerScreen = ({
     const [description, setDescription] = useState('');
 
     const thumbnailFileInputRef = useRef(null);
-
-     // --- START: PASTE THE NEW CODE BLOCK HERE ---
     
     const [availableCategories, setAvailableCategories] = useState([]);
-
-            const [showCurationModal, setShowCurationModal] = useState(false);
+    
+    // --- CONSOLIDATED: State and handler for the Curation Modal ---
+    const [showCurationModal, setShowCurationModal] = useState(false);
     const [curationTarget, setCurationTarget] = useState('');
 
     const openCurationModal = (target) => {
@@ -3976,10 +3988,8 @@ const AdminContentManagerScreen = ({
         setShowCurationModal(true);
     };
 
-    // This useEffect hook fetches the dynamic categories from Firestore.
     useEffect(() => {
         const categoriesRef = collection(db, "content_categories");
-        // These are system-level categories that should not be manually assigned.
         const systemCategories = ['Featured', 'Trending', 'Live Feed']; 
         
         const q = query(
@@ -3991,54 +4001,19 @@ const AdminContentManagerScreen = ({
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedCategories = snapshot.docs
                 .map(doc => doc.data().name)
-                .filter(name => !systemCategories.includes(name)); // Filter out the system categories
+                .filter(name => !systemCategories.includes(name));
             
             setAvailableCategories(fetchedCategories);
         });
         
-        return () => unsubscribe(); // Cleanup listener
+        return () => unsubscribe();
     }, []);
 
-    // This second useEffect ensures the default selection is always a valid, available category.
     useEffect(() => {
         if (availableCategories.length > 0 && !availableCategories.includes(contentType)) {
             setContentType(availableCategories[0]);
         }
     }, [availableCategories]);
-
-    // --- END: PASTE THE NEW CODE BLOCK HERE
-
-          const [contentToPromote, setContentToPromote] = useState(null);
-    const [showPromotionModal, setShowPromotionModal] = useState(false);
-
-    const handleSelectForPromotion = (content) => {
-        setContentToPromote(content);
-        setShowPromotionModal(false);
-    };
-
-    const handlePromote = async (targetCategory) => {
-        if (!contentToPromote) {
-            showMessage("Please select a content item first.");
-            return;
-        }
-        showMessage(`Promoting "${contentToPromote.title}" to ${targetCategory}...`);
-        try {
-            const contentRef = doc(db, `artifacts/${appId}/public/data/content_items`, contentToPromote.id);
-            await updateDoc(contentRef, {
-                contentType: targetCategory,
-                // When promoting to Featured, also set a high orderIndex to appear first
-                ...(targetCategory === 'Featured' && { orderIndex: 0 })
-            });
-            showMessage("Promotion successful!");
-            setContentToPromote(null); // Clear selection after promoting
-        } catch (error) {
-            showMessage("Error promoting content: " + error.message);
-            console.error("Promotion error:", error);
-        }
-    };
-    
-    // --- END: PASTE THE NEW CODE BLOCK HERE ---
-
 
     useEffect(() => {
         if (creatorProfile) {
@@ -4050,7 +4025,6 @@ const AdminContentManagerScreen = ({
         }
     }, [creatorProfile]);
 
-    // --- FIX: Added useEffect to fetch thumbnail from mainUrl ---
     useEffect(() => {
         if (!mainUrl) {
             setAutoThumbnailPreview('');
@@ -4090,7 +4064,6 @@ const AdminContentManagerScreen = ({
         setMainUrl('');
         setCustomThumbnailFile(null);
         setCustomThumbnailUrlPreview('');
-        // --- FIX: Reset the auto-thumbnail preview as well ---
         setAutoThumbnailPreview('');
         if (creatorProfile && creatorProfile.role === 'authority') {
             setCreatorName(creatorProfile.creatorName || '');
@@ -4210,48 +4183,47 @@ const AdminContentManagerScreen = ({
         );
     }
     
-    // --- FIX: Logic to determine which preview to show ---
     const currentPreview = customThumbnailUrlPreview || autoThumbnailPreview;
 
     return (
         <div className="screenContainer">
             <p className="heading">Manage Content</p>
-            <p className="subHeading">Add and review content items for Featured, Live Feed, and Categories.</p>
+            <p className="subHeading">Curate the home screen and add new videos to the content library.</p>
+            
             <AdminFeaturedContentManager featuredContentSlots={featuredContentSlots} showMessage={showMessage} />
-            <div className="dashboardSection">
-                <p className="dashboardSectionTitle">Add New Content Item</p>
-                <form onSubmit={handleAddContent}>
-                    <div className="formGroup"><label htmlFor="contentTitle" className="formLabel">Title:</label><input type="text" id="contentTitle" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} required /></div>
-                    <div className="formGroup"><label htmlFor="contentDescription" className="formLabel">Description:</label><textarea id="contentDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description for the content item"></textarea></div>
-                    <div className="formGroup"><label htmlFor="mainUrl" className="formLabel">Main Content URL (Video/Project Link):</label><input type="url" id="mainUrl" className="formInput" value={mainUrl} onChange={(e) => setMainUrl(e.target.value)} placeholder="e.g., YouTube link, Facebook video" required /><p className="smallText" 
-                    style={{textAlign: 'left', marginTop: '5px', color: '#AAA'}}>We'll try to extract a thumbnail from this link.</p></div>
+
             <div className="dashboardSection" style={{marginTop: '30px', border: '1px solid #00FF00'}}>
                 <p className="dashboardSectionTitle">Home Screen Curation</p>
                 <p className="dashboardItem" style={{color: '#AAA', marginBottom: '15px'}}>
                     Manually add, remove, and reorder content for the main sections on the Home screen.
                 </p>
                 <div style={{display: 'flex', justifyContent: 'space-around', gap: '10px', marginTop: '15px'}}>
-                    <button className="button" onClick={() => openCurationModal('Featured')} style={{margin: 0}}>
+                    <button type="button" className="button" onClick={() => openCurationModal('Featured')} style={{margin: 0}}>
                         <span className="buttonText">Manage Featured</span>
                     </button>
-                    <button className="button" onClick={() => openCurationModal('Trending')} style={{margin: 0}}>
+                    <button type="button" className="button" onClick={() => openCurationModal('Trending')} style={{margin: 0}}>
                         <span className="buttonText">Manage Trending</span>
                     </button>
-                    <button className="button" onClick={() => openCurationModal('Live Feed')} style={{margin: 0}}>
+                    <button type="button" className="button" onClick={() => openCurationModal('Live Feed')} style={{margin: 0}}>
                         <span className="buttonText">Manage Live Feed</span>
                     </button>
                 </div>
             </div>
-                    {/* --- FIX: Display the thumbnail preview --- */}
+
+            <div className="dashboardSection">
+                <p className="dashboardSectionTitle">Add New Content to Library</p>
+                <form onSubmit={handleAddContent}>
+                    <div className="formGroup"><label htmlFor="contentTitle" className="formLabel">Title:</label><input type="text" id="contentTitle" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} required /></div>
+                    <div className="formGroup"><label htmlFor="contentDescription" className="formLabel">Description:</label><textarea id="contentDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description for the content item"></textarea></div>
+                    <div className="formGroup"><label htmlFor="mainUrl" className="formLabel">Main Content URL (Video/Project Link):</label><input type="url" id="mainUrl" className="formInput" value={mainUrl} onChange={(e) => setMainUrl(e.target.value)} placeholder="e.g., YouTube link, Facebook video" required /><p className="smallText" 
+                    style={{textAlign: 'left', marginTop: '5px', color: '#AAA'}}>We'll try to extract a thumbnail from this link.</p></div>
                     {currentPreview && (
                         <div style={{ marginTop: '10px' }}>
                             <p className="formLabel" style={{marginBottom: '5px'}}>Thumbnail Preview:</p>
                             <img src={currentPreview} alt="Thumbnail Preview" style={{ maxWidth: '150px', borderRadius: '8px', border: '2px solid #FFD700' }} />
                         </div>
                     )}
-
                     <div className="formGroup"><label htmlFor="customThumbnailFile" className="formLabel">Custom Thumbnail Image (Optional):</label><input type="file" id="customThumbnailFile" ref={thumbnailFileInputRef} className="formInput" onChange={(e) => { const file = e.target.files[0]; setCustomThumbnailFile(file); if (file) { setCustomThumbnailUrlPreview(URL.createObjectURL(file)); } else { setCustomThumbnailUrlPreview(''); } }} accept="image/*" style={{padding: '10px 0', border: 'none', backgroundColor: 'transparent'}} /><p className="smallText" style={{textAlign: 'left', marginTop: '5px', color: '#AAA'}}>Upload an image to override the thumbnail from the video link.</p></div>
-                    
                     <div className="formGroup">
                         <label htmlFor="creatorName" className="formLabel">Creator Name:</label>
                         <input
@@ -4265,17 +4237,16 @@ const AdminContentManagerScreen = ({
                             style={creatorProfile && creatorProfile.role === 'authority' ? { backgroundColor: '#2A2A2A', cursor: 'not-allowed' } : {}}
                         />
                     </div>
-
                     <div className="formGroup">
-    <label htmlFor="contentType" className="formLabel">Content Type:</label>
-    <select id="contentType" className="formInput" value={contentType} onChange={(e) => setContentType(e.target.value)} required>
-        {availableCategories.length === 0 ? (
-            <option>Loading categories...</option>
-        ) : (
-            availableCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))
-        )}
-    </select>
-</div>
+                        <label htmlFor="contentType" className="formLabel">Content Type:</label>
+                        <select id="contentType" className="formInput" value={contentType} onChange={(e) => setContentType(e.target.value)} required>
+                            {availableCategories.length === 0 ? (
+                                <option>Loading categories...</option>
+                            ) : (
+                                availableCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))
+                            )}
+                        </select>
+                    </div>
                     <div className="formGroup"><label htmlFor="orderIndex" className="formLabel">Display Order Index (Lower numbers appear first):</label><input type="number" id="orderIndex" className="formInput" value={orderIndex} onChange={(e) => setOrderIndex(e.target.value)} min="0" /></div>
                     <div className="formGroup"><div className="checkboxItem"><input type="checkbox" id="isActive" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /><label htmlFor="isActive">Is Active (Show on public pages)</label></div></div>
                     <button type="submit" className="button"><span className="buttonText">Add Content Item</span></button>
@@ -5669,153 +5640,181 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
 
                 // REPLACE THE ENTIRE HomeScreen COMPONENT
 
-    const HomeScreen = ({ currentUser, showMessage, handleVideoPress, featuredContentSlots }) => {
-    const [featured, setFeatured] = useState([]);
-    const [finalTrendingList, setFinalTrendingList] = useState([]);
-    const [liveFeed, setLiveFeed] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [displayFeatured, setDisplayFeatured] = useState([]); 
-    const [displayLiveFeed, setDisplayLiveFeed] = useState([]); 
-    const horizontalCarouselRef = useRef(null);
-    const verticalCarouselRef = useRef(null);
-
-    // ... All of your useEffect hooks for fetching and scrolling content remain unchanged ...
-    const [displayTrending, setDisplayTrending] = useState([]); 
-
-useEffect(() => {
-    // This effect now combines the two sources of truth
-    const topSlots = (featuredContentSlots ? [
-        featuredContentSlots.slot_1?.content,
-        featuredContentSlots.slot_2?.content,
-        featuredContentSlots.slot_3?.content
-    ] : []).filter(Boolean); // Get the top 3, filtering out any empty slots
-
-    const topSlotIds = new Set(topSlots.map(item => item.id));
-
-    // Fetch the "generic" trending items to fill the remaining spots
-    const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
-    const trendingQuery = query(
-        contentCollectionRef, 
-        where('contentType', '==', 'Trending'), 
-        where('isActive', '==', true), 
-        orderBy('createdAt', 'desc'), 
-        limit(6) // Fetch 6 to have backups
-    );
-
-    const unsubscribe = onSnapshot(trendingQuery, (snapshot) => {
-        const genericTrending = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const HomeScreen = ({ currentUser, showMessage, handleVideoPress, handleLogout, creatorProfile, featuredContentSlots }) => {
+        const [loading, setLoading] = useState(true);
+        const [layout, setLayout] = useState(null);
+        const [liveFeed, setLiveFeed] = useState(null);
+        const [enrichedLayout, setEnrichedLayout] = useState({ featured: [], trending: [], liveFeed: [] });
+        const [displayFeatured, setDisplayFeatured] = useState([]);
+        const [displayLiveFeed, setDisplayLiveFeed] = useState([]);
         
-        // Filter out any generic items that are already featured in the top slots
-        const remainingTrending = genericTrending.filter(item => !topSlotIds.has(item.id));
+        const horizontalCarouselRef = useRef(null);
+        const verticalCarouselRef = useRef(null);
+
+        useEffect(() => {
+            const layoutDocRef = doc(db, "settings", "homeScreenLayout");
+            const unsubscribe = onSnapshot(layoutDocRef, (docSnap) => {
+                setLayout(docSnap.exists() ? docSnap.data() : { featuredItems: [], trendingItems: [], liveFeedItems: [] });
+            });
+            return () => unsubscribe();
+        }, []);
+
+        useEffect(() => {
+            const liveFeedQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`), where('contentType', '==', 'Live Feed'), where('isActive', '==', true), orderBy('createdAt', 'desc'), limit(20));
+            const unsubscribe = onSnapshot(liveFeedQuery, (snapshot) => {
+                setLiveFeed(snapshot.docs.map(d => ({ ...d.data(), id: d.id, type: 'internal' })));
+            });
+            return () => unsubscribe();
+        }, []);
+
+        useEffect(() => {
+            if (layout === null || liveFeed === null || featuredContentSlots === null) return;
+
+            const processData = async () => {
+                const manualTrending = layout.trendingItems || [];
+                const autoSlots = [featuredContentSlots.slot_1, featuredContentSlots.slot_2, featuredContentSlots.slot_3]
+                    .filter(slot => slot && slot.content).map(slot => ({ type: 'internal', contentId: slot.content.id, isAuto: true, orderIndex: -1 }));
+                const manualTrendingIds = new Set(manualTrending.filter(i => i.type === 'internal').map(i => i.contentId));
+                const uniqueAutoSlots = autoSlots.filter(slot => !manualTrendingIds.has(slot.contentId));
+                const combinedTrending = [...uniqueAutoSlots, ...manualTrending];
+
+                const manualLiveFeed = layout.liveFeedItems || [];
+                const autoSlotIds = new Set(autoSlots.map(slot => slot.contentId));
+                const manualLiveFeedIds = new Set(manualLiveFeed.filter(i => i.type === 'internal').map(i => i.contentId));
+                const uniqueAutoLiveFeed = liveFeed.filter(item => !manualLiveFeedIds.has(item.id));
+                const combinedLiveFeed = [...manualLiveFeed, ...uniqueAutoLiveFeed];
+
+                const allItems = { featured: layout.featuredItems || [], trending: combinedTrending, liveFeed: combinedLiveFeed };
+                const contentIds = [...new Set(Object.values(allItems).flat().filter(i => i.type === 'internal' && i.contentId).map(i => i.contentId))];
+                
+                const promises = contentIds.map(id => getDoc(doc(db, `artifacts/${appId}/public/data/content_items`, id)).catch(() => null));
+                const docSnapshots = await Promise.all(promises);
+                const allContentData = docSnapshots.filter(snap => snap && snap.exists()).map(snap => ({id: snap.id, ...snap.data()}));
+                
+                const contentMap = new Map(allContentData.map(c => [c.id, c]));
+                const enrich = (items) => items.map(item => {
+                    if (item.type === 'internal') {
+                        const content = contentMap.get(item.contentId);
+                        const isMod = creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority');
+                        if (content && (content.isActive || isMod)) return { ...item, ...content };
+                        return null;
+                    }
+                    return item;
+                }).filter(Boolean).sort((a,b) => (a.orderIndex || 99) - (b.orderIndex || 99));
+
+                const finalLayout = {
+                    featured: enrich(allItems.featured),
+                    trending: enrich(allItems.trending),
+                    liveFeed: enrich(allItems.liveFeed)
+                };
+                setEnrichedLayout(finalLayout);
+
+                const numFeaturedClones = 3;
+                setDisplayFeatured(finalLayout.featured.length > numFeaturedClones ? [...finalLayout.featured, ...finalLayout.featured.slice(0, numFeaturedClones)] : finalLayout.featured);
+                const numLiveFeedClones = 4;
+                setDisplayLiveFeed(finalLayout.liveFeed.length > numLiveFeedClones ? [...finalLayout.liveFeed, ...finalLayout.liveFeed.slice(0, numLiveFeedClones)] : finalLayout.liveFeed);
+                
+                setLoading(false);
+            };
+            processData();
+        }, [layout, liveFeed, featuredContentSlots, creatorProfile]);
+
+        useEffect(() => {
+            const horizontalCarousel = horizontalCarouselRef.current;
+            const verticalCarousel = verticalCarouselRef.current;
+            let horizontalInterval;
+            let verticalInterval;
+            const startHorizontalAutoscroll = () => {
+                if (!horizontalCarousel || displayFeatured.length <= 3) return;
+                const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15;
+                horizontalInterval = setInterval(() => {
+                    if (horizontalCarousel.scrollLeft >= (horizontalCarousel.scrollWidth / 2)) {
+                        horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
+                    } else {
+                        horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
+                    }
+                }, 4000);
+            };
+            const startVerticalAutoscroll = () => {
+                if (!verticalCarousel || displayLiveFeed.length <= 4) return;
+                const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15;
+                verticalInterval = setInterval(() => {
+                    if (verticalCarousel.scrollTop >= (verticalCarousel.scrollHeight / 2)) {
+                        verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
+                    } else {
+                        verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
+                    }
+                }, 3000);
+            };
+            startHorizontalAutoscroll();
+            startVerticalAutoscroll();
+            return () => { clearInterval(horizontalInterval); clearInterval(verticalInterval); };
+        }, [displayFeatured, displayLiveFeed]);
         
-        // Combine the lists and ensure it's no more than 6 items total
-        const finalTrendingList = [...topSlots, ...remainingTrending].slice(0, 6);
+        const handleHorizontalScroll = (direction) => { const carousel = horizontalCarouselRef.current; if (carousel) { const itemWidth = carousel.children[0]?.offsetWidth + 15; carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' }); } };
+        const handleVerticalScroll = (direction) => { const carousel = verticalCarouselRef.current; if (carousel) { const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15; carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' }); } };
+        const handleItemClick = (item) => { if (item.type === 'internal') { handleVideoPress(item.embedUrl || item.mainUrl, item); } else if (item.externalLink) { window.open(item.externalLink, '_blank'); } };
         
-        setFinalTrendingList(finalTrendingList);
-        setLoading(false); // Assuming setLoading is from your original component
-    });
-
-    // Also fetch Featured and Live Feed content (logic from your original component)
-    const featuredQuery = query(contentCollectionRef, where('contentType', '==', 'Featured'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
-    getDocs(featuredQuery).then(featuredSnapshot => {
-        const featuredData = featuredSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setFeatured(featuredData);
-        // This logic for infinite scroll can be simplified or kept as is
-        const numFeaturedClones = 3;
-        if (featuredData.length > numFeaturedClones) { setDisplayFeatured([...featuredData, ...featuredData.slice(0, numFeaturedClones)]); } else { setDisplayFeatured(featuredData); }
-    });
-
-    const liveFeedQuery = query(contentCollectionRef, where('contentType', '==', 'Live Feed'), where('isActive', '==', true), orderBy('orderIndex', 'asc'));
-    getDocs(liveFeedQuery).then(liveFeedSnapshot => {
-        const liveFeedData = liveFeedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setLiveFeed(liveFeedData);
-        const numLiveFeedClones = 2;
-        if (liveFeedData.length > numLiveFeedClones) { setDisplayLiveFeed([...liveFeedData, ...liveFeedData.slice(0, numLiveFeedClones)]); } else { setDisplayLiveFeed(liveFeedData); }
-    });
-
-    return () => unsubscribe(); // Cleanup the listener
-}, [featuredContentSlots]); // Re-run this logic whenever the featured slots change
-    useEffect(() => {
-        const horizontalCarousel = horizontalCarouselRef.current;
-        const verticalCarousel = verticalCarouselRef.current;
-        let horizontalInterval;
-        let verticalInterval;
-        const startHorizontalAutoscroll = () => { if (!horizontalCarousel || displayFeatured.length <= 3) { clearInterval(horizontalInterval); return; } const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15; const originalContentWidth = (displayFeatured.length - 3) * itemWidth; horizontalInterval = setInterval(() => { if (horizontalCarousel.scrollLeft >= originalContentWidth - (horizontalCarousel.clientWidth / 2)) { horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' }); } horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' }); }, 3000); };
-        const startVerticalAutoscroll = () => { if (!verticalCarousel || displayLiveFeed.length <= 2) { clearInterval(verticalInterval); return; } const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15; const originalContentHeight = (displayLiveFeed.length - 2) * itemHeight; verticalInterval = setInterval(() => { if (verticalCarousel.scrollTop >= originalContentHeight - (verticalCarousel.clientHeight / 2)) { verticalCarousel.scrollTo({ top: 0, behavior: 'instant' }); } verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' }); }, 3000); };
-        clearInterval(horizontalInterval); clearInterval(verticalInterval);
-        if (!loading) { startHorizontalAutoscroll(); startVerticalAutoscroll(); }
-        return () => { clearInterval(horizontalInterval); clearInterval(verticalInterval); };
-    }, [loading, displayFeatured, displayLiveFeed]);
-
-    const handleHorizontalScroll = (direction) => { const carousel = horizontalCarouselRef.current; if (carousel) { const itemWidth = carousel.children[0]?.offsetWidth + 15; carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' }); } };
-    const handleVerticalScroll = (direction) => { const carousel = verticalCarouselRef.current; if (carousel) { const itemHeight = carousel.children[0]?.offsetHeight + 15; carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' }); } };
-
-    return (
-        <div className="screenContainer">
-            <div className="topRightButtonContainer">
-                {currentUser && (<button className="topButton" onClick={() => setActiveScreen('TopCreators')}>Top Creators</button>)}
-                <button className="topButton" onClick={() => setActiveScreen('Support')}>Support Us</button>
-                {currentUser ? (<button className="topButton" onClick={handleLogout}>Logout</button>) : (<button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>)}
-            </div>
-            
-            <p className="sectionTitle">Featured Highlights</p>
-            <div className="carousel-wrapper">
-                {displayFeatured.length > 3 && ( <> <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button> <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button> </> )}
-                <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
-                    {loading ? ( Array.from({ length: 5 }).map((_, i) => (<div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>)) ) : (
-                        displayFeatured.map((item, index) => (
-                            <div key={`${item.id}-${index}`} className="horizontal-carousel-item" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)} style={{cursor: 'pointer'}}>
-                                <img src={item.customThumbnailUrl} alt={item.title} className="carousel-image" />
-                            </div>
-                        ))
-                    )}
+        return (
+            <div className="screenContainer">
+                <div className="topRightButtonContainer">
+                    {currentUser && (<button className="topButton" onClick={() => setActiveScreen('TopCreators')}>Top Creators</button>)}
+                    <button className="topButton" onClick={() => setActiveScreen('Support')}>Support Us</button>
+                    {currentUser ? (<button className="topButton" onClick={handleLogout}>Logout</button>) : (<button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>)}
                 </div>
-            </div>
-
-            <div className="sectionHeaderWithButton">
-                <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
-                {!currentUser && ( <div style={{display: 'flex', gap: '10px'}}> <button className="sectionHeaderButton" onClick={() => setActiveScreen('UserSignUp')}>User Sign Up</button> <button className="sectionHeaderButton" onClick={() => setActiveScreen('CreatorSignUp')}>Creator Sign Up</button> </div> )}
-            </div>
-            {loading ? <p>Loading trending...</p> : (
-                <div className="contentGrid">
-                    {finalTrendingList.map((item) => (
-                        // --- THIS IS THE FIX: Changed from <button> to <div> ---
-                        <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
-                            <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
-                                <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
-                            </div>
-                            <p className="contentTitle">{item.title}</p>
-                        </div>
-                    ))}
-                </div>
-            )}
-            
-            <div className="sectionHeaderWithButton">
-                <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
-                {currentUser && ( <div style={{display: 'flex', gap: '10px'}}> <button className="sectionHeaderButton" onClick={() => setActiveScreen('DiscoverUsers')}>Find Creators</button> <button className="sectionHeaderButton" onClick={() => setActiveScreen('Discover')}>Discover All</button> </div> )}
-            </div>
-            {loading ? <p>Loading live feed...</p> : (
-                 <div className="carousel-wrapper">
-                    {displayLiveFeed.length > 2 && ( <> <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button> <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button> </> )}
-                    <div className="vertical-carousel-container" ref={verticalCarouselRef}>
-                        {displayLiveFeed.map((item, index) => (
-                            // --- THIS IS THE FIX: Changed from <button> to <div> ---
-                            <div key={`${item.id}-${index}`} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
-                                <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
-                                <div className="liveFeedContent">
-                                    <p className="liveFeedTitle">{item.title}</p>
-                                    <p className="liveFeedCreator">by {item.creatorName}</p>
-                                </div>
-                                {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                <p className="sectionTitle">Featured Highlights</p>
+                <div className="carousel-wrapper">
+                    {displayFeatured.length > 3 && ( <> <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button> <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button> </> )}
+                    <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
+                        {loading ? Array.from({ length: 5 }).map((_, i) => <div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>)
+                        : displayFeatured.map((item, index) => (
+                            <div key={item.id ? `${item.id}-${index}` : `${item.title}-${index}`} className="horizontal-carousel-item" onClick={() => handleItemClick(item)} style={{cursor: 'pointer'}}>
+                                <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="carousel-image" />
                             </div>
                         ))}
                     </div>
                 </div>
-            )}
-        </div>
-    );
-};
+                <div className="sectionHeaderWithButton">
+                    <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
+                    {!currentUser && <div style={{display: 'flex', gap: '10px'}}><button className="sectionHeaderButton" onClick={() => setActiveScreen('UserSignUp')}>User Sign Up</button><button className="sectionHeaderButton" onClick={() => setActiveScreen('CreatorSignUp')}>Creator Sign Up</button></div>}
+                </div>
+                {loading ? <p>Loading trending...</p> : (
+                    <div className="contentGrid">
+                        {enrichedLayout.trending.map((item) => (
+                            <div key={item.id || item.title} className="contentCard" onClick={() => handleItemClick(item)}>
+                                <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl || item.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
+                                    <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                    {currentUser && item.type === 'internal' && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                </div>
+                                <p className="contentTitle">{item.title}</p>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                <div className="sectionHeaderWithButton">
+                    <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
+                    {currentUser && <div style={{display: 'flex', gap: '10px'}}><button className="sectionHeaderButton" onClick={() => setActiveScreen('DiscoverUsers')}>Find Creators</button><button className="sectionHeaderButton" onClick={() => setActiveScreen('Discover')}>Discover All</button></div>}
+                </div>
+                {loading ? <p>Loading live feed...</p> : (
+                    <div className="carousel-wrapper">
+                        {displayLiveFeed.length > 2 && ( <> <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button> <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button> </> )}
+                        <div className="vertical-carousel-container" ref={verticalCarouselRef}>
+                            {displayLiveFeed.map((item, index) => (
+                                <div key={item.id ? `${item.id}-${index}` : `${item.title}-${index}`} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleItemClick(item)}>
+                                    <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="liveFeedThumbnail" />
+                                    <div className="liveFeedContent">
+                                        <p className="liveFeedTitle">{item.title}</p>
+                                        <p className="liveFeedCreator">{item.type === 'internal' ? `by ${item.creatorName}` : 'Promotion'}</p>
+                                    </div>
+                                    {currentUser && item.type === 'internal' && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    };
 
 
             const PremiumScreen = () => (
@@ -6419,31 +6418,36 @@ const handleAddOrUpdateVideo = async () => {
 };
         // --- END OF REPLACEMENT COMPONENT ---
 
-    const renderScreen = () => {
+                const renderScreen = () => {
                 switch (activeScreen) {
-    case 'Home':
-    return <HomeScreen
-        currentUser={currentUser}
-        showMessage={showMessage}
-        handleVideoPress={handleVideoPress}
-        featuredContentSlots={featuredContentSlots}
-        />;
-    case 'Discover':
-    if (!currentUser) { /* ... */ }
-    return <CategoriesScreen showMessage={showMessage} isLive={isLive} countdownText={countdownText} liveThumbnail={liveThumbnail} />;;
-                    
-                    // ADD THESE TWO NEW CASES
-        case 'FollowingFeed':
-            if (!currentUser) {
-                showMessage("Please log in to see your feed.");
-                return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-            }
-            return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={setActiveScreen} showMessage={showMessage} handleVideoPress={handleVideoPress} />;
-        
-        case 'Contact':
-    return <ContactScreen setActiveScreen={setActiveScreen} showMessage={showMessage} currentUser={currentUser} />;
-
-                    case 'DiscoverUsers':
+                    case 'Home': {
+                        return <HomeScreen
+                            currentUser={currentUser}
+                            showMessage={showMessage}
+                            handleVideoPress={handleVideoPress}
+                            handleLogout={handleLogout}
+                            creatorProfile={creatorProfile}
+                            featuredContentSlots={featuredContentSlots}
+                        />;
+                    }
+                    case 'Discover': {
+                        if (!currentUser) {
+                            showMessage("Please log in to discover more content.");
+                            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        }
+                        return <CategoriesScreen showMessage={showMessage} isLive={isLive} countdownText={countdownText} liveThumbnail={liveThumbnail} />;
+                    }
+                    case 'FollowingFeed': {
+                        if (!currentUser) {
+                            showMessage("Please log in to see your feed.");
+                            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        }
+                        return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={setActiveScreen} showMessage={showMessage} handleVideoPress={handleVideoPress} />;
+                    }
+                    case 'Contact': {
+                        return <ContactScreen setActiveScreen={setActiveScreen} showMessage={showMessage} currentUser={currentUser} />;
+                    }
+                    case 'DiscoverUsers': {
                         return <DiscoverUsersScreen
                             showMessage={showMessage}
                             setActiveScreen={setActiveScreen}
@@ -6451,8 +6455,8 @@ const handleAddOrUpdateVideo = async () => {
                             creatorProfile={creatorProfile}
                             setSelectedUserId={setSelectedUserId} 
                         />;
-
-                    case 'UserProfile':
+                    }
+                    case 'UserProfile': {
                         return <UserProfileScreen
                             selectedUserId={selectedUserId}
                             setActiveScreen={setActiveScreen}
@@ -6460,94 +6464,112 @@ const handleAddOrUpdateVideo = async () => {
                             showMessage={showMessage}
                             currentUser={currentUser}
                         />;
-
-                    // ADD THIS NEW CASE
-                    case 'MyFollows':
+                    }
+                    case 'MyFollows': {
+                         if (!currentUser) {
+                            showMessage("Please log in to see your followed creators.");
+                            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        }
                         return <MyFollowsScreen 
                             currentUser={currentUser} 
                             showMessage={showMessage} 
                             setActiveScreen={setActiveScreen} 
                             setSelectedUserId={setSelectedUserId} 
                         />;
-
-                    case 'Login':
+                    }
+                    case 'Login': {
                         return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-                    case 'UserSignUp':
+                    }
+                    case 'UserSignUp': {
                         return <UserSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-                    case 'CreatorSignUp':
+                    }
+                    case 'CreatorSignUp': {
                         return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-                    case 'Premium':
+                    }
+                    case 'Premium': {
                         if (!currentUser) {
                             showMessage("Please log in to access Premium features.");
                             return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
                         }
                         return <PremiumScreen />;
-                    case 'Support':
+                    }
+                    case 'Support': {
                         return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-                    case 'AllCampaigns': 
+                    }
+                    case 'AllCampaigns': {
                         return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} />;
-                    case 'CampaignDetails':
+                    }
+                    case 'CampaignDetails': {
                         return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} />;
-                    case 'CreatorDashboard':
+                    }
+                    case 'CreatorDashboard': {
+                         if (!currentUser) {
+                            showMessage("Please log in to view your dashboard.");
+                            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        }
                         return <CreatorDashboardScreen 
-                        showMessage={showMessage} 
-                        setActiveScreen={setActiveScreen} 
-                        currentUser={currentUser} 
-                        creatorProfile={creatorProfile} 
-                        setCreatorProfile={setCreatorProfile} 
-                        setSelectedCampaignId={setSelectedCampaignId} 
-                        setShowConfirmationModal={setShowConfirmationModal} 
-                        setConfirmationTitle={setConfirmationTitle} 
-                        setConfirmationMessage={setConfirmationMessage} 
-                        setOnConfirmationAction={setOnConfirmationAction} />;
-                    
-                    case 'MyFollows':
-                return <MyFollowsScreen
-                currentUser={currentUser}
-                setActiveScreen={setActiveScreen}
-                setSelectedUserId={setSelectedUserId}
-                showMessage={showMessage}
-                    />;
-
-                    case 'CreateCampaign':
+                            showMessage={showMessage} 
+                            setActiveScreen={setActiveScreen} 
+                            currentUser={currentUser} 
+                            creatorProfile={creatorProfile} 
+                            setCreatorProfile={setCreatorProfile} 
+                            setSelectedCampaignId={setSelectedCampaignId} 
+                            setShowConfirmationModal={setShowConfirmationModal} 
+                            setConfirmationTitle={setConfirmationTitle} 
+                            setConfirmationMessage={setConfirmationMessage} 
+                            setOnConfirmationAction={setOnConfirmationAction} />;
+                    }
+                    case 'CreateCampaign': {
                         return <CreateCampaignScreen
                             showMessage={showMessage}
                             setActiveScreen={setActiveScreen}
                             currentUser={currentUser}
                             creatorProfile={creatorProfile}
                         />;
-                    
-                    case 'AdminDashboard':
+                    }
+                    case 'AdminDashboard': {
+                         if (!currentUser) {
+                            showMessage("You must be logged in as an admin to view this page.");
+                            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
+                        }
                         return <AdminDashboardScreen 
-                        showMessage={showMessage} 
-                        featuredContentSlots={featuredContentSlots}
-                        setActiveScreen={setActiveScreen} 
-                        currentUser={currentUser} 
-                        setSelectedAdminCampaignId={setSelectedAdminCampaignId} 
-                        creatorProfile={creatorProfile} 
-                        selectedAdminSubScreen={selectedAdminSubScreen} 
-                        setSelectedAdminSubScreen={setSelectedAdminSubScreen} 
-                        setShowConfirmationModal={setShowConfirmationModal} 
-                        setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} 
-                        setOnConfirmationAction={setOnConfirmationAction} />;
-                    
-                    case 'AdminCampaignDetails': 
+                            showMessage={showMessage} 
+                            featuredContentSlots={featuredContentSlots}
+                            setActiveScreen={setActiveScreen} 
+                            currentUser={currentUser} 
+                            setSelectedAdminCampaignId={setSelectedAdminCampaignId} 
+                            creatorProfile={creatorProfile} 
+                            selectedAdminSubScreen={selectedAdminSubScreen} 
+                            setSelectedAdminSubScreen={setSelectedAdminSubScreen} 
+                            setShowConfirmationModal={setShowConfirmationModal} 
+                            setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} 
+                            setOnConfirmationAction={setOnConfirmationAction} />;
+                    }
+                    case 'AdminCampaignDetails': {
                         return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile} />;
-                    
-                    case 'TopCreators':
-                            return <TopCreatorsScreen
+                    }
+                    case 'TopCreators': {
+                        return <TopCreatorsScreen
                             featuredContentSlots={featuredContentSlots}
                             handleVideoPress={handleVideoPress}
                             setActiveScreen={setActiveScreen}
                             currentUser={currentUser}
                             showMessage={showMessage}
                         />;
-
-                    case 'AnalyticsDashboard':
+                    }
+                    case 'AnalyticsDashboard': {
                         return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} />;
-
-                    default:
-                        return <HomeScreen isLive={isLive} countdownText={countdownText} />;
+                    }
+                    default: {
+                        return <HomeScreen 
+                            currentUser={currentUser} 
+                            showMessage={showMessage} 
+                            handleVideoPress={handleVideoPress} 
+                            handleLogout={handleLogout} 
+                            creatorProfile={creatorProfile} 
+                            featuredContentSlots={featuredContentSlots} 
+                        />;
+                    }
                 }
             };
 
