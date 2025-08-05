@@ -5671,9 +5671,6 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
             if (layout === null || liveFeed === null || featuredContentSlots === null) return;
 
             const processData = async () => {
-                console.log("%c---[DIAGNOSTIC START] processData triggered ---", "color: #FFD700; font-weight: bold;");
-                console.log("1. Raw data from listeners:", { layout, liveFeed, featuredContentSlots });
-
                 const manualTrending = layout.trendingItems || [];
                 const autoSlots = [featuredContentSlots.slot_1, featuredContentSlots.slot_2, featuredContentSlots.slot_3]
                     .filter(slot => slot && slot.content).map(slot => ({ type: 'internal', contentId: slot.content.id, isAuto: true, orderIndex: -1 }));
@@ -5682,32 +5679,34 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                 const combinedTrending = [...uniqueAutoSlots, ...manualTrending];
 
                 const manualLiveFeed = layout.liveFeedItems || [];
-                console.log("2. Manual Live Feed (from layout):", manualLiveFeed);
-
                 const manualLiveFeedIds = new Set(manualLiveFeed.filter(i => i.type === 'internal').map(i => i.contentId));
-                
                 const uniqueAutoLiveFeed = liveFeed.filter(item => !manualLiveFeedIds.has(item.id));
-                console.log("3. Unique Auto Live Feed (after filtering manual duplicates):", uniqueAutoLiveFeed);
-
                 const combinedLiveFeed = [...manualLiveFeed, ...uniqueAutoLiveFeed];
-                console.log("4. Combined Live Feed (before enriching):", combinedLiveFeed);
 
                 const allItems = { featured: layout.featuredItems || [], trending: combinedTrending, liveFeed: combinedLiveFeed };
-                const contentIds = [...new Set(Object.values(allItems).flat().filter(i => i.type === 'internal' && i.contentId).map(i => i.contentId))];
+                const contentIds = [...new Set(Object.values(allItems).flat().filter(i => i.type === 'internal' && (i.contentId || i.id)).map(i => i.contentId || i.id))];
                 
                 const promises = contentIds.map(id => getDoc(doc(db, `artifacts/${appId}/public/data/content_items`, id)).catch(() => null));
                 const docSnapshots = await Promise.all(promises);
                 const allContentData = docSnapshots.filter(snap => snap && snap.exists()).map(snap => ({id: snap.id, ...snap.data()}));
                 
                 const contentMap = new Map(allContentData.map(c => [c.id, c]));
+
                 const enrich = (items) => items.map(item => {
                     if (item.type === 'internal') {
+                        // If it's a complete object from the automated feed, just validate and pass it through.
+                        if (item.title && item.id) {
+                            const isMod = creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority');
+                            if (item.isActive || isMod) return item;
+                            return null;
+                        }
+                        // If it's a reference object from manual curation, enrich it.
                         const content = contentMap.get(item.contentId);
                         const isMod = creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority');
                         if (content && (content.isActive || isMod)) return { ...item, ...content };
                         return null;
                     }
-                    return item;
+                    return item; // Pass through external ads
                 }).filter(Boolean).sort((a,b) => (a.orderIndex || 99) - (b.orderIndex || 99));
 
                 const finalLayout = {
@@ -5715,9 +5714,6 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                     trending: enrich(allItems.trending),
                     liveFeed: enrich(allItems.liveFeed)
                 };
-                console.log("5. Final Enriched Layout (set to state):", finalLayout);
-                console.log("%c---[DIAGNOSTIC END] ---", "color: #FFD700; font-weight: bold;");
-
                 setEnrichedLayout(finalLayout);
 
                 const numFeaturedClones = 3;
