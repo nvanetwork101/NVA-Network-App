@@ -3159,10 +3159,11 @@ const AdminDashboardScreen = ({
                         <p className="confirmationModalMessage">{message}</p>
                         <div className="confirmationModalButtons">
                             <button className="confirmationButton confirm" onClick={() => {
+                                // This new structure ensures the correct action runs and the modal always closes properly.
                                 if (typeof onConfirm === 'function') {
-                                    onConfirm(); // First, run the assigned action
+                                    onConfirm(); 
                                 }
-                                onCancel();  // Then, run the function that closes the modal
+                                onCancel();  
                             }}>Confirm</button>
                             <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
                         </div>
@@ -3666,6 +3667,132 @@ const AdminDashboardScreen = ({
         };
         // --- END: NEW COMPONENT ---
 
+
+                // --- START: NEW COMPONENT ---
+        const AddUrlCurationModal = ({ showMessage, onSave, onCancel }) => {
+            const [title, setTitle] = useState('');
+            const [mainUrl, setMainUrl] = useState('');
+            const [imageFile, setImageFile] = useState(null);
+            const [imagePreview, setImagePreview] = useState('');
+            const [isUploading, setIsUploading] = useState(false);
+            const fileInputRef = useRef(null);
+
+            // This effect auto-fetches a thumbnail from the URL
+            useEffect(() => {
+                if (imageFile) return; // Don't auto-fetch if a custom image is already set
+                if (!mainUrl) {
+                    setImagePreview('');
+                    return;
+                }
+                const videoInfo = extractVideoInfo(mainUrl);
+                if (videoInfo && videoInfo.thumbnailUrl) {
+                    setImagePreview(videoInfo.thumbnailUrl);
+                } else {
+                    setImagePreview(''); // Clear if no thumb found
+                }
+            }, [mainUrl, imageFile]);
+
+            const handleFileChange = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setImageFile(file);
+                    setImagePreview(URL.createObjectURL(file));
+                }
+            };
+
+            const handleSave = async () => {
+                if (!title || !mainUrl) {
+                    showMessage("A Title and a URL are required.");
+                    return;
+                }
+                
+                const { embedUrl } = extractVideoInfo(mainUrl);
+
+                // If a custom image file was uploaded, we must first upload it to storage
+                if (imageFile) {
+                    setIsUploading(true);
+                    showMessage("Uploading custom thumbnail...");
+                    try {
+                        const filePath = `curated_thumbnails/${Date.now()}_${imageFile.name}`;
+                        const storageRef = ref(storage, filePath);
+                        const snapshot = await uploadBytes(storageRef, imageFile);
+                        const finalImageUrl = await getDownloadURL(snapshot.ref);
+                        showMessage("Thumbnail uploaded successfully!");
+                        
+                        // Call the onSave callback with the final data object
+                        onSave({
+                            type: 'external', // Treat as an external link for rendering purposes
+                            title,
+                            mainUrl: mainUrl,
+                            embedUrl: embedUrl, // Pass the embeddable URL
+                            imageUrl: finalImageUrl, // The URL from Firebase Storage
+                            externalLink: mainUrl, // The link to open on click
+                            orderIndex: Date.now()
+                        });
+
+                    } catch (error) {
+                        showMessage(`Thumbnail upload failed: ${error.message}`);
+                    } finally {
+                        setIsUploading(false);
+                    }
+                } else {
+                    // If no custom file, use the auto-fetched preview URL
+                    if (!imagePreview) {
+                        showMessage("Could not find a valid image preview. Please upload one.");
+                        return;
+                    }
+                    onSave({
+                        type: 'external',
+                        title,
+                        mainUrl: mainUrl,
+                        embedUrl: embedUrl,
+                        imageUrl: imagePreview, // The auto-fetched URL
+                        externalLink: mainUrl,
+                        orderIndex: Date.now()
+                    });
+                }
+            };
+
+            return (
+                <div className="confirmationModalOverlay" style={{ zIndex: 3000 }}>
+                    <div className="confirmationModalContent" style={{ textAlign: 'left', maxWidth: '500px' }}>
+                        <p className="confirmationModalTitle">Curate Content from URL</p>
+                        <div className="formGroup">
+                            <label className="formLabel">Title:</label>
+                            <input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Awesome New Skit" required/>
+                        </div>
+                        <div className="formGroup">
+                            <label className="formLabel">Content URL:</label>
+                            <input type="url" className="formInput" value={mainUrl} onChange={(e) => { setMainUrl(e.target.value); setImageFile(null); }} placeholder="https://www.youtube.com/watch?v=..." required/>
+                            <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>We'll try to fetch a preview from this link.</p>
+                        </div>
+                        <hr style={{borderColor: '#333', margin: '15px 0'}}/>
+                        <div className="formGroup">
+                            <label className="formLabel">Upload Custom Thumbnail (Overrides Preview):</label>
+                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" style={{ display: 'none' }} />
+                            <button type="button" className="button" onClick={() => fileInputRef.current.click()} style={{ width: '100%', backgroundColor: '#3A3A3A' }}>
+                                <span className="buttonText">Choose Image File</span>
+                            </button>
+                            {imagePreview && (
+                                <div style={{marginTop: '15px'}}>
+                                    <p className="formLabel">Final Preview:</p>
+                                    <img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '5px' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/200x120/555/FFF?text=No+Preview'; }} />
+                                </div>
+                            )}
+                        </div>
+                        <div className="confirmationModalButtons">
+                            <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
+                            <button className="confirmationButton confirm" onClick={handleSave} disabled={isUploading}>
+                                {isUploading ? 'Uploading...' : 'Add to Curation'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        // --- END: NEW COMPONENT ---
+
+
         // --- START: NEW COMPONENT ---
         const AdminCurationModal = ({ curationTarget, showMessage, onCancel, contentItems }) => {
             const [curatedItems, setCuratedItems] = useState([]);
@@ -3673,30 +3800,35 @@ const AdminDashboardScreen = ({
             const [isSaving, setIsSaving] = useState(false);
             const [showContentSelector, setShowContentSelector] = useState(false);
             const [showExternalAdModal, setShowExternalAdModal] = useState(false);
+            // --- NEW: State to control our new modal ---
+            const [showUrlCurationModal, setShowUrlCurationModal] = useState(false);
 
             const targetField = `${curationTarget.toLowerCase().replace(' ', '')}Items`;
 
             useEffect(() => {
-                const fetchInitialData = async () => {
+                const fetchAndEnrichLayout = async () => {
                     setLoading(true);
                     const layoutDocRef = doc(db, "settings", "homeScreenLayout");
                     try {
                         const docSnap = await getDoc(layoutDocRef);
+                        let itemsFromDB = [];
                         if (docSnap.exists()) {
                             const layoutData = docSnap.data();
-                            const itemsFromDB = layoutData[targetField] || [];
-                            
-                            const enrichedItems = itemsFromDB.map(item => {
-                                if (item.type === 'internal') {
-                                    const fullContent = contentItems.find(ci => ci.id === item.contentId);
-                                    return fullContent ? { ...item, ...fullContent } : null;
-                                }
-                                return item;
-                            }).filter(Boolean); // Filter out nulls for deleted content
-                            setCuratedItems(enrichedItems);
-                        } else {
-                            setCuratedItems([]);
+                            itemsFromDB = layoutData[targetField] || [];
                         }
+                        
+                        const contentMap = new Map(contentItems.map(ci => [ci.id, ci]));
+                        
+                        const enrichedItems = itemsFromDB.map(item => {
+                            if (item.type === 'internal') {
+                                const fullContent = contentMap.get(item.contentId);
+                                return fullContent ? { ...item, ...fullContent } : null;
+                            }
+                            return item;
+                        }).filter(Boolean);
+                        
+                        setCuratedItems(enrichedItems);
+
                     } catch (error) {
                         showMessage("Error fetching curation data: " + error.message);
                         setCuratedItems([]);
@@ -3705,8 +3837,8 @@ const AdminDashboardScreen = ({
                     }
                 };
                 
-                fetchInitialData();
-            }, [curationTarget]);
+                fetchAndEnrichLayout();
+            }, [curationTarget, contentItems]);
 
             const handleMove = (index, direction) => {
                 const newItems = [...curatedItems];
@@ -3733,15 +3865,22 @@ const AdminDashboardScreen = ({
                 const newItem = {
                     type: 'internal',
                     contentId: selectedContent.id,
-                    orderIndex: curatedItems.length
+                    orderIndex: curatedItems.length,
+                    ...selectedContent
                 };
-                setCuratedItems(prev => [...prev, { ...newItem, ...selectedContent }]);
+                setCuratedItems(prev => [...prev, newItem]);
                 setShowContentSelector(false);
             };
             
             const handleSaveExternalAd = (newAd) => {
                  setCuratedItems(prev => [...prev, newAd]);
                  setShowExternalAdModal(false);
+            };
+
+            // --- NEW: Handler for our new modal's data ---
+            const handleAddUrlContent = (newItem) => {
+                setCuratedItems(prev => [...prev, newItem]);
+                setShowUrlCurationModal(false); // Close the modal after saving
             };
 
             const handleSaveChanges = async () => {
@@ -3754,8 +3893,8 @@ const AdminDashboardScreen = ({
                         orderIndex: index
                     };
                     if (item.type === 'internal') {
-                        baseItem.contentId = item.contentId;
-                    } else {
+                        baseItem.contentId = item.contentId || item.id;
+                    } else { // This now covers both 'external' ads and our new URL-based content
                         baseItem.title = item.title;
                         baseItem.imageUrl = item.imageUrl;
                         baseItem.externalLink = item.externalLink;
@@ -3784,11 +3923,11 @@ const AdminDashboardScreen = ({
                             {loading ? <p>Loading...</p> : (
                                 curatedItems.length === 0 ? <p className="dashboardItem">This section is empty.</p> :
                                 curatedItems.map((item, index) => (
-                                    <div key={item.id || item.title + index} className="adminDashboardItem">
+                                    <div key={item.id ? `${item.id}-${index}`: `${item.title}-${index}`} className="adminDashboardItem">
                                         <img src={item.customThumbnailUrl || item.imageUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
                                         <div style={{flexGrow: 1, marginLeft: '10px'}}>
                                             <p className="adminDashboardItemTitle">{item.title}</p>
-                                            <p style={{fontSize: '12px', color: '#AAA'}}>{item.type === 'internal' ? `by ${item.creatorName || '...loading'}` : 'External Ad'}</p>
+                                            <p style={{fontSize: '12px', color: '#AAA'}}>{item.type === 'internal' ? `by ${item.creatorName || '...loading'}` : 'External/URL'}</p>
                                         </div>
                                         <div style={{display: 'flex', gap: '5px'}}>
                                             <button onClick={() => handleMove(index, -1)} disabled={index === 0} className="adminActionButton" style={{width: '30px'}}>▲</button>
@@ -3800,25 +3939,30 @@ const AdminDashboardScreen = ({
                             )}
                         </div>
 
+                        {/* --- NEW: Added third button to the layout --- */}
                         <div className="flex justify-around gap-4 my-4">
                             <button className="button" onClick={() => setShowContentSelector(true)}>
                                 <span className="buttonText">Add from Library</span>
                             </button>
-                             <button className="button" onClick={() => setShowExternalAdModal(true)}>
+                            <button className="button" onClick={() => setShowUrlCurationModal(true)}>
+                                <span className="buttonText">Add from URL</span>
+                            </button>
+                            <button className="button" onClick={() => setShowExternalAdModal(true)}>
                                 <span className="buttonText">Add External Ad</span>
                             </button>
                         </div>
 
                         <div className="confirmationModalButtons">
                             <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
-                            {/* --- THIS IS THE ONLY LINE THAT HAS BEEN CHANGED --- */}
-                            <button className="confirmationButton confirm" onClick={() => { console.log('Save Changes button clicked. Firing handleSaveChanges...'); handleSaveChanges(); }} disabled={isSaving}>
+                            <button className="confirmationButton confirm" onClick={handleSaveChanges} disabled={isSaving}>
                                 {isSaving ? 'Saving...' : 'Save Changes'}
                             </button>
                         </div>
 
                         {showContentSelector && <ContentSelectorModal showMessage={showMessage} onSelect={handleSelectInternalContent} onCancel={() => setShowContentSelector(false)} />}
                         {showExternalAdModal && <AddExternalAdModal showMessage={showMessage} onSave={handleSaveExternalAd} onCancel={() => setShowExternalAdModal(false)} />}
+                        {/* --- NEW: Render our new modal when its state is true --- */}
+                        {showUrlCurationModal && <AddUrlCurationModal showMessage={showMessage} onSave={handleAddUrlContent} onCancel={() => setShowUrlCurationModal(false)} />}
                     </div>
                 </div>
             );
@@ -5695,19 +5839,17 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
 
                 const enrich = (items) => items.map(item => {
                     if (item.type === 'internal') {
-                        // If it's a complete object from the automated feed, just validate and pass it through.
                         if (item.title && item.id) {
                             const isMod = creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority');
                             if (item.isActive || isMod) return item;
                             return null;
                         }
-                        // If it's a reference object from manual curation, enrich it.
                         const content = contentMap.get(item.contentId);
                         const isMod = creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority');
                         if (content && (content.isActive || isMod)) return { ...item, ...content };
                         return null;
                     }
-                    return item; // Pass through external ads
+                    return item;
                 }).filter(Boolean).sort((a,b) => (a.orderIndex || 99) - (b.orderIndex || 99));
 
                 const finalLayout = {
@@ -5726,41 +5868,55 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
             };
             processData();
         }, [layout, liveFeed, featuredContentSlots, creatorProfile]);
-
+        
+        // THIS IS THE FIX for the autoscroll timing bug.
         useEffect(() => {
-            const horizontalCarousel = horizontalCarouselRef.current;
-            const verticalCarousel = verticalCarouselRef.current;
             let horizontalInterval;
             let verticalInterval;
-            const startHorizontalAutoscroll = () => {
-                if (!horizontalCarousel || displayFeatured.length <= 3) return;
-                const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15;
-                horizontalInterval = setInterval(() => {
-                    if (horizontalCarousel.scrollLeft >= (horizontalCarousel.scrollWidth / 2)) {
-                        horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
-                    } else {
-                        horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
+            
+            // This function now runs after a short delay, ensuring the DOM is ready.
+            const setupCarousels = () => {
+                const horizontalCarousel = horizontalCarouselRef.current;
+                if (horizontalCarousel && displayFeatured.length > 3) {
+                    const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15;
+                    if (!isNaN(itemWidth) && itemWidth > 0) {
+                        horizontalInterval = setInterval(() => {
+                            if (horizontalCarousel.scrollLeft >= (horizontalCarousel.scrollWidth / 2)) {
+                                horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
+                            } else {
+                                horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
+                            }
+                        }, 4000);
                     }
-                }, 4000);
+                }
+
+                const verticalCarousel = verticalCarouselRef.current;
+                if (verticalCarousel && displayLiveFeed.length > 2) {
+                     const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15;
+                     if (!isNaN(itemHeight) && itemHeight > 0) {
+                        verticalInterval = setInterval(() => {
+                            if (verticalCarousel.scrollTop >= (verticalCarousel.scrollHeight / 2)) {
+                                verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
+                            } else {
+                                verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
+                            }
+                        }, 3000);
+                     }
+                }
             };
-            const startVerticalAutoscroll = () => {
-                if (!verticalCarousel || displayLiveFeed.length <= 4) return;
-                const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15;
-                verticalInterval = setInterval(() => {
-                    if (verticalCarousel.scrollTop >= (verticalCarousel.scrollHeight / 2)) {
-                        verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
-                    } else {
-                        verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
-                    }
-                }, 3000);
+
+            // Use setTimeout to delay execution until after the render cycle.
+            const timer = setTimeout(setupCarousels, 100);
+
+            return () => { 
+                clearTimeout(timer);
+                clearInterval(horizontalInterval); 
+                clearInterval(verticalInterval); 
             };
-            startHorizontalAutoscroll();
-            startVerticalAutoscroll();
-            return () => { clearInterval(horizontalInterval); clearInterval(verticalInterval); };
         }, [displayFeatured, displayLiveFeed]);
         
         const handleHorizontalScroll = (direction) => { const carousel = horizontalCarouselRef.current; if (carousel) { const itemWidth = carousel.children[0]?.offsetWidth + 15; carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' }); } };
-        const handleVerticalScroll = (direction) => { const carousel = verticalCarouselRef.current; if (carousel) { const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15; carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' }); } };
+        const handleVerticalScroll = (direction) => { const carousel = verticalCarouselRef.current; if (carousel) { const itemHeight = carousel.children[0]?.offsetHeight + 15; carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' }); } };
         const handleItemClick = (item) => { if (item.type === 'internal') { handleVideoPress(item.embedUrl || item.mainUrl, item); } else if (item.externalLink) { window.open(item.externalLink, '_blank'); } };
         
         return (
@@ -6722,4 +6878,3 @@ const handleAddOrUpdateVideo = async () => {
     </script>
 </body>
 </html>
-
