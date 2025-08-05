@@ -1450,7 +1450,7 @@
         .status-cancelled { color: #AAA; }
 
          /* START: New Carousel Navigation Button Styles */
-        .carousel-wrapper {
+            .carousel-wrapper {
             position: relative; /* Establishes a positioning context for the buttons */
             width: 100%;
         }
@@ -1817,45 +1817,20 @@
     const viewCountedRef = useRef(false); // Use a ref to prevent counting a view multiple times per session.
 
     useEffect(() => {
-        if (!contentItem || !currentUser || viewCountedRef.current) {
-            return; // Exit if we don't have the necessary info or have already counted the view.
-        }
-
-        const authorId = contentItem.creatorId || contentItem.createdBy;
-        const contentDocId = contentItem.originalContentId || contentItem.id;
-
-        // Condition: The creator cannot view their own content to increase stats.
-        if (currentUser.uid === authorId) {
-            return;
-        }
-
-        // Start the 10-second timer.
-        const timer = setTimeout(async () => {
-            try {
-                const contentRef = doc(db, `artifacts/${appId}/public/data/content_items`, contentDocId);
-                // Atomically increment the viewCount field by 1.
-                await updateDoc(contentRef, {
-                    viewCount: increment(1)
-                });
-                viewCountedRef.current = true; // Mark view as counted for this session.
-                console.log(`View counted for content: ${contentDocId}`);
-            } catch (error) {
-                console.error("Error incrementing view count:", error);
-                // We don't show a message to the user for this background task.
-            }
-        }, 10000); // 10,000 milliseconds = 10 seconds
-
-        // This is the cleanup function. It runs if the component is unmounted (modal is closed).
-        return () => {
-            clearTimeout(timer); // If the user closes the modal before 10s, cancel the view count.
-        };
-
+        // ... (existing useEffect code)
     }, [contentItem, currentUser]); // Effect dependencies
 
-    if (!videoUrl) return null;
+    if (!videoUrl) {
+        console.log("VideoPlayerModal: No videoUrl received, returning null."); // <--- ADD THIS LINE
+        return null;
+    }
 
     const { embedUrl, isVertical } = extractVideoInfo(videoUrl);
-    const finalEmbedUrl = embedUrl || (videoUrl.includes('?') ? `${videoUrl}&autoplay=1` : `${videoUrl}?autoplay=1`);
+    const finalEmbedUrl = embedUrl;
+
+    console.log("VideoPlayerModal: Initial videoUrl (from App):", videoUrl); // <--- ADD THIS LINE
+    console.log("VideoPlayerModal: Derived embedUrl (within modal):", embedUrl); // <--- ADD THIS LINE
+    console.log("VideoPlayerModal: Final URL for iframe src:", finalEmbedUrl); // <--- ADD THIS LINE
 
     return (
         <div className="videoModalOverlay">
@@ -3151,7 +3126,7 @@ const AdminDashboardScreen = ({
     );
 };
 
-                const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
+        const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
             return (
                 <div className="confirmationModalOverlay">
                     <div className="confirmationModalContent">
@@ -3159,12 +3134,10 @@ const AdminDashboardScreen = ({
                         <p className="confirmationModalMessage">{message}</p>
                         <div className="confirmationModalButtons">
                             <button className="confirmationButton confirm" onClick={() => {
-                                // This new, robust structure ensures the correct action runs
-                                // and the modal always closes cleanly afterward.
                                 if (typeof onConfirm === 'function') {
-                                    onConfirm(); 
+                                    onConfirm(); // First, run the assigned action
                                 }
-                                onCancel();  
+                                onCancel();  // Then, run the function that closes the modal
                             }}>Confirm</button>
                             <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
                         </div>
@@ -3668,124 +3641,6 @@ const AdminDashboardScreen = ({
         };
         // --- END: NEW COMPONENT ---
 
-
-                // --- START: NEW COMPONENT ---
-                const AddUrlCurationModal = ({ showMessage, onSave, onCancel }) => {
-            const [title, setTitle] = useState('');
-            const [mainUrl, setMainUrl] = useState('');
-            const [imageFile, setImageFile] = useState(null);
-            const [imagePreview, setImagePreview] = useState('');
-            const [isUploading, setIsUploading] = useState(false);
-            const fileInputRef = useRef(null);
-
-            useEffect(() => {
-                if (imageFile) return;
-                if (!mainUrl) {
-                    setImagePreview('');
-                    return;
-                }
-                const videoInfo = extractVideoInfo(mainUrl);
-                if (videoInfo && videoInfo.thumbnailUrl) {
-                    setImagePreview(videoInfo.thumbnailUrl);
-                } else {
-                    setImagePreview('');
-                }
-            }, [mainUrl, imageFile]);
-
-            const handleFileChange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    setImageFile(file);
-                    setImagePreview(URL.createObjectURL(file));
-                }
-            };
-
-            const handleSave = async () => {
-                if (!title || !mainUrl) {
-                    showMessage("A Title and a URL are required.");
-                    return;
-                }
-                
-                setIsUploading(true);
-                const { embedUrl } = extractVideoInfo(mainUrl);
-                let finalImageUrl = imagePreview; // Default to the auto-fetched URL
-
-                if (imageFile) {
-                    showMessage("Uploading custom thumbnail...");
-                    try {
-                        const filePath = `curated_thumbnails/${Date.now()}_${imageFile.name}`;
-                        const storageRefPath = ref(storage, filePath);
-                        const snapshot = await uploadBytes(storageRefPath, imageFile);
-                        finalImageUrl = await getDownloadURL(snapshot.ref); // Get the final URL
-                        showMessage("Thumbnail uploaded successfully!");
-                    } catch (error) {
-                        showMessage(`Thumbnail upload failed: ${error.message}`);
-                        setIsUploading(false);
-                        return; // Stop execution on failure
-                    }
-                }
-
-                if (!finalImageUrl) {
-                    showMessage("Could not find a valid image preview. Please upload one.");
-                    setIsUploading(false);
-                    return;
-                }
-
-                // This is the final data object to be passed to the parent.
-                const newItem = {
-                    type: 'external',
-                    title,
-                    mainUrl: mainUrl,
-                    embedUrl: embedUrl,
-                    imageUrl: finalImageUrl,
-                    externalLink: mainUrl,
-                    orderIndex: Date.now()
-                };
-
-                onSave(newItem); // Send the completed object to the parent
-                setIsUploading(false);
-            };
-
-            return (
-                <div className="confirmationModalOverlay" style={{ zIndex: 3000 }}>
-                    <div className="confirmationModalContent" style={{ textAlign: 'left', maxWidth: '500px' }}>
-                        <p className="confirmationModalTitle">Curate Content from URL</p>
-                        <div className="formGroup">
-                            <label className="formLabel">Title:</label>
-                            <input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Awesome New Skit" required/>
-                        </div>
-                        <div className="formGroup">
-                            <label className="formLabel">Content URL:</label>
-                            <input type="url" className="formInput" value={mainUrl} onChange={(e) => { setMainUrl(e.target.value); setImageFile(null); }} placeholder="https://www.youtube.com/watch?v=..." required/>
-                            <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>We'll try to fetch a preview from this link.</p>
-                        </div>
-                        <hr style={{borderColor: '#333', margin: '15px 0'}}/>
-                        <div className="formGroup">
-                            <label className="formLabel">Upload Custom Thumbnail (Overrides Preview):</label>
-                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*" style={{ display: 'none' }} />
-                            <button type="button" className="button" onClick={() => fileInputRef.current.click()} style={{ width: '100%', backgroundColor: '#3A3A3A' }}>
-                                <span className="buttonText">Choose Image File</span>
-                            </button>
-                            {imagePreview && (
-                                <div style={{marginTop: '15px'}}>
-                                    <p className="formLabel">Final Preview:</p>
-                                    <img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '5px' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/200x120/555/FFF?text=No+Preview'; }} />
-                                </div>
-                            )}
-                        </div>
-                        <div className="confirmationModalButtons">
-                            <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
-                            <button className="confirmationButton confirm" onClick={handleSave} disabled={isUploading}>
-                                {isUploading ? 'Uploading...' : 'Add to Curation'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-        // --- END: NEW COMPONENT ---
-
-
         // --- START: NEW COMPONENT ---
         const AdminCurationModal = ({ curationTarget, showMessage, onCancel, contentItems }) => {
             const [curatedItems, setCuratedItems] = useState([]);
@@ -3793,35 +3648,30 @@ const AdminDashboardScreen = ({
             const [isSaving, setIsSaving] = useState(false);
             const [showContentSelector, setShowContentSelector] = useState(false);
             const [showExternalAdModal, setShowExternalAdModal] = useState(false);
-            // --- NEW: State to control our new modal ---
-            const [showUrlCurationModal, setShowUrlCurationModal] = useState(false);
 
             const targetField = `${curationTarget.toLowerCase().replace(' ', '')}Items`;
 
             useEffect(() => {
-                const fetchAndEnrichLayout = async () => {
+                const fetchInitialData = async () => {
                     setLoading(true);
                     const layoutDocRef = doc(db, "settings", "homeScreenLayout");
                     try {
                         const docSnap = await getDoc(layoutDocRef);
-                        let itemsFromDB = [];
                         if (docSnap.exists()) {
                             const layoutData = docSnap.data();
-                            itemsFromDB = layoutData[targetField] || [];
+                            const itemsFromDB = layoutData[targetField] || [];
+                            
+                            const enrichedItems = itemsFromDB.map(item => {
+                                if (item.type === 'internal') {
+                                    const fullContent = contentItems.find(ci => ci.id === item.contentId);
+                                    return fullContent ? { ...item, ...fullContent } : null;
+                                }
+                                return item;
+                            }).filter(Boolean); // Filter out nulls for deleted content
+                            setCuratedItems(enrichedItems);
+                        } else {
+                            setCuratedItems([]);
                         }
-                        
-                        const contentMap = new Map(contentItems.map(ci => [ci.id, ci]));
-                        
-                        const enrichedItems = itemsFromDB.map(item => {
-                            if (item.type === 'internal') {
-                                const fullContent = contentMap.get(item.contentId);
-                                return fullContent ? { ...item, ...fullContent } : null;
-                            }
-                            return item;
-                        }).filter(Boolean);
-                        
-                        setCuratedItems(enrichedItems);
-
                     } catch (error) {
                         showMessage("Error fetching curation data: " + error.message);
                         setCuratedItems([]);
@@ -3830,8 +3680,8 @@ const AdminDashboardScreen = ({
                     }
                 };
                 
-                fetchAndEnrichLayout();
-            }, [curationTarget, contentItems]);
+                fetchInitialData();
+            }, [curationTarget]); // This hook now only re-runs if the target section changes
 
             const handleMove = (index, direction) => {
                 const newItems = [...curatedItems];
@@ -3858,22 +3708,15 @@ const AdminDashboardScreen = ({
                 const newItem = {
                     type: 'internal',
                     contentId: selectedContent.id,
-                    orderIndex: curatedItems.length,
-                    ...selectedContent
+                    orderIndex: curatedItems.length
                 };
-                setCuratedItems(prev => [...prev, newItem]);
+                setCuratedItems(prev => [...prev, { ...newItem, ...selectedContent }]);
                 setShowContentSelector(false);
             };
             
             const handleSaveExternalAd = (newAd) => {
                  setCuratedItems(prev => [...prev, newAd]);
                  setShowExternalAdModal(false);
-            };
-
-            // --- NEW: Handler for our new modal's data ---
-            const handleAddUrlContent = (newItem) => {
-                setCuratedItems(prev => [...prev, newItem]);
-                setShowUrlCurationModal(false); // Close the modal after saving
             };
 
             const handleSaveChanges = async () => {
@@ -3886,8 +3729,8 @@ const AdminDashboardScreen = ({
                         orderIndex: index
                     };
                     if (item.type === 'internal') {
-                        baseItem.contentId = item.contentId || item.id;
-                    } else { // This now covers both 'external' ads and our new URL-based content
+                        baseItem.contentId = item.contentId;
+                    } else {
                         baseItem.title = item.title;
                         baseItem.imageUrl = item.imageUrl;
                         baseItem.externalLink = item.externalLink;
@@ -3916,11 +3759,11 @@ const AdminDashboardScreen = ({
                             {loading ? <p>Loading...</p> : (
                                 curatedItems.length === 0 ? <p className="dashboardItem">This section is empty.</p> :
                                 curatedItems.map((item, index) => (
-                                    <div key={item.id ? `${item.id}-${index}`: `${item.title}-${index}`} className="adminDashboardItem">
+                                    <div key={item.id || item.title + index} className="adminDashboardItem">
                                         <img src={item.customThumbnailUrl || item.imageUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
                                         <div style={{flexGrow: 1, marginLeft: '10px'}}>
                                             <p className="adminDashboardItemTitle">{item.title}</p>
-                                            <p style={{fontSize: '12px', color: '#AAA'}}>{item.type === 'internal' ? `by ${item.creatorName || '...loading'}` : 'External/URL'}</p>
+                                            <p style={{fontSize: '12px', color: '#AAA'}}>{item.type === 'internal' ? `by ${item.creatorName || '...loading'}` : 'External Ad'}</p>
                                         </div>
                                         <div style={{display: 'flex', gap: '5px'}}>
                                             <button onClick={() => handleMove(index, -1)} disabled={index === 0} className="adminActionButton" style={{width: '30px'}}>▲</button>
@@ -3932,15 +3775,11 @@ const AdminDashboardScreen = ({
                             )}
                         </div>
 
-                        {/* --- NEW: Added third button to the layout --- */}
                         <div className="flex justify-around gap-4 my-4">
                             <button className="button" onClick={() => setShowContentSelector(true)}>
                                 <span className="buttonText">Add from Library</span>
                             </button>
-                            <button className="button" onClick={() => setShowUrlCurationModal(true)}>
-                                <span className="buttonText">Add from URL</span>
-                            </button>
-                            <button className="button" onClick={() => setShowExternalAdModal(true)}>
+                             <button className="button" onClick={() => setShowExternalAdModal(true)}>
                                 <span className="buttonText">Add External Ad</span>
                             </button>
                         </div>
@@ -3954,8 +3793,6 @@ const AdminDashboardScreen = ({
 
                         {showContentSelector && <ContentSelectorModal showMessage={showMessage} onSelect={handleSelectInternalContent} onCancel={() => setShowContentSelector(false)} />}
                         {showExternalAdModal && <AddExternalAdModal showMessage={showMessage} onSave={handleSaveExternalAd} onCancel={() => setShowExternalAdModal(false)} />}
-                        {/* --- NEW: Render our new modal when its state is true --- */}
-                        {showUrlCurationModal && <AddUrlCurationModal showMessage={showMessage} onSave={handleAddUrlContent} onCancel={() => setShowUrlCurationModal(false)} />}
                     </div>
                 </div>
             );
@@ -4126,26 +3963,31 @@ const AdminContentManagerScreen = ({
         setShowCurationModal(true);
     };
 
-    useEffect(() => {
-        const categoriesRef = collection(db, "content_categories");
-        const systemCategories = ['Featured', 'Trending', 'Live Feed']; 
-        
-        const q = query(
-            categoriesRef, 
-            where("isActive", "==", true), 
-            orderBy("orderIndex", "asc")
-        );
-        
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedCategories = snapshot.docs
-                .map(doc => doc.data().name)
-                .filter(name => !systemCategories.includes(name));
+            useEffect(() => {
+            const categoriesRef = collection(db, "content_categories");
+            const systemCategories = ['Featured', 'Trending']; 
+
+            const q = query(
+                categoriesRef, 
+                where("isActive", "==", true), 
+                orderBy("orderIndex", "asc")
+            );
             
-            setAvailableCategories(fetchedCategories);
-        });
-        
-        return () => unsubscribe();
-    }, []);
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                // Step 1: Fetch the existing, filterable categories from the database.
+                const fetchedCategories = snapshot.docs
+                    .map(doc => doc.data().name)
+                    .filter(name => !systemCategories.includes(name));
+                
+                // Step 2: Manually add "Live Feed" to the list of options.
+                const finalCategories = [...fetchedCategories, 'Live Feed'];
+                
+                // Step 3: Set the state with the complete list for the dropdown.
+                setAvailableCategories(finalCategories);
+            });
+            
+            return () => unsubscribe();
+        }, []);
 
     useEffect(() => {
         if (availableCategories.length > 0 && !availableCategories.includes(contentType)) {
@@ -4341,9 +4183,6 @@ const AdminContentManagerScreen = ({
                     </button>
                     <button type="button" className="button" onClick={() => openCurationModal('Trending')} style={{margin: 0}}>
                         <span className="buttonText">Manage Trending</span>
-                    </button>
-                    <button type="button" className="button" onClick={() => openCurationModal('Live Feed')} style={{margin: 0}}>
-                        <span className="buttonText">Manage Live Feed</span>
                     </button>
                 </div>
             </div>
@@ -5778,140 +5617,180 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
 
                 // REPLACE THE ENTIRE HomeScreen COMPONENT
 
-                const HomeScreen = ({ currentUser, showMessage, handleVideoPress, handleLogout, creatorProfile, featuredContentSlots }) => {
-        const [loading, setLoading] = useState(true);
-        const [layout, setLayout] = useState(null);
-        const [liveFeed, setLiveFeed] = useState(null);
-        const [enrichedLayout, setEnrichedLayout] = useState({ featured: [], trending: [], liveFeed: [] });
-        const [displayFeatured, setDisplayFeatured] = useState([]);
-        const [displayLiveFeed, setDisplayLiveFeed] = useState([]);
-        
+               const HomeScreen = ({ currentUser, showMessage, handleVideoPress, handleLogout, featuredContentSlots }) => {
+        const [enrichedLayout, setEnrichedLayout] = useState({ featured: [], trending: [] });
+        const [displayFeatured, setDisplayFeatured] = useState([]); 
+        const [displayLiveFeed, setDisplayLiveFeed] = useState([]); 
         const horizontalCarouselRef = useRef(null);
         const verticalCarouselRef = useRef(null);
+        
+        // Corrected loading state management
+        const [isLayoutLoading, setIsLayoutLoading] = useState(true);
+        const [isLiveFeedLoading, setIsLiveFeedLoading] = useState(true);
+        const loading = isLayoutLoading || isLiveFeedLoading; // Overall loading is true if any part is loading
 
+        // This is our combined data-fetching logic that now handles loading state correctly.
         useEffect(() => {
             const layoutDocRef = doc(db, "settings", "homeScreenLayout");
-            const unsubscribe = onSnapshot(layoutDocRef, (docSnap) => {
-                setLayout(docSnap.exists() ? docSnap.data() : { featuredItems: [], trendingItems: [], liveFeedItems: [] });
-            });
-            return () => unsubscribe();
-        }, []);
-
-        useEffect(() => {
             const liveFeedQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`), where('contentType', '==', 'Live Feed'), where('isActive', '==', true), orderBy('createdAt', 'desc'), limit(20));
-            const unsubscribe = onSnapshot(liveFeedQuery, (snapshot) => {
-                setLiveFeed(snapshot.docs.map(d => ({ ...d.data(), id: d.id, type: 'internal' })));
-            });
-            return () => unsubscribe();
-        }, []);
+            let cachedData = { layout: null, autoSlots: featuredContentSlots };
 
-        useEffect(() => {
-            if (layout === null || liveFeed === null || featuredContentSlots === null) return;
-
-            const processData = async () => {
-                const manualTrending = layout.trendingItems || [];
-                const autoSlots = [featuredContentSlots.slot_1, featuredContentSlots.slot_2, featuredContentSlots.slot_3]
+            const processManualContent = async () => {
+                if (cachedData.layout === null || cachedData.autoSlots === null) return;
+                const manualTrending = cachedData.layout.trendingItems || [];
+                const autoSlots = [cachedData.autoSlots.slot_1, cachedData.autoSlots.slot_2, cachedData.autoSlots.slot_3]
                     .filter(slot => slot && slot.content).map(slot => ({ type: 'internal', contentId: slot.content.id, isAuto: true, orderIndex: -1 }));
                 const manualTrendingIds = new Set(manualTrending.filter(i => i.type === 'internal').map(i => i.contentId));
                 const uniqueAutoSlots = autoSlots.filter(slot => !manualTrendingIds.has(slot.contentId));
                 const combinedTrending = [...uniqueAutoSlots, ...manualTrending];
-
-                const manualLiveFeed = layout.liveFeedItems || [];
-                const manualLiveFeedIds = new Set(manualLiveFeed.filter(i => i.type === 'internal').map(i => i.contentId));
-                const uniqueAutoLiveFeed = liveFeed.filter(item => !manualLiveFeedIds.has(item.id));
-                const combinedLiveFeed = [...manualLiveFeed, ...uniqueAutoLiveFeed];
-
-                const allItems = { featured: layout.featuredItems || [], trending: combinedTrending, liveFeed: combinedLiveFeed };
-                const contentIds = [...new Set(Object.values(allItems).flat().filter(i => i.type === 'internal' && (i.contentId || i.id)).map(i => i.contentId || i.id))];
-                
+                const allItems = { featured: cachedData.layout.featuredItems || [], trending: combinedTrending };
+                const contentIds = [...new Set(Object.values(allItems).flat().filter(i => i.type === 'internal' && i.contentId).map(i => i.contentId))];
                 const promises = contentIds.map(id => getDoc(doc(db, `artifacts/${appId}/public/data/content_items`, id)).catch(() => null));
                 const docSnapshots = await Promise.all(promises);
                 const allContentData = docSnapshots.filter(snap => snap && snap.exists()).map(snap => ({id: snap.id, ...snap.data()}));
-                
                 const contentMap = new Map(allContentData.map(c => [c.id, c]));
-
                 const enrich = (items) => items.map(item => {
-                    if (item.type === 'internal') {
-                        if (item.title && item.id) {
-                            const isMod = creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority');
-                            if (item.isActive || isMod) return item;
-                            return null;
-                        }
-                        const content = contentMap.get(item.contentId);
-                        const isMod = creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority');
-                        if (content && (content.isActive || isMod)) return { ...item, ...content };
-                        return null;
-                    }
+                    if (item.type === 'internal') return contentMap.has(item.contentId) ? { ...item, ...contentMap.get(item.contentId) } : null;
                     return item;
                 }).filter(Boolean).sort((a,b) => (a.orderIndex || 99) - (b.orderIndex || 99));
-
-                const finalLayout = {
-                    featured: enrich(allItems.featured),
-                    trending: enrich(allItems.trending),
-                    liveFeed: enrich(allItems.liveFeed)
-                };
+                
+                const finalLayout = { featured: enrich(allItems.featured), trending: enrich(allItems.trending) };
                 setEnrichedLayout(finalLayout);
 
                 const numFeaturedClones = 3;
-                setDisplayFeatured(finalLayout.featured.length > numFeaturedClones ? [...finalLayout.featured, ...finalLayout.featured.slice(0, numFeaturedClones)] : finalLayout.featured);
-                const numLiveFeedClones = 4;
-                setDisplayLiveFeed(finalLayout.liveFeed.length > numLiveFeedClones ? [...finalLayout.liveFeed, ...finalLayout.liveFeed.slice(0, numLiveFeedClones)] : finalLayout.liveFeed);
-                
-                setLoading(false);
+                if (finalLayout.featured.length > numFeaturedClones) {
+                    setDisplayFeatured([...finalLayout.featured, ...finalLayout.featured.slice(0, numFeaturedClones)]);
+                } else {
+                    setDisplayFeatured(finalLayout.featured);
+                }
+                setIsLayoutLoading(false); // Set layout loading to false
             };
-            processData();
-        }, [layout, liveFeed, featuredContentSlots, creatorProfile]);
-        
-        // THIS IS THE FIX for the autoscroll timing bug.
+
+            const unsubLiveFeed = onSnapshot(liveFeedQuery, (snapshot) => {
+                const liveItems = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                const numLiveFeedClones = 4;
+                if (liveItems.length > numLiveFeedClones) setDisplayLiveFeed([...liveItems, ...liveItems.slice(0, numLiveFeedClones)]);
+                else setDisplayLiveFeed(liveItems);
+                setIsLiveFeedLoading(false); // Set live feed loading to false
+            });
+            
+            const unsubLayout = onSnapshot(layoutDocRef, (docSnap) => {
+                cachedData.layout = docSnap.exists() ? docSnap.data() : { featuredItems: [], trendingItems: [] };
+                processManualContent();
+            });
+            
+            cachedData.autoSlots = featuredContentSlots || { slot_1: null, slot_2: null, slot_3: null };
+            processManualContent();
+            return () => { unsubLayout(); unsubLiveFeed(); };
+        }, [featuredContentSlots]);
+
+        // This is YOUR restored, working carousel animation logic.
+                // This is YOUR old, working carousel animation logic, restored.
         useEffect(() => {
+            const horizontalCarousel = horizontalCarouselRef.current;
+            const verticalCarousel = verticalCarouselRef.current;
             let horizontalInterval;
             let verticalInterval;
-            
-            // This function now runs after a short delay, ensuring the DOM is ready.
-            const setupCarousels = () => {
-                const horizontalCarousel = horizontalCarouselRef.current;
-                if (horizontalCarousel && displayFeatured.length > 3) {
-                    const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15;
-                    if (!isNaN(itemWidth) && itemWidth > 0) {
-                        horizontalInterval = setInterval(() => {
-                            if (horizontalCarousel.scrollLeft >= (horizontalCarousel.scrollWidth / 2)) {
-                                horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
-                            } else {
-                                horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
-                            }
-                        }, 4000);
+
+            const startHorizontalAutoscroll = () => {
+                if (!horizontalCarousel || displayFeatured.length <= 3) {
+                    clearInterval(horizontalInterval);
+                    return;
+                }
+                const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15; 
+                const originalContentWidth = (displayFeatured.length - 3) * itemWidth; 
+
+                horizontalInterval = setInterval(() => {
+                    if (horizontalCarousel.scrollLeft >= originalContentWidth - (horizontalCarousel.clientWidth / 2)) {
+                        horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
                     }
-                }
-
-                const verticalCarousel = verticalCarouselRef.current;
-                if (verticalCarousel && displayLiveFeed.length > 2) {
-                     const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15;
-                     if (!isNaN(itemHeight) && itemHeight > 0) {
-                        verticalInterval = setInterval(() => {
-                            if (verticalCarousel.scrollTop >= (verticalCarousel.scrollHeight / 2)) {
-                                verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
-                            } else {
-                                verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
-                            }
-                        }, 3000);
-                     }
-                }
+                     // This was missing the 'else', which is critical.
+                    else {
+                         horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
+                    }
+                }, 3000);
             };
 
-            // Use setTimeout to delay execution until after the render cycle.
-            const timer = setTimeout(setupCarousels, 100);
+           const startVerticalAutoscroll = () => {
+                // Corrected condition to check for 4 clones, not 2.
+                if (!verticalCarousel || displayLiveFeed.length <= 4) { 
+                    clearInterval(verticalInterval);
+                    return;
+                }
+                const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15; 
+                // Corrected calculation to subtract 4 clones, not 2.
+                const originalContentHeight = (displayLiveFeed.length - 4) * itemHeight; 
 
-            return () => { 
-                clearTimeout(timer);
-                clearInterval(horizontalInterval); 
-                clearInterval(verticalInterval); 
+                verticalInterval = setInterval(() => {
+                    if (verticalCarousel.scrollTop >= originalContentHeight - (verticalCarousel.clientHeight / 2)) {
+                        verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
+                    }
+                    else {
+                        verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
+                    }
+                }, 3000);
             };
-        }, [displayFeatured, displayLiveFeed]);
-        
-        const handleHorizontalScroll = (direction) => { const carousel = horizontalCarouselRef.current; if (carousel) { const itemWidth = carousel.children[0]?.offsetWidth + 15; carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' }); } };
-        const handleVerticalScroll = (direction) => { const carousel = verticalCarouselRef.current; if (carousel) { const itemHeight = carousel.children[0]?.offsetHeight + 15; carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' }); } };
-        const handleItemClick = (item) => { if (item.type === 'internal') { handleVideoPress(item.embedUrl || item.mainUrl, item); } else if (item.externalLink) { window.open(item.externalLink, '_blank'); } };
-        
+
+            // Clear any lingering intervals before starting.
+            clearInterval(horizontalInterval);
+            clearInterval(verticalInterval);
+
+            // Only start the animations when all content is fully loaded.
+            if (!loading) {
+                startHorizontalAutoscroll();
+                startVerticalAutoscroll();
+            }
+
+            // The cleanup function to run when the component updates or unmounts.
+            return () => {
+                clearInterval(horizontalInterval);
+                clearInterval(verticalInterval);
+            };
+        }, [loading, displayFeatured, displayLiveFeed]); // Dependencies from your code.
+
+        const handleHorizontalScroll = (direction) => {
+            const carousel = horizontalCarouselRef.current;
+            if (carousel) {
+                const itemWidth = carousel.children[0]?.offsetWidth + 15;
+                carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' });
+            }
+        };
+        const handleVerticalScroll = (direction) => {
+            const carousel = verticalCarouselRef.current;
+            if (carousel) {
+                const itemHeight = carousel.children[0]?.offsetHeight + 15;
+                carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' });
+            }
+        };
+        const handleItemClick = (item) => {
+                    if (!currentUser) {
+                        showMessage("Please sign up or log in to engage with content!");
+                        return;
+                    }
+
+                    console.log("handleItemClick: Item clicked:", item); // <--- ADD THIS LINE
+
+                    // For external ads/promotions, open in new tab
+                    if (item.type === 'external' && item.externalLink) {
+                        window.open(item.externalLink, '_blank');
+                        logFeaturedLinkClick('external_ad', item.title); // Log click for external ads
+                        return;
+                    }
+
+                    // For internal content, ensure we have an embeddable URL
+                    // Re-extract video info to be absolutely sure we have the latest embedUrl based on mainUrl
+                    // This is safer than relying solely on item.embedUrl stored in Firestore,
+                    // in case the parsing logic improved or data was old.
+                    const { embedUrl } = extractVideoInfo(item.mainUrl || item.url); // Use item.url as fallback for older content structure
+
+                    console.log("handleItemClick: Derived embedUrl:", embedUrl); // <--- ADD THIS LINE
+
+                    if (embedUrl) {
+                        handleVideoPress(embedUrl, item);
+                    } else {
+                        showMessage("This video cannot be played in-app. It might be from an unsupported source or the link is invalid.");
+                    }
+                };
         return (
             <div className="screenContainer">
                 <div className="topRightButtonContainer">
@@ -5921,11 +5800,16 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                 </div>
                 <p className="sectionTitle">Featured Highlights</p>
                 <div className="carousel-wrapper">
-                    {displayFeatured.length > 3 && ( <> <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button> <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button> </> )}
+                    {displayFeatured.length > 3 && (
+                        <>
+                            <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button>
+                            <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button>
+                        </>
+                    )}
                     <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
                         {loading ? Array.from({ length: 5 }).map((_, i) => <div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>)
                         : displayFeatured.map((item, index) => (
-                            <div key={item.id ? `${item.id}-${index}` : `${item.title}-${index}`} className="horizontal-carousel-item" onClick={() => handleItemClick(item)} style={{cursor: 'pointer'}}>
+                            <div key={`${item.id}-${index}`} className="horizontal-carousel-item" onClick={() => handleItemClick(item)} style={{cursor: 'pointer'}}>
                                 <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="carousel-image" />
                             </div>
                         ))}
@@ -5952,23 +5836,21 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                     <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
                     {currentUser && <div style={{display: 'flex', gap: '10px'}}><button className="sectionHeaderButton" onClick={() => setActiveScreen('DiscoverUsers')}>Find Creators</button><button className="sectionHeaderButton" onClick={() => setActiveScreen('Discover')}>Discover All</button></div>}
                 </div>
-                {loading ? <p>Loading live feed...</p> : (
-                    <div className="carousel-wrapper">
-                        {displayLiveFeed.length > 2 && ( <> <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button> <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button> </> )}
-                        <div className="vertical-carousel-container" ref={verticalCarouselRef}>
-                            {displayLiveFeed.map((item, index) => (
-                                <div key={item.id ? `${item.id}-${index}` : `${item.title}-${index}`} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleItemClick(item)}>
-                                    <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="liveFeedThumbnail" />
-                                    <div className="liveFeedContent">
-                                        <p className="liveFeedTitle">{item.title}</p>
-                                        <p className="liveFeedCreator">{item.type === 'internal' ? `by ${item.creatorName}` : 'Promotion'}</p>
-                                    </div>
-                                    {currentUser && item.type === 'internal' && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                <div className="carousel-wrapper">
+                    {displayLiveFeed.length > 2 && ( <> <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button> <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button> </> )}
+                    <div className="vertical-carousel-container" ref={verticalCarouselRef}>
+                        {displayLiveFeed.map((item, index) => (
+                            <div key={item.id ? `${item.id}-${index}` : `${item.title}-${index}`} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleItemClick(item)}>
+                                <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="liveFeedThumbnail" />
+                                <div className="liveFeedContent">
+                                    <p className="liveFeedTitle">{item.title}</p>
+                                    <p className="liveFeedCreator">{item.type === 'internal' ? `by ${item.creatorName}` : 'Promotion'}</p>
                                 </div>
-                            ))}
-                        </div>
+                                {currentUser && item.type === 'internal' && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                            </div>
+                        ))}
                     </div>
-                )}
+                </div>
             </div>
         );
     };
@@ -6871,4 +6753,3 @@ const handleAddOrUpdateVideo = async () => {
     </script>
 </body>
 </html>
-
