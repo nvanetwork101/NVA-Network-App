@@ -5762,35 +5762,44 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                 carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' });
             }
         };
-        const handleItemClick = (item) => {
-                    if (!currentUser) {
-                        showMessage("Please sign up or log in to engage with content!");
-                        return;
-                    }
+         const handleItemClick = (item) => {
+    // This initial login check remains the same
+    if (!currentUser) {
+        showMessage("Please sign up or log in to engage with content!");
+        return;
+    }
 
-                    console.log("handleItemClick: Item clicked:", item); // <--- ADD THIS LINE
+    // This is the new, smarter logic:
+    let urlToTest;
+    if (item.type === 'external') {
+        urlToTest = item.externalLink;
+    } else {
+        // This handles items from the Live Feed and any other 'internal' content
+        urlToTest = item.mainUrl || item.url;
+    }
 
-                    // For external ads/promotions, open in new tab
-                    if (item.type === 'external' && item.externalLink) {
-                        window.open(item.externalLink, '_blank');
-                        logFeaturedLinkClick('external_ad', item.title); // Log click for external ads
-                        return;
-                    }
+    if (!urlToTest) {
+        showMessage("This item has no valid link to play.");
+        return;
+    }
 
-                    // For internal content, ensure we have an embeddable URL
-                    // Re-extract video info to be absolutely sure we have the latest embedUrl based on mainUrl
-                    // This is safer than relying solely on item.embedUrl stored in Firestore,
-                    // in case the parsing logic improved or data was old.
-                    const { embedUrl } = extractVideoInfo(item.mainUrl || item.url); // Use item.url as fallback for older content structure
+    // Now, we test the URL, regardless of its original type
+    const { embedUrl } = extractVideoInfo(urlToTest);
 
-                    console.log("handleItemClick: Derived embedUrl:", embedUrl); // <--- ADD THIS LINE
-
-                    if (embedUrl) {
-                        handleVideoPress(embedUrl, item);
-                    } else {
-                        showMessage("This video cannot be played in-app. It might be from an unsupported source or the link is invalid.");
-                    }
-                };
+    if (embedUrl) {
+        // If we found an embeddable URL, play it in the app!
+        handleVideoPress(embedUrl, item);
+    } else {
+        // If it's not embeddable, and it was an external link, open it externally.
+        // Otherwise, show an error.
+        if (item.type === 'external') {
+             window.open(urlToTest, '_blank');
+        } else {
+             showMessage("This video cannot be played in-app. It might be from an unsupported source.");
+        }
+    }
+};
+// --- END OF FINAL handleItemClick FUNCTION
         return (
             <div className="screenContainer">
                 <div className="topRightButtonContainer">
@@ -5821,16 +5830,24 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                 </div>
                 {loading ? <p>Loading trending...</p> : (
                     <div className="contentGrid">
-                        {enrichedLayout.trending.map((item) => (
+                    {enrichedLayout.trending.map((item) => {
+                        
+                        // --- ADD THIS CONSOLE.LOG LINE ---
+                        console.log("Rendering Trending Item:", item);
+
+                        return ( // The return statement was implicitly there, now we make it explicit
                             <div key={item.id || item.title} className="contentCard" onClick={() => handleItemClick(item)}>
                                 <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl || item.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
                                     <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                    {currentUser && item.type === 'internal' && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                    
+                                    {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                    
                                 </div>
                                 <p className="contentTitle">{item.title}</p>
                             </div>
-                        ))}
-                    </div>
+                        );
+                    })}
+                </div>
                 )}
                 <div className="sectionHeaderWithButton">
                     <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
@@ -5846,7 +5863,7 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
                                     <p className="liveFeedTitle">{item.title}</p>
                                     <p className="liveFeedCreator">{item.type === 'internal' ? `by ${item.creatorName}` : 'Promotion'}</p>
                                 </div>
-                                {currentUser && item.type === 'internal' && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
                             </div>
                         ))}
                     </div>
