@@ -3151,7 +3151,7 @@ const AdminDashboardScreen = ({
     );
 };
 
-        const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
+                const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
             return (
                 <div className="confirmationModalOverlay">
                     <div className="confirmationModalContent">
@@ -3159,7 +3159,8 @@ const AdminDashboardScreen = ({
                         <p className="confirmationModalMessage">{message}</p>
                         <div className="confirmationModalButtons">
                             <button className="confirmationButton confirm" onClick={() => {
-                                // This new structure ensures the correct action runs and the modal always closes properly.
+                                // This new, robust structure ensures the correct action runs
+                                // and the modal always closes cleanly afterward.
                                 if (typeof onConfirm === 'function') {
                                     onConfirm(); 
                                 }
@@ -3669,7 +3670,7 @@ const AdminDashboardScreen = ({
 
 
                 // --- START: NEW COMPONENT ---
-        const AddUrlCurationModal = ({ showMessage, onSave, onCancel }) => {
+                const AddUrlCurationModal = ({ showMessage, onSave, onCancel }) => {
             const [title, setTitle] = useState('');
             const [mainUrl, setMainUrl] = useState('');
             const [imageFile, setImageFile] = useState(null);
@@ -3677,9 +3678,8 @@ const AdminDashboardScreen = ({
             const [isUploading, setIsUploading] = useState(false);
             const fileInputRef = useRef(null);
 
-            // This effect auto-fetches a thumbnail from the URL
             useEffect(() => {
-                if (imageFile) return; // Don't auto-fetch if a custom image is already set
+                if (imageFile) return;
                 if (!mainUrl) {
                     setImagePreview('');
                     return;
@@ -3688,7 +3688,7 @@ const AdminDashboardScreen = ({
                 if (videoInfo && videoInfo.thumbnailUrl) {
                     setImagePreview(videoInfo.thumbnailUrl);
                 } else {
-                    setImagePreview(''); // Clear if no thumb found
+                    setImagePreview('');
                 }
             }, [mainUrl, imageFile]);
 
@@ -3706,51 +3706,44 @@ const AdminDashboardScreen = ({
                     return;
                 }
                 
+                setIsUploading(true);
                 const { embedUrl } = extractVideoInfo(mainUrl);
+                let finalImageUrl = imagePreview; // Default to the auto-fetched URL
 
-                // If a custom image file was uploaded, we must first upload it to storage
                 if (imageFile) {
-                    setIsUploading(true);
                     showMessage("Uploading custom thumbnail...");
                     try {
                         const filePath = `curated_thumbnails/${Date.now()}_${imageFile.name}`;
-                        const storageRef = ref(storage, filePath);
-                        const snapshot = await uploadBytes(storageRef, imageFile);
-                        const finalImageUrl = await getDownloadURL(snapshot.ref);
+                        const storageRefPath = ref(storage, filePath);
+                        const snapshot = await uploadBytes(storageRefPath, imageFile);
+                        finalImageUrl = await getDownloadURL(snapshot.ref); // Get the final URL
                         showMessage("Thumbnail uploaded successfully!");
-                        
-                        // Call the onSave callback with the final data object
-                        onSave({
-                            type: 'external', // Treat as an external link for rendering purposes
-                            title,
-                            mainUrl: mainUrl,
-                            embedUrl: embedUrl, // Pass the embeddable URL
-                            imageUrl: finalImageUrl, // The URL from Firebase Storage
-                            externalLink: mainUrl, // The link to open on click
-                            orderIndex: Date.now()
-                        });
-
                     } catch (error) {
                         showMessage(`Thumbnail upload failed: ${error.message}`);
-                    } finally {
                         setIsUploading(false);
+                        return; // Stop execution on failure
                     }
-                } else {
-                    // If no custom file, use the auto-fetched preview URL
-                    if (!imagePreview) {
-                        showMessage("Could not find a valid image preview. Please upload one.");
-                        return;
-                    }
-                    onSave({
-                        type: 'external',
-                        title,
-                        mainUrl: mainUrl,
-                        embedUrl: embedUrl,
-                        imageUrl: imagePreview, // The auto-fetched URL
-                        externalLink: mainUrl,
-                        orderIndex: Date.now()
-                    });
                 }
+
+                if (!finalImageUrl) {
+                    showMessage("Could not find a valid image preview. Please upload one.");
+                    setIsUploading(false);
+                    return;
+                }
+
+                // This is the final data object to be passed to the parent.
+                const newItem = {
+                    type: 'external',
+                    title,
+                    mainUrl: mainUrl,
+                    embedUrl: embedUrl,
+                    imageUrl: finalImageUrl,
+                    externalLink: mainUrl,
+                    orderIndex: Date.now()
+                };
+
+                onSave(newItem); // Send the completed object to the parent
+                setIsUploading(false);
             };
 
             return (
@@ -6878,3 +6871,4 @@ const handleAddOrUpdateVideo = async () => {
     </script>
 </body>
 </html>
+
