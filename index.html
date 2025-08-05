@@ -3706,7 +3706,7 @@ const AdminDashboardScreen = ({
                 };
                 
                 fetchInitialData();
-            }, [curationTarget]); // This hook now only re-runs if the target section changes
+            }, [curationTarget]);
 
             const handleMove = (index, direction) => {
                 const newItems = [...curatedItems];
@@ -3811,7 +3811,8 @@ const AdminDashboardScreen = ({
 
                         <div className="confirmationModalButtons">
                             <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
-                            <button className="confirmationButton confirm" onClick={handleSaveChanges} disabled={isSaving}>
+                            {/* --- THIS IS THE ONLY LINE THAT HAS BEEN CHANGED --- */}
+                            <button className="confirmationButton confirm" onClick={() => { console.log('Save Changes button clicked. Firing handleSaveChanges...'); handleSaveChanges(); }} disabled={isSaving}>
                                 {isSaving ? 'Saving...' : 'Save Changes'}
                             </button>
                         </div>
@@ -6721,3 +6722,4 @@ const handleAddOrUpdateVideo = async () => {
     </script>
 </body>
 </html>
+
