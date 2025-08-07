@@ -5570,7 +5570,9 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
 
         function App() {
             const [currentUser, setCurrentUser] = useState(null);
-            
+            const [activeScreen, setActiveScreen] = useState('Home');
+            const [canExit, setCanExit] = useState(false);
+            const exitTimer = useRef(null);
             const [showMoreMenu, setShowMoreMenu] = useState(false);
             const [activeCategory, setActiveCategory] = useState('Skits');
             const [message, setMessage] = useState('');
@@ -5578,68 +5580,61 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const [currentVideoUrl, setCurrentVideoUrl] = useState('');
              const isInitialLoad = useRef(true);
 
-           const [activeScreen, setActiveScreen] = useState(() => localStorage.getItem('nva-last-screen') || 'Home');
-            const [canExit, setCanExit] = useState(false);
-            const exitTimer = useRef(null);
-
-            // --- START: Back Button, State Restoration, and Exit Confirmation Logic ---
-
-            // This effect saves the current screen to localStorage whenever it changes.
-            useEffect(() => {
-                localStorage.setItem('nva-last-screen', activeScreen);
-            }, [activeScreen]);
-
-            // This effect manages all browser history and back-button presses.
+            // This effect handles the user clicking the browser/phone back button
             useEffect(() => {
                 const handlePopState = (event) => {
-                    // If the user is on the Home screen and presses back...
-                    if (window.history.state?.screen === 'Home' || activeScreen === 'Home') {
+                    // This condition checks if the user is on the "Home" screen
+                    if (window.history.state?.screen === 'Home') {
                          if (canExit) {
-                            // If they confirmed, allow the app to close by going back again.
-                            window.history.back(); 
+                            // If they already pressed once, allow the app to close.
+                            window.history.back();
                             return;
                         }
 
-                        // If it's the first press, show a message and prevent exit.
+                        // This is the first press on the Home screen.
                         showMessage('Press back again to exit.');
                         setCanExit(true);
 
-                        // Push the state back to prevent the app from closing.
+                        // Push the 'Home' state back onto the history stack to prevent the app from closing.
                         window.history.pushState({ screen: 'Home' }, '');
                         
-                        // Start a timer to reset the exit confirmation.
+                        // Start a timer to reset the exit confirmation after 2 seconds.
                         exitTimer.current = setTimeout(() => {
                             setCanExit(false);
-                        }, 2000); // 2-second window to press back again.
-                        
-                        return;
-                    }
+                        }, 2000);
 
-                    // For any other screen, just navigate back.
-                    if (event.state && event.state.screen) {
+                    } else if (event.state && event.state.screen) {
+                        // For any other screen, just navigate back normally.
                         setActiveScreen(event.state.screen);
                     }
                 };
 
                 window.addEventListener('popstate', handlePopState);
                 
-                // On initial load, ensure the history state matches the active screen.
-                window.history.replaceState({ screen: activeScreen }, '');
+                // On initial load, we replace the current history entry with our 'Home' state
+                window.history.replaceState({ screen: 'Home' }, '');
 
                 // Cleanup function
                 return () => {
                     window.removeEventListener('popstate', handlePopState);
                     clearTimeout(exitTimer.current);
                 };
-            }, [activeScreen, canExit]); // Rerun when activeScreen or canExit changes.
+            }, [canExit]); // This effect now correctly depends on the `canExit` state.
 
-            // This effect pushes a new state to history when navigating forward in the app.
+            // This effect handles the user navigating forward within the app
             useEffect(() => {
+                // We don't want to push a new history state on the very first render.
+                if (isInitialLoad.current) {
+                    isInitialLoad.current = false;
+                    return;
+                }
+                
+                // Only push a new state if it's different from the one we are already on.
                 if (window.history.state?.screen !== activeScreen) {
                     window.history.pushState({ screen: activeScreen }, '');
                 }
-            }, [activeScreen]);
-            // --- END: Back Button, State Restoration, and Exit Confirmation Logic ---
+            }, [activeScreen]); // This runs every time the activeScreen changes.
+            // --- END: Back Button and History Management Logic ---
             const [currentContentItem, setCurrentContentItem] = useState(null);
             const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
             const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
