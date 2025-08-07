@@ -1859,10 +1859,9 @@
                     ></iframe>
                 </div>
                 
-                {/* START: ADDED VIEW COUNT DISPLAY */}
                 <div style={{
                     position: 'absolute',
-                    bottom: '8px',
+                    bottom: '15px', // Changed from 8px to 15px
                     left: '8px',
                     backgroundColor: 'rgba(10, 10, 10, 0.7)',
                     border: '1px solid #FFD700',
@@ -1881,7 +1880,6 @@
                         {(contentItem?.viewCount || 0).toLocaleString()}
                     </span>
                 </div>
-                {/* END: ADDED VIEW COUNT DISPLAY */}
                 
                 {currentUser && contentItem && contentItem.id && (
                      <LikeButton contentItem={contentItem} currentUser={currentUser} showMessage={showMessage} />
@@ -1895,12 +1893,10 @@
                 const LikeButton = ({ contentItem, currentUser, showMessage }) => {
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(contentItem.likeCount || 0);
-    const [isLoading, setIsLoading] = useState(true); // Start in a loading state
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Determine the correct ID for the original content item
     const contentDocId = contentItem.originalContentId || contentItem.id;
     
-    // This useEffect hook runs once to check if the user has already liked this post.
     useEffect(() => {
         if (!currentUser || !contentDocId) {
             setIsLoading(false);
@@ -1914,10 +1910,9 @@
             setIsLoading(false);
         });
 
-        return () => unsubscribe(); // Cleanup the listener
+        return () => unsubscribe();
     }, [contentDocId, currentUser]);
     
-    // This useEffect hook keeps the public like count in sync with the database.
     useEffect(() => {
         if (!contentDocId) return;
 
@@ -1934,18 +1929,17 @@
 
 
     const handleLike = async (e) => {
-        e.stopPropagation(); // Stop the click from opening the video player.
+        e.stopPropagation();
         
         if (!currentUser) {
             showMessage("Please log in to like content.");
             return;
         }
-        if (isLoading) return; // Prevent clicks while loading initial state
+        if (isLoading) return;
 
         const contentRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}`);
         const likeRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}/likes`, currentUser.uid);
 
-        // Optimistically update the UI for a fast user experience.
         const newLikedState = !isLiked;
         const newLikeCount = newLikedState ? likeCount + 1 : likeCount - 1;
         setIsLiked(newLikedState);
@@ -1953,18 +1947,15 @@
 
         try {
             if (newLikedState) {
-                // User is LIKING the post
                 await setDoc(likeRef, { likedAt: new Date().toISOString() });
                 await updateDoc(contentRef, { likeCount: increment(1) });
             } else {
-                // User is UNLIKING the post
                 await deleteDoc(likeRef);
                 await updateDoc(contentRef, { likeCount: increment(-1) });
             }
         } catch (error) {
             console.error("Error updating like status:", error);
             showMessage("An error occurred. Please try again.");
-            // If the database update fails, revert the optimistic UI changes.
             setIsLiked(!newLikedState);
             setLikeCount(likeCount);
         }
@@ -1975,10 +1966,10 @@
     return (
         <button
             onClick={handleLike}
-            disabled={isLoading} // Disable button until we know the like status
+            disabled={isLoading}
             style={{
                 position: 'absolute',
-                bottom: '8px',
+                bottom: '15px', // Changed from 8px to 15px
                 right: '8px',
                 backgroundColor: 'rgba(10, 10, 10, 0.7)',
                 border: '1px solid #FFD700',
@@ -4947,7 +4938,7 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
 
     return (
         <div className="screenContainer">
-            <p className="sectionTitle">Discover Content</p>
+            <p className="sectionTitle" style={{ fontSize: '18px' }}>Featured Highlights</p>
             {loadingCategories ? <p>Loading categories...</p> : (
                 <div className="categoryTabs">
                     {categories.map(category => (
