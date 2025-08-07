@@ -5576,6 +5576,41 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const [message, setMessage] = useState('');
             const [showVideoModal, setShowVideoModal] = useState(false);
             const [currentVideoUrl, setCurrentVideoUrl] = useState('');
+             const isInitialLoad = useRef(true);
+
+            // This effect handles the user clicking the browser/phone back button
+            useEffect(() => {
+                const handlePopState = (event) => {
+                    if (event.state && event.state.screen) {
+                        setActiveScreen(event.state.screen);
+                    }
+                };
+
+                window.addEventListener('popstate', handlePopState);
+                
+                // On initial load, we replace the current history entry with our 'Home' state
+                // This ensures the user can't go "back" from the home screen and close the app accidentally
+                window.history.replaceState({ screen: 'Home' }, '');
+
+                return () => {
+                    window.removeEventListener('popstate', handlePopState);
+                };
+            }, []); // Empty dependency array means this runs only once on mount.
+
+            // This effect handles the user navigating forward within the app
+            useEffect(() => {
+                // We don't want to push a new history state on the very first render.
+                if (isInitialLoad.current) {
+                    isInitialLoad.current = false;
+                    return;
+                }
+                
+                // Only push a new state if it's different from the one we are already on.
+                if (window.history.state?.screen !== activeScreen) {
+                    window.history.pushState({ screen: activeScreen }, '');
+                }
+            }, [activeScreen]); // This runs every time the activeScreen changes.
+            // --- END: Back Button and History Management Logic ---
             const [currentContentItem, setCurrentContentItem] = useState(null);
             const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
             const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
@@ -5850,38 +5885,43 @@ useEffect(() => {
                     clearInterval(horizontalInterval);
                     return;
                 }
-                const itemWidth = horizontalCarousel.children[0].offsetWidth + 15; // Width + margin
-                const originalItemCount = displayFeatured.length - 3; // The number of actual items before clones
+                const itemWidth = horizontalCarousel.children[0].offsetWidth + 15;
+                
+                // --- START: SURGICAL FIX ---
+                // This guard clause prevents the animation from starting with incorrect measurements.
+                if (itemWidth <= 15) return; 
+                // --- END: SURGICAL FIX ---
+
+                const originalItemCount = displayFeatured.length - 3;
                 const originalContentWidth = originalItemCount * itemWidth;
 
                 horizontalInterval = setInterval(() => {
-                    // Check if the scroll position is at or beyond the start of the cloned items
                     if (horizontalCarousel.scrollLeft >= originalContentWidth) {
-                        // Perform the invisible jump: INSTANTLY move back to the start
                         horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
                     }
-                    
-                    // Execute the SMOOTH scroll to the next item immediately after the potential jump
                     horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
-
                 }, 3000);
             };
 
             const startVerticalAutoscroll = () => {
-                if (!verticalCarousel || displayLiveFeed.length <= 4) { 
+                if (!verticalCarousel || !verticalCarousel.children[0] || displayLiveFeed.length <= 4) {
                     clearInterval(verticalInterval);
                     return;
                 }
-                const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15; 
-                const originalContentHeight = (displayLiveFeed.length - 4) * itemHeight; 
+                const itemHeight = verticalCarousel.children[0].offsetHeight + 15;
+
+                // --- START: SURGICAL FIX (Applied to vertical scroll as well for consistency) ---
+                if (itemHeight <= 15) return;
+                // --- END: SURGICAL FIX ---
+
+                const originalItemCount = displayLiveFeed.length - 4;
+                const originalContentHeight = originalItemCount * itemHeight;
 
                 verticalInterval = setInterval(() => {
-                    if (verticalCarousel.scrollTop >= originalContentHeight - (verticalCarousel.clientHeight / 2)) {
+                    if (verticalCarousel.scrollTop >= originalContentHeight) {
                         verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
                     }
-                    else {
-                        verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
-                    }
+                    verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
                 }, 3000);
             };
 
@@ -5889,7 +5929,6 @@ useEffect(() => {
             clearInterval(verticalInterval);
 
             if (!loading) {
-                // A small delay to ensure the DOM is fully painted before calculating widths
                 setTimeout(() => {
                     startHorizontalAutoscroll();
                     startVerticalAutoscroll();
