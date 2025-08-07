@@ -8,11 +8,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
+
     <!-- PWA Enhancements START -->
-    <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="/icon-192x192.png">
+    <!-- This links to your manifest file -->
+    <link rel="manifest" href="manifest.json">
+
+    <!-- This sets the icon for iPhones/iPads when added to the home screen -->
+    <link rel="apple-touch-icon" href="NVA Network ICON 192.png">
+
+    <!-- This sets the browser address bar color on mobile -->
     <meta name="theme-color" content="#0A0A0A">
     <!-- PWA Enhancements END -->
+
     <style>
         html, body {
             height: 100%;
@@ -1852,17 +1859,32 @@
                     ></iframe>
                 </div>
                 
-                {/* This is the final, correct placement for the Like Button */}
+                {/* START: ADDED VIEW COUNT DISPLAY */}
+                <div style={{
+                    position: 'absolute',
+                    bottom: '8px',
+                    left: '8px',
+                    backgroundColor: 'rgba(10, 10, 10, 0.7)',
+                    border: '1px solid #FFD700',
+                    borderRadius: '50px',
+                    padding: '0 8px',
+                    height: '32px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px'
+                }}>
+                    <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: '#FFF' }}>
+                        <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path>
+                    </svg>
+                    <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>
+                        {(contentItem?.viewCount || 0).toLocaleString()}
+                    </span>
+                </div>
+                {/* END: ADDED VIEW COUNT DISPLAY */}
+                
                 {currentUser && contentItem && contentItem.id && (
-                    <div style={{
-                        padding: '10px 15px',
-                        width: '100%',
-                        display: 'flex',
-                        justifyContent: 'flex-start',
-                        boxSizing: 'border-box'
-                    }}>
-                        <LikeButton contentItem={contentItem} currentUser={currentUser} showMessage={showMessage} />
-                    </div>
+                     <LikeButton contentItem={contentItem} currentUser={currentUser} showMessage={showMessage} />
                 )}
             </div>
         </div>
