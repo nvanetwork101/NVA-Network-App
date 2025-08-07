@@ -8,18 +8,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-
     <!-- PWA Enhancements START -->
-    <!-- This links to your manifest file -->
-    <link rel="manifest" href="manifest.json">
-
-    <!-- This sets the icon for iPhones/iPads when added to the home screen -->
-    <link rel="apple-touch-icon" href="NVA Network ICON 192.png">
-
-    <!-- This sets the browser address bar color on mobile -->
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icon-192x192.png">
     <meta name="theme-color" content="#0A0A0A">
     <!-- PWA Enhancements END -->
-
     <style>
         html, body {
             height: 100%;
@@ -1736,7 +1729,7 @@
 
     <!-- 4. Define your React App component (JSX content here) -->
     <script type="text/babel">
-        const { useState, useEffect, useRef, useCallback, useMemo } = React;
+        const { useState, useEffect, useRef, useCallback } = React;
 
                 // --- CORRECTED AND CONSOLIDATED CONSTANTS ---
         const auth = window.firebaseAuth;
@@ -1859,14 +1852,15 @@
                     ></iframe>
                 </div>
                 
+                {/* --- START: ADDED VIEW COUNT DISPLAY --- */}
                 <div style={{
                     position: 'absolute',
-                    bottom: '15px', // Changed from 8px to 15px
-                    left: '8px',
+                    bottom: '20px', // MODIFIED: Set to a higher value for better spacing
+                    left: '15px',
                     backgroundColor: 'rgba(10, 10, 10, 0.7)',
                     border: '1px solid #FFD700',
                     borderRadius: '50px',
-                    padding: '0 8px',
+                    padding: '0 10px',
                     height: '32px',
                     display: 'flex',
                     alignItems: 'center',
@@ -1880,9 +1874,10 @@
                         {(contentItem?.viewCount || 0).toLocaleString()}
                     </span>
                 </div>
-                
+                {/* --- END: ADDED VIEW COUNT DISPLAY --- */}
+
                 {currentUser && contentItem && contentItem.id && (
-                     <LikeButton contentItem={contentItem} currentUser={currentUser} showMessage={showMessage} />
+                    <LikeButton contentItem={contentItem} currentUser={currentUser} showMessage={showMessage} />
                 )}
             </div>
         </div>
@@ -1893,10 +1888,12 @@
                 const LikeButton = ({ contentItem, currentUser, showMessage }) => {
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(contentItem.likeCount || 0);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(true); // Start in a loading state
 
+    // Determine the correct ID for the original content item
     const contentDocId = contentItem.originalContentId || contentItem.id;
     
+    // This useEffect hook runs once to check if the user has already liked this post.
     useEffect(() => {
         if (!currentUser || !contentDocId) {
             setIsLoading(false);
@@ -1910,9 +1907,10 @@
             setIsLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => unsubscribe(); // Cleanup the listener
     }, [contentDocId, currentUser]);
     
+    // This useEffect hook keeps the public like count in sync with the database.
     useEffect(() => {
         if (!contentDocId) return;
 
@@ -1929,17 +1927,18 @@
 
 
     const handleLike = async (e) => {
-        e.stopPropagation();
+        e.stopPropagation(); // Stop the click from opening the video player.
         
         if (!currentUser) {
             showMessage("Please log in to like content.");
             return;
         }
-        if (isLoading) return;
+        if (isLoading) return; // Prevent clicks while loading initial state
 
         const contentRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}`);
         const likeRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}/likes`, currentUser.uid);
 
+        // Optimistically update the UI for a fast user experience.
         const newLikedState = !isLiked;
         const newLikeCount = newLikedState ? likeCount + 1 : likeCount - 1;
         setIsLiked(newLikedState);
@@ -1947,15 +1946,18 @@
 
         try {
             if (newLikedState) {
+                // User is LIKING the post
                 await setDoc(likeRef, { likedAt: new Date().toISOString() });
                 await updateDoc(contentRef, { likeCount: increment(1) });
             } else {
+                // User is UNLIKING the post
                 await deleteDoc(likeRef);
                 await updateDoc(contentRef, { likeCount: increment(-1) });
             }
         } catch (error) {
             console.error("Error updating like status:", error);
             showMessage("An error occurred. Please try again.");
+            // If the database update fails, revert the optimistic UI changes.
             setIsLiked(!newLikedState);
             setLikeCount(likeCount);
         }
@@ -1966,18 +1968,18 @@
     return (
         <button
             onClick={handleLike}
-            disabled={isLoading}
+            disabled={isLoading} // Disable button until we know the like status
             style={{
                 position: 'absolute',
-                bottom: '15px', // Changed from 8px to 15px
-                right: '8px',
+                bottom: '20px', // MODIFIED: Set to a higher value for better spacing
+                right: '15px',
                 backgroundColor: 'rgba(10, 10, 10, 0.7)',
                 border: '1px solid #FFD700',
                 borderRadius: '50%',
                 width: 'auto',
                 minWidth: '32px',
                 height: '32px',
-                padding: '0 8px',
+                padding: '0 10px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -4938,7 +4940,7 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
 
     return (
         <div className="screenContainer">
-            <p className="sectionTitle" style={{ fontSize: '18px' }}>Featured Highlights</p>
+            <p className="sectionTitle">Discover Content</p>
             {loadingCategories ? <p>Loading categories...</p> : (
                 <div className="categoryTabs">
                     {categories.map(category => (
@@ -5771,15 +5773,17 @@ useEffect(() => {
 
                const HomeScreen = ({ currentUser, showMessage, handleVideoPress, handleLogout, featuredContentSlots }) => {
         const [enrichedLayout, setEnrichedLayout] = useState({ featured: [], trending: [] });
-        const [displayFeatured, setDisplayFeatured] = useState([]);
-        const [displayLiveFeed, setDisplayLiveFeed] = useState([]);
+        const [displayFeatured, setDisplayFeatured] = useState([]); 
+        const [displayLiveFeed, setDisplayLiveFeed] = useState([]); 
         const horizontalCarouselRef = useRef(null);
         const verticalCarouselRef = useRef(null);
-
+        
+        // Corrected loading state management
         const [isLayoutLoading, setIsLayoutLoading] = useState(true);
         const [isLiveFeedLoading, setIsLiveFeedLoading] = useState(true);
-        const loading = isLayoutLoading || isLiveFeedLoading;
+        const loading = isLayoutLoading || isLiveFeedLoading; // Overall loading is true if any part is loading
 
+        // This is our combined data-fetching logic that now handles loading state correctly.
         useEffect(() => {
             const layoutDocRef = doc(db, "settings", "homeScreenLayout");
             const liveFeedQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`), where('contentType', '==', 'Live Feed'), where('isActive', '==', true), orderBy('createdAt', 'desc'), limit(20));
@@ -5803,7 +5807,7 @@ useEffect(() => {
                     if (item.type === 'internal') return contentMap.has(item.contentId) ? { ...item, ...contentMap.get(item.contentId) } : null;
                     return item;
                 }).filter(Boolean).sort((a,b) => (a.orderIndex || 99) - (b.orderIndex || 99));
-
+                
                 const finalLayout = { featured: enrich(allItems.featured), trending: enrich(allItems.trending) };
                 setEnrichedLayout(finalLayout);
 
@@ -5813,7 +5817,7 @@ useEffect(() => {
                 } else {
                     setDisplayFeatured(finalLayout.featured);
                 }
-                setIsLayoutLoading(false);
+                setIsLayoutLoading(false); // Set layout loading to false
             };
 
             const unsubLiveFeed = onSnapshot(liveFeedQuery, (snapshot) => {
@@ -5821,19 +5825,21 @@ useEffect(() => {
                 const numLiveFeedClones = 4;
                 if (liveItems.length > numLiveFeedClones) setDisplayLiveFeed([...liveItems, ...liveItems.slice(0, numLiveFeedClones)]);
                 else setDisplayLiveFeed(liveItems);
-                setIsLiveFeedLoading(false);
+                setIsLiveFeedLoading(false); // Set live feed loading to false
             });
-
+            
             const unsubLayout = onSnapshot(layoutDocRef, (docSnap) => {
                 cachedData.layout = docSnap.exists() ? docSnap.data() : { featuredItems: [], trendingItems: [] };
                 processManualContent();
             });
-
+            
             cachedData.autoSlots = featuredContentSlots || { slot_1: null, slot_2: null, slot_3: null };
             processManualContent();
             return () => { unsubLayout(); unsubLiveFeed(); };
         }, [featuredContentSlots]);
 
+        // This is YOUR restored, working carousel animation logic.
+                // This is YOUR old, working carousel animation logic, restored.
         useEffect(() => {
             const horizontalCarousel = horizontalCarouselRef.current;
             const verticalCarousel = verticalCarouselRef.current;
@@ -5841,30 +5847,34 @@ useEffect(() => {
             let verticalInterval;
 
             const startHorizontalAutoscroll = () => {
-                if (!horizontalCarousel || displayFeatured.length <= 3) {
+                if (!horizontalCarousel || !horizontalCarousel.children[0] || displayFeatured.length <= 3) {
                     clearInterval(horizontalInterval);
                     return;
                 }
-                const itemWidth = horizontalCarousel.children[0]?.offsetWidth + 15;
-                const originalContentWidth = (displayFeatured.length - 3) * itemWidth;
+                const itemWidth = horizontalCarousel.children[0].offsetWidth + 15; // Width + margin
+                const originalItemCount = displayFeatured.length - 3; // The number of actual items before clones
+                const originalContentWidth = originalItemCount * itemWidth;
 
                 horizontalInterval = setInterval(() => {
-                    if (horizontalCarousel.scrollLeft >= originalContentWidth - (horizontalCarousel.clientWidth / 2)) {
+                    // Check if the scroll position is at or beyond the start of the cloned items
+                    if (horizontalCarousel.scrollLeft >= originalContentWidth) {
+                        // Perform the invisible jump: INSTANTLY move back to the start
                         horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
                     }
-                    else {
-                         horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
-                    }
+                    
+                    // Execute the SMOOTH scroll to the next item immediately after the potential jump
+                    horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
+
                 }, 3000);
             };
 
-           const startVerticalAutoscroll = () => {
-                if (!verticalCarousel || displayLiveFeed.length <= 4) {
+            const startVerticalAutoscroll = () => {
+                if (!verticalCarousel || displayLiveFeed.length <= 4) { 
                     clearInterval(verticalInterval);
                     return;
                 }
-                const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15;
-                const originalContentHeight = (displayLiveFeed.length - 4) * itemHeight;
+                const itemHeight = verticalCarousel.children[0]?.offsetHeight + 15; 
+                const originalContentHeight = (displayLiveFeed.length - 4) * itemHeight; 
 
                 verticalInterval = setInterval(() => {
                     if (verticalCarousel.scrollTop >= originalContentHeight - (verticalCarousel.clientHeight / 2)) {
@@ -5880,8 +5890,11 @@ useEffect(() => {
             clearInterval(verticalInterval);
 
             if (!loading) {
-                startHorizontalAutoscroll();
-                startVerticalAutoscroll();
+                // A small delay to ensure the DOM is fully painted before calculating widths
+                setTimeout(() => {
+                    startHorizontalAutoscroll();
+                    startVerticalAutoscroll();
+                }, 100);
             }
 
             return () => {
@@ -5905,55 +5918,57 @@ useEffect(() => {
             }
         };
          const handleItemClick = (item) => {
-            if (!currentUser) {
-                showMessage("Please sign up or log in to engage with content!");
-                return;
-            }
+    // This initial login check remains the same
+    if (!currentUser) {
+        showMessage("Please sign up or log in to engage with content!");
+        return;
+    }
 
-            let urlToTest;
-            if (item.type === 'external') {
-                urlToTest = item.externalLink;
-            } else {
-                urlToTest = item.mainUrl || item.url;
-            }
+    // This is the new, smarter logic:
+    let urlToTest;
+    if (item.type === 'external') {
+        urlToTest = item.externalLink;
+    } else {
+        // This handles items from the Live Feed and any other 'internal' content
+        urlToTest = item.mainUrl || item.url;
+    }
 
-            if (!urlToTest) {
-                showMessage("This item has no valid link to play.");
-                return;
-            }
+    if (!urlToTest) {
+        showMessage("This item has no valid link to play.");
+        return;
+    }
 
-            const { embedUrl } = extractVideoInfo(urlToTest);
+    // Now, we test the URL, regardless of its original type
+    const { embedUrl } = extractVideoInfo(urlToTest);
 
-            if (embedUrl) {
-                handleVideoPress(embedUrl, item);
-            } else {
-                if (item.type === 'external') {
-                     window.open(urlToTest, '_blank');
-                } else {
-                     showMessage("This video cannot be played in-app. It might be from an unsupported source.");
-                }
-            }
-        };
-
+    if (embedUrl) {
+        // If we found an embeddable URL, play it in the app!
+        handleVideoPress(embedUrl, item);
+    } else {
+        // If it's not embeddable, and it was an external link, open it externally.
+        // Otherwise, show an error.
+        if (item.type === 'external') {
+             window.open(urlToTest, '_blank');
+        } else {
+             showMessage("This video cannot be played in-app. It might be from an unsupported source.");
+        }
+    }
+};
+// --- END OF FINAL handleItemClick FUNCTION
         return (
             <div className="screenContainer">
-                {/* --- START OF MODIFIED SECTION --- */}
                 <div style={{
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center'
-                    // Removed marginTop to bring it closer to the header
                 }}>
                     <p className="sectionTitle" style={{ margin: 0, fontSize: '18px', marginTop: '20px' }}>Featured Highlights</p>
-                    {/* The topRightButtonContainer is now a direct child of the flex container */}
                     <div className="topRightButtonContainer" style={{ position: 'static', top: 'auto', right: 'auto' }}>
                         {currentUser && (<button className="topButton" onClick={() => setActiveScreen('TopCreators')}>Top Creators</button>)}
                         <button className="topButton" onClick={() => setActiveScreen('Support')}>Support Us</button>
                         {currentUser ? (<button className="topButton" onClick={handleLogout}>Logout</button>) : (<button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>)}
                     </div>
                 </div>
-                {/* --- END OF MODIFIED SECTION --- */}
-
                 <div className="carousel-wrapper">
                     {displayFeatured.length > 3 && (
                         <>
@@ -5977,20 +5992,28 @@ useEffect(() => {
                 </div>
                 {loading ? <p>Loading trending...</p> : (
                     <div className="contentGrid">
-                    {enrichedLayout.trending.map((item) => (
+                    {enrichedLayout.trending.map((item) => {
+                        
+                        // --- ADD THIS CONSOLE.LOG LINE ---
+                        console.log("Rendering Trending Item:", item);
+
+                        return ( // The return statement was implicitly there, now we make it explicit
                             <div key={item.id || item.title} className="contentCard" onClick={() => handleItemClick(item)}>
                                 <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl || item.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
                                     <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                    
                                     {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                    
                                 </div>
                                 <p className="contentTitle">{item.title}</p>
+                                {/* --- ADD THIS BLOCK to display view count --- */}
                                 <div style={{ padding: '0 10px 10px 10px', display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px' }}>
                                 <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
                                 <span>{item.viewCount || 0} views</span>
                                 </div>
                             </div>
-                        )
-                    )}
+                        );
+                    })}
                 </div>
                 )}
                 <div className="sectionHeaderWithButton">
@@ -6642,73 +6665,72 @@ const handleAddOrUpdateVideo = async () => {
 
                 // --- FIND and REPLACE your ENTIRE renderScreen function with this block ---
 
-       const renderScreen = useMemo(() => {
-    // The "Gatekeeper" logic remains the same
-    if (currentUser && !currentUser.emailVerified) {
-        return <VerificationScreen 
-            currentUser={currentUser} 
-            showMessage={showMessage} 
-            handleLogout={handleLogout} 
-            setActiveScreen={setActiveScreen}
-        />;
-    }
+       const memoizedScreen = React.useMemo(() => {
+            if (currentUser && !currentUser.emailVerified) {
+                return <VerificationScreen 
+                    currentUser={currentUser} 
+                    showMessage={showMessage} 
+                    handleLogout={handleLogout} 
+                    setActiveScreen={setActiveScreen}
+                />;
+            }
+            
+            // Note: The 'Discover' case is handled outside this memoization
+            // because it's the only one that needs to re-render every second.
+            switch (activeScreen) {
+                case 'Home':
+                    return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
+                case 'FollowingFeed':
+                    return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={setActiveScreen} showMessage={showMessage} handleVideoPress={handleVideoPress}/>;
+                case 'Contact':
+                    return <ContactScreen setActiveScreen={setActiveScreen} showMessage={showMessage} currentUser={currentUser}/>;
+                case 'DiscoverUsers':
+                    return <DiscoverUsersScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} creatorProfile={creatorProfile} setSelectedUserId={setSelectedUserId}/>;
+                case 'UserProfile':
+                    return <UserProfileScreen selectedUserId={selectedUserId} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} showMessage={showMessage} currentUser={currentUser}/>;
+                case 'MyFollows':
+                    return <MyFollowsScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId}/>;
+                case 'Followers':
+                    return <FollowersScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId}/>;
+                case 'Login':
+                    return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
+                case 'UserSignUp':
+                    return <UserSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
+                case 'CreatorSignUp':
+                    return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
+                case 'Premium':
+                    return <PremiumScreen />;
+                case 'Support':
+                    return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
+                case 'AllCampaigns':
+                    return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId}/>;
+                case 'CampaignDetails':
+                    return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser}/>;
+                case 'CreatorDashboard':
+                    return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setSelectedCampaignId={setSelectedCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction}/>;
+                case 'CreateCampaign':
+                    return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile}/>;
+                case 'AdminDashboard':
+                    return <AdminDashboardScreen showMessage={showMessage} featuredContentSlots={featuredContentSlots} setActiveScreen={setActiveScreen} currentUser={currentUser} setSelectedAdminCampaignId={setSelectedAdminCampaignId} creatorProfile={creatorProfile} selectedAdminSubScreen={selectedAdminSubScreen} setSelectedAdminSubScreen={setSelectedAdminSubScreen} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction}/>;
+                case 'AdminCampaignDetails':
+                    return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile}/>;
+                case 'TopCreators':
+                    return <TopCreatorsScreen featuredContentSlots={featuredContentSlots} handleVideoPress={handleVideoPress} setActiveScreen={setActiveScreen} currentUser={currentUser} showMessage={showMessage}/>;
+                case 'AnalyticsDashboard':
+                    return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
+                default:
+                    return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
+            }
+        }, [activeScreen, currentUser, creatorProfile, featuredContentSlots]); // IMPORTANT: Notice countdownText and isLive are NOT in this array.
 
-    // The switch statement remains the same
-    switch (activeScreen) {
-        case 'Home':
-            return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
-        case 'Discover':
-            return <CategoriesScreen showMessage={showMessage} isLive={isLive} countdownText={countdownText} liveThumbnail={liveThumbnail} currentUser={currentUser} handleVideoPress={handleVideoPress}/>;
-        case 'FollowingFeed':
-            return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={setActiveScreen} showMessage={showMessage} handleVideoPress={handleVideoPress}/>;
-        case 'Contact':
-            return <ContactScreen setActiveScreen={setActiveScreen} showMessage={showMessage} currentUser={currentUser}/>;
-        case 'DiscoverUsers':
-            return <DiscoverUsersScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} creatorProfile={creatorProfile} setSelectedUserId={setSelectedUserId}/>;
-        case 'UserProfile':
-            return <UserProfileScreen selectedUserId={selectedUserId} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} showMessage={showMessage} currentUser={currentUser}/>;
-        case 'MyFollows':
-            return <MyFollowsScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId}/>;
-        case 'Followers':
-            return <FollowersScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId}/>;
-        case 'Login':
-            return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
-        case 'UserSignUp':
-            return <UserSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
-        case 'CreatorSignUp':
-            return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
-        case 'Premium':
-            return <PremiumScreen />;
-        case 'Support':
-            return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
-        case 'AllCampaigns':
-            return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId}/>;
-        case 'CampaignDetails':
-            return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser}/>;
-        case 'CreatorDashboard':
-            return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setSelectedCampaignId={setSelectedCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction}/>;
-        case 'CreateCampaign':
-            return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile}/>;
-        case 'AdminDashboard':
-            return <AdminDashboardScreen showMessage={showMessage} featuredContentSlots={featuredContentSlots} setActiveScreen={setActiveScreen} currentUser={currentUser} setSelectedAdminCampaignId={setSelectedAdminCampaignId} creatorProfile={creatorProfile} selectedAdminSubScreen={selectedAdminSubScreen} setSelectedAdminSubScreen={setSelectedAdminSubScreen} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction}/>;
-        case 'AdminCampaignDetails':
-            return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile}/>;
-        case 'TopCreators':
-            return <TopCreatorsScreen featuredContentSlots={featuredContentSlots} handleVideoPress={handleVideoPress} setActiveScreen={setActiveScreen} currentUser={currentUser} showMessage={showMessage}/>;
-        case 'AnalyticsDashboard':
-            return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
-        default:
-            return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
-    }
-}, [
-    // This is the dependency array.
-    activeScreen, 
-    currentUser, 
-    creatorProfile, 
-    featuredContentSlots, 
-    isLive, 
-    countdownText
-]);
+        const renderScreen = () => {
+            if (activeScreen === 'Discover') {
+                // Render this screen fresh every time, as it needs the live countdown
+                return <CategoriesScreen showMessage={showMessage} isLive={isLive} countdownText={countdownText} liveThumbnail={liveThumbnail} currentUser={currentUser} handleVideoPress={handleVideoPress}/>;
+            }
+            // For all other screens, return the stable, memoized version
+            return memoizedScreen;
+        };
 
 // --- END OF REPLACEMENT BLOCK ---
 
@@ -6750,7 +6772,7 @@ const handleAddOrUpdateVideo = async () => {
     />
 </div>
 
-                    {renderScreen}
+                    {renderScreen()}
 
                     <div className="navigationBar" style={{ position: 'relative' }}>
     <button className="navButton" onClick={() => setActiveScreen('Home')}>
