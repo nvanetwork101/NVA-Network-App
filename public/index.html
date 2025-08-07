@@ -5583,8 +5583,8 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             // This effect handles the user clicking the browser/phone back button
             useEffect(() => {
                 const handlePopState = (event) => {
-                    // This condition checks if the user is on the "Home" screen
-                    if (window.history.state?.screen === 'Home') {
+                    // This is the corrected logic. It checks the REACT state, not the history state.
+                    if (activeScreen === 'Home') {
                          if (canExit) {
                             // If they already pressed once, allow the app to close.
                             window.history.back();
@@ -5605,6 +5605,8 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
 
                     } else if (event.state && event.state.screen) {
                         // For any other screen, just navigate back normally.
+                        clearTimeout(exitTimer.current); // Clear any pending exit timers
+                        setCanExit(false);
                         setActiveScreen(event.state.screen);
                     }
                 };
@@ -5619,7 +5621,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
                     window.removeEventListener('popstate', handlePopState);
                     clearTimeout(exitTimer.current);
                 };
-            }, [canExit]); // This effect now correctly depends on the `canExit` state.
+            }, [activeScreen, canExit]); // This effect now correctly depends on BOTH states.
 
             // This effect handles the user navigating forward within the app
             useEffect(() => {
