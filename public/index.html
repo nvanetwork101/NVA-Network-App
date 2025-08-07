@@ -3097,8 +3097,7 @@ const AdminDashboardScreen = ({
             <p className="subHeading">Manage users and crowdfunding campaigns.</p>
 
             {/* --- CHANGE #1: ADD THE "SITE MANAGEMENT" BUTTON --- */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
-                <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', paddingBottom: '20px', flexWrap: 'wrap', position: 'sticky', top: 0, zIndex: 50, backgroundColor: '#0A0A0A' }}>                <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF' }}>
                     <span className="buttonText">Overview</span>
                 </button>
                 <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF' }}>
@@ -6721,7 +6720,7 @@ const handleAddOrUpdateVideo = async () => {
                 default:
                     return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
             }
-        }, [activeScreen, currentUser, creatorProfile, featuredContentSlots]); // IMPORTANT: Notice countdownText and isLive are NOT in this array.
+        }, [activeScreen, currentUser, creatorProfile, featuredContentSlots, selectedAdminSubScreen]); // IMPORTANT: Notice countdownText and isLive are NOT in this array.
 
         const renderScreen = () => {
             if (activeScreen === 'Discover') {
