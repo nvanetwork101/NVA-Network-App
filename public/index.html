@@ -28,13 +28,16 @@
             -webkit-overflow-scrolling: touch;
         }
         #root {
-            width: 100%;
-            min-height: 100vh; /* Use min-height to ensure it fills the screen */
+            /* The surgical change: We remove 'width: 100%' */
+            /* This allows the 'max-width' to work with the body's 'justify-content: center' */
+            min-height: 100vh;
             background-color: #0A0A0A;
             display: flex;
             flex-direction: column;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-            max-width: 1200px; /* Constrain width on desktops/large tablets */
+            max-width: 1200px; /* This now becomes the effective width on large screens */
+            /* We also add this to ensure it takes up the full width on smaller screens */
+            flex-grow: 1; 
         }
         .container {
             flex: 1;
@@ -2764,7 +2767,7 @@
             );
         };
 
-        const CampaignDetailsScreen = ({ showMessage, setActiveScreen, selectedCampaignId, currentUser }) => {
+        const CampaignDetailsScreen = ({ showMessage, setActiveScreen, selectedCampaignId, currentUser, setPledgeContext }) => {
             const [campaign, setCampaign] = useState(null);
             const [loading, setLoading] = useState(true);
             const campaignImageRef = useRef(null); // Ref to the image element
@@ -2799,61 +2802,31 @@
                 fetchCampaignDetails();
             }, [selectedCampaignId, setActiveScreen, showMessage]);
 
-            const handleSupportCampaign = async () => {
-                    if (!campaign) return;
+            // THIS IS THE NEW, CORRECTLY PLACED FUNCTION
+            const handleSupportCampaign = () => {
+                if (!campaign) return;
 
-                    // If user is not logged in, sign in anonymously
-                    if (!auth.currentUser) {
-                        try {
-                            await signInAnonymously(auth);
-                            // auth.currentUser will now be set to the anonymous user
-                        } catch (error) {
-                            console.error("Error signing in anonymously:", error);
-                            showMessage(`Failed to sign in for donation: ${error.message}. Please try again.`);
-                            return;
-                        }
-                    }
+                const isEnded = new Date(campaign.endDate) < new Date();
+                if (isEnded || campaign.status !== 'active') {
+                    showMessage("This campaign is not active and cannot receive donations.");
+                    return;
+                }
+                if (!currentUser) {
+                    showMessage("Please log in to support a campaign.");
+                    setActiveScreen('Login');
+                    return;
+                }
 
-                    const isEnded = new Date(campaign.endDate) < new Date();
-                    if (isEnded) {
-                        showMessage("This campaign has ended and can no longer receive donations.");
-                        return;
-                    }
-                    if (campaign.status !== 'active') {
-                        showMessage("This campaign is not yet active and cannot receive donations.");
-                        return;
-                    }
-
-                    const donationAmount = 10; // Simulating a $10 donation for simplicity
-                    const newRaisedAmount = (campaign.raised || 0) + donationAmount;
-
-                    try {
-                        // Update the campaign's raised amount
-                        const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
-                        await updateDoc(campaignDocRef, {
-                            raised: newRaisedAmount,
-                            updatedAt: new Date().toISOString()
-                        });
-
-                        // Add a detailed donation record to the campaign's subcollection
-                        const campaignDonationsRef = collection(db, `artifacts/${appId}/public/data/campaigns`, campaign.id, 'donations');
-                        await addDoc(campaignDonationsRef, {
-                            userId: auth.currentUser.uid, // Use current user's UID (anonymous or authenticated)
-                            userName: auth.currentUser.isAnonymous ? "Anonymous Donor" : (currentUser.email.split('@')[0] || "Logged In User"),
-                            amount: donationAmount,
-                            timestamp: new Date().toISOString(),
-                            campaignTitle: campaign.title,
-                            campaignCreator: campaign.creatorName
-                        });
-
-                        setCampaign(prev => ({ ...prev, raised: newRaisedAmount })); // Optimistically update UI
-                        showMessage(`Thank you for donating $${donationAmount} to "${campaign.title}"!`);
-                    } catch (error) {
-                        console.error("Error supporting campaign:", error);
-                        showMessage(`Failed to process donation: ${error.message}. Please try again.`);
-                    }
-                };
-
+                setPledgeContext({
+                    type: 'donation',
+                    campaignId: campaign.id,
+                    campaignTitle: campaign.title,
+                    creatorName: campaign.creatorName,
+                    amount: '' // Start with an empty amount
+                });
+                setActiveScreen('DonationPledge');
+            };
+// =========== END FUNCTION REPLACEMENT ===========
 
             if (loading) {
                 return (
@@ -2934,7 +2907,7 @@
                         </p>
                     )}
 
-
+                    {/* =========== START BUTTON REPLACEMENT =========== */}
                     <button
                         className="button"
                         onClick={handleSupportCampaign}
@@ -2943,7 +2916,8 @@
                     >
                         <span className="buttonText">{isCampaignEnded ? 'Campaign Ended' : (campaign.status === 'pending' ? 'Pending Review' : (campaign.status === 'rejected' ? 'Campaign Rejected' : (campaign.status === 'cancelled' ? 'Campaign Cancelled' : 'Support This Campaign')))}</span>
                     </button>
-
+{/* =========== END BUTTON REPLACEMENT =========== */}
+                    
                     {campaign.imageUrl && (
                         <button
                             className="button"
@@ -3062,9 +3036,60 @@ const AdminDashboardScreen = ({
     setConfirmationMessage,
     setOnConfirmationAction
 }) => {
-    // ... all of your existing state and functions inside this component remain exactly the same ...
-    // (changeUserRoleLogic, confirmRecalculate, useEffect, etc. are all still here)
+
     const [isUserManagementExpanded, setIsUserManagementExpanded] = useState(true);
+    const [pledgeSortType, setPledgeSortType] = useState('date');
+    const [pendingPledges, setPendingPledges] = useState([]);
+    const [loadingPledges, setLoadingPledges] = useState(true);
+
+    useEffect(() => {
+        if (creatorProfile && creatorProfile.role === 'admin') {
+            const pledgesRef = collection(db, "paymentPledges");
+            const q = query(pledgesRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc'));
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                const fetchedPledges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setPendingPledges(fetchedPledges);
+                setLoadingPledges(false);
+            });
+            return () => unsubscribe();
+        } else {
+            setLoadingPledges(false);
+        }
+    }, [creatorProfile]);
+
+    const handleApprovePledge = async (pledgeId) => {
+        showMessage(`Approving pledge ${pledgeId}...`);
+        try {
+            const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js");
+            const functions = getFunctions(window.firebaseApp);
+            const approvePledgeCallable = httpsCallable(functions, 'approvePledge');
+            const result = await approvePledgeCallable({ pledgeId: pledgeId });
+            showMessage(result.data.message);
+        } catch (error) {
+            console.error("Error calling approvePledge function:", error);
+            showMessage(`Error: ${error.message}`);
+        }
+    };
+
+    const denyPledgeLogic = async (pledgeId) => {
+        showMessage(`Denying pledge ${pledgeId}...`);
+        try {
+            await deleteDoc(doc(db, "paymentPledges", pledgeId));
+            showMessage("Pledge denied and removed successfully.");
+        } catch (error) {
+            console.error("Error denying pledge:", error);
+            showMessage(`Error: ${error.message}`);
+        }
+    };
+
+    const confirmDenyPledge = (pledge) => {
+        setConfirmationTitle("Deny Pledge?");
+        setConfirmationMessage(`Are you sure you want to deny and permanently delete this pledge from ${pledge.userName} for $${pledge.amount.toFixed(2)}? This action cannot be undone.`);
+        setOnConfirmationAction(() => () => denyPledgeLogic(pledge.id));
+        setShowConfirmationModal(true);
+    };
+
+    // --- All other state and functions for the dashboard ---
     const [isPendingCampaignsExpanded, setIsPendingCampaignsExpanded] = useState(true);
     const [isActiveCampaignsExpanded, setIsActiveCampaignsExpanded] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -3087,40 +3112,78 @@ const AdminDashboardScreen = ({
     const recalculateCountsForUser = async (userToFix) => { setIsCorrectingCount(userToFix.id); showMessage(`Recalculating counts for ${userToFix.creatorName || userToFix.email}...`); try { const followersRef = collection(db, "creators", userToFix.id, "followers"); const followersSnapshot = await getDocs(followersRef); const actualFollowerCount = followersSnapshot.size; const followingRef = collection(db, "creators", userToFix.id, "following"); const followingSnapshot = await getDocs(followingRef); const actualFollowingCount = followingSnapshot.size; await updateDoc(doc(db, "creators", userToFix.id), { followerCount: actualFollowerCount, followingCount: actualFollowingCount }); showMessage(`Counts for ${userToFix.creatorName || userToFix.email} have been corrected.`); } catch (error) { console.error("Error during single-user count correction:", error); showMessage(`Error correcting counts: ${error.message}`); } finally { setIsCorrectingCount(null); } };
     const confirmRecalculate = (userToFix) => { setConfirmationTitle("Recalculate Counts?"); setConfirmationMessage(`This will manually recount followers and following for "${userToFix.creatorName || userToFix.email}" and update their profile. Proceed?`); setOnConfirmationAction(() => () => recalculateCountsForUser(userToFix)); setShowConfirmationModal(true); };
     useEffect(() => { const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`); const qPending = query(campaignsCollectionRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc')); const unsubscribePending = onSnapshot(qPending, (snapshot) => { setPendingCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const qActive = query(campaignsCollectionRef, where('status', '==', 'active'), orderBy('createdAt', 'desc')); const unsubscribeActive = onSnapshot(qActive, (snapshot) => { setActiveCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const usersCollectionRef = collection(db, "creators"); const unsubscribeUsers = onSnapshot(usersCollectionRef, (snapshot) => { setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setLoading(false); }); let unsubscribeBanRequests = () => {}; if (creatorProfile && creatorProfile.role === 'admin') { const banRequestsRef = collection(db, "banRequests"); const q = query(banRequestsRef, where('status', '==', 'pending')); unsubscribeBanRequests = onSnapshot(q, (snapshot) => { setBanRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); } return () => { unsubscribePending(); unsubscribeActive(); unsubscribeUsers(); unsubscribeBanRequests(); }; }, [creatorProfile]);
+    
     if (!currentUser || !creatorProfile || (creatorProfile.role !== 'admin' && creatorProfile.role !== 'authority')) { return ( <div className="screenContainer"> <p className="heading">Access Denied</p> <p className="subHeading">You must be an Admin or Authority to view this dashboard.</p> <button className="button" onClick={() => setActiveScreen('Login')}><span className="buttonText">Go to Login</span></button> </div> ); }
     if (loading) { return ( <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}> <p className="heading">Loading Admin Dashboard...</p> <p className="subHeading" style={{ color: '#FFD700' }}>Please wait.</p> </div> ); }
     const filteredUsers = allUsers.filter(user => { if (creatorProfile.role === 'authority' && user.role === 'admin') { return false; } const matchesSearchTerm = searchTerm === '' || (user.creatorName && user.creatorName.toLowerCase().includes(searchTerm.toLowerCase())) || (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase())); const matchesRole = selectedRole === 'All' || user.role === selectedRole; return matchesSearchTerm && matchesRole; });
+
+    const sortedPledges = [...pendingPledges].sort((a, b) => {
+        if (pledgeSortType === 'type') {
+            if (a.paymentType < b.paymentType) return -1;
+            if (a.paymentType > b.paymentType) return 1;
+        }
+        return new Date(b.createdAt) - new Date(a.createdAt);
+    });
 
     return (
         <div className="screenContainer">
             <p className="heading">Admin Dashboard</p>
             <p className="subHeading">Manage users and crowdfunding campaigns.</p>
 
-            {/* --- CHANGE #1: ADD THE "SITE MANAGEMENT" BUTTON --- */}
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', paddingBottom: '20px', flexWrap: 'wrap', position: 'sticky', top: 0, zIndex: 50, backgroundColor: '#0A0A0A' }}>                <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF' }}>
-                    <span className="buttonText">Overview</span>
-                </button>
-                <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF' }}>
-                    <span className="buttonText">Content</span>
-                </button>
-                <button className="button" onClick={() => setSelectedAdminSubScreen('ManageCategories')} style={{ backgroundColor: selectedAdminSubScreen === 'ManageCategories' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ManageCategories' ? '#0A0A0A' : '#FFF' }}>
-                    <span className="buttonText">Categories</span>
-                </button>
-                <button className="button" onClick={() => setSelectedAdminSubScreen('SiteManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'SiteManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'SiteManagement' ? '#0A0A0A' : '#FFF' }}>
-                    <span className="buttonText">Site Management</span>
-                </button>
-                <button className="button" onClick={() => setActiveScreen('AnalyticsDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF' }}>
-                    <span className="buttonText">Analytics</span>
-                </button>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', paddingBottom: '20px', flexWrap: 'wrap', position: 'sticky', top: 0, zIndex: 50, backgroundColor: '#0A0A0A' }}>
+                <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Overview</span></button>
+                <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Content</span></button>
+                <button className="button" onClick={() => setSelectedAdminSubScreen('ManageCategories')} style={{ backgroundColor: selectedAdminSubScreen === 'ManageCategories' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ManageCategories' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Categories</span></button>
+                <button className="button" onClick={() => setSelectedAdminSubScreen('SiteManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'SiteManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'SiteManagement' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Site Management</span></button>
+                <button className="button" onClick={() => setActiveScreen('AnalyticsDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF' }}><span className="buttonText">Analytics</span></button>
             </div>
 
             {selectedAdminSubScreen === 'Overview' && (
                 <>
-                    {/* ... The entire Overview section remains unchanged ... */}
                     {creatorProfile.role === 'admin' && banRequests.length > 0 && ( <section className="dashboardSection" style={{ border: '2px solid #FFD700' }}> <p className="dashboardSectionTitle">Pending Authority Ban Requests ({banRequests.length})</p> <div className="dashboardContentList"> {banRequests.map(req => ( <div key={req.id} className="adminDashboardItem"> <div style={{ flexGrow: 1 }}> <p className="adminDashboardItemTitle">Target: {req.targetUserName}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Requested by: {req.requesterName}</p> </div> <button className="adminActionButton approve" onClick={() => handleApproveBanRequest(req)}>Approve Ban</button> <button className="adminActionButton reject" onClick={() => handleDenyBanRequest(req)}>Deny Request</button> </div> ))} </div> </section> )}
                     <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList"> {filteredUsers.map(user => ( <div key={user.id} className="adminDashboardItem" style={{alignItems: 'flex-start'}}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p> <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p> <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p> </div> <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}> {currentUser.uid !== user.id && <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} onClick={() => confirmToggleBan(user)} disabled={isSubmittingRequest === user.id}> {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')} </button>} <div className="formGroup" style={{marginBottom: 0}}> <select className="formInput" value={user.role} onChange={(e) => confirmChangeUserRole(user, e.target.value)} disabled={isUpdatingRole === user.id || user.id === currentUser.uid || (creatorProfile.role === 'authority' && user.role === 'admin')} style={{padding: '5px', fontSize: '12px', width: '120px'}}> <option value="user">User</option> <option value="creator">Creator</option> <option value="authority">Authority</option> {creatorProfile.role === 'admin' && <option value="admin">Admin</option>} </select> {isUpdatingRole === user.id && <p style={{fontSize: '10px', color: '#FFD700', textAlign: 'right'}}>Updating...</p>} </div> <button className="adminActionButton" onClick={() => confirmRecalculate(user)} disabled={isCorrectingCount === user.id} style={{ backgroundColor: '#FF8C00' }}> {isCorrectingCount === user.id ? 'Recalculating...' : 'Recalculate Counts'} </button> </div> </div> ))} </div> } </div> </div> </section>
                     <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p> <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> : <div className="dashboardContentList"> {pendingCampaigns.map(campaign => ( <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{campaign.title}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p> </div> </div> ))} </div> } </div> </div> </section>
                     <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsActiveCampaignsExpanded, isActiveCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p> <button className="admin-toggle-button">{isActiveCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="active-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : <div className="dashboardContentList"> {activeCampaigns.map(campaign => ( <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{campaign.title}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p> </div> </div> ))} </div> } </div> </div> </section>
+                    {creatorProfile.role === 'admin' && selectedAdminSubScreen === 'Overview' && (
+                         <section className="dashboardSection" style={{border: '2px solid #FFD700'}}>
+                            <div className="flex justify-between items-center">
+                                <p className="dashboardSectionTitle" style={{marginBottom: 0}}>Pending Payments ({pendingPledges.length})</p>
+                                <div style={{display: 'flex', gap: '10px'}}>
+                                    <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'date' ? '#FFD700' : '#555', color: pledgeSortType === 'date' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('date')}>Sort by Time</button>
+                                    <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'type' ? '#FFD700' : '#555', color: pledgeSortType === 'type' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('type')}>Sort by Type</button>
+                                </div>
+                            </div>
+                            <div className="pt-4 border-t border-gray-200 mt-4" style={{borderColor: '#3A3A3A'}}>
+                                {loadingPledges ? (
+                                    <p className="dashboardItem">Loading pending payments...</p>
+                                ) : pendingPledges.length === 0 ? (
+                                    <p className="dashboardItem">There are no payments pending review.</p>
+                                ) : (
+                                    <div className="dashboardContentList">
+                                        {sortedPledges.map(pledge => (
+                                            <div key={pledge.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
+                                                <div className="flex justify-between items-center">
+                                                    <p className="adminDashboardItemTitle">{pledge.paymentType === 'premium' ? 'Premium Subscription' : (pledge.paymentType === 'eventTicket' ? 'Event Ticket' : 'Campaign Donation')}</p>
+                                                    <p style={{fontSize: '18px', fontWeight: 'bold', color: '#FFD70D'}}>${pledge.amount.toFixed(2)}</p>
+                                                </div>
+                                                <div style={{fontSize: '12px', color: '#CCC'}}>
+                                                    <p>Pledge ID: <span style={{fontWeight: 'bold', color: '#FFF'}}>{pledge.pledgeId}</span></p>
+                                                    <p>User: {pledge.userName} ({pledge.userEmail})</p>
+                                                    {pledge.paymentType === 'donation' && <p>Campaign: {pledge.targetCampaignTitle}</p>}
+                                                     {pledge.paymentType === 'eventTicket' && <p>Event: {pledge.targetEventTitle || 'Live Premiere'}</p>}
+                                                    <p>Date: {new Date(pledge.createdAt).toLocaleString()}</p>
+                                                </div>
+                                                <div className="flex justify-end items-center gap-4 mt-2">
+                                                    <button className="adminActionButton reject" onClick={() => confirmDenyPledge(pledge)}>Deny</button>
+                                                    <button className="adminActionButton approve" onClick={() => handleApprovePledge(pledge.id)}>Approve</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    )}
                     <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}><span className="buttonText">Back to Home</span></button>
                 </>
             )}
@@ -3150,7 +3213,6 @@ const AdminDashboardScreen = ({
                 />
             )}
             
-            {/* --- CHANGE #2: ADD THE ROUTER LOGIC FOR THE NEW SCREEN --- */}
             {selectedAdminSubScreen === 'SiteManagement' && (
                 <AdminSiteManagerScreen
                 showMessage={showMessage}
@@ -3165,6 +3227,7 @@ const AdminDashboardScreen = ({
         </div>
     );
 };
+// =================== END REPLACEMENT ===================
 
         const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
             return (
@@ -3221,6 +3284,7 @@ const AdminDashboardScreen = ({
                 fetchCampaignDetails();
             }, [selectedAdminCampaignId, setActiveScreen, showMessage]);
 
+               
             const confirmApprove = () => {
                 // Check if current user is an authority and the campaign creator is an admin
                 if (creatorProfile.role === 'authority' && campaign && campaign.creatorId) {
@@ -3465,102 +3529,221 @@ const AdminDashboardScreen = ({
             );
         };
 
-        // Helper function for extracting video IDs and creating embed/thumbnail URLs
-                // Helper function for extracting video IDs and creating embed/thumbnail URLs
-        const extractVideoInfo = (url) => {
-            let videoId = null;
-            let thumbnailUrl = '';
-            let embedUrl = '';
-            let platform = 'generic';
-            let isVertical = false; // Flag for vertical videos like Shorts or TikToks
 
-            // YouTube (Now includes /shorts/)
-            let match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([^&?#]+)/);
-            if (match && match[1]) {
-                videoId = match[1];
-                thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-                embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
-                platform = 'youtube';
-                if (url.includes('/shorts/')) {
-                    isVertical = true;
+          // =========== START REPLACEMENT ===========
+           const DonationPledgeScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, pledgeContext, setPledgeIdForConfirmation }) => {
+            const [amount, setAmount] = useState('');
+            const [userName, setUserName] = useState((creatorProfile && creatorProfile.creatorName) ? creatorProfile.creatorName : (currentUser ? currentUser.email.split('@')[0] : ''));
+            const [agreedToTerms, setAgreedToTerms] = useState(false);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+
+            const handleSubmitPledge = async (e) => {
+                e.preventDefault();
+                if (!userName.trim()) { showMessage("Please enter your name."); return; }
+                if (!agreedToTerms) { showMessage("You must agree to the terms."); return; }
+                setIsSubmitting(true);
+                
+                const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;
+                const pledgeAmount = parseFloat(amount);
+
+                if (isNaN(pledgeAmount) || pledgeAmount <= 0) {
+                    showMessage("Please enter a valid amount.");
+                    setIsSubmitting(false);
+                    return;
                 }
-            } else {
-                // Facebook
-                match = url.match(/(?:facebook\.com\/(?:video.php\?v=|watch\/\?v=)|fb\.watch\/|facebook\.com\/[^\/]+\/videos\/)([0-9]+)/);
-                if (match && match[1]) {
-                    videoId = match[1];
-                    thumbnailUrl = `https://placehold.co/150x100/4267B2/FFFFFF?text=Facebook`;
-                    embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=0&width=560&autoplay=1`;
-                    platform = 'facebook';
-                } else {
-                    // TikTok
-                    match = url.match(/(?:tiktok\.com\/@(?:[a-zA-Z0-9._]+)\/video\/|vm\.tiktok\.com\/|tiktok\.com\/embed\/)([0-9]+)/);
-                    if (match && match[1]) {
-                        videoId = match[1];
-                        isVertical = true; // TikTok videos are vertical
-                        thumbnailUrl = `https://placehold.co/150x100/69C9D0/FFFFFF?text=TikTok`;
-                        embedUrl = `https://www.tiktok.com/embed/${videoId}`;
-                        platform = 'tiktok';
+
+                try {
+                    const pledgeRef = doc(collection(db, "paymentPledges"), pledgeId);
+                    await setDoc(pledgeRef, {
+                        pledgeId, userId: currentUser.uid, userName, userEmail: currentUser.email,
+                        paymentType: 'donation', amount: pledgeAmount, status: 'pending',
+                        targetCampaignId: pledgeContext.campaignId, targetCampaignTitle: pledgeContext.campaignTitle,
+                        targetCreatorName: pledgeContext.creatorName, createdAt: new Date().toISOString(),
+                    });
+                    setPledgeIdForConfirmation(pledgeId);
+                    setActiveScreen('PendingConfirmation');
+                } catch (error) {
+                    showMessage(`An error occurred: ${error.message}`);
+                    setIsSubmitting(false);
+                }
+            };
+            
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Support a Campaign</p>
+                    <p className="subHeading">{`You are donating to "${pledgeContext.campaignTitle}"`}</p>
+                    <form onSubmit={handleSubmitPledge}>
+                        <div className="formGroup">
+                            <label htmlFor="pledgeName" className="formLabel">Your Name:</label>
+                            <input type="text" id="pledgeName" className="formInput" value={userName} onChange={(e) => setUserName(e.target.value)} required />
+                        </div>
+                        <div className="formGroup">
+                            <label htmlFor="donationAmount" className="formLabel">Donation Amount (USD):</label>
+                            <input type="number" id="donationAmount" className="formInput" value={amount} onChange={(e) => setAmount(e.target.value)} required min="1" step="any" />
+                        </div>
+                        <div className="formGroup"><p className="termsText" style={{textAlign: 'left', color: '#CCC'}}>This is a manual payment process. You will be given instructions to complete your payment via MMG after submitting.<br/><br/><strong>A small platform fee (7%) helps NVA Network support creators.</strong></p></div>
+                        <div className="formGroup"><div className="checkboxItem"><input type="checkbox" id="agreeToTerms" checked={agreedToTerms} onChange={(e) => setAgreedToTerms(e.target.checked)} required /><label htmlFor="agreeToTerms">I understand and agree to the payment terms.</label></div></div>
+                        <button type="submit" className="button" disabled={isSubmitting}><span className="buttonText">{isSubmitting ? "Generating..." : "Submit Pledge & Get Payment Info"}</span></button>
+                    </form>
+                </div>
+            );
+        };
+// =========== END REPLACEMENT ==========
+       
+        const SubscriptionPledgeScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, pledgeContext, setPledgeIdForConfirmation }) => {
+            const [userName, setUserName] = useState((creatorProfile && creatorProfile.creatorName) ? creatorProfile.creatorName : (currentUser ? currentUser.email.split('@')[0] : ''));
+            const [agreedToTerms, setAgreedToTerms] = useState(false);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const isTicket = pledgeContext.type === 'eventTicket';
+
+            const handleSubmitPledge = async (e) => {
+                e.preventDefault();
+                if (!userName.trim()) { 
+                    showMessage("Please enter your name."); 
+                    return; 
+                }
+                if (!agreedToTerms) { 
+                    showMessage("You must agree to the terms."); 
+                    return; 
+                }
+                setIsSubmitting(true);
+                
+                const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;
+                try {
+                    const pledgeRef = doc(collection(db, "paymentPledges"), pledgeId);
+                    await setDoc(pledgeRef, {
+                        pledgeId, userId: currentUser.uid, userName, userEmail: currentUser.email,
+                        paymentType: pledgeContext.type, amount: pledgeContext.amount, status: 'pending',
+                        targetEventId: pledgeContext.targetEventId || null, targetEventTitle: pledgeContext.targetEventTitle || null,
+                        createdAt: new Date().toISOString(),
+                    });
+                    setPledgeIdForConfirmation(pledgeId);
+                    setActiveScreen('PendingConfirmation');
+                } catch (error) {
+                    showMessage(`An error occurred: ${error.message}`);
+                    setIsSubmitting(false);
+                }
+            };
+            
+            return (
+                <div className="screenContainer">
+                    <p className="heading">{isTicket ? "Purchase Event Ticket" : "Get NVA Premium"}</p>
+                    <p className="subHeading">{isTicket ? `Ticket for: "${pledgeContext.targetEventTitle}"` : "Unlock exclusive content and an ad-free experience."}</p>
+                    <form onSubmit={handleSubmitPledge}>
+                        <div className="formGroup">
+                            <label htmlFor="pledgeName" className="formLabel">Your Name:</label>
+                            <input type="text" id="pledgeName" className="formInput" value={userName} onChange={(e) => setUserName(e.target.value)} required />
+                        </div>
+                        <div className="premiumFeatureCard">
+                            <p className="premiumFeatureTitle" style={{textAlign: 'center'}}>{isTicket ? 'Event Ticket' : 'Premium Subscription'}</p>
+                            <p className="premiumFeatureDescription" style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', color: '#FFF'}}>${parseFloat(pledgeContext.amount).toFixed(2)} USD</p>
+                            <p className="premiumFeatureDescription" style={{textAlign: 'center'}}>{isTicket ? 'one-time purchase' : 'per month'}</p>
+                        </div>
+                        <div className="formGroup"><p className="termsText" style={{textAlign: 'left', color: '#CCC'}}>This is a manual payment process. You will be given instructions to complete your payment via MMG after submitting.</p></div>
+                        <div className="formGroup"><div className="checkboxItem"><input type="checkbox" id="agreeToTerms" checked={agreedToTerms} onChange={(e) => setAgreedToTerms(e.target.checked)} required /><label htmlFor="agreeToTerms">I understand and agree to the payment terms.</label></div></div>
+                        <button type="submit" className="button" disabled={isSubmitting}><span className="buttonText">{isSubmitting ? "Generating..." : "Submit Pledge & Get Payment Info"}</span></button>
+                    </form>
+                    <button className="button" onClick={() => setActiveScreen('Premium')} style={{ backgroundColor: '#3A3A3A', marginTop: '20px' }}>
+                        <span className="buttonText">Back</span>
+                    </button>
+                </div>
+            );
+        };
+// =========== END REPLACEMENT ===========
+
+                // =========== ADD THE FOLLOWING CODE BLOCK ===========
+        const PendingConfirmationScreen = ({ showMessage, setActiveScreen, pledgeId, currentUser }) => {
+            const [pledgeDetails, setPledgeDetails] = useState(null);
+            const [isLoading, setIsLoading] = useState(true);
+
+            useEffect(() => {
+                if (!pledgeId) {
+                    setActiveScreen('Home');
+                    return;
+                }
+                const pledgeRef = doc(db, "paymentPledges", pledgeId);
+                const unsubscribe = onSnapshot(pledgeRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        setPledgeDetails(data);
+                        setIsLoading(false);
+                        if (data.status === 'approved') {
+                            showMessage("Payment confirmed successfully!");
+                            unsubscribe();
+                            setTimeout(() => setActiveScreen('Home'), 3000);
+                        } else if (data.status === 'denied') {
+                            showMessage("Your payment pledge was denied.");
+                            unsubscribe();
+                            setTimeout(() => setActiveScreen('Home'), 3000);
+                        }
+                    } else {
+                        // This case can happen if an admin deletes the pledge
+                        showMessage("This payment pledge is no longer valid.");
+                        unsubscribe();
+                        setActiveScreen('Home');
                     }
+                });
+
+                return () => unsubscribe(); // Cleanup listener
+            }, [pledgeId]);
+
+            const renderPledgeSummary = () => {
+                if (!pledgeDetails) return null;
+                switch (pledgeDetails.paymentType) {
+                    case 'donation': return `Donation for "${pledgeDetails.targetCampaignTitle}"`;
+                    case 'premium': return `NVA Premium Subscription`;
+                    case 'eventTicket': return `Event Ticket for "${pledgeDetails.targetEventTitle}"`;
+                    default: return 'Your Pledge';
                 }
+            };
+
+            if (isLoading) {
+                return <div className="screenContainer"><p className="heading">Generating Your Payment Details...</p></div>;
+            }
+            
+            if (pledgeDetails.status === 'approved') {
+                return (
+                    <div className="screenContainer" style={{textAlign: 'center'}}>
+                        <p className="heading" style={{color: '#00FF00'}}>Payment Confirmed!</p>
+                        <p className="subHeading">Thank you for your support. Redirecting you home...</p>
+                    </div>
+                );
             }
 
-            return { videoId, thumbnailUrl, embedUrl, platform, isVertical };
-        };
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Complete Your Payment</p>
+                    <p className="subHeading" style={{color: '#FFD700'}}>Action Required</p>
+                    
+                    <div className="premiumFeatureCard" style={{textAlign: 'center'}}>
+                        <p className="premiumFeatureDescription" style={{marginBottom: '5px'}}>Please send exactly:</p>
+                        <p className="premiumFeatureTitle" style={{fontSize: '32px', color: '#FFF'}}>${pledgeDetails.amount.toFixed(2)} USD</p>
+                        <p className="premiumFeatureDescription" style={{marginTop: '10px'}}>to our MMG account:</p>
+                        <p className="premiumFeatureTitle" style={{fontSize: '24px'}}>+592 612 3456 (Example #)</p>
+                    </div>
 
+                    <div className="dashboardSection" style={{marginTop: '20px'}}>
+                        <p className="dashboardSectionTitle">Crucial Final Step:</p>
+                        <p className="paragraph">
+                            In the MMG payment reference/reason field, you **MUST** include the following Pledge ID.
+                            Failure to do so will result in your payment not being processed.
+                        </p>
+                        <p className="heading" style={{fontSize: '28px', backgroundColor: '#0A0A0A', padding: '10px', borderRadius: '8px', border: '1px solid #FFD700', userSelect: 'all'}}>
+                            {pledgeId}
+                        </p>
+                    </div>
 
-        const ContentSelectorModal = ({ onSelect, onCancel, showMessage }) => {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [results, setResults] = useState([]);
-    const [loading, setLoading] = useState(false);
+                    <p className="paragraph" style={{textAlign: 'center', marginTop: '20px'}}>This screen is listening for updates. Once we manually verify your MMG transaction, this screen will automatically confirm it.</p>
+                     <p className="smallText">You can safely navigate away and come back later if needed.</p>
 
-    const handleSearch = async (e) => {
-        e.preventDefault();
-        if (!searchTerm.trim()) return;
-        setLoading(true);
-        try {
-            const contentRef = collection(db, `artifacts/${appId}/public/data/content_items`);
-            const q = query(contentRef, where('isActive', '==', true));
-            const snapshot = await getDocs(q);
-            const allContent = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
-            const filtered = allContent.filter(item => 
-                item.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                item.creatorName.toLowerCase().includes(searchTerm.toLowerCase())
+                    <button className="button" onClick={() => setActiveScreen('Home')} style={{backgroundColor: '#3A3A3A', marginTop: '10px'}}>
+                        <span className="buttonText">I have paid. Back to Home</span>
+                    </button>
+                </div>
             );
-            setResults(filtered);
-        } catch (error) {
-            showMessage("Error searching content: " + error.message);
-        } finally {
-            setLoading(false);
-        }
-    };
+        };
+// =========== END OF CODE BLOCK TO ADD ===========
 
-    return (
-        <div className="confirmationModalOverlay" style={{zIndex: 2500}}>
-            <div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '600px'}}>
-                <p className="confirmationModalTitle">Select Content</p>
-                <form onSubmit={handleSearch}>
-                    <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="formInput" placeholder="Search by title or creator..."/>
-                    <button type="submit" className="button" style={{width: '100%', marginTop: '10px'}}>{loading ? 'Searching...' : 'Search'}</button>
-                </form>
-                <div className="dashboardContentList" style={{marginTop: '15px', maxHeight: '300px', overflowY: 'auto'}}>
-                    {results.map(item => (
-                        <div key={item.id} className="adminDashboardItem" onClick={() => onSelect(item)} style={{cursor: 'pointer'}}>
-                            <img src={item.customThumbnailUrl} alt={item.title} style={{width: '50px', height: '30px', objectFit: 'cover', borderRadius: '4px'}}/>
-                            <div style={{flexGrow: 1, marginLeft: '10px'}}>
-                                <p className="adminDashboardItemTitle" style={{fontSize: '14px'}}>{item.title}</p>
-                                <p style={{fontSize: '12px', color: '#AAA'}}>by {item.creatorName}</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-                <div className="confirmationModalButtons" style={{marginTop: '20px'}}>
-                    <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
-                </div>
-            </div>
-        </div>
-    );
-};
 
                     // --- START: NEW COMPONENT ---
         const AddExternalAdModal = ({ showMessage, onSave, onCancel }) => {
@@ -4313,6 +4496,9 @@ const AdminContentManagerScreen = ({
     const [isSaving, setIsSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
     const [isLeaderboardEnabled, setIsLeaderboardEnabled] = useState(false);
+    const [premiumPrice, setPremiumPrice] = useState(1.99);
+    const [ticketPrice, setTicketPrice] = useState(5.00);
+    const [isTicketedEvent, setIsTicketedEvent] = useState(false);
     const [submissions, setSubmissions] = useState([]);
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
     const [selectedSubmission, setSelectedSubmission] = useState(null);
@@ -4337,6 +4523,19 @@ const AdminContentManagerScreen = ({
     } else {
         setIsLeaderboardEnabled(false); // Default to false if not set
     }
+        // =========== ADD THE FOLLOWING BLOCK ===========
+    // --- NEW: Handle pricing and ticket toggles ---
+    if (data && typeof data.premiumPrice === 'number') {
+        setPremiumPrice(data.premiumPrice);
+    }
+    if (data && typeof data.ticketPrice === 'number') {
+        setTicketPrice(data.ticketPrice);
+    }
+    if (data && typeof data.isTicketedEvent === 'boolean') {
+        setIsTicketedEvent(data.isTicketedEvent);
+    }
+// =========== END OF CODE BLOCK TO ADD ===========
+
 } else {
     setSocialLinks([]);
     setIsLeaderboardEnabled(false); // Default to false if doc doesn't exist
@@ -4370,7 +4569,14 @@ setIsLoading(false);
 };
     const handleSaveChanges = async () => { if (!hasChanges) return; setIsSaving(true); showMessage("Saving changes..."); try { const socialLinksDocRef = doc(db, "settings", "socialLinks"); await setDoc(socialLinksDocRef, { 
     links: socialLinks, 
-    isLeaderboardEnabled: isLeaderboardEnabled 
+    isLeaderboardEnabled: isLeaderboardEnabled, 
+    
+    // =========== ADD THE FOLLOWING 3 LINES ===========
+    premiumPrice: parseFloat(premiumPrice),
+    ticketPrice: parseFloat(ticketPrice),
+    isTicketedEvent: isTicketedEvent
+// =========== END OF CODE BLOCK TO ADD ===========
+
 }, { merge: true }); showMessage("Changes saved successfully!"); setHasChanges(false); } catch (error) { showMessage(`Error saving changes: ${error.message}`); } finally { setIsSaving(false); } };
 
     // handleViewSubmission remains unchanged
@@ -4444,6 +4650,49 @@ setIsLoading(false);
         </label>
     </div>
 </div>
+
+
+            <div className="dashboardSection">
+                <p className="dashboardSectionTitle">Monetization Settings</p>
+                <div className="adminDashboardItem">
+                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p>
+                    <input 
+                        type="number" 
+                        className="formInput" 
+                        value={premiumPrice} 
+                        onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }}
+                        style={{width: '100px', textAlign: 'right'}} 
+                    />
+                </div>
+                <div className="adminDashboardItem">
+                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Enable One-Time Ticket Sales</p>
+                    <label className="flex items-center cursor-pointer">
+                        <span className="mr-3 text-sm font-medium text-gray-300">{isTicketedEvent ? 'Enabled' : 'Disabled'}</span>
+                        <div className="relative">
+                            <input 
+                                type="checkbox" 
+                                className="sr-only" 
+                                checked={isTicketedEvent} 
+                                onChange={(e) => { setIsTicketedEvent(e.target.checked); setHasChanges(true); }} 
+                            />
+                            <div className={`block w-14 h-8 rounded-full ${isTicketedEvent ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isTicketedEvent ? 'transform translate-x-6' : ''}`}></div>
+                        </div>
+                    </label>
+                </div>
+                {isTicketedEvent && (
+                    <div className="adminDashboardItem">
+                        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Single Event Ticket Price (USD)</p>
+                        <input 
+                            type="number" 
+                            className="formInput" 
+                            value={ticketPrice} 
+                            onChange={(e) => { setTicketPrice(e.target.value); setHasChanges(true); }}
+                            style={{width: '100px', textAlign: 'right'}} 
+                        />
+                    </div>
+                )}
+            </div>
 
             <div className="dashboardSection" style={{marginTop: '20px'}}>
                 <p className="dashboardSectionTitle">Contact Form Submissions</p>
@@ -4975,7 +5224,6 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
     );
 };
 
-// --- END OF REPLACEMENT BLOCK ---
         
         // --- NEW HeaderLiveButton Component ---
 const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
@@ -5222,7 +5470,6 @@ const FollowersScreen = ({ currentUser, setActiveScreen, setSelectedUserId, show
     );
 };
 
-// --- END OF NEW COMPONENT BLOCK ---
 // --- UPDATED ANALYTICS DASHBOARD ---
         const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
     const [creators, setCreators] = useState([]);
@@ -5569,16 +5816,22 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
         
 
         function App() {
+
+// =========== START REPLACEMENT ===========
             const [currentUser, setCurrentUser] = useState(null);
             const [activeScreen, setActiveScreen] = useState('Home');
+            const [pledgeContext, setPledgeContext] = useState(null);
+            const [pledgeIdForConfirmation, setPledgeIdForConfirmation] = useState(null);
             const [canExit, setCanExit] = useState(false);
             const exitTimer = useRef(null);
             const [showMoreMenu, setShowMoreMenu] = useState(false);
+            
             const [activeCategory, setActiveCategory] = useState('Skits');
             const [message, setMessage] = useState('');
             const [showVideoModal, setShowVideoModal] = useState(false);
             const [currentVideoUrl, setCurrentVideoUrl] = useState('');
-             const isInitialLoad = useRef(true);
+            const isInitialLoad = useRef(true);
+// =========== END REPLACEMENT ===========
 
              // This effect MANAGES the back button and history stack.
             useEffect(() => {
@@ -5703,8 +5956,6 @@ useEffect(() => {
         unsubscribeProfile();
     };
 }, []); // This empty array is correct.
-
-// --- END OF REPLACEMENT BLOCK ---
 
             useEffect(() => {
             const slotsDocRef = doc(db, "settings", "featuredContentSlots");
@@ -5906,6 +6157,7 @@ useEffect(() => {
 
         // This is YOUR restored, working carousel animation logic.
                 // This is YOUR old, working carousel animation logic, restored.
+        // This is the definitive, zoom-resilient, perpetual carousel animation logic.
         useEffect(() => {
             const horizontalCarousel = horizontalCarouselRef.current;
             const verticalCarousel = verticalCarouselRef.current;
@@ -5918,20 +6170,19 @@ useEffect(() => {
                     return;
                 }
                 const itemWidth = horizontalCarousel.children[0].offsetWidth + 15;
-                
-                // --- START: SURGICAL FIX ---
-                // This guard clause prevents the animation from starting with incorrect measurements.
-                if (itemWidth <= 15) return; 
-                // --- END: SURGICAL FIX ---
+                if (itemWidth <= 15) return;
 
                 const originalItemCount = displayFeatured.length - 3;
                 const originalContentWidth = originalItemCount * itemWidth;
 
                 horizontalInterval = setInterval(() => {
-                    if (horizontalCarousel.scrollLeft >= originalContentWidth) {
+                    // THE FIX: Subtract 1 pixel as a buffer for floating-point rounding errors.
+                    // This ensures the condition passes even if the scrollLeft is 1199.99 instead of 1200.
+                    if (horizontalCarousel.scrollLeft >= originalContentWidth - 1) {
                         horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
+                    } else {
+                        horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
                     }
-                    horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
                 }, 3000);
             };
 
@@ -5941,25 +6192,26 @@ useEffect(() => {
                     return;
                 }
                 const itemHeight = verticalCarousel.children[0].offsetHeight + 15;
-
-                // --- START: SURGICAL FIX (Applied to vertical scroll as well for consistency) ---
                 if (itemHeight <= 15) return;
-                // --- END: SURGICAL FIX ---
 
                 const originalItemCount = displayLiveFeed.length - 4;
                 const originalContentHeight = originalItemCount * itemHeight;
 
                 verticalInterval = setInterval(() => {
-                    if (verticalCarousel.scrollTop >= originalContentHeight) {
+                    // THE FIX: Applied to the vertical carousel as well for robustness.
+                    if (verticalCarousel.scrollTop >= originalContentHeight - 1) {
                         verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
+                    } else {
+                        verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
                     }
-                    verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
                 }, 3000);
             };
 
+            // Clear any existing intervals before starting new ones.
             clearInterval(horizontalInterval);
             clearInterval(verticalInterval);
 
+            // Start the animations after the component has loaded.
             if (!loading) {
                 setTimeout(() => {
                     startHorizontalAutoscroll();
@@ -5967,12 +6219,12 @@ useEffect(() => {
                 }, 100);
             }
 
+            // Cleanup function to run when the component unmounts.
             return () => {
                 clearInterval(horizontalInterval);
                 clearInterval(verticalInterval);
             };
         }, [loading, displayFeatured, displayLiveFeed]);
-
         const handleHorizontalScroll = (direction) => {
             const carousel = horizontalCarouselRef.current;
             if (carousel) {
@@ -6114,69 +6366,86 @@ useEffect(() => {
     };
 
 
-            const PremiumScreen = () => (
-                <div className="screenContainer">
-                    <p className="heading">Unlock NVA Network Premium!</p>
-                    <p className="subHeading">Experience Guyanese content like never before.</p>
+            // =========== START REPLACEMENT ===========
+            const PremiumScreen = ({ showMessage, currentUser, setActiveScreen, setPledgeContext }) => {
+                const [monetizationSettings, setMonetizationSettings] = useState({
+                    premiumPrice: 1.99,
+                    ticketPrice: 5.00,
+                    isTicketedEvent: false
+                });
+                const [loading, setLoading] = useState(true);
 
-                    <div className="premiumFeatureCard">
-                        <p className="premiumFeatureTitle">1. Exclusive Content Access</p>
-                        <p className="premiumFeatureDescription">
-                            Get early access to new shows, premium-only series, uncensored versions,
-                            and exclusive live events. Example: "Watch the full uncut version of Vibes Unfiltered before anyone else!"
-                        </p>
-                    </div>
+                useEffect(() => {
+                    const settingsDocRef = doc(db, "settings", "socialLinks");
+                    const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
+                        if (docSnap.exists()) {
+                            const data = docSnap.data();
+                            setMonetizationSettings({
+                                premiumPrice: data.premiumPrice || 1.99,
+                                ticketPrice: data.ticketPrice || 5.00,
+                                isTicketedEvent: data.isTicketedEvent || false
+                            });
+                        }
+                        setLoading(false);
+                    });
+                    return () => unsubscribe();
+                }, []);
 
-                    <div className="premiumFeatureCard">
-                        <p className="premiumFeatureTitle">2. Ad-Free Viewing</p>
-                        <p className="premiumFeatureDescription">
-                            Enjoy a seamless, uninterrupted viewing experience without in-app banner ads or pre-roll ads.
-                        </p>
-                    </div>
+                const handlePledge = (type) => {
+                    if (!currentUser) {
+                        showMessage("Please log in or sign up to continue.");
+                        setActiveScreen('Login');
+                        return;
+                    }
+                    if (type === 'eventTicket' && !monetizationSettings.isTicketedEvent) {
+                        showMessage("There is no ticketed event currently available for purchase.");
+                        return;
+                    }
 
-                    <div className="premiumFeatureCard">
-                        <p className="premiumFeatureTitle">3. Special Perks & Giveaways</p>
-                        <p className="premiumFeatureDescription">
-                            Participate in monthly giveaways, exclusive merch drops, coupon codes for local businesses,
-                            and priority access to virtual meet & greets.
-                        </p>
-                    </div>
-                    <div className="premiumFeatureCard">
-                        <p className="premiumFeatureTitle">5. Downloadable/Offline Viewing (Future)</p>
-                        <p className="premiumFeatureDescription">
-                            (Coming Soon) Download original content to watch offline, perfect for inconsistent internet.
-                        </p>
-                    </div>
+                    const context = type === 'premium' 
+                        ? { type: 'premium', amount: monetizationSettings.premiumPrice }
+                        : { 
+                            type: 'eventTicket',
+                            amount: monetizationSettings.ticketPrice,
+                            // These fields can be expanded later
+                            targetEventId: 'LivePremiere_General', 
+                            targetEventTitle: "Live Premiere Event"
+                          };
+                    
+                    if (type === 'premium' || type === 'eventTicket') {
+                         setPledgeContext(context);
+                         setActiveScreen('SubscriptionPledge');
+                    }
+                };
 
-                    <p className="sectionTitle">Pricing:</p>
-                    <div className="pricingTable">
-                        <div className="pricingRow">
-                            <p className="pricingTier">Free</p>
-                            <p className="pricingFeatures">Public videos, live shows, ads</p>
-                            <p className="pricingPrice">$0</p>
+                return (
+                    <div className="screenContainer">
+                        <p className="heading">NVA Network Premium Access</p>
+                        <p className="subHeading">Choose how you want to experience our exclusive content.</p>
+
+                        <div className="premiumFeatureCard" style={{border: '1px solid #FFD700'}}>
+                            <p className="premiumFeatureTitle">Premium Subscription</p>
+                            <p className="premiumFeatureDescription">Get access to **all** ticketed live events, enjoy ad-free viewing, and receive exclusive perks. The best value for dedicated fans.</p>
+                            <button className="button" style={{marginTop: '15px'}} onClick={() => handlePledge('premium')}>
+                                <span className="buttonText">Purchase Subscription</span>
+                            </button>
                         </div>
-                        <div className="pricingRow">
-                            <p className="pricingTier">Premium Monthly</p>
-                            <p className="pricingFeatures">All perks above</p>
-                            <p className="pricingPrice">$1.99 USD / ~$400 GYD</p>
-                        </div>
-                        <div className="pricingRow">
-                            <p className="pricingTier">Premium Yearly</p>
-                            <p className="pricingFeatures">Discounted + bonus perks</p>
-                            <p className="pricingPrice">$20 USD / ~$4,000 GYD</p>
+
+                        <div className="premiumFeatureCard" style={{border: '1px solid #CCC'}}>
+                             <p className="premiumFeatureTitle" style={{color: '#CCC'}}>Single Event Ticket</p>
+                            {loading ? (<p className="premiumFeatureDescription">Loading...</p>) : monetizationSettings.isTicketedEvent ? (
+                                <>
+                                    <p className="premiumFeatureDescription">Purchase a single-use ticket for our next live premiere event.</p>
+                                    <button className="button" style={{marginTop: '15px', backgroundColor: '#555'}} onClick={() => handlePledge('eventTicket')}>
+                                        <span className="buttonText">Buy Ticket</span>
+                                    </button>
+                                </>
+                            ) : (<p className="premiumFeatureDescription">There are no new ticketed events scheduled at this time. Please check back later!</p>)}
                         </div>
                     </div>
-                    <p className="smallText">
-                        (Note: Actual payment integration would be done here using services like Stripe/PayPal.)
-                    </p>
-                    <button
-                        className="button"
-                        onClick={() => showMessage('Simulating subscription purchase. In a real app, this would initiate payment.')}
-                    >
-                        <span className="buttonText">Subscribe Now!</span>
-                    </button>
-                </div>
-            );
+                );
+            };
+// =========== END REPLACEMENT ===========
 
             const AboutContactScreen = () => (
                 <div className="screenContainer">
@@ -6201,18 +6470,16 @@ useEffect(() => {
             );
 
             const CrowdfundingScreen = ({ showMessage, setActiveScreen }) => {
-                const PLATFORM_FEE_PERCENTAGE = 0.07; // Define the platform fee as a constant
+                const PLATFORM_FEE_PERCENTAGE = 0.07;
                 return (
                     <div className="screenContainer">
                         <p className="heading">Support Guyanese Creators!</p>
                         <p className="subHeading">Help bring more authentic Guyanese content to life.</p>
-
                         <p className="paragraph">
                             International crowdfunding platforms often don't support direct bank accounts in Guyana,
                             making it difficult for our talented creators to receive global support.
                             At NVA Network, we're committed to finding direct ways for you to contribute!
                         </p>
-
                         <div className="premiumFeatureCard">
                             <p className="premiumFeatureTitle">Why Your Support Matters:</p>
                             <p className="premiumFeatureDescription">
@@ -6220,7 +6487,6 @@ useEffect(() => {
                                 Every dollar helps cover production costs, equipment, and fair compensation for our artists.
                             </p>
                         </div>
-
                         <p className="sectionTitle">How You Can Contribute Directly:</p>
                         <p className="paragraph">
                             We are setting up direct support channels that are accessible within Guyana and for our diaspora.
@@ -6229,22 +6495,17 @@ useEffect(() => {
                         <p className="listItem">• Direct Bank Transfer (Local & International options)</p>
                         <p className="listItem">• Mobile Money Services (e.g., MMG - Mobile Money Guyana)</p>
                         <p className="listItem">• Other Local Payment Methods</p>
-
                         <button
                             className="button"
                             onClick={() => setActiveScreen('AllCampaigns')}
                         >
                             <span className="buttonText">Browse Creator Campaigns</span>
                         </button>
-                        <p className="smallText">
-                            (Discover campaigns and support your favorite creators!)
-                        </p>
-
+                        <p className="smallText">(Discover campaigns and support your favorite creators!)</p>
                         <p className="paragraph" style={{ marginTop: '20px' }}>
                             Your generosity empowers Guyanese voices and helps us build a stronger, more vibrant content ecosystem.
                             Thank you for being a part of the NVA Network family!
                         </p>
-
                         <p className="smallText" style={{ marginTop: '20px', color: '#888' }}>
                             A small platform fee (e.g., {(PLATFORM_FEE_PERCENTAGE * 100).toFixed(0)}%) helps NVA Network cover operational costs and continue supporting our creators.
                         </p>
@@ -6733,9 +6994,10 @@ const handleAddOrUpdateVideo = async () => {
 };
         // --- END OF REPLACEMENT COMPONENT ---
 
-                // --- FIND and REPLACE your ENTIRE renderScreen function with this block ---
+              // --- FIND and REPLACE your ENTIRE renderScreen function with this block ---
 
-       const memoizedScreen = React.useMemo(() => {
+// =========== START REPLACEMENT ===========
+              const memoizedScreen = React.useMemo(() => {
             if (currentUser && !currentUser.emailVerified) {
                 return <VerificationScreen 
                     currentUser={currentUser} 
@@ -6745,8 +7007,6 @@ const handleAddOrUpdateVideo = async () => {
                 />;
             }
             
-            // Note: The 'Discover' case is handled outside this memoization
-            // because it's the only one that needs to re-render every second.
             switch (activeScreen) {
                 case 'Home':
                     return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
@@ -6769,13 +7029,26 @@ const handleAddOrUpdateVideo = async () => {
                 case 'CreatorSignUp':
                     return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                 case 'Premium':
-                    return <PremiumScreen />;
+                    return <PremiumScreen showMessage={showMessage} currentUser={currentUser} setActiveScreen={setActiveScreen} setPledgeContext={setPledgeContext} />;
                 case 'Support':
                     return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                 case 'AllCampaigns':
                     return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId}/>;
                 case 'CampaignDetails':
-                    return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser}/>;
+                    return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} setPledgeContext={setPledgeContext} />;
+                case 'DonationPledge':
+                    return <DonationPledgeScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} />;
+                case 'SubscriptionPledge':
+                    return <SubscriptionPledgeScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} />;
+                case 'PendingConfirmation':
+                    if (!pledgeIdForConfirmation) {
+                        return (
+                            <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
+                                <p className="heading">Initializing Secure Session...</p>
+                            </div>
+                        );
+                    }
+                    return <PendingConfirmationScreen showMessage={showMessage} setActiveScreen={setActiveScreen} pledgeId={pledgeIdForConfirmation} currentUser={currentUser} />;
                 case 'CreatorDashboard':
                     return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setSelectedCampaignId={setSelectedCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction}/>;
                 case 'CreateCampaign':
@@ -6791,7 +7064,7 @@ const handleAddOrUpdateVideo = async () => {
                 default:
                     return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
             }
-        }, [activeScreen, currentUser, creatorProfile, featuredContentSlots, selectedAdminSubScreen]); // IMPORTANT: Notice countdownText and isLive are NOT in this array.
+        }, [activeScreen, currentUser, creatorProfile, featuredContentSlots, selectedAdminSubScreen, pledgeIdForConfirmation]);
 
         const renderScreen = () => {
             if (activeScreen === 'Discover') {
@@ -6801,8 +7074,7 @@ const handleAddOrUpdateVideo = async () => {
             // For all other screens, return the stable, memoized version
             return memoizedScreen;
         };
-
-// --- END OF REPLACEMENT BLOCK ---
+// =========== END REPLACEMENT ===========
 
 
                         if (authLoading) {
