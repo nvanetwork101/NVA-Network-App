@@ -1270,7 +1270,50 @@
         .adminDashboardItemStatus.rejected {
             color: #DC3545;
         }
+        /* --- START: New Donation Ticker Styles --- */
+        .donationTickerContainer {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1500; /* Above most content, below modals */
+            background-color: rgba(10, 10, 10, 0.85);
+            border: 1px solid #FFD700;
+            border-radius: 10px;
+            padding: 12px 18px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            max-width: 300px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+            pointer-events: none; /* Make it non-interactive */
+        }
 
+        .donationTickerContainer.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .tickerIcon {
+            width: 20px;
+            height: 20px;
+            fill: #FFD700;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        .tickerText {
+            color: #FFF;
+            font-size: 14px;
+            line-height: 1.4;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        .tickerText strong {
+            color: #FFD700;
+            font-weight: bold;
+        }
+        /* --- END: New Donation Ticker Styles --- */
         /* Confirmation Modal Styles */
         .confirmationModalOverlay {
             position: fixed;
@@ -1659,6 +1702,7 @@
         import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs, deleteDoc, limit, increment, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
         import { getAnalytics, logEvent, setUserId, setUserProperties } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
         
         // Global Firebase variables (provided by Canvas environment)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -1720,7 +1764,10 @@
         window.signInAnonymously = signInAnonymously; // Expose signInAnonymously
         window.sendEmailVerification = sendEmailVerification; // Expose verification function
         window.limit = limit;
-
+        
+         // ADD THESE TWO NEW LINES
+        window.getFunctions = getFunctions;
+        window.httpsCallable = httpsCallable;
         
     </script>
 
@@ -1758,6 +1805,8 @@
         const deleteDoc = window.deleteDoc;
         const runTransaction = window.runTransaction;
         const ref = window.ref;
+        const getFunctions = window.getFunctions;
+        const httpsCallable = window.httpsCallable;
         const uploadBytes = window.uploadBytes;
         const getDownloadURL = window.getDownloadURL;
         const appId = window.appId;
@@ -3060,7 +3109,6 @@ const AdminDashboardScreen = ({
     const handleApprovePledge = async (pledgeId) => {
         showMessage(`Approving pledge ${pledgeId}...`);
         try {
-            const { getFunctions, httpsCallable } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js");
             const functions = getFunctions(window.firebaseApp);
             const approvePledgeCallable = httpsCallable(functions, 'approvePledge');
             const result = await approvePledgeCallable({ pledgeId: pledgeId });
@@ -5809,6 +5857,86 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
     );
 };
 
+            // --- NEW DONATION TICKER COMPONENT ---
+        const DonationTicker = ({ showMessage }) => {
+            const [allDonations, setAllDonations] = useState([]);
+            const [donationQueue, setDonationQueue] = useState([]);
+            const [currentDonation, setCurrentDonation] = useState(null); // This line was missing from the previous snippet
+            const isProcessing = useRef(false);
+            const tickerInterval = useRef(null);
+
+            // This effect fetches the initial data and listens for new approved donations.
+            useEffect(() => {
+                const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                const publicDonationsRef = collection(db, "public_donations");
+                const q = query(
+                    publicDonationsRef,
+                    where('approvedAt', '>', twentyFourHoursAgo.toISOString()),
+                    orderBy('approvedAt', 'desc'),
+                    limit(10)
+                );
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const newDonations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setAllDonations(newDonations);
+                }, (error) => {
+                    // This will catch the permission error if rules are not deployed, without crashing the app
+                    console.error("Donation Ticker Error:", error.message);
+                });
+
+                return () => unsubscribe();
+            }, []);
+
+            // This effect safely adds newly fetched donations to the display queue.
+            useEffect(() => {
+                setDonationQueue(prevQueue => {
+                    const existingIds = new Set(prevQueue.map(d => d.id));
+                    // THIS IS THE CORRECTED LOGIC: It no longer references currentDonation.
+                    const newItems = allDonations.filter(d => !existingIds.has(d.id));
+                    return [...prevQueue, ...newItems];
+                });
+            }, [allDonations]);
+
+
+            // This effect manages the display cycle itself.
+            useEffect(() => {
+                const processQueue = () => {
+                    if (isProcessing.current || donationQueue.length === 0) return;
+
+                    isProcessing.current = true;
+                    
+                    const nextDonation = donationQueue[0]; // Peek at the next item
+                    setDonationQueue(prev => prev.slice(1)); // Update state to remove it
+                    setCurrentDonation(nextDonation); // Show the donation
+
+                    setTimeout(() => {
+                        setCurrentDonation(null); // Hide the donation
+                        setTimeout(() => {
+                            isProcessing.current = false; // Allow next donation to process
+                        }, 1000); // 1s pause between tickers
+                    }, 6000); // 6s visible time
+                };
+
+                tickerInterval.current = setInterval(processQueue, 500);
+
+                return () => clearInterval(tickerInterval.current);
+            }, [donationQueue]);
+
+
+            return (
+                <div className={`donationTickerContainer ${currentDonation ? 'visible' : ''}`}>
+                    {currentDonation && (
+                        <>
+                            <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
+                            <div className="tickerText">
+                                <strong>{currentDonation.userName}</strong> just donated <strong>${currentDonation.amount.toFixed(2)}</strong> to "{currentDonation.targetCampaignTitle}"!
+                            </div>
+                        </>
+                    )}
+                </div>
+            );
+        };
+
 // ======================================================================
 // --- Your App component should start on the very next line ---
 // ======================================================================
@@ -7172,30 +7300,34 @@ const handleAddOrUpdateVideo = async () => {
     )}
 </div>
 
-                    {message && (
-                        <div className="messageBox">
-                            <p className="messageText">{message}</p>
-                        </div>
-                    )}
+                    <>
+                        {message && (
+                            <div className="messageBox">
+                                <p className="messageText">{message}</p>
+                            </div>
+                        )}
 
-                    {showVideoModal && (
-                    <VideoPlayerModal
-                    videoUrl={currentVideoUrl}
-                        onClose={closeVideoModal}
-                        contentItem={currentContentItem}
-                        currentUser={currentUser}
-                        showMessage={showMessage}
-                    />
-                )}
-                        
-                    {showConfirmationModal && (
-                        <ConfirmationModal
-                            title={confirmationTitle}
-                            message={confirmationMessage}
-                            onConfirm={onConfirmationAction}
-                            onCancel={() => setShowConfirmationModal(false)}
+                        <DonationTicker showMessage={showMessage} />
+
+                        {showVideoModal && (
+                        <VideoPlayerModal
+                            videoUrl={currentVideoUrl}
+                            onClose={closeVideoModal}
+                            contentItem={currentContentItem}
+                            currentUser={currentUser}
+                            showMessage={showMessage}
                         />
                     )}
+                            
+                        {showConfirmationModal && (
+                            <ConfirmationModal
+                                title={confirmationTitle}
+                                message={confirmationMessage}
+                                onConfirm={onConfirmationAction}
+                                onCancel={() => setShowConfirmationModal(false)}
+                            />
+                        )}
+                    </>
                 </div>
             );
         }
