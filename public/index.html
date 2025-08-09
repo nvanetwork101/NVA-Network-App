@@ -4597,7 +4597,33 @@ const AdminContentManagerScreen = ({
     const [submissions, setSubmissions] = useState([]);
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
     const [selectedSubmission, setSelectedSubmission] = useState(null);
+    const handleDiagnose = async () => {
+        if (!auth.currentUser) {
+            showMessage("You must be logged in to diagnose.");
+            return;
+        }
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const frontendProjectId = payload.project_id;
+            showMessage(`Frontend Token Project ID: ${frontendProjectId}`);
 
+            const diagnoseCallable = window.httpsCallable(window.firebaseFunctions, 'diagnoseProjectID');
+            const result = await diagnoseCallable();
+            const backendProjectId = result.data.confirmedProjectID;
+            showMessage(`Backend Function Project ID: ${backendProjectId}`);
+
+            if (frontendProjectId === backendProjectId) {
+                showMessage("SUCCESS: Project IDs match! The issue is elsewhere.");
+            } else {
+                showMessage("FAILURE: Project ID Mismatch Detected!");
+            }
+
+        } catch (error) {
+            console.error("Error during diagnosis:", error);
+            showMessage(`Diagnosis failed: ${error.message}`);
+        }
+    };
     // useEffect hooks remain unchanged
     useEffect(() => {
         const socialLinksDocRef = doc(db, "settings", "socialLinks");
