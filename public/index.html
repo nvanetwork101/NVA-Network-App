@@ -1749,7 +1749,7 @@
         const db = getFirestore(app);
         const storage = getStorage(app);
         const analytics = getAnalytics(app);
-        const functions = getFunctions(app); // Create ONE shared instance of Functions
+        const functions = getFunctions(app, 'us-central1'); // Create and specify region for the shared instance
 
         // Export SDK instances to the window object
         window.firebaseApp = app;
@@ -3106,6 +3106,7 @@ const DataCorrectionTool = ({ showMessage }) => {
     };
 
     return (
+            
         <div className="dashboardSection" style={{ border: '2px solid #DC3545', marginTop: '20px' }}>
             <p className="dashboardSectionTitle">Data Correction Tools</p>
             <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '15px' }}>
@@ -3179,15 +3180,73 @@ const AdminDashboardScreen = ({
 
     const handleApprovePledge = async (pledgeId) => {
         showMessage(`Approving pledge ${pledgeId}...`);
+
+        // Manually get the token from the current user.
+        if (!auth.currentUser) {
+            showMessage("Error: No user is currently logged in.");
+            return;
+        }
+
         try {
-            const approvePledgeCallable = window.httpsCallable(window.firebaseFunctions, 'approvePledge');
-            const result = await approvePledgeCallable({ pledgeId: pledgeId, appId: appId });
-            showMessage(result.data.message);
+            const idToken = await auth.currentUser.getIdToken();
+            const functionUrl = 'https://us-central1-nvanetworkapp.cloudfunctions.net/approvePledge';
+
+            const response = await fetch(functionUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
+                body: JSON.stringify({ data: { pledgeId: pledgeId, appId: appId } })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                // Handle errors returned from the function
+                const errorMessage = result.error ? result.error.message : 'An unknown error occurred.';
+                throw new Error(errorMessage);
+            }
+
+            // The 'data' from a manual call is nested inside a 'result' object
+            const message = result.result ? result.result.message : 'Pledge processed.';
+            showMessage(message);
+
         } catch (error) {
-            console.error("Error calling approvePledge function:", error);
+            console.error("Error calling approvePledge function manually:", error);
             showMessage(`Error: ${error.message}`);
         }
     };
+        const handleDiagnose = async () => {
+        if (!auth.currentUser) {
+            showMessage("You must be logged in to diagnose.");
+            return;
+        }
+        try {
+            // Get the token from the client
+            const token = await auth.currentUser.getIdToken();
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const frontendProjectId = payload.project_id;
+            showMessage(`Frontend Token Project ID: ${frontendProjectId}`);
+
+            // Call the backend function
+            const diagnoseCallable = window.httpsCallable(window.firebaseFunctions, 'diagnoseProjectID');
+            const result = await diagnoseCallable();
+            const backendProjectId = result.data.confirmedProjectID;
+            showMessage(`Backend Function Project ID: ${backendProjectId}`);
+
+            if (frontendProjectId === backendProjectId) {
+                showMessage("SUCCESS: Project IDs match! The issue is elsewhere.");
+            } else {
+                showMessage("FAILURE: Project ID Mismatch Detected!");
+            }
+
+        } catch (error) {
+            console.error("Error during diagnosis:", error);
+            showMessage(`Diagnosis failed: ${error.message}`);
+        }
+    };
+
     const denyPledgeLogic = async (pledgeId) => { showMessage(`Denying pledge ${pledgeId}...`); try { await deleteDoc(doc(db, "paymentPledges", pledgeId)); showMessage("Pledge denied and removed successfully."); } catch (error) { console.error("Error denying pledge:", error); showMessage(`Error: ${error.message}`); } };
     const confirmDenyPledge = (pledge) => { setConfirmationTitle("Deny Pledge?"); setConfirmationMessage(`Are you sure you want to deny and permanently delete this pledge from ${pledge.userName} for $${pledge.amount.toFixed(2)}? This action cannot be undone.`); setOnConfirmationAction(() => () => denyPledgeLogic(pledge.id)); setShowConfirmationModal(true); };
     const changeUserRoleLogic = async (targetUser, newRole) => { setIsUpdatingRole(targetUser.id); showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`); try { const userDocRef = doc(db, "creators", targetUser.id); await updateDoc(userDocRef, { role: newRole }); showMessage(`Success! ${targetUser.creatorName || targetUser.email} is now a(n) ${newRole}.`); } catch (error) { console.error("Error changing user role:", error); showMessage(`Error: ${error.message}`); } finally { setIsUpdatingRole(null); } };
@@ -4763,6 +4822,18 @@ setIsLoading(false);
                     </div>
                 </div>
             )}
+                            {/* --- START: ADD THIS NEW DIAGNOSTIC SECTION --- */}
+            <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}>
+                <p className="dashboardSectionTitle">Project Diagnostics</p>
+                <button
+                    className="button"
+                    onClick={handleDiagnose}
+                    style={{ backgroundColor: '#008080' }}
+                >
+                    <span className="buttonText">Diagnose Project ID Mismatch</span>
+                </button>
+            </div>
+            {/* --- END: ADD THIS NEW DIAGNOSTIC SECTION --- */}
         </div>
     );
 };
@@ -5099,7 +5170,7 @@ setIsLoading(false);
                         Password must be at least 8 characters long, include at least one number and one capital letter.
                     </p>
                 </div>
-
+        
                 <div className="formGroup">
                     <div className="checkboxItem">
                         <input
