@@ -1747,51 +1747,52 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const storage = getStorage(app); // Initialize Storage
+        const storage = getStorage(app);
         const analytics = getAnalytics(app);
-        window.firebaseAnalytics = analytics; // Export the instance
-        window.logEvent = logEvent; // Export the function
-        window.setUserId = setUserId; // Export the function
-        window.setUserProperties = setUserProperties; // Export the function
+        const functions = getFunctions(app); // Create ONE shared instance of Functions
 
-        // Export for use in React component
+        // Export SDK instances to the window object
         window.firebaseApp = app;
         window.firebaseAuth = auth;
         window.firebaseDb = db;
-        window.firebaseStorage = storage; // Export Storage
-        window.initialAuthToken = initialAuthToken; // Export corrected initialAuthToken
-        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword; // Expose the function itself
-        window.signInWithEmailAndPassword = signInWithEmailAndPassword; // Expose sign-in function
-        window.signOut = signOut; // Expose sign-out function
-        window.onAuthStateChanged = onAuthStateChanged; // Expose auth state listener
-        window.doc = doc; // Expose Firestore doc
-        window.setDoc = setDoc; // Expose Firestore setDoc
-        window.getDoc = getDoc; // Expose Firestore getDoc
-        window.updateDoc = updateDoc; // Expose Firestore updateDoc
-        window.collection = collection; // Expose Firestore collection
-        window.addDoc = addDoc; // Expose Firestore addDoc
-        window.query = query; // Expose Firestore query
-        window.orderBy = orderBy; // Expose Firestore orderBy
-        window.onSnapshot = onSnapshot; // Expose Firestore onSnapshot
-        window.where = where; // Expose where for Firestore queries
-        window.getDocs = getDocs; // Expose getDocs for Firestore queries
-        window.deleteDoc = deleteDoc; // Expose deleteDoc for Firestore
-        window.increment = increment; // Expose the increment function
-        window.runTransaction = runTransaction; // Expose the Transaction function
-        window.ref = ref;
-        window.uploadBytes = uploadBytes;
+        window.firebaseStorage = storage;
+        window.firebaseAnalytics = analytics;
+        window.firebaseFunctions = functions; // This is the new shared Functions instance
+
+        // Export Analytics functions
+        window.logEvent = logEvent;
+        window.setUserId = setUserId;
+        window.setUserProperties = setUserProperties;
+        
+        // Export other Firebase methods
+        window.initialAuthToken = initialAuthToken;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.signOut = signOut;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.doc = doc;
+        window.setDoc = setDoc;
+        window.getDoc = getDoc;
+        window.updateDoc = updateDoc;
+        window.collection = collection;
+        window.addDoc = addDoc;
+        window.query = query;
+        window.orderBy = orderBy;
+        window.onSnapshot = onSnapshot;
+        window.where = where;
+        window.getDocs = getDocs;
+        window.deleteDoc = deleteDoc;
+        window.increment = increment;
+        window.runTransaction = runTransaction;
         window.ref = ref;
         window.uploadBytes = uploadBytes;
         window.getDownloadURL = getDownloadURL;
         window.appId = appId;
-        window.signInWithCustomToken = signInWithCustomToken; // Expose signInWithCustomToken
-        window.signInAnonymously = signInAnonymously; // Expose signInAnonymously
-        window.sendEmailVerification = sendEmailVerification; // Expose verification function
+        window.signInWithCustomToken = signInWithCustomToken;
+        window.signInAnonymously = signInAnonymously;
+        window.sendEmailVerification = sendEmailVerification;
         window.limit = limit;
-        
-         // ADD THESE TWO NEW LINES
-        window.getFunctions = getFunctions;
-        window.httpsCallable = httpsCallable;
+        window.httpsCallable = httpsCallable; // Export the factory function
         
     </script>
 
@@ -1859,8 +1860,9 @@
         const deleteDoc = window.deleteDoc;
         const runTransaction = window.runTransaction;
         const ref = window.ref;
-        const getFunctions = window.getFunctions;
-        const httpsCallable = window.httpsCallable;
+        // --- START: CORRECTED CONSTANTS ---
+        const functions = window.firebaseFunctions; // Use the shared INSTANCE
+        const httpsCallable = window.httpsCallable; // Keep the factory
         const uploadBytes = window.uploadBytes;
         const getDownloadURL = window.getDownloadURL;
         const appId = window.appId;
@@ -3175,7 +3177,17 @@ const AdminDashboardScreen = ({
         }
     }, [creatorProfile]);
 
-    const handleApprovePledge = async (pledgeId) => { showMessage(`Approving pledge ${pledgeId}...`); try { const functions = getFunctions(window.firebaseApp); const approvePledgeCallable = httpsCallable(functions, 'approvePledge'); const result = await approvePledgeCallable({ pledgeId: pledgeId, appId: appId }); showMessage(result.data.message); } catch (error) { console.error("Error calling approvePledge function:", error); showMessage(`Error: ${error.message}`); } };
+    const handleApprovePledge = async (pledgeId) => {
+        showMessage(`Approving pledge ${pledgeId}...`);
+        try {
+            const approvePledgeCallable = window.httpsCallable(window.firebaseFunctions, 'approvePledge');
+            const result = await approvePledgeCallable({ pledgeId: pledgeId, appId: appId });
+            showMessage(result.data.message);
+        } catch (error) {
+            console.error("Error calling approvePledge function:", error);
+            showMessage(`Error: ${error.message}`);
+        }
+    };
     const denyPledgeLogic = async (pledgeId) => { showMessage(`Denying pledge ${pledgeId}...`); try { await deleteDoc(doc(db, "paymentPledges", pledgeId)); showMessage("Pledge denied and removed successfully."); } catch (error) { console.error("Error denying pledge:", error); showMessage(`Error: ${error.message}`); } };
     const confirmDenyPledge = (pledge) => { setConfirmationTitle("Deny Pledge?"); setConfirmationMessage(`Are you sure you want to deny and permanently delete this pledge from ${pledge.userName} for $${pledge.amount.toFixed(2)}? This action cannot be undone.`); setOnConfirmationAction(() => () => denyPledgeLogic(pledge.id)); setShowConfirmationModal(true); };
     const changeUserRoleLogic = async (targetUser, newRole) => { setIsUpdatingRole(targetUser.id); showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`); try { const userDocRef = doc(db, "creators", targetUser.id); await updateDoc(userDocRef, { role: newRole }); showMessage(`Success! ${targetUser.creatorName || targetUser.email} is now a(n) ${newRole}.`); } catch (error) { console.error("Error changing user role:", error); showMessage(`Error: ${error.message}`); } finally { setIsUpdatingRole(null); } };
@@ -5843,13 +5855,13 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const tickerInterval = useRef(null);
 
             // This effect fetches the initial data and listens for new approved donations.
-            useEffect(() => {
-                // --- START: MODIFIED EXPIRATION LOGIC (5 DAYS) ---
+             useEffect(() => {
                 const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
                 const publicDonationsRef = collection(db, "public_donations");
                 const q = query(
                     publicDonationsRef,
-                    where('approvedAt', '>', fiveDaysAgo.toISOString()),
+                    // --- FIX: Compare against a Date object directly, not a string ---
+                    where('approvedAt', '>', fiveDaysAgo),
                     orderBy('approvedAt', 'desc'),
                     limit(10)
                 );
