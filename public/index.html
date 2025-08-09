@@ -1747,52 +1747,51 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const storage = getStorage(app);
+        const storage = getStorage(app); // Initialize Storage
         const analytics = getAnalytics(app);
-        const functions = getFunctions(app, 'us-central1'); // Create and specify region for the shared instance
+        window.firebaseAnalytics = analytics; // Export the instance
+        window.logEvent = logEvent; // Export the function
+        window.setUserId = setUserId; // Export the function
+        window.setUserProperties = setUserProperties; // Export the function
 
-        // Export SDK instances to the window object
+        // Export for use in React component
         window.firebaseApp = app;
         window.firebaseAuth = auth;
         window.firebaseDb = db;
-        window.firebaseStorage = storage;
-        window.firebaseAnalytics = analytics;
-        window.firebaseFunctions = functions; // This is the new shared Functions instance
-
-        // Export Analytics functions
-        window.logEvent = logEvent;
-        window.setUserId = setUserId;
-        window.setUserProperties = setUserProperties;
-        
-        // Export other Firebase methods
-        window.initialAuthToken = initialAuthToken;
-        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
-        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
-        window.signOut = signOut;
-        window.onAuthStateChanged = onAuthStateChanged;
-        window.doc = doc;
-        window.setDoc = setDoc;
-        window.getDoc = getDoc;
-        window.updateDoc = updateDoc;
-        window.collection = collection;
-        window.addDoc = addDoc;
-        window.query = query;
-        window.orderBy = orderBy;
-        window.onSnapshot = onSnapshot;
-        window.where = where;
-        window.getDocs = getDocs;
-        window.deleteDoc = deleteDoc;
-        window.increment = increment;
-        window.runTransaction = runTransaction;
+        window.firebaseStorage = storage; // Export Storage
+        window.initialAuthToken = initialAuthToken; // Export corrected initialAuthToken
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword; // Expose the function itself
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword; // Expose sign-in function
+        window.signOut = signOut; // Expose sign-out function
+        window.onAuthStateChanged = onAuthStateChanged; // Expose auth state listener
+        window.doc = doc; // Expose Firestore doc
+        window.setDoc = setDoc; // Expose Firestore setDoc
+        window.getDoc = getDoc; // Expose Firestore getDoc
+        window.updateDoc = updateDoc; // Expose Firestore updateDoc
+        window.collection = collection; // Expose Firestore collection
+        window.addDoc = addDoc; // Expose Firestore addDoc
+        window.query = query; // Expose Firestore query
+        window.orderBy = orderBy; // Expose Firestore orderBy
+        window.onSnapshot = onSnapshot; // Expose Firestore onSnapshot
+        window.where = where; // Expose where for Firestore queries
+        window.getDocs = getDocs; // Expose getDocs for Firestore queries
+        window.deleteDoc = deleteDoc; // Expose deleteDoc for Firestore
+        window.increment = increment; // Expose the increment function
+        window.runTransaction = runTransaction; // Expose the Transaction function
+        window.ref = ref;
+        window.uploadBytes = uploadBytes;
         window.ref = ref;
         window.uploadBytes = uploadBytes;
         window.getDownloadURL = getDownloadURL;
         window.appId = appId;
-        window.signInWithCustomToken = signInWithCustomToken;
-        window.signInAnonymously = signInAnonymously;
-        window.sendEmailVerification = sendEmailVerification;
+        window.signInWithCustomToken = signInWithCustomToken; // Expose signInWithCustomToken
+        window.signInAnonymously = signInAnonymously; // Expose signInAnonymously
+        window.sendEmailVerification = sendEmailVerification; // Expose verification function
         window.limit = limit;
-        window.httpsCallable = httpsCallable; // Export the factory function
+        
+         // ADD THESE TWO NEW LINES
+        window.getFunctions = getFunctions;
+        window.httpsCallable = httpsCallable;
         
     </script>
 
@@ -1860,9 +1859,8 @@
         const deleteDoc = window.deleteDoc;
         const runTransaction = window.runTransaction;
         const ref = window.ref;
-        // --- START: CORRECTED CONSTANTS ---
-        const functions = window.firebaseFunctions; // Use the shared INSTANCE
-        const httpsCallable = window.httpsCallable; // Keep the factory
+        const getFunctions = window.getFunctions;
+        const httpsCallable = window.httpsCallable;
         const uploadBytes = window.uploadBytes;
         const getDownloadURL = window.getDownloadURL;
         const appId = window.appId;
@@ -3106,7 +3104,6 @@ const DataCorrectionTool = ({ showMessage }) => {
     };
 
     return (
-            
         <div className="dashboardSection" style={{ border: '2px solid #DC3545', marginTop: '20px' }}>
             <p className="dashboardSectionTitle">Data Correction Tools</p>
             <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '15px' }}>
@@ -3144,11 +3141,59 @@ const AdminDashboardScreen = ({
     setConfirmationMessage,
     setOnConfirmationAction
 }) => {
+
     const [isUserManagementExpanded, setIsUserManagementExpanded] = useState(true);
     const [pledgeSortType, setPledgeSortType] = useState('date');
     const [pendingPledges, setPendingPledges] = useState([]);
     const [loadingPledges, setLoadingPledges] = useState(true);
     const [isPaymentsExpanded, setIsPaymentsExpanded] = useState(true);
+
+    useEffect(() => {
+        if (creatorProfile && creatorProfile.role === 'admin') {
+            const pledgesRef = collection(db, "paymentPledges");
+            const q = query(pledgesRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc'));
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                const fetchedPledges = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setPendingPledges(fetchedPledges);
+                setLoadingPledges(false);
+            });
+            return () => unsubscribe();
+        } else {
+            setLoadingPledges(false);
+        }
+    }, [creatorProfile]);
+
+    const handleApprovePledge = async (pledgeId) => {
+        showMessage(`Approving pledge ${pledgeId}...`);
+        try {
+            const functions = getFunctions(window.firebaseApp);
+            const approvePledgeCallable = httpsCallable(functions, 'approvePledge');
+            const result = await approvePledgeCallable({ pledgeId: pledgeId, appId: appId });
+            showMessage(result.data.message);
+        } catch (error) {
+            console.error("Error calling approvePledge function:", error);
+            showMessage(`Error: ${error.message}`);
+        }
+    };
+
+    const denyPledgeLogic = async (pledgeId) => {
+        showMessage(`Denying pledge ${pledgeId}...`);
+        try {
+            await deleteDoc(doc(db, "paymentPledges", pledgeId));
+            showMessage("Pledge denied and removed successfully.");
+        } catch (error) {
+            console.error("Error denying pledge:", error);
+            showMessage(`Error: ${error.message}`);
+        }
+    };
+
+    const confirmDenyPledge = (pledge) => {
+        setConfirmationTitle("Deny Pledge?");
+        setConfirmationMessage(`Are you sure you want to deny and permanently delete this pledge from ${pledge.userName} for $${pledge.amount.toFixed(2)}? This action cannot be undone.`);
+        setOnConfirmationAction(() => () => denyPledgeLogic(pledge.id));
+        setShowConfirmationModal(true);
+    };
+
     const [isPendingCampaignsExpanded, setIsPendingCampaignsExpanded] = useState(true);
     const [isActiveCampaignsExpanded, setIsActiveCampaignsExpanded] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -3161,94 +3206,6 @@ const AdminDashboardScreen = ({
     const [banRequests, setBanRequests] = useState([]);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(null);
     const [isCorrectingCount, setIsCorrectingCount] = useState(null);
-    const [premiumUsers, setPremiumUsers] = useState([]);
-    const [isPremiumUsersExpanded, setIsPremiumUsersExpanded] = useState(true);
-
-    useEffect(() => {
-        if (creatorProfile && creatorProfile.role === 'admin') {
-            const pledgesRef = collection(db, "paymentPledges");
-            const q = query(pledgesRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc'));
-            const unsubscribe = onSnapshot(q, (snapshot) => {
-                setPendingPledges(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                setLoadingPledges(false);
-            });
-            return () => unsubscribe();
-        } else {
-            setLoadingPledges(false);
-        }
-    }, [creatorProfile]);
-
-    const handleApprovePledge = async (pledgeId) => {
-        showMessage(`Approving pledge ${pledgeId}...`);
-
-        // Manually get the token from the current user.
-        if (!auth.currentUser) {
-            showMessage("Error: No user is currently logged in.");
-            return;
-        }
-
-        try {
-            const idToken = await auth.currentUser.getIdToken();
-            const functionUrl = 'https://us-central1-nvanetworkapp.cloudfunctions.net/approvePledge';
-
-            const response = await fetch(functionUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${idToken}`
-                },
-                body: JSON.stringify({ data: { pledgeId: pledgeId, appId: appId } })
-            });
-
-            const result = await response.json();
-
-            if (!response.ok) {
-                // Handle errors returned from the function
-                const errorMessage = result.error ? result.error.message : 'An unknown error occurred.';
-                throw new Error(errorMessage);
-            }
-
-            // The 'data' from a manual call is nested inside a 'result' object
-            const message = result.result ? result.result.message : 'Pledge processed.';
-            showMessage(message);
-
-        } catch (error) {
-            console.error("Error calling approvePledge function manually:", error);
-            showMessage(`Error: ${error.message}`);
-        }
-    };
-        const handleDiagnose = async () => {
-        if (!auth.currentUser) {
-            showMessage("You must be logged in to diagnose.");
-            return;
-        }
-        try {
-            // Get the token from the client
-            const token = await auth.currentUser.getIdToken();
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            const frontendProjectId = payload.project_id;
-            showMessage(`Frontend Token Project ID: ${frontendProjectId}`);
-
-            // Call the backend function
-            const diagnoseCallable = window.httpsCallable(window.firebaseFunctions, 'diagnoseProjectID');
-            const result = await diagnoseCallable();
-            const backendProjectId = result.data.confirmedProjectID;
-            showMessage(`Backend Function Project ID: ${backendProjectId}`);
-
-            if (frontendProjectId === backendProjectId) {
-                showMessage("SUCCESS: Project IDs match! The issue is elsewhere.");
-            } else {
-                showMessage("FAILURE: Project ID Mismatch Detected!");
-            }
-
-        } catch (error) {
-            console.error("Error during diagnosis:", error);
-            showMessage(`Diagnosis failed: ${error.message}`);
-        }
-    };
-
-    const denyPledgeLogic = async (pledgeId) => { showMessage(`Denying pledge ${pledgeId}...`); try { await deleteDoc(doc(db, "paymentPledges", pledgeId)); showMessage("Pledge denied and removed successfully."); } catch (error) { console.error("Error denying pledge:", error); showMessage(`Error: ${error.message}`); } };
-    const confirmDenyPledge = (pledge) => { setConfirmationTitle("Deny Pledge?"); setConfirmationMessage(`Are you sure you want to deny and permanently delete this pledge from ${pledge.userName} for $${pledge.amount.toFixed(2)}? This action cannot be undone.`); setOnConfirmationAction(() => () => denyPledgeLogic(pledge.id)); setShowConfirmationModal(true); };
     const changeUserRoleLogic = async (targetUser, newRole) => { setIsUpdatingRole(targetUser.id); showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`); try { const userDocRef = doc(db, "creators", targetUser.id); await updateDoc(userDocRef, { role: newRole }); showMessage(`Success! ${targetUser.creatorName || targetUser.email} is now a(n) ${newRole}.`); } catch (error) { console.error("Error changing user role:", error); showMessage(`Error: ${error.message}`); } finally { setIsUpdatingRole(null); } };
     const confirmChangeUserRole = (targetUser, newRole) => { setConfirmationTitle("Change User Role?"); setConfirmationMessage(`Are you sure you want to change ${targetUser.creatorName || targetUser.email}'s role to "${newRole}"?`); setOnConfirmationAction(() => () => changeUserRoleLogic(targetUser, newRole)); setShowConfirmationModal(true); };
     const toggleBanLogic = async (userToBan) => { if (userToBan.id === currentUser.uid) { showMessage("You cannot ban your own account."); return; } if (creatorProfile.role === 'authority' && userToBan.role === 'authority') { setIsSubmittingRequest(userToBan.id); try { const banRequestRef = collection(db, "banRequests"); await addDoc(banRequestRef, { requesterId: currentUser.uid, requesterName: creatorProfile.creatorName, targetUserId: userToBan.id, targetUserName: userToBan.creatorName || userToBan.email, status: 'pending', timestamp: new Date().toISOString() }); showMessage(`Ban request for ${userToBan.creatorName || userToBan.email} has been submitted for Admin approval.`); } catch (error) { console.error("Error submitting ban request:", error); showMessage(`Failed to submit ban request: ${error.message}`); } finally { setIsSubmittingRequest(null); } return; } if (creatorProfile.role === 'authority' && userToBan.role === 'admin') { showMessage("Authority users cannot ban Admin accounts."); return; } try { const userDocRef = doc(db, "creators", userToBan.id); await updateDoc(userDocRef, { banned: !userToBan.banned, updatedAt: new Date().toISOString() }); showMessage(`${userToBan.banned ? 'Unbanned' : 'Banned'} user: ${userToBan.creatorName || userToBan.email}`); } catch (error) { console.error("Error toggling ban status:", error); showMessage(`Failed to toggle ban status: ${error.message}`); } };
@@ -3258,34 +3215,19 @@ const AdminDashboardScreen = ({
     const toggleSection = (setterFunction, currentState) => { setterFunction(!currentState); };
     const recalculateCountsForUser = async (userToFix) => { setIsCorrectingCount(userToFix.id); showMessage(`Recalculating counts for ${userToFix.creatorName || userToFix.email}...`); try { const followersRef = collection(db, "creators", userToFix.id, "followers"); const followersSnapshot = await getDocs(followersRef); const actualFollowerCount = followersSnapshot.size; const followingRef = collection(db, "creators", userToFix.id, "following"); const followingSnapshot = await getDocs(followingRef); const actualFollowingCount = followingSnapshot.size; await updateDoc(doc(db, "creators", userToFix.id), { followerCount: actualFollowerCount, followingCount: actualFollowingCount }); showMessage(`Counts for ${userToFix.creatorName || userToFix.email} have been corrected.`); } catch (error) { console.error("Error during single-user count correction:", error); showMessage(`Error correcting counts: ${error.message}`); } finally { setIsCorrectingCount(null); } };
     const confirmRecalculate = (userToFix) => { setConfirmationTitle("Recalculate Counts?"); setConfirmationMessage(`This will manually recount followers and following for "${userToFix.creatorName || userToFix.email}" and update their profile. Proceed?`); setOnConfirmationAction(() => () => recalculateCountsForUser(userToFix)); setShowConfirmationModal(true); };
-    
-    useEffect(() => {
-        const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
-        const qPending = query(campaignsCollectionRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc'));
-        const unsubscribePending = onSnapshot(qPending, (snapshot) => { setPendingCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); });
-        const qActive = query(campaignsCollectionRef, where('status', '==', 'active'), orderBy('createdAt', 'desc'));
-        const unsubscribeActive = onSnapshot(qActive, (snapshot) => { setActiveCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); });
-        const usersCollectionRef = collection(db, "creators");
-        const unsubscribeUsers = onSnapshot(usersCollectionRef, (snapshot) => {
-            const allUsersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setAllUsers(allUsersData);
-            const activePremiumUsers = allUsersData.filter(user => user.premiumExpiresAt && user.premiumExpiresAt.toDate() > new Date());
-            setPremiumUsers(activePremiumUsers);
-            setLoading(false);
-        });
-        let unsubscribeBanRequests = () => {};
-        if (creatorProfile && creatorProfile.role === 'admin') {
-            const banRequestsRef = collection(db, "banRequests");
-            const q = query(banRequestsRef, where('status', '==', 'pending'));
-            unsubscribeBanRequests = onSnapshot(q, (snapshot) => { setBanRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); });
-        }
-        return () => { unsubscribePending(); unsubscribeActive(); unsubscribeUsers(); unsubscribeBanRequests(); };
-    }, [creatorProfile]);
+    useEffect(() => { const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`); const qPending = query(campaignsCollectionRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc')); const unsubscribePending = onSnapshot(qPending, (snapshot) => { setPendingCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const qActive = query(campaignsCollectionRef, where('status', '==', 'active'), orderBy('createdAt', 'desc')); const unsubscribeActive = onSnapshot(qActive, (snapshot) => { setActiveCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const usersCollectionRef = collection(db, "creators"); const unsubscribeUsers = onSnapshot(usersCollectionRef, (snapshot) => { setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setLoading(false); }); let unsubscribeBanRequests = () => {}; if (creatorProfile && creatorProfile.role === 'admin') { const banRequestsRef = collection(db, "banRequests"); const q = query(banRequestsRef, where('status', '==', 'pending')); unsubscribeBanRequests = onSnapshot(q, (snapshot) => { setBanRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); } return () => { unsubscribePending(); unsubscribeActive(); unsubscribeUsers(); unsubscribeBanRequests(); }; }, [creatorProfile]);
     
     if (!currentUser || !creatorProfile || (creatorProfile.role !== 'admin' && creatorProfile.role !== 'authority')) { return ( <div className="screenContainer"> <p className="heading">Access Denied</p> <p className="subHeading">You must be an Admin or Authority to view this dashboard.</p> <button className="button" onClick={() => setActiveScreen('Login')}><span className="buttonText">Go to Login</span></button> </div> ); }
     if (loading) { return ( <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}> <p className="heading">Loading Admin Dashboard...</p> <p className="subHeading" style={{ color: '#FFD700' }}>Please wait.</p> </div> ); }
     const filteredUsers = allUsers.filter(user => { if (creatorProfile.role === 'authority' && user.role === 'admin') { return false; } const matchesSearchTerm = searchTerm === '' || (user.creatorName && user.creatorName.toLowerCase().includes(searchTerm.toLowerCase())) || (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase())); const matchesRole = selectedRole === 'All' || user.role === selectedRole; return matchesSearchTerm && matchesRole; });
-    const sortedPledges = [...pendingPledges].sort((a, b) => { if (pledgeSortType === 'type') { if (a.paymentType < b.paymentType) return -1; if (a.paymentType > b.paymentType) return 1; } return new Date(b.createdAt) - new Date(a.createdAt); });
+
+    const sortedPledges = [...pendingPledges].sort((a, b) => {
+        if (pledgeSortType === 'type') {
+            if (a.paymentType < b.paymentType) return -1;
+            if (a.paymentType > b.paymentType) return 1;
+        }
+        return new Date(b.createdAt) - new Date(a.createdAt);
+    });
 
     return (
         <div className="screenContainer">
@@ -3297,24 +3239,98 @@ const AdminDashboardScreen = ({
                 <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Content</span></button>
                 <button className="button" onClick={() => setSelectedAdminSubScreen('ManageCategories')} style={{ backgroundColor: selectedAdminSubScreen === 'ManageCategories' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ManageCategories' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Categories</span></button>
                 <button className="button" onClick={() => setSelectedAdminSubScreen('SiteManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'SiteManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'SiteManagement' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Site Management</span></button>
-                <button className="button" onClick={() => setActiveScreen('AnalyticsDashboard')} style={{ backgroundColor: '#3A3A3A' }}><span className="buttonText light">Analytics</span></button>
+                <button className="button" onClick={() => setActiveScreen('AnalyticsDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF' }}><span className="buttonText">Analytics</span></button>
             </div>
 
             {selectedAdminSubScreen === 'Overview' && (
                 <>
                     {creatorProfile.role === 'admin' && banRequests.length > 0 && ( <section className="dashboardSection" style={{ border: '2px solid #FFD700' }}> <p className="dashboardSectionTitle">Pending Authority Ban Requests ({banRequests.length})</p> <div className="dashboardContentList"> {banRequests.map(req => ( <div key={req.id} className="adminDashboardItem"> <div style={{ flexGrow: 1 }}> <p className="adminDashboardItemTitle">Target: {req.targetUserName}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Requested by: {req.requesterName}</p> </div> <button className="adminActionButton approve" onClick={() => handleApproveBanRequest(req)}>Approve Ban</button> <button className="adminActionButton reject" onClick={() => handleDenyBanRequest(req)}>Deny Request</button> </div> ))} </div> </section> )}
-                    <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList"> {filteredUsers.map(user => ( <div key={user.id} className="adminDashboardItem" style={{alignItems: 'flex-start'}}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p> <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p> <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p> </div> <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}> {currentUser.uid !== user.id && <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} onClick={() => confirmToggleBan(user)} disabled={isSubmittingRequest === user.id}> {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')} </button>} <div className="formGroup" style={{marginBottom: 0}}> <select className="formInput" value={user.role} onChange={(e) => confirmChangeUserRole(user, e.target.value)} disabled={isUpdatingRole === user.id || user.id === currentUser.uid || (creatorProfile.role === 'authority' && user.role === 'admin')} style={{padding: '5px', fontSize: '12px', width: '120px'}}> <option value="user">User</option> <option value="creator">Creator</option> <option value="authority">Authority</option> {creatorProfile.role === 'admin' && <option value="admin">Admin</option>} </select> {isUpdatingRole === user.id && <p style={{fontSize: '10px', color: '#FFD700', textAlign: 'right'}}>Updating...</p>} </div> <button className="adminActionButton" onClick={() => confirmRecalculate(user)} disabled={isCorrectingCount === user.id} style={{ backgroundColor: '#FF8C00' }}> {isCorrectingCount === user.id ? 'Recalculating...' : 'Recalculate Counts'} </button> </div> </div> ))} </div> } </div> </div> </section>
+                   <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList"> {filteredUsers.map(user => ( <div key={user.id} className="adminDashboardItem" style={{alignItems: 'flex-start'}}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p> <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p> <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p> </div> <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}> {currentUser.uid !== user.id && <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} onClick={() => confirmToggleBan(user)} disabled={isSubmittingRequest === user.id}> {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')} </button>} <div className="formGroup" style={{marginBottom: 0}}> <select className="formInput" value={user.role} onChange={(e) => confirmChangeUserRole(user, e.target.value)} disabled={isUpdatingRole === user.id || user.id === currentUser.uid || (creatorProfile.role === 'authority' && user.role === 'admin')} style={{padding: '5px', fontSize: '12px', width: '120px'}}> <option value="user">User</option> <option value="creator">Creator</option> <option value="authority">Authority</option> {creatorProfile.role === 'admin' && <option value="admin">Admin</option>} </select> {isUpdatingRole === user.id && <p style={{fontSize: '10px', color: '#FFD700', textAlign: 'right'}}>Updating...</p>} </div> <button className="adminActionButton" onClick={() => confirmRecalculate(user)} disabled={isCorrectingCount === user.id} style={{ backgroundColor: '#FF8C00' }}> {isCorrectingCount === user.id ? 'Recalculating...' : 'Recalculate Counts'} </button> </div> </div> ))} </div> } </div> </div> </section>
                     <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p> <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> : <div className="dashboardContentList"> {pendingCampaigns.map(campaign => ( <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{campaign.title}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p> </div> </div> ))} </div> } </div> </div> </section>
                     <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsActiveCampaignsExpanded, isActiveCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p> <button className="admin-toggle-button">{isActiveCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="active-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : <div className="dashboardContentList"> {activeCampaigns.map(campaign => ( <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{campaign.title}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p> </div> </div> ))} </div> } </div> </div> </section>
-                    {creatorProfile.role === 'admin' && selectedAdminSubScreen === 'Overview' && ( <section className="dashboardSection" style={{border: '2px solid #FFD700'}}> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPaymentsExpanded, isPaymentsExpanded)}> <p className="dashboardSectionTitle" style={{marginBottom: 0}}>Pending Payments ({pendingPledges.length})</p> <button className="admin-toggle-button">{isPaymentsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="pending-payments-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPaymentsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{borderColor: '#3A3A3A'}}> <div style={{display: 'flex', gap: '10px', justifyContent: 'flex-end', marginBottom: '15px'}}> <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'date' ? '#FFD700' : '#555', color: pledgeSortType === 'date' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('date')}>Sort by Time</button> <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'type' ? '#FFD700' : '#555', color: pledgeSortType === 'type' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('type')}>Sort by Type</button> </div> {loadingPledges ? ( <p className="dashboardItem">Loading pending payments...</p> ) : pendingPledges.length === 0 ? ( <p className="dashboardItem">There are no payments pending review.</p> ) : ( <div className="dashboardContentList"> {sortedPledges.map(pledge => ( <div key={pledge.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}> <div className="flex justify-between items-center"> <p className="adminDashboardItemTitle">{pledge.paymentType === 'premium' ? 'Premium Subscription' : (pledge.paymentType === 'eventTicket' ? 'Event Ticket' : 'Campaign Donation')}</p> <p style={{fontSize: '18px', fontWeight: 'bold', color: '#FFD70D'}}>${pledge.amount.toFixed(2)}</p> </div> <div style={{fontSize: '12px', color: '#CCC'}}> <p>Pledge ID: <span style={{fontWeight: 'bold', color: '#FFF'}}>{pledge.pledgeId}</span></p> <p>User: {pledge.userName} ({pledge.userEmail})</p> {pledge.paymentType === 'donation' && <p>Campaign: {pledge.targetCampaignTitle}</p>} {pledge.paymentType === 'eventTicket' && <p>Event: {pledge.targetEventTitle || 'Live Premiere'}</p>} <p>Date: {new Date(pledge.createdAt).toLocaleString()}</p> </div> <div className="flex justify-end items-center gap-4 mt-2"> <button className="adminActionButton reject" onClick={() => confirmDenyPledge(pledge)}>Deny</button> <button className="adminActionButton approve" onClick={() => handleApprovePledge(pledge.id)}>Approve</button> </div> </div> ))} </div> )} </div> </div> </section> )}
-                    {(creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && ( <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPremiumUsersExpanded, isPremiumUsersExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Premium Subscribers ({premiumUsers.length})</p> <button className="admin-toggle-button">{isPremiumUsersExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="premium-users-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPremiumUsersExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {loading ? ( <p className="dashboardItem">Loading subscribers...</p> ) : premiumUsers.length === 0 ? ( <p className="dashboardItem">There are no active premium subscribers.</p> ) : ( <div className="dashboardContentList"> {premiumUsers.map(user => ( <div key={user.id} className="adminDashboardItem"> <img src={user.profilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} alt="pfp" style={{width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover'}} /> <div style={{ flexGrow: 1, marginLeft: '10px' }}> <p className="adminDashboardItemTitle">{user.creatorName}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Expires: {new Date(user.premiumExpiresAt.toDate()).toLocaleDateString()}</p> </div> </div> ))} </div> )} </div> </div> </section> )}
+                    {creatorProfile.role === 'admin' && selectedAdminSubScreen === 'Overview' && (
+                        <section className="dashboardSection" style={{border: '2px solid #FFD700'}}>
+                            <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPaymentsExpanded, isPaymentsExpanded)}>
+                                <p className="dashboardSectionTitle" style={{marginBottom: 0}}>Pending Payments ({pendingPledges.length})</p>
+                                <button className="admin-toggle-button">{isPaymentsExpanded ? '\u25BC' : '\u25B6'}</button>
+                            </div>
+                            <div id="pending-payments-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPaymentsExpanded ? 'max-h-screen' : 'max-h-0'}`}>
+                                <div className="pt-4 border-t border-gray-200 mt-4" style={{borderColor: '#3A3A3A'}}>
+                                    <div style={{display: 'flex', gap: '10px', justifyContent: 'flex-end', marginBottom: '15px'}}>
+                                        <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'date' ? '#FFD700' : '#555', color: pledgeSortType === 'date' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('date')}>Sort by Time</button>
+                                        <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'type' ? '#FFD700' : '#555', color: pledgeSortType === 'type' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('type')}>Sort by Type</button>
+                                    </div>
+                                    {loadingPledges ? (
+                                        <p className="dashboardItem">Loading pending payments...</p>
+                                    ) : pendingPledges.length === 0 ? (
+                                        <p className="dashboardItem">There are no payments pending review.</p>
+                                    ) : (
+                                        <div className="dashboardContentList">
+                                            {sortedPledges.map(pledge => (
+                                                <div key={pledge.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
+                                                    <div className="flex justify-between items-center">
+                                                        <p className="adminDashboardItemTitle">{pledge.paymentType === 'premium' ? 'Premium Subscription' : (pledge.paymentType === 'eventTicket' ? 'Event Ticket' : 'Campaign Donation')}</p>
+                                                        <p style={{fontSize: '18px', fontWeight: 'bold', color: '#FFD70D'}}>${pledge.amount.toFixed(2)}</p>
+                                                    </div>
+                                                    <div style={{fontSize: '12px', color: '#CCC'}}>
+                                                        <p>Pledge ID: <span style={{fontWeight: 'bold', color: '#FFF'}}>{pledge.pledgeId}</span></p>
+                                                        <p>User: {pledge.userName} ({pledge.userEmail})</p>
+                                                        {pledge.paymentType === 'donation' && <p>Campaign: {pledge.targetCampaignTitle}</p>}
+                                                        {pledge.paymentType === 'eventTicket' && <p>Event: {pledge.targetEventTitle || 'Live Premiere'}</p>}
+                                                        <p>Date: {new Date(pledge.createdAt).toLocaleString()}</p>
+                                                    </div>
+                                                    <div className="flex justify-end items-center gap-4 mt-2">
+                                                        <button className="adminActionButton reject" onClick={() => confirmDenyPledge(pledge)}>Deny</button>
+                                                        <button className="adminActionButton approve" onClick={() => handleApprovePledge(pledge.id)}>Approve</button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </section>
+                    )}
                     <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}><span className="buttonText light">Back to Home</span></button>
                 </>
             )}
 
-            {selectedAdminSubScreen === 'ContentManagement' && ( <AdminContentManagerScreen showMessage={showMessage} featuredContentSlots={featuredContentSlots} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} /> )}
-            {selectedAdminSubScreen === 'ManageCategories' && ( <AdminCategoryManagerScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} /> )}
-            {selectedAdminSubScreen === 'SiteManagement' && ( <AdminSiteManagerScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} /> )}
+            {selectedAdminSubScreen === 'ContentManagement' && (
+                <AdminContentManagerScreen
+                    showMessage={showMessage}
+                    featuredContentSlots={featuredContentSlots}
+                    setActiveScreen={setActiveScreen}
+                    currentUser={currentUser}
+                    creatorProfile={creatorProfile}
+                    setShowConfirmationModal={setShowConfirmationModal}
+                    setConfirmationTitle={setConfirmationTitle}
+                    setConfirmationMessage={setConfirmationMessage}
+                    setOnConfirmationAction={setOnConfirmationAction}
+                />
+            )}
+
+            {selectedAdminSubScreen === 'ManageCategories' && (
+                <AdminCategoryManagerScreen
+                    showMessage={showMessage}
+                    setActiveScreen={setActiveScreen}
+                    setShowConfirmationModal={setShowConfirmationModal}
+                    setConfirmationTitle={setConfirmationTitle}
+                    setConfirmationMessage={setConfirmationMessage}
+                    setOnConfirmationAction={setOnConfirmationAction}
+                />
+            )}
+            
+            {selectedAdminSubScreen === 'SiteManagement' && (
+                <AdminSiteManagerScreen
+                showMessage={showMessage}
+                setActiveScreen={setActiveScreen}
+                setShowConfirmationModal={setShowConfirmationModal}
+                setConfirmationTitle={setConfirmationTitle}
+                setConfirmationMessage={setConfirmationMessage}
+                setOnConfirmationAction={setOnConfirmationAction}
+                />
+            )}
+
         </div>
     );
 };
@@ -4597,25 +4613,7 @@ const AdminContentManagerScreen = ({
     const [submissions, setSubmissions] = useState([]);
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
     const [selectedSubmission, setSelectedSubmission] = useState(null);
-    const [diagnosticResults, setDiagnosticResults] = useState(null);
-    const [isDiagnosing, setIsDiagnosing] = useState(false);
-    const handleRunDiagnostics = async () => {
-        setIsDiagnosing(true);
-        setDiagnosticResults(null);
-        showMessage("Running system diagnostics...");
-        try {
-            const runDiagnosticsCallable = window.httpsCallable(window.firebaseFunctions, 'runSystemDiagnostics');
-            const result = await runDiagnosticsCallable();
-            setDiagnosticResults(result.data.diagnosticResults);
-            showMessage("Diagnostics complete.");
-        } catch (error) {
-            console.error("Error running diagnostics:", error);
-            showMessage(`Diagnostics failed: ${error.message}`);
-            setDiagnosticResults({ error: error.message });
-        } finally {
-            setIsDiagnosing(false);
-        }
-    };
+
     // useEffect hooks remain unchanged
     useEffect(() => {
         const socialLinksDocRef = doc(db, "settings", "socialLinks");
@@ -4840,41 +4838,6 @@ setIsLoading(false);
                     </div>
                 </div>
             )}
-                             {/* --- START: REPLACE THE OLD DIAGNOSTICS DIV WITH THIS ENTIRE BLOCK --- */}
-            <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}>
-                <p className="dashboardSectionTitle">System Status</p>
-                <button
-                    className="button"
-                    onClick={handleRunDiagnostics}
-                    style={{ backgroundColor: '#008080' }}
-                    disabled={isDiagnosing}
-                >
-                    <span className="buttonText">{isDiagnosing ? 'Running...' : 'Run System Diagnostics'}</span>
-                </button>
-                {diagnosticResults && (
-                    <div style={{ marginTop: '15px', color: '#FFF' }}>
-                        {diagnosticResults.error ? (
-                            <p style={{ color: '#DC3545' }}>Error: {diagnosticResults.error}</p>
-                        ) : (
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <tbody>
-                                    <tr style={{ borderBottom: '1px solid #3A3A3A' }}>
-                                        <td style={{ padding: '8px 0', fontWeight: 'bold' }}>Project ID:</td>
-                                        <td style={{ textAlign: 'right' }}>{diagnosticResults.projectID}</td>
-                                    </tr>
-                                    <tr style={{ borderBottom: '1px solid #3A3A3A' }}>
-                                        <td style={{ padding: '8px 0', fontWeight: 'bold' }}>Database Connectivity:</td>
-                                        <td style={{ textAlign: 'right', color: diagnosticResults.dbConnectivity === 'Success' ? '#00FF00' : '#DC3545', fontWeight: 'bold' }}>
-                                            {diagnosticResults.dbConnectivity}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        )}
-                    </div>
-                )}
-            </div>
-            {/* --- END: REPLACEMENT BLOCK --- */}
         </div>
     );
 };
@@ -5211,7 +5174,7 @@ setIsLoading(false);
                         Password must be at least 8 characters long, include at least one number and one capital letter.
                     </p>
                 </div>
-        
+
                 <div className="formGroup">
                     <div className="checkboxItem">
                         <input
@@ -5959,98 +5922,69 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
 };
 
             // --- NEW DONATION TICKER COMPONENT ---
-        const DonationTicker = ({ showMessage, currentUser }) => {
+        const DonationTicker = ({ showMessage }) => {
+            const [allDonations, setAllDonations] = useState([]);
             const [donationQueue, setDonationQueue] = useState([]);
-            const [currentDonation, setCurrentDonation] = useState(null);
+            const [currentDonation, setCurrentDonation] = useState(null); // This line was missing from the previous snippet
             const isProcessing = useRef(false);
             const tickerInterval = useRef(null);
 
-            // Effect 1: Fetch unseen donations for the current user.
+            // This effect fetches the initial data and listens for new approved donations.
             useEffect(() => {
-                if (!currentUser) {
-                    setDonationQueue([]);
-                    return; // Do nothing if user is not logged in.
-                }
+                const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                const publicDonationsRef = collection(db, "public_donations");
+                const q = query(
+                    publicDonationsRef,
+                    where('approvedAt', '>', twentyFourHoursAgo.toISOString()),
+                    orderBy('approvedAt', 'desc'),
+                    limit(10)
+                );
 
-                const fetchUnseenDonations = async () => {
-                    try {
-                        // 1. Get the list of notifications the user has already seen.
-                        const seenNotifsRef = collection(db, "creators", currentUser.uid, "seenNotifications");
-                        const seenSnapshot = await getDocs(seenNotifsRef);
-                        const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const newDonations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setAllDonations(newDonations);
+                }, (error) => {
+                    // This will catch the permission error if rules are not deployed, without crashing the app
+                    console.error("Donation Ticker Error:", error.message);
+                });
 
-                        // 2. Get public donations from the last 7 days.
-                        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-                        const publicDonationsRef = collection(db, "public_donations");
-                        const q = query(
-                            publicDonationsRef,
-                            where('approvedAt', '>', sevenDaysAgo),
-                            orderBy('approvedAt', 'desc'),
-                            limit(20) // Limit to prevent fetching too many old donations
-                        );
-                        
-                        const publicSnapshot = await getDocs(q);
-                        const allRecentDonations = publicSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                return () => unsubscribe();
+            }, []);
 
-                        // 3. Filter out the ones the user has already seen.
-                        const unseenDonations = allRecentDonations.filter(donation => !seenIds.has(donation.id));
-                        
-                        // 4. Add the new, unseen donations to our queue.
-                        if (unseenDonations.length > 0) {
-                            setDonationQueue(prevQueue => {
-                                const existingIds = new Set(prevQueue.map(d => d.id));
-                                const trulyNewItems = unseenDonations.filter(d => !existingIds.has(d.id));
-                                return [...prevQueue, ...trulyNewItems];
-                            });
-                        }
-                    } catch (error) {
-                        console.error("Donation Ticker Error:", error.message);
-                    }
-                };
-
-                fetchUnseenDonations();
-
-                // Optional: Set up a real-time listener for brand new donations if desired.
-                // For now, this fetch-on-load approach is simpler and meets requirements.
-
-            }, [currentUser]); // Re-run whenever the user logs in or out.
-
-            // Effect 2: Process the display queue.
+            // This effect safely adds newly fetched donations to the display queue.
             useEffect(() => {
-                const processQueue = async () => {
-                    if (isProcessing.current || donationQueue.length === 0 || !currentUser) return;
+                setDonationQueue(prevQueue => {
+                    const existingIds = new Set(prevQueue.map(d => d.id));
+                    // THIS IS THE CORRECTED LOGIC: It no longer references currentDonation.
+                    const newItems = allDonations.filter(d => !existingIds.has(d.id));
+                    return [...prevQueue, ...newItems];
+                });
+            }, [allDonations]);
+
+
+            // This effect manages the display cycle itself.
+            useEffect(() => {
+                const processQueue = () => {
+                    if (isProcessing.current || donationQueue.length === 0) return;
 
                     isProcessing.current = true;
                     
-                    const nextDonation = donationQueue[0];
-                    setDonationQueue(prev => prev.slice(1));
-                    
-                    // --- MARK AS SEEN ---
-                    // Immediately mark the notification as seen to prevent re-showing on refresh.
-                    try {
-                        const seenDocRef = doc(db, "creators", currentUser.uid, "seenNotifications", nextDonation.id);
-                        await setDoc(seenDocRef, { seenAt: new Date() });
-                    } catch (error) {
-                        console.error("Failed to mark notification as seen:", error);
-                        // If this fails, we should stop to avoid a loop.
-                        isProcessing.current = false;
-                        return;
-                    }
-                    
+                    const nextDonation = donationQueue[0]; // Peek at the next item
+                    setDonationQueue(prev => prev.slice(1)); // Update state to remove it
                     setCurrentDonation(nextDonation); // Show the donation
 
                     setTimeout(() => {
-                        setCurrentDonation(null); // Hide it
+                        setCurrentDonation(null); // Hide the donation
                         setTimeout(() => {
-                            isProcessing.current = false; // Allow next one to process
-                        }, 1000); // 1s pause
+                            isProcessing.current = false; // Allow next donation to process
+                        }, 1000); // 1s pause between tickers
                     }, 6000); // 6s visible time
                 };
 
                 tickerInterval.current = setInterval(processQueue, 500);
 
                 return () => clearInterval(tickerInterval.current);
-            }, [donationQueue, currentUser]);
+            }, [donationQueue]);
 
 
             return (
