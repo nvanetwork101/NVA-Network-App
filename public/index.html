@@ -1781,7 +1781,37 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
+          // --- NEW HELPER FUNCTION TO BE ADDED ---
+        const extractVideoInfo = (url) => {
+            if (!url) return { videoId: null, thumbnailUrl: null, embedUrl: null, platform: 'unknown', isVertical: false };
+            let videoId = null;
+            let platform = 'unknown';
+            let isVertical = false;
+
+            // YouTube (Standard, Short, Mobile)
+            const youtubeRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/ ]{11})/;
+            const youtubeMatch = url.match(youtubeRegex);
+            if (youtubeMatch && youtubeMatch[1]) {
+                videoId = youtubeMatch[1];
+                platform = 'youtube';
+                if (url.includes('/shorts/')) {
+                    isVertical = true;
+                }
+            }
+            // Add other platform regex checks here if needed (e.g., Vimeo, Facebook)
+
+            if (!videoId) {
+                return { videoId: null, thumbnailUrl: null, embedUrl: null, platform: 'unknown', isVertical: false };
+            }
+
+            const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+            const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+
+            return { videoId, thumbnailUrl, embedUrl, platform, isVertical };
+        };
+
                 // --- CORRECTED AND CONSOLIDATED CONSTANTS ---
+                
         const auth = window.firebaseAuth;
         const db = window.firebaseDb;
         const increment = window.increment;
