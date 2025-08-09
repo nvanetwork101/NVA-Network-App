@@ -5959,70 +5959,98 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
 };
 
             // --- NEW DONATION TICKER COMPONENT ---
-        const DonationTicker = ({ showMessage }) => {
-            const [allDonations, setAllDonations] = useState([]);
+        const DonationTicker = ({ showMessage, currentUser }) => {
             const [donationQueue, setDonationQueue] = useState([]);
-            const [currentDonation, setCurrentDonation] = useState(null); // This line was missing from the previous snippet
+            const [currentDonation, setCurrentDonation] = useState(null);
             const isProcessing = useRef(false);
             const tickerInterval = useRef(null);
 
-            // This effect fetches the initial data and listens for new approved donations.
-             useEffect(() => {
-                const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
-                const publicDonationsRef = collection(db, "public_donations");
-                const q = query(
-                    publicDonationsRef,
-                    // --- FIX: Compare against a Date object directly, not a string ---
-                    where('approvedAt', '>', fiveDaysAgo),
-                    orderBy('approvedAt', 'desc'),
-                    limit(10)
-                );
-
-                const unsubscribe = onSnapshot(q, (snapshot) => {
-                    const newDonations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setAllDonations(newDonations);
-                }, (error) => {
-                    // This will catch the permission error if rules are not deployed, without crashing the app
-                    console.error("Donation Ticker Error:", error.message);
-                });
-
-                return () => unsubscribe();
-            }, []);
-
-            // This effect safely adds newly fetched donations to the display queue.
+            // Effect 1: Fetch unseen donations for the current user.
             useEffect(() => {
-                setDonationQueue(prevQueue => {
-                    const existingIds = new Set(prevQueue.map(d => d.id));
-                    // THIS IS THE CORRECTED LOGIC: It no longer references currentDonation.
-                    const newItems = allDonations.filter(d => !existingIds.has(d.id));
-                    return [...prevQueue, ...newItems];
-                });
-            }, [allDonations]);
+                if (!currentUser) {
+                    setDonationQueue([]);
+                    return; // Do nothing if user is not logged in.
+                }
 
+                const fetchUnseenDonations = async () => {
+                    try {
+                        // 1. Get the list of notifications the user has already seen.
+                        const seenNotifsRef = collection(db, "creators", currentUser.uid, "seenNotifications");
+                        const seenSnapshot = await getDocs(seenNotifsRef);
+                        const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
 
-            // This effect manages the display cycle itself.
+                        // 2. Get public donations from the last 7 days.
+                        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                        const publicDonationsRef = collection(db, "public_donations");
+                        const q = query(
+                            publicDonationsRef,
+                            where('approvedAt', '>', sevenDaysAgo),
+                            orderBy('approvedAt', 'desc'),
+                            limit(20) // Limit to prevent fetching too many old donations
+                        );
+                        
+                        const publicSnapshot = await getDocs(q);
+                        const allRecentDonations = publicSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                        // 3. Filter out the ones the user has already seen.
+                        const unseenDonations = allRecentDonations.filter(donation => !seenIds.has(donation.id));
+                        
+                        // 4. Add the new, unseen donations to our queue.
+                        if (unseenDonations.length > 0) {
+                            setDonationQueue(prevQueue => {
+                                const existingIds = new Set(prevQueue.map(d => d.id));
+                                const trulyNewItems = unseenDonations.filter(d => !existingIds.has(d.id));
+                                return [...prevQueue, ...trulyNewItems];
+                            });
+                        }
+                    } catch (error) {
+                        console.error("Donation Ticker Error:", error.message);
+                    }
+                };
+
+                fetchUnseenDonations();
+
+                // Optional: Set up a real-time listener for brand new donations if desired.
+                // For now, this fetch-on-load approach is simpler and meets requirements.
+
+            }, [currentUser]); // Re-run whenever the user logs in or out.
+
+            // Effect 2: Process the display queue.
             useEffect(() => {
-                const processQueue = () => {
-                    if (isProcessing.current || donationQueue.length === 0) return;
+                const processQueue = async () => {
+                    if (isProcessing.current || donationQueue.length === 0 || !currentUser) return;
 
                     isProcessing.current = true;
                     
-                    const nextDonation = donationQueue[0]; // Peek at the next item
-                    setDonationQueue(prev => prev.slice(1)); // Update state to remove it
+                    const nextDonation = donationQueue[0];
+                    setDonationQueue(prev => prev.slice(1));
+                    
+                    // --- MARK AS SEEN ---
+                    // Immediately mark the notification as seen to prevent re-showing on refresh.
+                    try {
+                        const seenDocRef = doc(db, "creators", currentUser.uid, "seenNotifications", nextDonation.id);
+                        await setDoc(seenDocRef, { seenAt: new Date() });
+                    } catch (error) {
+                        console.error("Failed to mark notification as seen:", error);
+                        // If this fails, we should stop to avoid a loop.
+                        isProcessing.current = false;
+                        return;
+                    }
+                    
                     setCurrentDonation(nextDonation); // Show the donation
 
                     setTimeout(() => {
-                        setCurrentDonation(null); // Hide the donation
+                        setCurrentDonation(null); // Hide it
                         setTimeout(() => {
-                            isProcessing.current = false; // Allow next donation to process
-                        }, 1000); // 1s pause between tickers
+                            isProcessing.current = false; // Allow next one to process
+                        }, 1000); // 1s pause
                     }, 6000); // 6s visible time
                 };
 
                 tickerInterval.current = setInterval(processQueue, 500);
 
                 return () => clearInterval(tickerInterval.current);
-            }, [donationQueue]);
+            }, [donationQueue, currentUser]);
 
 
             return (
