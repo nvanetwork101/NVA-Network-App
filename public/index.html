@@ -3141,7 +3141,7 @@ const AdminDashboardScreen = ({
         try {
             const functions = getFunctions(window.firebaseApp);
             const approvePledgeCallable = httpsCallable(functions, 'approvePledge');
-            const result = await approvePledgeCallable({ pledgeId: pledgeId });
+            const result = await approvePledgeCallable({ pledgeId: pledgeId, appId: appId });
             showMessage(result.data.message);
         } catch (error) {
             console.error("Error calling approvePledge function:", error);
