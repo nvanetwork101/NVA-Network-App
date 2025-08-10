@@ -1805,6 +1805,295 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
+            // ======================= START: NEW NOTIFICATION COMPONENTS =======================
+        const NotificationBell = ({ count, onClick }) => {
+            return (
+                <button className="navButton" onClick={onClick} style={{ position: 'relative', backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
+                    <span className="navButtonText" style={{ color: '#FFD700' }}>
+                        <svg viewBox="0 0 24 24" style={{ width: '24px', height: '24px', fill: 'currentColor' }}>
+                            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                        </svg>
+                    </span>
+                    {count > 0 && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '-5px',
+                            right: '-5px',
+                            backgroundColor: '#DC3545',
+                            color: '#FFF',
+                            borderRadius: '50%',
+                            width: '20px',
+                            height: '20px',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            fontSize: '12px',
+                            fontWeight: 'bold'
+                        }}>
+                            {count}
+                        </div>
+                    )}
+                </button>
+            );
+        };
+
+        const NotificationToast = ({ notification, onDismiss }) => {
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    onDismiss();
+                }, 6000); // Disappear after 6 seconds
+
+                return () => clearTimeout(timer);
+            }, [notification, onDismiss]);
+
+            if (!notification) return null;
+
+            return (
+                <div className="donationTickerContainer visible" style={{cursor: 'pointer'}} onClick={onDismiss}>
+                    <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
+                    <div className="tickerText">
+                        {notification.message}
+                    </div>
+                </div>
+            );
+        };
+
+        const NotificationInboxScreen = ({ notifications, setActiveScreen }) => {
+            const markAsRead = async (notification) => {
+                if (!notification.isRead) {
+                    const notifRef = doc(db, "notifications", notification.id);
+                    try {
+                        await updateDoc(notifRef, { isRead: true });
+                    } catch (error) {
+                        console.error("Failed to mark notification as read:", error);
+                    }
+                }
+                // Also mark seen broadcasts
+                if (notification.isBroadcast) {
+                    const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
+                    try {
+                         await setDoc(seenRef, { seenAt: new Date() });
+                    } catch (error) {
+                         console.error("Failed to mark broadcast as seen:", error);
+                    }
+                }
+            };
+
+            const handleNotificationClick = (notification) => {
+                markAsRead(notification);
+                if (notification.link) {
+                    // For now, we only handle simple screen navigation
+                    const screen = notification.link.replace('/', '');
+                    setActiveScreen(screen);
+                }
+            };
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Notifications</p>
+                    <div className="dashboardContentList">
+                        {notifications.length === 0 ? (
+                            <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
+                        ) : (
+                            notifications.map(item => (
+                                <div
+                                    key={item.id}
+                                    className="adminDashboardItem"
+                                    style={{
+                                        cursor: 'pointer',
+                                        borderLeft: item.isRead === false ? '4px solid #FFD700' : '4px solid transparent',
+                                        flexDirection: 'column',
+                                        alignItems: 'flex-start'
+                                    }}
+                                    onClick={() => handleNotificationClick(item)}
+                                >
+                                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>{item.message}</p>
+                                    <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        };
+        // ======================== END: NEW NOTIFICATION COMPONENTS ========================
+
+            // ======================= START: NEW NOTIFICATION HOOK =======================
+        const useNotifications = (currentUser) => {
+            const [notifications, setNotifications] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+
+            useEffect(() => {
+                if (!currentUser) {
+                    setNotifications([]);
+                    setIsLoading(false);
+                    return;
+                }
+
+                // Listener for private, targeted notifications
+                const privateNotifRef = collection(db, "notifications");
+                const privateQuery = query(privateNotifRef, where("userId", "==", currentUser.uid), orderBy("timestamp", "desc"), limit(20));
+                const unsubscribePrivate = onSnapshot(privateQuery, (snapshot) => {
+                    const privateNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: false }));
+                    // We will merge this with broadcast notifications later
+                    // For now, let's just update the state to trigger a re-render
+                    setNotifications(prev => {
+                        const existingIds = new Set(prev.map(p => p.id));
+                        const newPrivate = privateNotifications.filter(n => !existingIds.has(n.id));
+                        return [...prev, ...newPrivate].sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
+                    });
+                });
+
+                // ======================= START: NEW NOTIFICATION COMPONENTS =======================
+        const NotificationBell = ({ count, onClick }) => {
+            return (
+                <button className="navButton" onClick={onClick} style={{ position: 'relative', backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
+                    <span className="navButtonText" style={{ color: '#FFD700' }}>
+                        <svg viewBox="0 0 24 24" style={{ width: '24px', height: '24px', fill: 'currentColor' }}>
+                            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                        </svg>
+                    </span>
+                    {count > 0 && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '-5px',
+                            right: '-5px',
+                            backgroundColor: '#DC3545',
+                            color: '#FFF',
+                            borderRadius: '50%',
+                            width: '20px',
+                            height: '20px',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            fontSize: '12px',
+                            fontWeight: 'bold'
+                        }}>
+                            {count}
+                        </div>
+                    )}
+                </button>
+            );
+        };
+
+        const NotificationToast = ({ notification, onDismiss }) => {
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    onDismiss();
+                }, 6000); // Disappear after 6 seconds
+
+                return () => clearTimeout(timer);
+            }, [notification, onDismiss]);
+
+            if (!notification) return null;
+
+            return (
+                <div className="donationTickerContainer visible" style={{cursor: 'pointer'}} onClick={onDismiss}>
+                    <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
+                    <div className="tickerText">
+                        {notification.message}
+                    </div>
+                </div>
+            );
+        };
+
+        const NotificationInboxScreen = ({ notifications, setActiveScreen }) => {
+            const markAsRead = async (notification) => {
+                if (!notification.isRead) {
+                    const notifRef = doc(db, "notifications", notification.id);
+                    try {
+                        await updateDoc(notifRef, { isRead: true });
+                    } catch (error) {
+                        console.error("Failed to mark notification as read:", error);
+                    }
+                }
+                // Also mark seen broadcasts
+                if (notification.isBroadcast) {
+                    const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
+                    try {
+                         await setDoc(seenRef, { seenAt: new Date() });
+                    } catch (error) {
+                         console.error("Failed to mark broadcast as seen:", error);
+                    }
+                }
+            };
+
+            const handleNotificationClick = (notification) => {
+                markAsRead(notification);
+                if (notification.link) {
+                    // For now, we only handle simple screen navigation
+                    const screen = notification.link.replace('/', '');
+                    setActiveScreen(screen);
+                }
+            };
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Notifications</p>
+                    <div className="dashboardContentList">
+                        {notifications.length === 0 ? (
+                            <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
+                        ) : (
+                            notifications.map(item => (
+                                <div
+                                    key={item.id}
+                                    className="adminDashboardItem"
+                                    style={{
+                                        cursor: 'pointer',
+                                        borderLeft: item.isRead === false ? '4px solid #FFD700' : '4px solid transparent',
+                                        flexDirection: 'column',
+                                        alignItems: 'flex-start'
+                                    }}
+                                    onClick={() => handleNotificationClick(item)}
+                                >
+                                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>{item.message}</p>
+                                    <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        };
+        // ======================== END: NEW NOTIFICATION COMPONENTS ========================
+
+                // Listener for public, broadcast notifications
+                const broadcastNotifRef = collection(db, "broadcast_notifications");
+                const broadcastQuery = query(broadcastNotifRef, orderBy("timestamp", "desc"), limit(10));
+                const unsubscribeBroadcast = onSnapshot(broadcastQuery, async (broadcastSnapshot) => {
+                    const broadcastNotifications = broadcastSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: true }));
+                    
+                    // Get the list of broadcast notifications this user has already seen
+                    const seenRef = collection(db, "creators", currentUser.uid, "seenNotifications");
+                    const seenSnapshot = await getDocs(seenRef);
+                    const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
+
+                    // Filter out the seen broadcasts
+                    const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
+
+                    setNotifications(prev => {
+                        const existingIds = new Set(prev.map(p => p.id));
+                        const newUnseen = unseenBroadcasts.filter(n => !existingIds.has(n.id));
+                        // Combine, remove duplicates, and sort
+                        const combined = [...prev, ...newUnseen];
+                        const uniqueNotifications = Array.from(new Map(combined.map(item => [item.id, item])).values());
+                        return uniqueNotifications.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
+                    });
+                    setIsLoading(false);
+                });
+
+                // Cleanup listeners on component unmount
+                return () => {
+                    unsubscribePrivate();
+                    unsubscribeBroadcast();
+                };
+
+            }, [currentUser]); // Re-run effect if the user logs in or out
+
+            return { notifications, isLoading };
+        };
+        // ======================== END: NEW NOTIFICATION HOOK ========================
+
           // --- NEW HELPER FUNCTION TO BE ADDED ---
         const extractVideoInfo = (url) => {
             if (!url) return { videoId: null, thumbnailUrl: null, embedUrl: null, platform: 'unknown', isVertical: false };
@@ -6072,6 +6361,43 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const exitTimer = useRef(null);
             const [showMoreMenu, setShowMoreMenu] = useState(false);
             
+            // ======================= START: NEW CODE =======================
+            // Call our new hook to get a live list of notifications
+            const { notifications: unreadNotifications, isLoading: notificationsLoading } = useNotifications(currentUser);
+            // ======================== END: NEW CODE ========================
+            
+             // ======================= START: NEW TOAST STATE AND LOGIC =======================
+            const [toastQueue, setToastQueue] = useState([]);
+            const [currentToast, setCurrentToast] = useState(null);
+            const processedToastIds = useRef(new Set());
+
+            useEffect(() => {
+                // Add new, unseen notifications to the toast queue
+                const newNotifications = unreadNotifications.filter(n => !processedToastIds.current.has(n.id) && n.isRead === false);
+                if (newNotifications.length > 0) {
+                    setToastQueue(prev => [...prev, ...newNotifications]);
+                    newNotifications.forEach(n => processedToastIds.current.add(n.id));
+                }
+            }, [unreadNotifications]);
+
+            useEffect(() => {
+                // Process the toast queue
+                if (!currentToast && toastQueue.length > 0) {
+                    const nextToast = toastQueue[0];
+                    setCurrentToast(nextToast);
+                    setToastQueue(prev => prev.slice(1));
+                }
+            }, [currentToast, toastQueue]);
+
+            const handleDismissToast = () => {
+                if(currentToast?.link) {
+                    const screen = currentToast.link.replace('/', '');
+                    setActiveScreen(screen);
+                }
+                setCurrentToast(null);
+            };
+            // ======================== END: NEW TOAST STATE AND LOGIC ========================
+
             const [activeCategory, setActiveCategory] = useState('Skits');
             const [message, setMessage] = useState('');
             const [showVideoModal, setShowVideoModal] = useState(false);
@@ -7229,6 +7555,9 @@ const CreatorDashboardScreen = ({
                     return <TopCreatorsScreen featuredContentSlots={featuredContentSlots} handleVideoPress={handleVideoPress} setActiveScreen={setActiveScreen} currentUser={currentUser} showMessage={showMessage}/>;
                 case 'AnalyticsDashboard':
                     return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
+                
+                case 'NotificationInbox':
+                        return <NotificationInboxScreen notifications={unreadNotifications} setActiveScreen={setActiveScreen} />;
                 default:
                     return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
             }
@@ -7257,6 +7586,7 @@ const CreatorDashboardScreen = ({
             // This prevents the race condition after email verification.
             
 // --- END OF THE NEW BLOCK 
+          
             return (
                 <div className="container">
                 <div className="header">
@@ -7289,6 +7619,12 @@ const CreatorDashboardScreen = ({
         <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
     </button>
     
+    {/* ======================= START: NEW NOTIFICATION BELL ======================= */}
+    {currentUser && (
+        <NotificationBell count={unreadNotifications.filter(n => n.isRead === false).length} onClick={() => setActiveScreen('NotificationInbox')} />
+    )}
+    {/* ======================== END: NEW NOTIFICATION BELL ======================== */}
+
     {currentUser && (
         <button className="navButton" onClick={() => setActiveScreen('FollowingFeed')} style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
             <span className="navButtonText" style={{ color: '#FFD700' }}>Following</span>
@@ -7348,7 +7684,9 @@ const CreatorDashboardScreen = ({
                             </div>
                         )}
 
-                        <DonationTicker showMessage={showMessage} />
+                        {/* ======================= START: REPURPOSED TOAST COMPONENT ======================= */}
+                        <NotificationToast notification={currentToast} onDismiss={handleDismissToast} />
+                        {/* ======================== END: REPURPOSED TOAST COMPONENT ======================== */}
 
                         {showVideoModal && (
                         <VideoPlayerModal
@@ -7369,13 +7707,13 @@ const CreatorDashboardScreen = ({
                             />
                         )}
                     </>
-                </div>
-            );
-        }
+                  </div>
+                );
+            } // <--- PASTE THE MISSING CLOSING BRACE HERE
 
-         // --- END OF CORRECTED BLOCK ---
+                // --- END OF CORRECTED BLOCK ---
 
-        window.onload = function() {
+                window.onload = function() {
             if (
                 typeof window.firebaseAuth === 'undefined' ||
                 typeof window.onAuthStateChanged === 'undefined' ||
