@@ -1805,7 +1805,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
-                // ======================= START: UNIFIED NOTIFICATION CODE BLOCK =======================
+                // ======================= START: FINAL NOTIFICATION HOOK =======================
         const useNotifications = (currentUser) => {
             const [notifications, setNotifications] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
@@ -1845,21 +1845,21 @@
                     mergeAndSetNotifications();
                 });
 
-                // Listener for public, broadcast notifications
+                // Listener for public, broadcast notifications (WITH 5-DAY WINDOW)
                 const broadcastNotifRef = collection(db, "broadcast_notifications");
-                const broadcastQuery = query(broadcastNotifRef, orderBy("timestamp", "desc"), limit(10));
+                const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+                const broadcastQuery = query(broadcastNotifRef, where("timestamp", ">", fiveDaysAgo), orderBy("timestamp", "desc"));
                 const unsubscribeBroadcast = onSnapshot(broadcastQuery, (snapshot) => {
                     broadcastNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: true }));
                     mergeAndSetNotifications();
                 });
 
-                // Cleanup listeners on component unmount
                 return () => {
                     unsubscribePrivate();
                     unsubscribeBroadcast();
                 };
 
-            }, [currentUser]); // Re-run effect if the user logs in or out
+            }, [currentUser]);
 
             return { notifications, isLoading };
         };
