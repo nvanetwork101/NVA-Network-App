@@ -1805,120 +1805,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
 
-            // ======================= START: NEW NOTIFICATION COMPONENTS =======================
-        const NotificationBell = ({ count, onClick }) => {
-            return (
-                <button className="navButton" onClick={onClick} style={{ position: 'relative', backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
-                    <span className="navButtonText" style={{ color: '#FFD700' }}>
-                        <svg viewBox="0 0 24 24" style={{ width: '24px', height: '24px', fill: 'currentColor' }}>
-                            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-                        </svg>
-                    </span>
-                    {count > 0 && (
-                        <div style={{
-                            position: 'absolute',
-                            top: '-5px',
-                            right: '-5px',
-                            backgroundColor: '#DC3545',
-                            color: '#FFF',
-                            borderRadius: '50%',
-                            width: '20px',
-                            height: '20px',
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            fontSize: '12px',
-                            fontWeight: 'bold'
-                        }}>
-                            {count}
-                        </div>
-                    )}
-                </button>
-            );
-        };
-
-        const NotificationToast = ({ notification, onDismiss }) => {
-            useEffect(() => {
-                const timer = setTimeout(() => {
-                    onDismiss();
-                }, 6000); // Disappear after 6 seconds
-
-                return () => clearTimeout(timer);
-            }, [notification, onDismiss]);
-
-            if (!notification) return null;
-
-            return (
-                <div className="donationTickerContainer visible" style={{cursor: 'pointer'}} onClick={onDismiss}>
-                    <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
-                    <div className="tickerText">
-                        {notification.message}
-                    </div>
-                </div>
-            );
-        };
-
-        const NotificationInboxScreen = ({ notifications, setActiveScreen }) => {
-            const markAsRead = async (notification) => {
-                if (!notification.isRead) {
-                    const notifRef = doc(db, "notifications", notification.id);
-                    try {
-                        await updateDoc(notifRef, { isRead: true });
-                    } catch (error) {
-                        console.error("Failed to mark notification as read:", error);
-                    }
-                }
-                // Also mark seen broadcasts
-                if (notification.isBroadcast) {
-                    const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
-                    try {
-                         await setDoc(seenRef, { seenAt: new Date() });
-                    } catch (error) {
-                         console.error("Failed to mark broadcast as seen:", error);
-                    }
-                }
-            };
-
-            const handleNotificationClick = (notification) => {
-                markAsRead(notification);
-                if (notification.link) {
-                    // For now, we only handle simple screen navigation
-                    const screen = notification.link.replace('/', '');
-                    setActiveScreen(screen);
-                }
-            };
-
-            return (
-                <div className="screenContainer">
-                    <p className="heading">Notifications</p>
-                    <div className="dashboardContentList">
-                        {notifications.length === 0 ? (
-                            <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
-                        ) : (
-                            notifications.map(item => (
-                                <div
-                                    key={item.id}
-                                    className="adminDashboardItem"
-                                    style={{
-                                        cursor: 'pointer',
-                                        borderLeft: item.isRead === false ? '4px solid #FFD700' : '4px solid transparent',
-                                        flexDirection: 'column',
-                                        alignItems: 'flex-start'
-                                    }}
-                                    onClick={() => handleNotificationClick(item)}
-                                >
-                                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>{item.message}</p>
-                                    <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            );
-        };
-        // ======================== END: NEW NOTIFICATION COMPONENTS ========================
-
-            // ======================= START: NEW NOTIFICATION HOOK =======================
+                // ======================= START: UNIFIED NOTIFICATION CODE BLOCK =======================
         const useNotifications = (currentUser) => {
             const [notifications, setNotifications] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
@@ -1927,159 +1814,43 @@
                 if (!currentUser) {
                     setNotifications([]);
                     setIsLoading(false);
-                    return;
+                    return () => {}; // Return an empty function for cleanup
                 }
+
+                setIsLoading(true);
+                let privateNotifications = [];
+                let broadcastNotifications = [];
+
+                const mergeAndSetNotifications = async () => {
+                    const seenRef = collection(db, "creators", currentUser.uid, "seenNotifications");
+                    const seenSnapshot = await getDocs(seenRef);
+                    const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
+                    
+                    const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
+
+                    const combined = [...privateNotifications, ...unseenBroadcasts];
+                    const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+                    
+                    unique.sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
+                    
+                    setNotifications(unique);
+                    setIsLoading(false);
+                };
 
                 // Listener for private, targeted notifications
                 const privateNotifRef = collection(db, "notifications");
                 const privateQuery = query(privateNotifRef, where("userId", "==", currentUser.uid), orderBy("timestamp", "desc"), limit(20));
                 const unsubscribePrivate = onSnapshot(privateQuery, (snapshot) => {
-                    const privateNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: false }));
-                    // We will merge this with broadcast notifications later
-                    // For now, let's just update the state to trigger a re-render
-                    setNotifications(prev => {
-                        const existingIds = new Set(prev.map(p => p.id));
-                        const newPrivate = privateNotifications.filter(n => !existingIds.has(n.id));
-                        return [...prev, ...newPrivate].sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
-                    });
+                    privateNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: false }));
+                    mergeAndSetNotifications();
                 });
-
-                // ======================= START: NEW NOTIFICATION COMPONENTS =======================
-        const NotificationBell = ({ count, onClick }) => {
-            return (
-                <button className="navButton" onClick={onClick} style={{ position: 'relative', backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
-                    <span className="navButtonText" style={{ color: '#FFD700' }}>
-                        <svg viewBox="0 0 24 24" style={{ width: '24px', height: '24px', fill: 'currentColor' }}>
-                            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
-                        </svg>
-                    </span>
-                    {count > 0 && (
-                        <div style={{
-                            position: 'absolute',
-                            top: '-5px',
-                            right: '-5px',
-                            backgroundColor: '#DC3545',
-                            color: '#FFF',
-                            borderRadius: '50%',
-                            width: '20px',
-                            height: '20px',
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            fontSize: '12px',
-                            fontWeight: 'bold'
-                        }}>
-                            {count}
-                        </div>
-                    )}
-                </button>
-            );
-        };
-
-        const NotificationToast = ({ notification, onDismiss }) => {
-            useEffect(() => {
-                const timer = setTimeout(() => {
-                    onDismiss();
-                }, 6000); // Disappear after 6 seconds
-
-                return () => clearTimeout(timer);
-            }, [notification, onDismiss]);
-
-            if (!notification) return null;
-
-            return (
-                <div className="donationTickerContainer visible" style={{cursor: 'pointer'}} onClick={onDismiss}>
-                    <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
-                    <div className="tickerText">
-                        {notification.message}
-                    </div>
-                </div>
-            );
-        };
-
-        const NotificationInboxScreen = ({ notifications, setActiveScreen }) => {
-            const markAsRead = async (notification) => {
-                if (!notification.isRead) {
-                    const notifRef = doc(db, "notifications", notification.id);
-                    try {
-                        await updateDoc(notifRef, { isRead: true });
-                    } catch (error) {
-                        console.error("Failed to mark notification as read:", error);
-                    }
-                }
-                // Also mark seen broadcasts
-                if (notification.isBroadcast) {
-                    const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
-                    try {
-                         await setDoc(seenRef, { seenAt: new Date() });
-                    } catch (error) {
-                         console.error("Failed to mark broadcast as seen:", error);
-                    }
-                }
-            };
-
-            const handleNotificationClick = (notification) => {
-                markAsRead(notification);
-                if (notification.link) {
-                    // For now, we only handle simple screen navigation
-                    const screen = notification.link.replace('/', '');
-                    setActiveScreen(screen);
-                }
-            };
-
-            return (
-                <div className="screenContainer">
-                    <p className="heading">Notifications</p>
-                    <div className="dashboardContentList">
-                        {notifications.length === 0 ? (
-                            <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
-                        ) : (
-                            notifications.map(item => (
-                                <div
-                                    key={item.id}
-                                    className="adminDashboardItem"
-                                    style={{
-                                        cursor: 'pointer',
-                                        borderLeft: item.isRead === false ? '4px solid #FFD700' : '4px solid transparent',
-                                        flexDirection: 'column',
-                                        alignItems: 'flex-start'
-                                    }}
-                                    onClick={() => handleNotificationClick(item)}
-                                >
-                                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>{item.message}</p>
-                                    <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-            );
-        };
-        // ======================== END: NEW NOTIFICATION COMPONENTS ========================
 
                 // Listener for public, broadcast notifications
                 const broadcastNotifRef = collection(db, "broadcast_notifications");
                 const broadcastQuery = query(broadcastNotifRef, orderBy("timestamp", "desc"), limit(10));
-                const unsubscribeBroadcast = onSnapshot(broadcastQuery, async (broadcastSnapshot) => {
-                    const broadcastNotifications = broadcastSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: true }));
-                    
-                    // Get the list of broadcast notifications this user has already seen
-                    const seenRef = collection(db, "creators", currentUser.uid, "seenNotifications");
-                    const seenSnapshot = await getDocs(seenRef);
-                    const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
-
-                    // Filter out the seen broadcasts
-                    const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
-
-                    setNotifications(prev => {
-                        const existingIds = new Set(prev.map(p => p.id));
-                        const newUnseen = unseenBroadcasts.filter(n => !existingIds.has(n.id));
-                        // Combine, remove duplicates, and sort
-                        const combined = [...prev, ...newUnseen];
-                        const uniqueNotifications = Array.from(new Map(combined.map(item => [item.id, item])).values());
-                        return uniqueNotifications.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
-                    });
-                    setIsLoading(false);
+                const unsubscribeBroadcast = onSnapshot(broadcastQuery, (snapshot) => {
+                    broadcastNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: true }));
+                    mergeAndSetNotifications();
                 });
 
                 // Cleanup listeners on component unmount
@@ -2092,7 +1863,118 @@
 
             return { notifications, isLoading };
         };
-        // ======================== END: NEW NOTIFICATION HOOK ========================
+
+        const NotificationBell = ({ count, onClick }) => {
+            return (
+                <button className="navButton" onClick={onClick} style={{ position: 'relative', backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
+                    <span className="navButtonText" style={{ color: '#FFD700' }}>
+                        <svg viewBox="0 0 24 24" style={{ width: '24px', height: '24px', fill: 'currentColor' }}>
+                            <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+                        </svg>
+                    </span>
+                    {count > 0 && (
+                        <div style={{
+                            position: 'absolute',
+                            top: '-5px',
+                            right: '-5px',
+                            backgroundColor: '#DC3545',
+                            color: '#FFF',
+                            borderRadius: '50%',
+                            width: '20px',
+                            height: '20px',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            fontSize: '12px',
+                            fontWeight: 'bold'
+                        }}>
+                            {count}
+                        </div>
+                    )}
+                </button>
+            );
+        };
+
+        const NotificationToast = ({ notification, onDismiss }) => {
+            useEffect(() => {
+                const timer = setTimeout(() => {
+                    onDismiss();
+                }, 6000); // Disappear after 6 seconds
+
+                return () => clearTimeout(timer);
+            }, [notification, onDismiss]);
+
+            if (!notification) return null;
+
+            return (
+                <div className="donationTickerContainer visible" style={{cursor: 'pointer'}} onClick={onDismiss}>
+                    <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
+                    <div className="tickerText">
+                        {notification.message}
+                    </div>
+                </div>
+            );
+        };
+
+        const NotificationInboxScreen = ({ notifications, setActiveScreen }) => {
+            const markAsRead = async (notification) => {
+                // Mark private notifications as read
+                if (!notification.isBroadcast && !notification.isRead) {
+                    const notifRef = doc(db, "notifications", notification.id);
+                    try {
+                        await updateDoc(notifRef, { isRead: true });
+                    } catch (error) {
+                        console.error("Failed to mark notification as read:", error);
+                    }
+                }
+                // Always mark broadcasts as seen, as their read state isn't tracked in the doc itself
+                if (notification.isBroadcast) {
+                    const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
+                    try {
+                         await setDoc(seenRef, { seenAt: new Date() });
+                    } catch (error) {
+                         console.error("Failed to mark broadcast as seen:", error);
+                    }
+                }
+            };
+
+            const handleNotificationClick = (notification) => {
+                markAsRead(notification);
+                if (notification.link) {
+                    const screen = notification.link.replace('/', '');
+                    setActiveScreen(screen);
+                }
+            };
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Notifications</p>
+                    <div className="dashboardContentList">
+                        {notifications.length === 0 ? (
+                            <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
+                        ) : (
+                            notifications.map(item => (
+                                <div
+                                    key={item.id}
+                                    className="adminDashboardItem"
+                                    style={{
+                                        cursor: 'pointer',
+                                        borderLeft: (item.isBroadcast || item.isRead === true) ? '4px solid transparent' : '4px solid #FFD700',
+                                        flexDirection: 'column',
+                                        alignItems: 'flex-start'
+                                    }}
+                                    onClick={() => handleNotificationClick(item)}
+                                >
+                                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>{item.message}</p>
+                                    <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        };
+        // ======================= END: UNIFIED NOTIFICATION CODE BLOCK =======================
 
           // --- NEW HELPER FUNCTION TO BE ADDED ---
         const extractVideoInfo = (url) => {
