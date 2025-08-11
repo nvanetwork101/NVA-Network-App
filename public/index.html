@@ -107,11 +107,12 @@
         .navigationBar {
             display: flex;
             justify-content: space-around;
-            padding: 10px 0;
+            padding: 10px;
             background-color: #1A1A1A;
             border-top: 1px solid #333;
-            border-radius: 0 0 15px 15px; /* Rounded bottom corners */
-            /* Removed flex-wrap and gap as Support Us is moved */
+            border-radius: 0 0 15px 15px;
+            flex-wrap: wrap; /* This allows buttons to wrap onto the next line */
+            gap: 10px;       /* This creates consistent spacing between all buttons */
         }
         .navButton {
             padding: 8px 15px;
