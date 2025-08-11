@@ -17,6 +17,9 @@
         *, *::before, *::after {
             box-sizing: border-box;
         }
+        html {
+            overflow-y: scroll; /* This is the definitive fix. It prevents layout shift. */
+        }
         html, body {
             height: 100%;
             margin: 0;
