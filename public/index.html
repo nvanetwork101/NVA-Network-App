@@ -1838,6 +1838,17 @@
                 }
             }, [currentUser]);
 
+            
+            const markNotificationAsRead = useCallback(async (notificationId) => {
+                if (!currentUser) return;
+                try {
+                    const notifRef = doc(db, "notifications", notificationId);
+                    await updateDoc(notifRef, { isRead: true });
+                } catch (error) {
+                    console.error("Failed to mark notification as read:", error);
+                }
+            }, [currentUser]);
+            
             useEffect(() => {
                 if (!currentUser) {
                     setNotifications([]);
@@ -1889,7 +1900,7 @@
 
             }, [currentUser, pendingDeletes]);
 
-            return { notifications, isLoading, dismissNotification, markBroadcastAsSeen };
+            return { notifications, isLoading, dismissNotification, markBroadcastAsSeen, markNotificationAsRead };
         };
 // END of REPLACEMENT Block
 
@@ -6313,7 +6324,8 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             
             // ======================= START: NEW CODE =======================
             // Call our new hook to get a live list of notifications
-            const { notifications: unreadNotifications, isLoading: notificationsLoading, dismissNotification, markBroadcastAsSeen } = useNotifications(currentUser);
+            const { notifications: unreadNotifications, isLoading: notificationsLoading, dismissNotification, markBroadcastAsSeen, markNotificationAsRead } = 
+            useNotifications(currentUser);
             // ======================== END: NEW CODE ========================
             
               // ======================= START: NEW TOAST STATE AND LOGIC =======================
@@ -6322,8 +6334,8 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const processedToastIds = useRef(new Set());
 
             useEffect(() => {
-                // Find notifications that the toast system hasn't processed in this session yet.
-                const newNotifications = unreadNotifications.filter(n => !processedToastIds.current.has(n.id));
+                // This effect now correctly filters for notifications that are NOT marked as read.
+                const newNotifications = unreadNotifications.filter(n => !processedToastIds.current.has(n.id) && n.isRead === false);
                 if (newNotifications.length > 0) {
                     setToastQueue(prev => [...prev, ...newNotifications]);
                     newNotifications.forEach(n => processedToastIds.current.add(n.id));
@@ -6337,24 +6349,27 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
                     setCurrentToast(nextToast);
                     setToastQueue(prev => prev.slice(1));
 
-                    // THE FIX: The moment we decide to show a toast, if it's a broadcast,
-                    // we tell the backend it has been seen.
+                    // THE DEFINITIVE FIX:
+                    // If it's a broadcast, mark it as "seen" in its own subcollection.
                     if (nextToast.isBroadcast) {
                         markBroadcastAsSeen(nextToast.id);
+                    // If it's a private notification, update its document to set isRead = true.
+                    } else {
+                        markNotificationAsRead(nextToast.id);
                     }
                 }
-            }, [currentToast, toastQueue, markBroadcastAsSeen]);
+            }, [currentToast, toastQueue, markBroadcastAsSeen, markNotificationAsRead]);
 
-            // CORRECTED: This function now ONLY handles clicks, for navigation.
+            // This function now ONLY handles clicks, for navigation.
             const handleToastClick = () => {
                 if(currentToast?.link) {
                     const screen = currentToast.link.replace('/', '');
                     setActiveScreen(screen);
                 }
-                setCurrentToast(null); // It also dismisses the toast on click.
+                setCurrentToast(null);
             };
             
-            // NEW: This function handles the timeout, ONLY dismissing the toast.
+            // This function handles the timeout, ONLY dismissing the toast.
             const handleToastTimeout = () => {
                 setCurrentToast(null);
             };
