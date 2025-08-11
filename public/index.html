@@ -5638,6 +5638,7 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
             setContent(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             setLoadingContent(false);
         });
+        const liveStreamUrl = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
         return () => unsubscribe();
     }, [activeCategory]);
 
@@ -5645,15 +5646,15 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
     // because we are now using the one passed down from the App component.
 
     const LiveStreamPlayer = () => {
-        if (isLive) {
+        if (true) {
             const { embedUrl, isVertical } = extractVideoInfo(liveStreamUrl);
             const finalEmbedUrl = embedUrl || `${liveStreamUrl}?autoplay=1`;
             return (
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <div className={`videoModalContent`} style={{position: 'relative', width: '100%', maxWidth: '900px', height: 'calc(100vh - 300px)', minHeight: '400px', boxShadow: 'none', background: 'transparent'}}>
-                        <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`} style={{height: '100%', paddingBottom: 0}}>
-                            <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe>
-                        </div>
+                <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                    {/* The videoModalContent class and its extra div wrapper are removed. 
+                        The videoIframeContainer is now the direct child, constrained by its parent's width. */}
+                    <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`} style={{ maxWidth: '900px', height: 'auto' }}>
+                        <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe>
                     </div>
                 </div>
             );
