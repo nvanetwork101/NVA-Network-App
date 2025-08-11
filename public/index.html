@@ -5674,9 +5674,8 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
             const { embedUrl, isVertical } = extractVideoInfo(liveStreamUrl);
             const finalEmbedUrl = embedUrl || `${liveStreamUrl}?autoplay=1`;
             return (
-                // A simple, responsive container that respects its parent's padding.
+                // This simple, responsive container respects its parent's padding and has no conflicting classes.
                 <div style={{ width: '100%', maxWidth: '900px', margin: '0 auto' }}>
-                    {/* The videoIframeContainer now works as intended, managing the aspect ratio. */}
                     <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
                         <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe>
                     </div>
