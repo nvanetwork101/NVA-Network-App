@@ -1809,7 +1809,34 @@
         const useNotifications = (currentUser) => {
             const [notifications, setNotifications] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
-            const [pendingDeletes, setPendingDeletes] = useState(new Set()); // Tracks optimistic deletes
+            const [pendingDeletes, setPendingDeletes] = useState(new Set());
+
+            const dismissNotification = useCallback((notificationId) => {
+                setPendingDeletes(prev => new Set(prev).add(notificationId));
+                const functions = getFunctions(window.firebaseApp);
+                const deleteNotificationCallable = httpsCallable(functions, 'deleteNotification');
+                
+                deleteNotificationCallable({ notificationId })
+                    .catch(error => {
+                        console.error("Failed to dismiss notification:", error);
+                        setPendingDeletes(prev => {
+                            const newSet = new Set(prev);
+                            newSet.delete(notificationId);
+                            return newSet;
+                        });
+                    });
+            }, []);
+
+            // NEW: Helper function to permanently mark a broadcast as seen by the user.
+            const markBroadcastAsSeen = async (notificationId) => {
+                if (!currentUser) return;
+                try {
+                    const seenRef = doc(db, "creators", currentUser.uid, "seenNotifications", notificationId);
+                    await setDoc(seenRef, { seenAt: new Date() });
+                } catch (error) {
+                    console.error("Failed to mark broadcast as seen:", error);
+                }
+            };
 
             useEffect(() => {
                 if (!currentUser) {
@@ -1829,13 +1856,17 @@
                     
                     const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
 
+                    // THE FIX: As soon as we identify unseen broadcasts, we mark them as seen
+                    // so they won't be processed as "new" ever again. This is a fire-and-forget action.
+                    unseenBroadcasts.forEach(notif => markBroadcastAsSeen(notif.id));
+                    
                     const combined = [...privateNotifications, ...unseenBroadcasts];
-                    const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
+                    const filtered = combined.filter(n => !pendingDeletes.has(n.id));
+                    const unique = Array.from(new Map(filtered.map(item => [item.id, item])).values());
                     
                     unique.sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
                     
-                    // The key change: Filter out any items pending deletion
-                    setNotifications(unique.filter(n => !pendingDeletes.has(n.id)));
+                    setNotifications(unique);
                     setIsLoading(false);
                 };
 
@@ -1859,30 +1890,11 @@
                     unsubscribeBroadcast();
                 };
 
-            }, [currentUser, pendingDeletes]); // Re-run if pendingDeletes changes
+            }, [currentUser, pendingDeletes]);
 
-            const markPendingDelete = (id) => {
-                setPendingDeletes(prev => new Set(prev).add(id));
-            };
-
-            const rollbackDelete = (id) => {
-                setPendingDeletes(prev => {
-                    const newSet = new Set(prev);
-                    newSet.delete(id);
-                    return newSet;
-                });
-            };
-
-            const confirmDelete = (id) => {
-                setPendingDeletes(prev => {
-                    const newSet = new Set(prev);
-                    newSet.delete(id);
-                    return newSet;
-                });
-            };
-
-            return { notifications, isLoading, setNotifications, markPendingDelete, rollbackDelete, confirmDelete };
+            return { notifications, isLoading, dismissNotification };
         };
+// END of REPLACEMENT Block
 
         const NotificationBell = ({ count, onClick }) => {
             return (
@@ -1918,14 +1930,27 @@
         const NotificationToast = ({ notification, onClick, onTimeout }) => {
             useEffect(() => {
                 const timer = setTimeout(() => {
-                    onTimeout(); // This will now only close the toast, not navigate
-                }, 6000); // Disappear after 6 seconds
+                    onTimeout(); 
+                }, 6000); 
 
                 return () => clearTimeout(timer);
             }, [notification, onTimeout]);
 
             if (!notification) return null;
 
+            // Check for the special donation broadcast type
+            if (notification.broadcastType === 'DONATION') {
+                return (
+                     <div className="donationTickerContainer visible">
+                        <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
+                        <div className="tickerText">
+                            <strong>{notification.userName}</strong> just donated <strong>${notification.amount.toFixed(2)}</strong> to "{notification.targetCampaignTitle}"!
+                        </div>
+                    </div>
+                );
+            }
+
+            // Fallback to the standard notification toast
             return (
                 <div className="donationTickerContainer visible" style={{cursor: 'pointer'}} onClick={onClick}>
                     <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
@@ -1936,79 +1961,87 @@
             );
         };
 
-        const NotificationInboxScreen = ({ notifications, setActiveScreen, showMessage, setNotifications, markPendingDelete, rollbackDelete, confirmDelete }) => {
-            const [isDeleting, setIsDeleting] = useState(null);
+        const NotificationInboxScreen = ({ notifications, setActiveScreen, dismissNotification }) => {
+            // This local state is the key. It gives this component direct, instant control over the UI.
+            const [localNotifications, setLocalNotifications] = useState(notifications);
 
-            const handleDelete = async (e, notificationToDelete) => {
-                e.stopPropagation();
-                if (isDeleting) return;
+            // This effect synchronizes the local list with the master list from the hook
+            // when the component first loads or when a new notification arrives from the server.
+            useEffect(() => {
+                setLocalNotifications(notifications);
+            }, [notifications]);
 
-                setIsDeleting(notificationToDelete.id);
-
-                // Snapshot for rollback is now handled implicitly by the hook
-                const originalNotifications = [...notifications]; 
-
-                // Optimistic UI update using the hook's function
-                markPendingDelete(notificationToDelete.id);
-                setNotifications(prev => prev.filter(n => n.id !== notificationToDelete.id));
-
-                try {
-                    if (notificationToDelete.isBroadcast) {
-                        const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notificationToDelete.id);
-                        await setDoc(seenRef, { seenAt: new Date() });
-                    } else {
-                        const functions = getFunctions(window.firebaseApp);
-                        const deleteNotificationCallable = httpsCallable(functions, 'deleteNotification');
-                        await deleteNotificationCallable({ notificationId: notificationToDelete.id });
+            const markAsRead = async (notification) => {
+                // Mark private notifications as read
+                if (!notification.isBroadcast && !notification.isRead) {
+                    const notifRef = doc(db, "notifications", notification.id);
+                    try {
+                        await updateDoc(notifRef, { isRead: true });
+                    } catch (error) {
+                        console.error("Failed to mark notification as read:", error);
                     }
-                    // If successful, confirm the delete so the hook can clean up
-                    confirmDelete(notificationToDelete.id);
-                } catch (error) {
-                    console.error("Failed to delete notification:", error);
-                    showMessage(`Error: ${error.message}`);
-                    // If it fails, roll back using the hook and the local snapshot
-                    rollbackDelete(notificationToDelete.id);
-                    setNotifications(originalNotifications);
-                } finally {
-                    setIsDeleting(null);
+                }
+                // Always mark broadcasts as seen, as their read state isn't tracked in the doc itself
+                if (notification.isBroadcast) {
+                    const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
+                    try {
+                         await setDoc(seenRef, { seenAt: new Date() });
+                    } catch (error) {
+                         console.error("Failed to mark broadcast as seen:", error);
+                    }
                 }
             };
 
-            const handleNotificationClick = async (notification) => {
-                if (!notification.isBroadcast && !notification.isRead) {
-                    const notifRef = doc(db, "notifications", notification.id);
-                    await updateDoc(notifRef, { isRead: true }).catch(err => console.error("Failed to mark as read", err));
-                }
+            const handleNotificationClick = (notification) => {
+                markAsRead(notification);
                 if (notification.link) {
-                    setActiveScreen(notification.link.replace('/', ''));
+                    const screen = notification.link.replace('/', '');
+                    setActiveScreen(screen);
                 }
+            };
+
+            const handleDismiss = (notificationId, event) => {
+                event.stopPropagation(); // Prevents the card's main click action
+
+                // 1. INSTANTLY update the local UI state. This is the fix.
+                setLocalNotifications(prev => prev.filter(n => n.id !== notificationId));
+
+                // 2. Call the function from the hook to handle the backend deletion.
+                dismissNotification(notificationId);
             };
 
             return (
                 <div className="screenContainer">
                     <p className="heading">Notifications</p>
                     <div className="dashboardContentList">
-                        {notifications.length === 0 ? (
+                        {localNotifications.length === 0 ? (
                             <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
                         ) : (
-                            notifications.map(item => (
+                            localNotifications.map(item => (
                                 <div
                                     key={item.id}
                                     className="adminDashboardItem"
-                                    style={{ cursor: 'pointer', borderLeft: (item.isBroadcast || item.isRead === true) ? '4px solid transparent' : '4px solid #FFD700' }}
+                                    style={{
+                                        cursor: 'pointer',
+                                        borderLeft: (item.isBroadcast || item.isRead === true) ? '4px solid transparent' : '4px solid #FFD700',
+                                        flexDirection: 'column',
+                                        alignItems: 'flex-start'
+                                    }}
                                     onClick={() => handleNotificationClick(item)}
                                 >
-                                    <div style={{ flexGrow: 1, marginRight: '10px' }}>
-                                        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>{item.message}</p>
-                                        <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                                        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal', flexGrow: 1}}>{item.message}</p>
+                                        {!item.isBroadcast && (
+                                            <button 
+                                                className="adminActionButton reject" // Use 'reject' class for red styling
+                                                style={{ marginLeft: '15px' }} 
+                                                onClick={(e) => handleDismiss(item.id, e)}
+                                            >
+                                                Dismiss
+                                            </button>
+                                        )}
                                     </div>
-                                    <button 
-                                        className="adminActionButton reject"
-                                        onClick={(e) => handleDelete(e, item)}
-                                        disabled={isDeleting === item.id}
-                                    >
-                                        {isDeleting === item.id ? '...' : 'Dismiss'}
-                                    </button>
+                                    <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
                                 </div>
                             ))
                         )}
@@ -2016,7 +2049,7 @@
                 </div>
             );
         };
-// END of REPLACEMENT Block
+        // ======================= END: UNIFIED NOTIFICATION CODE BLOCK =======================
 
           // --- NEW HELPER FUNCTION TO BE ADDED ---
         const extractVideoInfo = (url) => {
@@ -2959,8 +2992,8 @@
         const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignId }) => {
             const [campaigns, setCampaigns] = useState([]);
             const [loading, setLoading] = useState(true);
-            const [searchTerm, setSearchTerm] = useState(''); // State for the search query
-            const PLATFORM_FEE_PERCENTAGE = 0.07;
+            const [searchTerm, setSearchTerm] = useState('');
+            const PLATFORM_FEE_PERCENTAGE = 0.07; 
 
             useEffect(() => {
                 const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
@@ -2986,14 +3019,6 @@
                 return () => unsubscribe();
             }, []);
 
-            // Filter campaigns based on the search term
-            const filteredCampaigns = campaigns.filter(campaign => {
-                const term = searchTerm.toLowerCase();
-                const titleMatch = campaign.title.toLowerCase().includes(term);
-                const creatorMatch = campaign.creatorName.toLowerCase().includes(term);
-                return titleMatch || creatorMatch;
-            });
-
             if (loading) {
                 return (
                     <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
@@ -3003,28 +3028,30 @@
                 );
             }
 
+            const filteredCampaigns = campaigns.filter(campaign => 
+                campaign.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                campaign.creatorName.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
             return (
                 <div className="screenContainer">
                     <p className="heading">All Campaigns</p>
                     <p className="subHeading">Discover and support projects by Guyanese creators!</p>
 
-                    {/* --- NEW SEARCH BAR --- */}
-                    <form onSubmit={(e) => e.preventDefault()} style={{ marginBottom: '20px' }}>
-                        <div className="formGroup">
-                             <input
-                                type="text"
-                                className="formInput"
-                                placeholder="Search by campaign title or creator name..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                        </div>
-                    </form>
+                    <div className="formGroup" style={{ marginTop: '10px', marginBottom: '20px' }}>
+                        <input
+                            type="text"
+                            className="formInput"
+                            placeholder="Search by title or creator name..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
 
-                    {filteredCampaigns.length === 0 ? (
-                        <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>
-                            {searchTerm ? `No campaigns found for "${searchTerm}".` : "No active campaigns found yet."}
-                        </p>
+                    {campaigns.length === 0 ? (
+                        <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No active campaigns found yet.</p>
+                    ) : filteredCampaigns.length === 0 ? (
+                        <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No campaigns found matching "{searchTerm}".</p>
                     ) : (
                         <div className="allCampaignsList">
                             {filteredCampaigns.map(campaign => {
@@ -3412,23 +3439,27 @@ const AdminDashboardScreen = ({
         }
     };
 
-    const denyPledgeLogic = async (pledgeId) => {
-        showMessage(`Denying pledge ${pledgeId}...`);
-        try {
-            await deleteDoc(doc(db, "paymentPledges", pledgeId));
-            showMessage("Pledge denied and removed successfully.");
-        } catch (error) {
-            console.error("Error denying pledge:", error);
-            showMessage(`Error: ${error.message}`);
-        }
-    };
-
-    const confirmDenyPledge = (pledge) => {
-        setConfirmationTitle("Deny Pledge?");
-        setConfirmationMessage(`Are you sure you want to deny and permanently delete this pledge from ${pledge.userName} for $${pledge.amount.toFixed(2)}? This action cannot be undone.`);
-        setOnConfirmationAction(() => () => denyPledgeLogic(pledge.id));
-        setShowConfirmationModal(true);
-    };
+    // START of REPLACEMENT Block
+        const denyPledgeLogic = async (pledgeId) => {
+            showMessage(`Denying pledge...`);
+            try {
+                // The ONLY job of this function now is to delete the pledge.
+                // The onPledgeDelete backend trigger will automatically send the notification.
+                await deleteDoc(doc(db, "paymentPledges", pledgeId));
+                showMessage("Pledge denied and removed successfully.");
+            } catch (error) {
+                console.error("Error denying pledge:", error);
+                showMessage(`Error denying pledge: ${error.message}`);
+            }
+        };
+    
+        const confirmDenyPledge = (pledge) => {
+            setConfirmationTitle("Deny Pledge?");
+            setConfirmationMessage(`Are you sure you want to deny and permanently delete this pledge from ${pledge.userName} for $${pledge.amount.toFixed(2)}? This action will notify the user and cannot be undone.`);
+            setOnConfirmationAction(() => () => denyPledgeLogic(pledge.id));
+            setShowConfirmationModal(true);
+        };
+       // END of REPLACEMENT Block
 
     const [isPendingCampaignsExpanded, setIsPendingCampaignsExpanded] = useState(true);
     const [isActiveCampaignsExpanded, setIsActiveCampaignsExpanded] = useState(true);
@@ -3438,7 +3469,7 @@ const AdminDashboardScreen = ({
     const [activeCampaigns, setActiveCampaigns] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [isUpdatingRole, setIsUpdatingRole] = useState(null);
+        const [isUpdatingRole, setIsUpdatingRole] = useState(null);
     const [banRequests, setBanRequests] = useState([]);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(null);
     const [isCorrectingCount, setIsCorrectingCount] = useState(null);
@@ -3738,8 +3769,9 @@ const AdminDashboardScreen = ({
             const handleRejectCampaign = async () => {
                 setShowConfirmationModal(false); // Close modal
                 if (!campaign || !currentUser) return;
-
+            
                 try {
+                    // This function now ONLY updates the status. The backend trigger handles the notification.
                     const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
                     await updateDoc(campaignDocRef, {
                         status: 'rejected',
@@ -3747,13 +3779,15 @@ const AdminDashboardScreen = ({
                         rejectedAt: new Date().toISOString(),
                         updatedAt: new Date().toISOString()
                     });
-                    showMessage(`Campaign "${campaign.title}" rejected.`);
+            
+                    showMessage(`Campaign "${campaign.title}" rejected. Creator will be notified.`);
                     setActiveScreen('AdminDashboard'); // Go back to dashboard
                 } catch (error) {
                     console.error("Error rejecting campaign:", error);
                     showMessage(`Failed to reject campaign: ${error.message}`);
                 }
             };
+// END of REPLACEMENT Block
 
             const confirmEndCampaignByAdmin = () => {
                 // Check if current user is an authority and the campaign creator is an admin
@@ -3860,7 +3894,7 @@ const AdminDashboardScreen = ({
                                     <button
                                         className="button"
                                         onClick={() => window.open(campaign.projectLink, '_blank')}
-                                        style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '10px', width: 'auto', alignSelf: 'flex-start', padding: '8px 15px', fontSize: '14px' }}
+                                        style={{ backgroundColor: '#3A3A3A', marginTop: '10px', width: 'auto', alignSelf: 'flex-start', padding: '8px 15px', fontSize: '14px' }}
                                     >
                                         <span className="buttonText">Review Creator's Project Link</span>
                                     </button>
@@ -3870,7 +3904,7 @@ const AdminDashboardScreen = ({
                         )}
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '20px' }}>
                         {campaign.status === 'pending' && ( // Only show approve/reject for pending
                             <>
                                 <button
@@ -3901,9 +3935,9 @@ const AdminDashboardScreen = ({
                     <button
                         className="button"
                         onClick={() => setActiveScreen('AdminDashboard')}
-                        style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}
+                        style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFF', marginTop: '30px' }}
                     >
-                        <span className="buttonText">Back to Admin Dashboard</span>
+                        <span className="buttonText light">Back to Admin Dashboard</span>
                     </button>
                 </div>
             );
@@ -6263,87 +6297,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
         </div>
     );
 };
-
-            // --- NEW DONATION TICKER COMPONENT ---
-        const DonationTicker = ({ showMessage }) => {
-            const [allDonations, setAllDonations] = useState([]);
-            const [donationQueue, setDonationQueue] = useState([]);
-            const [currentDonation, setCurrentDonation] = useState(null); // This line was missing from the previous snippet
-            const isProcessing = useRef(false);
-            const tickerInterval = useRef(null);
-
-            // This effect fetches the initial data and listens for new approved donations.
-            useEffect(() => {
-                const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-                const publicDonationsRef = collection(db, "public_donations");
-                const q = query(
-                    publicDonationsRef,
-                    where('approvedAt', '>', twentyFourHoursAgo.toISOString()),
-                    orderBy('approvedAt', 'desc'),
-                    limit(10)
-                );
-
-                const unsubscribe = onSnapshot(q, (snapshot) => {
-                    const newDonations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setAllDonations(newDonations);
-                }, (error) => {
-                    // This will catch the permission error if rules are not deployed, without crashing the app
-                    console.error("Donation Ticker Error:", error.message);
-                });
-
-                return () => unsubscribe();
-            }, []);
-
-            // This effect safely adds newly fetched donations to the display queue.
-            useEffect(() => {
-                setDonationQueue(prevQueue => {
-                    const existingIds = new Set(prevQueue.map(d => d.id));
-                    // THIS IS THE CORRECTED LOGIC: It no longer references currentDonation.
-                    const newItems = allDonations.filter(d => !existingIds.has(d.id));
-                    return [...prevQueue, ...newItems];
-                });
-            }, [allDonations]);
-
-
-            // This effect manages the display cycle itself.
-            useEffect(() => {
-                const processQueue = () => {
-                    if (isProcessing.current || donationQueue.length === 0) return;
-
-                    isProcessing.current = true;
-                    
-                    const nextDonation = donationQueue[0]; // Peek at the next item
-                    setDonationQueue(prev => prev.slice(1)); // Update state to remove it
-                    setCurrentDonation(nextDonation); // Show the donation
-
-                    setTimeout(() => {
-                        setCurrentDonation(null); // Hide the donation
-                        setTimeout(() => {
-                            isProcessing.current = false; // Allow next donation to process
-                        }, 1000); // 1s pause between tickers
-                    }, 6000); // 6s visible time
-                };
-
-                tickerInterval.current = setInterval(processQueue, 500);
-
-                return () => clearInterval(tickerInterval.current);
-            }, [donationQueue]);
-
-
-            return (
-                <div className={`donationTickerContainer ${currentDonation ? 'visible' : ''}`}>
-                    {currentDonation && (
-                        <>
-                            <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
-                            <div className="tickerText">
-                                <strong>{currentDonation.userName}</strong> just donated <strong>${currentDonation.amount.toFixed(2)}</strong> to "{currentDonation.targetCampaignTitle}"!
-                            </div>
-                        </>
-                    )}
-                </div>
-            );
-        };
-
+            
 // ======================================================================
 // --- Your App component should start on the very next line ---
 // ======================================================================
@@ -6362,8 +6316,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             
             // ======================= START: NEW CODE =======================
             // Call our new hook to get a live list of notifications
-            const { notifications: unreadNotifications, isLoading: notificationsLoading, setNotifications, markPendingDelete, rollbackDelete, 
-            confirmDelete } = useNotifications(currentUser);
+            const { notifications: unreadNotifications, isLoading: notificationsLoading, dismissNotification } = useNotifications(currentUser);
             // ======================== END: NEW CODE ========================
             
               // ======================= START: NEW TOAST STATE AND LOGIC =======================
@@ -7606,15 +7559,7 @@ const CreatorDashboardScreen = ({
                     return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                 
                 case 'NotificationInbox':
-                        return <NotificationInboxScreen 
-                            notifications={unreadNotifications} 
-                            setActiveScreen={setActiveScreen} 
-                            showMessage={showMessage} 
-                            setNotifications={setNotifications}
-                            markPendingDelete={markPendingDelete}
-                            rollbackDelete={rollbackDelete}
-                            confirmDelete={confirmDelete}
-                        />;
+                        return <NotificationInboxScreen notifications={unreadNotifications} setActiveScreen={setActiveScreen} dismissNotification={dismissNotification} />;
                 default:
                     return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
             }
