@@ -106,13 +106,13 @@
         }
         .navigationBar {
             display: flex;
-            justify-content: space-around;
-            padding: 10px;
+            flex-wrap: wrap; /* The key property to allow wrapping */
+            justify-content: center; /* Centers the buttons as a group */
+            gap: 15px; /* Creates perfect 15px spacing between all items */
+            padding: 15px; /* Provides breathing room around the buttons */
             background-color: #1A1A1A;
             border-top: 1px solid #333;
             border-radius: 0 0 15px 15px;
-            flex-wrap: wrap; /* This allows buttons to wrap onto the next line */
-            gap: 10px;       /* This creates consistent spacing between all buttons */
         }
         .navButton {
             padding: 8px 15px;
@@ -2454,7 +2454,7 @@
     const [profile, setProfile] = useState(null);
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
-    
+    const [isContentListExpanded, setIsContentListExpanded] = useState(true);
     // --- State for the follow system ---
     const [isFollowing, setIsFollowing] = useState(false);
     const [isFollowLoading, setIsFollowLoading] = useState(false);
@@ -3562,6 +3562,14 @@ const AdminDashboardScreen = ({
                             </div> 
                         </div> 
                     </section>
+                   
+                   <section className="dashboardSection">
+                         <p className="dashboardSectionTitle">Community Management</p>
+                         <button className="button" onClick={() => setActiveScreen('PremiumMembersScreen')} style={{width: '100%', backgroundColor: '#FFD700', color: '#0A0A0A'}}>
+                            <span className="buttonText">View All Premium Members 👑</span>
+                        </button>
+                    </section>
+                   
                     {creatorProfile.role === 'admin' && selectedAdminSubScreen === 'Overview' && (
                         <section className="dashboardSection" style={{border: '2px solid #FFD700'}}>
                             <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPaymentsExpanded, isPaymentsExpanded)}>
@@ -4599,6 +4607,7 @@ const AdminContentManagerScreen = ({
 }) => {
     const [contentItems, setContentItems] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isContentListExpanded, setIsContentListExpanded] = useState(true); // <-- THIS LINE IS THE FIX
 
     const [title, setTitle] = useState('');
     const [mainUrl, setMainUrl] = useState('');
@@ -4615,7 +4624,6 @@ const AdminContentManagerScreen = ({
     
     const [availableCategories, setAvailableCategories] = useState([]);
     
-    // --- CONSOLIDATED: State and handler for the Curation Modal ---
     const [showCurationModal, setShowCurationModal] = useState(false);
     const [curationTarget, setCurationTarget] = useState('');
 
@@ -4635,15 +4643,12 @@ const AdminContentManagerScreen = ({
             );
             
             const unsubscribe = onSnapshot(q, (snapshot) => {
-                // Step 1: Fetch the existing, filterable categories from the database.
                 const fetchedCategories = snapshot.docs
                     .map(doc => doc.data().name)
                     .filter(name => !systemCategories.includes(name));
                 
-                // Step 2: Manually add "Live Feed" to the list of options.
                 const finalCategories = [...fetchedCategories, 'Live Feed'];
                 
-                // Step 3: Set the state with the complete list for the dropdown.
                 setAvailableCategories(finalCategories);
             });
             
@@ -4893,23 +4898,34 @@ const AdminContentManagerScreen = ({
             </div>
 
             <div className="dashboardSection" style={{ marginTop: '30px' }}>
-                <p className="dashboardSectionTitle">Existing Content Items ({contentItems.length})</p>
-                {loading ? <p>Loading...</p> : (
-                    <div className="dashboardContentList">
-                        {contentItems.map(item => (
-                            <div key={item.id} className="adminDashboardItem">
-                                <img src={item.customThumbnailUrl || 'https://placehold.co/50x50/3A3A3A/FFF?text=X'} alt="Thumbnail" style={{ width: '50px', height: '50px', borderRadius: '5px', objectFit: 'cover', marginRight: '10px' }} />
-                                <div style={{ flexGrow: 1 }}>
-                                    <p className="adminDashboardItemTitle">{item.title}</p>
-                                    <p style={{ fontSize: '12px', color: '#CCC' }}>Creator: {item.creatorName} | Type: {item.contentType}</p>
-                                    <p style={{ fontSize: '12px', color: item.isActive ? '#00FF00' : '#DC3545' }}>Status: {item.isActive ? 'Active' : 'Inactive'}</p>
-                                </div>
-                                <button className="adminActionButton" onClick={() => handleToggleActive(item)} style={{ backgroundColor: item.isActive ? '#DC3545' : '#008000', color: '#FFF' }}>{item.isActive ? 'Deactivate' : 'Activate'}</button>
-                                <button className="adminActionButton reject" onClick={() => confirmDeleteContent(item.id, item.title)}>Delete</button>
+                <div 
+                    className="flex justify-between items-center cursor-pointer" 
+                    onClick={() => setIsContentListExpanded(!isContentListExpanded)}
+                >
+                    <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Existing Content Items ({contentItems.length})</p>
+                    <button className="text-xl font-bold text-white">{isContentListExpanded ? '▼' : '▶'}</button>
+                </div>
+                
+                <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isContentListExpanded ? 'max-h-[3000px] mt-4' : 'max-h-0'}`}>
+                    <div className="pt-4 border-t" style={{borderColor: '#3A3A3A'}}>
+                        {loading ? <p>Loading...</p> : (
+                            <div className="dashboardContentList">
+                                {contentItems.map(item => (
+                                    <div key={item.id} className="adminDashboardItem">
+                                        <img src={item.customThumbnailUrl || 'https://placehold.co/50x50/3A3A3A/FFF?text=X'} alt="Thumbnail" style={{ width: '50px', height: '50px', borderRadius: '5px', objectFit: 'cover', marginRight: '10px' }} />
+                                        <div style={{ flexGrow: 1 }}>
+                                            <p className="adminDashboardItemTitle">{item.title}</p>
+                                            <p style={{ fontSize: '12px', color: '#CCC' }}>Creator: {item.creatorName} | Type: {item.contentType}</p>
+                                            <p style={{ fontSize: '12px', color: item.isActive ? '#00FF00' : '#DC3545' }}>Status: {item.isActive ? 'Active' : 'Inactive'}</p>
+                                        </div>
+                                        <button className="adminActionButton" onClick={() => handleToggleActive(item)} style={{ backgroundColor: item.isActive ? '#DC3545' : '#008000', color: '#FFF' }}>{item.isActive ? 'Deactivate' : 'Activate'}</button>
+                                        <button className="adminActionButton reject" onClick={() => confirmDeleteContent(item.id, item.title)}>Delete</button>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
+                        )}
                     </div>
-                )}
+                </div>
             </div>
             
             {showCurationModal && (
@@ -4923,8 +4939,7 @@ const AdminContentManagerScreen = ({
         </div>
     );
 };
-
-                    // REPLACE THE PREVIOUS AdminSiteManagerScreen WITH THIS FUNCTIONAL VERSION
+// ====================== END: FULL COMPONENT REPLACEMENT ======================
 
     // FINAL VERSION of AdminSiteManagerScreen (with Inbox)
 
@@ -5971,6 +5986,101 @@ const FollowersScreen = ({ currentUser, setActiveScreen, setSelectedUserId, show
         </div>
     );
 };
+
+// ===================== START: FULL COMPONENT REPLACEMENT =====================
+const PremiumMembersScreen = ({ setActiveScreen, setSelectedUserId, showMessage }) => {
+    const [allPremiumUsers, setAllPremiumUsers] = useState([]);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [loading, setLoading] = useState(true);
+
+    // This useEffect now runs once on load to get ALL premium users.
+    useEffect(() => {
+        const fetchPremiumUsers = async () => {
+            setLoading(true);
+            try {
+                const creatorsRef = collection(db, "creators");
+                const q = query(
+                    creatorsRef,
+                    where('premiumExpiresAt', '>', new Date()),
+                    orderBy('premiumExpiresAt', 'desc')
+                );
+
+                const querySnapshot = await getDocs(q);
+                const usersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setAllPremiumUsers(usersData); // Store the full list
+
+            } catch (error) {
+                console.error("Error fetching premium members:", error);
+                showMessage("Failed to load premium members list.");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchPremiumUsers();
+    }, []);
+
+    const viewProfile = (userId) => {
+        setSelectedUserId(userId);
+        setActiveScreen('UserProfile');
+    };
+
+    // This is NOT state. It's a derived value calculated on every render.
+    // It filters the full list based on the current searchTerm state.
+    const filteredUsers = allPremiumUsers.filter(user =>
+        user.creatorName.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    if (loading) {
+        return <div className="screenContainer"><p className="heading">Loading Premium Members...</p></div>;
+    }
+
+    return (
+        <div className="screenContainer">
+            <p className="heading">Premium Members</p>
+            <p className="subHeading">A list of all users currently supporting the platform.</p>
+
+            {/* This is the new real-time search/filter input */}
+            <div className="formGroup" style={{ marginTop: '10px', marginBottom: '20px' }}>
+                <input
+                    type="text"
+                    className="formInput"
+                    placeholder="Filter by name..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
+
+            <div className="user-search-list">
+                {allPremiumUsers.length === 0 ? (
+                     <p className="dashboardItem" style={{textAlign: 'center'}}>There are currently no active premium members.</p>
+                ) : filteredUsers.length === 0 ? (
+                    <p className="dashboardItem" style={{textAlign: 'center'}}>No premium members match your filter "{searchTerm}".</p>
+                ) : (
+                    filteredUsers.map(user => (
+                        <div key={user.id} className="user-search-item" style={{cursor: 'pointer'}} onClick={() => viewProfile(user.id)}>
+                            <img src={user.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt={user.creatorName} className="user-search-pfp"/>
+                            <div className="user-search-info">
+                                <p className="user-search-name" style={{display: 'flex', alignItems: 'center'}}>
+                                    {user.creatorName}
+                                    <span style={{marginLeft: '10px', fontSize: '14px'}}>👑</span>
+                                </p>
+                                <p className="user-search-role">
+                                    Premium Expires: {new Date(user.premiumExpiresAt.toDate()).toLocaleDateString()}
+                                </p>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}>
+                <span className="buttonText">Back to Admin Dashboard</span>
+            </button>
+        </div>
+    );
+};
+
 
 // --- UPDATED ANALYTICS DASHBOARD ---
         const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
@@ -7402,7 +7512,6 @@ const CreatorDashboardScreen = ({
                                 </div>
                                 <div style={{marginLeft: '1rem'}}>
                                     <p className="dashboardItem" style={{fontSize: '18px', fontWeight: 'bold', color: '#FFF'}}>{creatorProfile.creatorName}</p>
-                                    {/* --- START: MODIFIED PREMIUM BADGE LOGIC (CHECKS TIMESTAMP) --- */}
                                     <p className="dashboardItem" style={{fontSize: '12px', color: '#AAA', display: 'flex', alignItems: 'center'}}>
                                         Role: {creatorProfile.role}
                                         {creatorProfile.premiumExpiresAt && new Date(creatorProfile.premiumExpiresAt.toDate()) > new Date() && (
@@ -7506,17 +7615,15 @@ const CreatorDashboardScreen = ({
                         </div>
                     </div>
                 )}
-                
+                                
                 <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}><span className="buttonText light">Back to Home</span></button>
             </div>
             {showImageAdjustModal && imageFileToAdjust && (<ProfilePictureAdjustModal isUploading={isUploadingPFP} imageUrl={URL.createObjectURL(imageFileToAdjust)} onSave={handleSaveAdjustedProfilePicture} onCancel={handleCancelAdjust} showMessage={showMessage} />)}
         </>
     );
 };
-        // --- END OF REPLACEMENT COMPONENT ---
-
-              // --- FIND and REPLACE your ENTIRE renderScreen function with this block ---
-
+// ====================== END: REPLACEMENT BLOCK ======================
+       
 // =========== START REPLACEMENT ===========
               const memoizedScreen = React.useMemo(() => {
             if (currentUser && !currentUser.emailVerified) {
@@ -7582,7 +7689,8 @@ const CreatorDashboardScreen = ({
                     return <TopCreatorsScreen featuredContentSlots={featuredContentSlots} handleVideoPress={handleVideoPress} setActiveScreen={setActiveScreen} currentUser={currentUser} showMessage={showMessage}/>;
                 case 'AnalyticsDashboard':
                     return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
-                
+                case 'PremiumMembersScreen':
+                    return <PremiumMembersScreen setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId} showMessage={showMessage} />;
                 case 'NotificationInbox':
                         return <NotificationInboxScreen notifications={unreadNotifications} setActiveScreen={setActiveScreen} dismissNotification={dismissNotification} />;
                 default:
