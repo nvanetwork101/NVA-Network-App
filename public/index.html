@@ -1916,45 +1916,40 @@
             );
         };
 
-        const NotificationInboxScreen = ({ notifications, setActiveScreen }) => {
-            const [isDeleting, setIsDeleting] = useState(null); // To show loading state on the button
+        const NotificationInboxScreen = ({ notifications, setActiveScreen, showMessage }) => { // Added showMessage to props
+            const [isDeleting, setIsDeleting] = useState(null);
 
             const handleDelete = async (e, notification) => {
-                e.stopPropagation(); // Prevent the main click handler from firing
-                if (isDeleting) return; // Prevent double-clicks
-
+                e.stopPropagation();
+                if (isDeleting) return;
                 setIsDeleting(notification.id);
 
-                // For a BROADCAST, we just "mark it as seen" to hide it from the user's view
                 if (notification.isBroadcast) {
                     const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
                     try {
                          await setDoc(seenRef, { seenAt: new Date() });
-                         // The UI will update automatically due to the real-time listener in useNotifications
                     } catch (error) {
                          console.error("Failed to mark broadcast as seen:", error);
+                         showMessage(`Error dismissing: ${error.message}`); // VISIBLE ERROR
                     } finally {
                         setIsDeleting(null);
                     }
                     return;
                 }
 
-                // For a PRIVATE notification, we call the Cloud Function to delete it
                 try {
                     const functions = getFunctions(window.firebaseApp);
                     const deleteNotificationCallable = httpsCallable(functions, 'deleteNotification');
                     await deleteNotificationCallable({ notificationId: notification.id });
-                    // The UI updates automatically because the listener will no longer find the doc
                 } catch (error) {
                     console.error("Failed to delete notification:", error);
-                    showMessage(`Error: ${error.message}`); // Show a visible error to the user
+                    showMessage(`Error deleting: ${error.message}`); // VISIBLE ERROR
                 } finally {
                     setIsDeleting(null);
                 }
             };
 
             const handleNotificationClick = async (notification) => {
-                // This function now only handles marking as read and navigation
                 if (!notification.isBroadcast && !notification.isRead) {
                     const notifRef = doc(db, "notifications", notification.id);
                     await updateDoc(notifRef, { isRead: true }).catch(err => console.error("Failed to mark as read", err));
