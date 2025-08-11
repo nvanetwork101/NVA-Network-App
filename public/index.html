@@ -1920,6 +1920,8 @@
         const [isDeleting, setIsDeleting] = useState(null); // To show loading state on the button
 
         const handleDelete = async (e, notification) => {
+            alert('Dismiss button clicked!'); // <-- THIS IS THE TEST LINE
+            
             e.stopPropagation(); // Prevent the main click handler from firing
             if (isDeleting) return; // Prevent double-clicks
 
