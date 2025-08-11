@@ -146,10 +146,10 @@
         .contentGrid {
             display: flex;
             flex-wrap: wrap;
-            gap: 15px; /* This is the modern, robust way to handle spacing */
+            gap: 15px; /* Explicitly set the gap between items */
         }
         .contentCard {
-            width: calc(50% - 7.5px); /* Roughly half width for two columns with spacing */
+            flex: 1 1 calc(50% - 8px); /* Grow, shrink, and base size. The 8px is a safe half-gap. */
             margin-bottom: 15px;
             background-color: #2A2A2A;
             border-radius: 10px;
