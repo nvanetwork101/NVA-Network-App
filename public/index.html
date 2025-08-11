@@ -196,14 +196,29 @@
             margin-bottom: 15px;
             height: 40px;
             display: flex;
-            overflow-x: auto; /* Enable horizontal scrolling for tabs */
-            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
-            padding-bottom: 5px; /* Space for scrollbar if it appears */
+            /* This property is key for equal spacing of the visible buttons */
+            justify-content: space-around;
+            align-items: center;
+            position: relative; /* Crucial for positioning the dropdown */
         }
-        
-        /* Optional but recommended: Hide the default scrollbar on browsers that support it */
-        .categoryTabs::-webkit-scrollbar {
-            display: none;
+        .moreCategoriesMenu {
+            position: absolute;
+            top: 100%; /* Position it right below the tabs bar */
+            right: 0; /* Align to the right side */
+            background-color: #1A1A1A;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.7);
+            border: 1px solid #333;
+            z-index: 100; /* Ensure it appears above other content */
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 200px; /* Give the menu a fixed width */
+        }
+        .moreMenuItem {
+            width: 100%; /* Make each button take the full width of the menu */
+            margin-right: 0; /* Override the default margin */
         }
 
         .categoryTab {
@@ -5629,15 +5644,15 @@ const AdminContentManagerScreen = ({
         // --- FIND and REPLACE the ENTIRE CategoriesScreen component with this block ---
 
 const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, currentUser, handleVideoPress }) => {
-    // This component now correctly receives handleVideoPress as a prop.
-    
     const [categories, setCategories] = useState([]);
     const [activeCategory, setActiveCategory] = useState('Live Premieres');
     const [content, setContent] = useState([]);
     const [loadingCategories, setLoadingCategories] = useState(true);
     const [loadingContent, setLoadingContent] = useState(false);
-    // Note: The local useState variables for the modal are no longer needed here.
     const [liveStreamUrl, setLiveStreamUrl] = useState('');
+    
+    // New state to manage the visibility of the "More Content" dropdown
+    const [showMoreMenu, setShowMoreMenu] = useState(false);
 
     useEffect(() => {
         const categoriesRef = collection(db, "content_categories");
@@ -5666,15 +5681,16 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
         return () => unsubscribe();
     }, [activeCategory]);
 
-    // Note: The local handleVideoPress and closeVideoModal functions have been DELETED
-    // because we are now using the one passed down from the App component.
+    const handleCategoryClick = (categoryName) => {
+        setActiveCategory(categoryName);
+        setShowMoreMenu(false); // Close the menu whenever a category is selected
+    };
 
     const LiveStreamPlayer = () => {
         if (isLive) {
             const { embedUrl, isVertical } = extractVideoInfo(liveStreamUrl);
             const finalEmbedUrl = embedUrl || `${liveStreamUrl}?autoplay=1`;
             return (
-                // This simple, responsive container respects its parent's padding and has no conflicting classes.
                 <div style={{ width: '100%', maxWidth: '900px', margin: '0 auto' }}>
                     <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
                         <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe>
@@ -5710,17 +5726,40 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
             </div>
         );
     };
+    
+    // Logic to split categories into visible and hidden
+    const visibleCategories = categories.slice(0, 2);
+    const hiddenCategories = categories.slice(2);
 
     return (
         <div className="screenContainer">
             <p className="sectionTitle">Discover Content</p>
             {loadingCategories ? <p>Loading categories...</p> : (
                 <div className="categoryTabs">
-                    {categories.map(category => (
-                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => setActiveCategory(category.name)}>
+                    {/* Render the first 2 (or fewer) visible categories */}
+                    {visibleCategories.map(category => (
+                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
                             <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
                         </button>
                     ))}
+                    
+                    {/* If there are more than 2 categories, render the "More Content" button */}
+                    {hiddenCategories.length > 0 && (
+                        <button className="categoryTab" onClick={() => setShowMoreMenu(!showMoreMenu)}>
+                            <span className="categoryTabText">More Content {showMoreMenu ? '▲' : '▼'}</span>
+                        </button>
+                    )}
+
+                    {/* Conditionally render the dropdown menu */}
+                    {showMoreMenu && hiddenCategories.length > 0 && (
+                        <div className="moreCategoriesMenu">
+                            {hiddenCategories.map(category => (
+                                <button key={category.id} className={`categoryTab moreMenuItem ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
+                                    <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
             
@@ -6440,6 +6479,8 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
 
 // =========== START REPLACEMENT ===========
             const [currentUser, setCurrentUser] = useState(null);
+            // NOTE: Replace this placeholder URL with the actual URL of your hosted notification sound file.
+            const notificationSoundRef = useRef(new Audio('https://nva-network-app.netlify.app/notification.mp3'));
             const [activeScreen, setActiveScreen] = useState('Home');
             const [pledgeContext, setPledgeContext] = useState(null);
             const [pledgeIdForConfirmation, setPledgeIdForConfirmation] = useState(null);
@@ -6473,7 +6514,14 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
                     const nextToast = toastQueue[0];
                     setCurrentToast(nextToast);
                     setToastQueue(prev => prev.slice(1));
-
+                    // Play the notification sound
+                    if (notificationSoundRef.current) {
+                        notificationSoundRef.current.play().catch(error => {
+                            // This catch block gracefully handles the browser's autoplay policy
+                            // without crashing the app. It's expected to trigger on the first notification.
+                            console.log("Audio play was blocked by the browser, which is expected on first load. Sound will play on subsequent notifications after user interaction.");
+                        });
+                    }
                     // THE DEFINITIVE FIX:
                     // If it's a broadcast, mark it as "seen" in its own subcollection.
                     if (nextToast.isBroadcast) {
