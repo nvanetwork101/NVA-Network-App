@@ -148,12 +148,12 @@
         }
         .contentGrid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr); /* This is the core of the fix: create two equal-width columns. */
-            gap: 15px; /* This robustly handles both horizontal and vertical spacing. */
+            grid-template-columns: repeat(2, 1fr); /* Create 2 equal-fraction columns */
+            gap: 15px; /* Create a perfect 15px gap between columns and rows */
         }
         .contentCard {
-            /* We COMPLETELY REMOVE the fragile 'width' calculation. The parent grid now controls the size. */
-            /* We also remove margin-bottom, as 'gap' handles row spacing automatically. */
+            /* The width is now controlled by the parent grid. */
+            /* We remove margin-bottom because the parent's 'gap' property handles all spacing. */
             background-color: #2A2A2A;
             border-radius: 10px;
             overflow: hidden;
