@@ -1895,19 +1895,19 @@
             );
         };
 
-        const NotificationToast = ({ notification, onDismiss }) => {
+        const NotificationToast = ({ notification, onClick, onTimeout }) => {
             useEffect(() => {
                 const timer = setTimeout(() => {
-                    onDismiss();
+                    onTimeout(); // This will now only close the toast, not navigate
                 }, 6000); // Disappear after 6 seconds
 
                 return () => clearTimeout(timer);
-            }, [notification, onDismiss]);
+            }, [notification, onTimeout]);
 
             if (!notification) return null;
 
             return (
-                <div className="donationTickerContainer visible" style={{cursor: 'pointer'}} onClick={onDismiss}>
+                <div className="donationTickerContainer visible" style={{cursor: 'pointer'}} onClick={onClick}>
                     <svg className="tickerIcon" viewBox="0 0 24 24"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm3.71,9.71-4,4a1,1,0,0,1-1.42,0l-2-2a1,1,0,1,1,1.42-1.42L11,13.59l3.29-3.3a1,1,0,0,1,1.42,1.42Z"></path></svg>
                     <div className="tickerText">
                         {notification.message}
@@ -1917,64 +1917,88 @@
         };
 
         const NotificationInboxScreen = ({ notifications, setActiveScreen }) => {
-            const markAsRead = async (notification) => {
-                // Mark private notifications as read
-                if (!notification.isBroadcast && !notification.isRead) {
-                    const notifRef = doc(db, "notifications", notification.id);
-                    try {
-                        await updateDoc(notifRef, { isRead: true });
-                    } catch (error) {
-                        console.error("Failed to mark notification as read:", error);
-                    }
-                }
-                // Always mark broadcasts as seen, as their read state isn't tracked in the doc itself
-                if (notification.isBroadcast) {
-                    const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
-                    try {
-                         await setDoc(seenRef, { seenAt: new Date() });
-                    } catch (error) {
-                         console.error("Failed to mark broadcast as seen:", error);
-                    }
-                }
-            };
+        const [isDeleting, setIsDeleting] = useState(null); // To show loading state on the button
 
-            const handleNotificationClick = (notification) => {
-                markAsRead(notification);
-                if (notification.link) {
-                    const screen = notification.link.replace('/', '');
-                    setActiveScreen(screen);
-                }
-            };
+        const handleDelete = async (e, notification) => {
+            e.stopPropagation(); // Prevent the main click handler from firing
+            if (isDeleting) return; // Prevent double-clicks
 
-            return (
-                <div className="screenContainer">
-                    <p className="heading">Notifications</p>
-                    <div className="dashboardContentList">
-                        {notifications.length === 0 ? (
-                            <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
-                        ) : (
-                            notifications.map(item => (
-                                <div
-                                    key={item.id}
-                                    className="adminDashboardItem"
-                                    style={{
-                                        cursor: 'pointer',
-                                        borderLeft: (item.isBroadcast || item.isRead === true) ? '4px solid transparent' : '4px solid #FFD700',
-                                        flexDirection: 'column',
-                                        alignItems: 'flex-start'
-                                    }}
-                                    onClick={() => handleNotificationClick(item)}
-                                >
+            setIsDeleting(notification.id);
+
+            // For a BROADCAST, we just "mark it as seen" to hide it from the user's view
+            if (notification.isBroadcast) {
+                const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
+                try {
+                     await setDoc(seenRef, { seenAt: new Date() });
+                     // The UI will update automatically due to the real-time listener in useNotifications
+                } catch (error) {
+                     console.error("Failed to mark broadcast as seen:", error);
+                } finally {
+                    setIsDeleting(null);
+                }
+                return;
+            }
+
+            // For a PRIVATE notification, we call the Cloud Function to delete it
+            try {
+                const functions = getFunctions(window.firebaseApp);
+                const deleteNotificationCallable = httpsCallable(functions, 'deleteNotification');
+                await deleteNotificationCallable({ notificationId: notification.id });
+                // The UI updates automatically because the listener will no longer find the doc
+            } catch (error) {
+                console.error("Failed to delete notification:", error);
+            } finally {
+                setIsDeleting(null);
+            }
+        };
+
+        const handleNotificationClick = async (notification) => {
+            // This function now only handles marking as read and navigation
+            if (!notification.isBroadcast && !notification.isRead) {
+                const notifRef = doc(db, "notifications", notification.id);
+                await updateDoc(notifRef, { isRead: true }).catch(err => console.error("Failed to mark as read", err));
+            }
+            if (notification.link) {
+                setActiveScreen(notification.link.replace('/', ''));
+            }
+        };
+
+        return (
+            <div className="screenContainer">
+                <p className="heading">Notifications</p>
+                <div className="dashboardContentList">
+                    {notifications.length === 0 ? (
+                        <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
+                    ) : (
+                        notifications.map(item => (
+                            <div
+                                key={item.id}
+                                className="adminDashboardItem"
+                                style={{
+                                    cursor: 'pointer',
+                                    borderLeft: (item.isBroadcast || item.isRead === true) ? '4px solid transparent' : '4px solid #FFD700',
+                                }}
+                                onClick={() => handleNotificationClick(item)}
+                            >
+                                <div style={{ flexGrow: 1, marginRight: '10px' }}>
                                     <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>{item.message}</p>
                                     <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
                                 </div>
-                            ))
-                        )}
-                    </div>
+                                <button 
+                                    className="adminActionButton reject"
+                                    onClick={(e) => handleDelete(e, item)}
+                                    disabled={isDeleting === item.id}
+                                >
+                                    {isDeleting === item.id ? '...' : 'Dismiss'}
+                                </button>
+                            </div>
+                        ))
+                    )}
                 </div>
-            );
-        };
-        // ======================= END: UNIFIED NOTIFICATION CODE BLOCK =======================
+            </div>
+        );
+    };
+// END of REPLACEMENT Block (...down to this line)
 
           // --- NEW HELPER FUNCTION TO BE ADDED ---
         const extractVideoInfo = (url) => {
@@ -2917,13 +2941,14 @@
         const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignId }) => {
             const [campaigns, setCampaigns] = useState([]);
             const [loading, setLoading] = useState(true);
-            const PLATFORM_FEE_PERCENTAGE = 0.07; // Define the platform fee as a constant
+            const [searchTerm, setSearchTerm] = useState(''); // State for the search query
+            const PLATFORM_FEE_PERCENTAGE = 0.07;
 
             useEffect(() => {
                 const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
                 const q = query(
                     campaignsCollectionRef,
-                    where('status', '==', 'active'), // Only show active campaigns
+                    where('status', '==', 'active'),
                     orderBy('createdAt', 'desc')
                 );
 
@@ -2943,6 +2968,13 @@
                 return () => unsubscribe();
             }, []);
 
+            // Filter campaigns based on the search term
+            const filteredCampaigns = campaigns.filter(campaign => {
+                const term = searchTerm.toLowerCase();
+                const titleMatch = campaign.title.toLowerCase().includes(term);
+                const creatorMatch = campaign.creatorName.toLowerCase().includes(term);
+                return titleMatch || creatorMatch;
+            });
 
             if (loading) {
                 return (
@@ -2958,11 +2990,26 @@
                     <p className="heading">All Campaigns</p>
                     <p className="subHeading">Discover and support projects by Guyanese creators!</p>
 
-                    {campaigns.length === 0 ? (
-                        <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No active campaigns found yet.</p>
+                    {/* --- NEW SEARCH BAR --- */}
+                    <form onSubmit={(e) => e.preventDefault()} style={{ marginBottom: '20px' }}>
+                        <div className="formGroup">
+                             <input
+                                type="text"
+                                className="formInput"
+                                placeholder="Search by campaign title or creator name..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                    </form>
+
+                    {filteredCampaigns.length === 0 ? (
+                        <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>
+                            {searchTerm ? `No campaigns found for "${searchTerm}".` : "No active campaigns found yet."}
+                        </p>
                     ) : (
                         <div className="allCampaignsList">
-                            {campaigns.map(campaign => {
+                            {filteredCampaigns.map(campaign => {
                                 const isEnded = new Date(campaign.endDate) < new Date();
                                 return (
                                     <div
@@ -2976,14 +3023,14 @@
                                         <div
                                             className="campaignListImagePlaceholder"
                                             style={{ backgroundImage: campaign.imageUrl ? `url(${campaign.imageUrl})` : 'none' }}
-                                            onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='none'; }} /* No background image on error */
+                                            onError={(e) => { e.target.onerror = null; e.target.style.backgroundImage='none'; }}
                                         >
                                             <button
                                                 className="campaignListProjectButton"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    if (campaign.imageUrl) {
-                                                        window.open(campaign.imageUrl, '_blank');
+                                                    if (campaign.projectLink) {
+                                                        window.open(campaign.projectLink, '_blank');
                                                     } else {
                                                         showMessage('No project link provided for this campaign.');
                                                     }
@@ -3417,8 +3464,40 @@ const AdminDashboardScreen = ({
                 <>
                     {creatorProfile.role === 'admin' && banRequests.length > 0 && ( <section className="dashboardSection" style={{ border: '2px solid #FFD700' }}> <p className="dashboardSectionTitle">Pending Authority Ban Requests ({banRequests.length})</p> <div className="dashboardContentList"> {banRequests.map(req => ( <div key={req.id} className="adminDashboardItem"> <div style={{ flexGrow: 1 }}> <p className="adminDashboardItemTitle">Target: {req.targetUserName}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Requested by: {req.requesterName}</p> </div> <button className="adminActionButton approve" onClick={() => handleApproveBanRequest(req)}>Approve Ban</button> <button className="adminActionButton reject" onClick={() => handleDenyBanRequest(req)}>Deny Request</button> </div> ))} </div> </section> )}
                    <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList"> {filteredUsers.map(user => ( <div key={user.id} className="adminDashboardItem" style={{alignItems: 'flex-start'}}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p> <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p> <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p> </div> <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}> {currentUser.uid !== user.id && <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} onClick={() => confirmToggleBan(user)} disabled={isSubmittingRequest === user.id}> {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')} </button>} <div className="formGroup" style={{marginBottom: 0}}> <select className="formInput" value={user.role} onChange={(e) => confirmChangeUserRole(user, e.target.value)} disabled={isUpdatingRole === user.id || user.id === currentUser.uid || (creatorProfile.role === 'authority' && user.role === 'admin')} style={{padding: '5px', fontSize: '12px', width: '120px'}}> <option value="user">User</option> <option value="creator">Creator</option> <option value="authority">Authority</option> {creatorProfile.role === 'admin' && <option value="admin">Admin</option>} </select> {isUpdatingRole === user.id && <p style={{fontSize: '10px', color: '#FFD700', textAlign: 'right'}}>Updating...</p>} </div> <button className="adminActionButton" onClick={() => confirmRecalculate(user)} disabled={isCorrectingCount === user.id} style={{ backgroundColor: '#FF8C00' }}> {isCorrectingCount === user.id ? 'Recalculating...' : 'Recalculate Counts'} </button> </div> </div> ))} </div> } </div> </div> </section>
-                    <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p> <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> : <div className="dashboardContentList"> {pendingCampaigns.map(campaign => ( <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{campaign.title}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p> </div> </div> ))} </div> } </div> </div> </section>
-                    <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsActiveCampaignsExpanded, isActiveCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p> <button className="admin-toggle-button">{isActiveCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="active-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : <div className="dashboardContentList"> {activeCampaigns.map(campaign => ( <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{campaign.title}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p> </div> </div> ))} </div> } </div> </div> </section>
+                    <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p> <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> : <div className="dashboardContentList"> {pendingCampaigns.map(campaign => ( 
+                    <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }} style={{ cursor: 'pointer', alignItems: 'center' }}>
+                                    <img 
+                                        src={campaign.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} 
+                                        alt="Campaign Thumbnail"
+                                        style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginRight: '15px' }}
+                                    />
+                                    <div style={{ flexGrow: 1, marginRight: '10px' }}>
+                                        <p className="adminDashboardItemTitle">{campaign.title}</p>
+                                        <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
+                                    </div>
+                                </div> 
+                                ))} 
+                            </div> } 
+                        </div> 
+                    </div> 
+                </section>
+             <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsActiveCampaignsExpanded, isActiveCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p> <button className="admin-toggle-button">{isActiveCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="active-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : <div className="dashboardContentList"> {activeCampaigns.map(campaign => ( 
+             <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }} style={{ cursor: 'pointer', alignItems: 'center' }}>
+                                    <img 
+                                        src={campaign.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} 
+                                        alt="Campaign Thumbnail"
+                                        style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginRight: '15px' }}
+                                    />
+                                    <div style={{ flexGrow: 1, marginRight: '10px' }}>
+                                        <p className="adminDashboardItemTitle">{campaign.title}</p>
+                                        <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
+                                    </div>
+                                </div> 
+                                ))} 
+                                </div> } 
+                            </div> 
+                        </div> 
+                    </section>
                     {creatorProfile.role === 'admin' && selectedAdminSubScreen === 'Overview' && (
                         <section className="dashboardSection" style={{border: '2px solid #FFD700'}}>
                             <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPaymentsExpanded, isPaymentsExpanded)}>
@@ -3499,6 +3578,7 @@ const AdminDashboardScreen = ({
                 setConfirmationTitle={setConfirmationTitle}
                 setConfirmationMessage={setConfirmationMessage}
                 setOnConfirmationAction={setOnConfirmationAction}
+                creatorProfile={creatorProfile}
                 />
             )}
 
@@ -3937,12 +4017,23 @@ const AdminDashboardScreen = ({
         const PendingConfirmationScreen = ({ showMessage, setActiveScreen, pledgeId, currentUser }) => {
             const [pledgeDetails, setPledgeDetails] = useState(null);
             const [isLoading, setIsLoading] = useState(true);
+            const [mmgNumber, setMmgNumber] = useState(''); // State variable is now correctly declared here
 
             useEffect(() => {
                 if (!pledgeId) {
                     setActiveScreen('Home');
-                    return;
+                    return () => {};
                 }
+
+                // Fetch the site-wide settings first to get the MMG number
+                const settingsRef = doc(db, "settings", "socialLinks");
+                getDoc(settingsRef).then(settingsSnap => {
+                    if (settingsSnap.exists()) {
+                        setMmgNumber(settingsSnap.data().mmgNumber || 'Admin Not Set');
+                    }
+                });
+
+                // Set up the listener for the specific pledge
                 const pledgeRef = doc(db, "paymentPledges", pledgeId);
                 const unsubscribe = onSnapshot(pledgeRef, (docSnap) => {
                     if (docSnap.exists()) {
@@ -3959,14 +4050,13 @@ const AdminDashboardScreen = ({
                             setTimeout(() => setActiveScreen('Home'), 3000);
                         }
                     } else {
-                        // This case can happen if an admin deletes the pledge
                         showMessage("This payment pledge is no longer valid.");
                         unsubscribe();
                         setActiveScreen('Home');
                     }
                 });
 
-                return () => unsubscribe(); // Cleanup listener
+                return () => unsubscribe();
             }, [pledgeId]);
 
             const renderPledgeSummary = () => {
@@ -4000,14 +4090,14 @@ const AdminDashboardScreen = ({
                     <div className="premiumFeatureCard" style={{textAlign: 'center'}}>
                         <p className="premiumFeatureDescription" style={{marginBottom: '5px'}}>Please send exactly:</p>
                         <p className="premiumFeatureTitle" style={{fontSize: '32px', color: '#FFF'}}>${pledgeDetails.amount.toFixed(2)} USD</p>
-                        <p className="premiumFeatureDescription" style={{marginTop: '10px'}}>to our MMG account:</p>
-                        <p className="premiumFeatureTitle" style={{fontSize: '24px'}}>+592 612 3456 (Example #)</p>
+                        <p className="premiumFeatureDescription" style={{marginTop: '10px'}}>To our MMG account along with screenshot of your confirmed Payment Receipt:</p>
+                        <p className="premiumFeatureTitle" style={{fontSize: '24px'}}>{mmgNumber || 'Contact Admin for Payment Info'}</p>
                     </div>
 
                     <div className="dashboardSection" style={{marginTop: '20px'}}>
                         <p className="dashboardSectionTitle">Crucial Final Step:</p>
                         <p className="paragraph">
-                            In the MMG payment reference/reason field, you **MUST** include the following Pledge ID.
+                            In the MMG Enter Description Field you **MUST** include the following Pledge ID.
                             Failure to do so will result in your payment not being processed.
                         </p>
                         <p className="heading" style={{fontSize: '28px', backgroundColor: '#0A0A0A', padding: '10px', borderRadius: '8px', border: '1px solid #FFD700', userSelect: 'all'}}>
@@ -4018,14 +4108,13 @@ const AdminDashboardScreen = ({
                     <p className="paragraph" style={{textAlign: 'center', marginTop: '20px'}}>This screen is listening for updates. Once we manually verify your MMG transaction, this screen will automatically confirm it.</p>
                      <p className="smallText">You can safely navigate away and come back later if needed.</p>
 
-                    <button className="button" onClick={() => setActiveScreen('Home')} style={{backgroundColor: '#3A3A3A', marginTop: '10px'}}>
+                    <button className="button" onClick={() => setActiveScreen('Home')} style={{backgroundColor: '#3A3A0A', marginTop: '10px'}}>
                         <span className="buttonText">I have paid. Back to Home</span>
                     </button>
                 </div>
             );
         };
-// =========== END OF CODE BLOCK TO ADD ===========
-
+// END of REPLACEMENT Block
 
                     // --- START: NEW COMPONENT ---
         const AddExternalAdModal = ({ showMessage, onSave, onCancel }) => {
@@ -4772,7 +4861,7 @@ const AdminContentManagerScreen = ({
 
     // FINAL VERSION of AdminSiteManagerScreen (with Inbox)
 
-        const AdminSiteManagerScreen = ({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
+        const AdminSiteManagerScreen = ({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile }) => {
     const [socialLinks, setSocialLinks] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -4786,7 +4875,7 @@ const AdminContentManagerScreen = ({
     const [selectedSubmission, setSelectedSubmission] = useState(null);
       const [diagnosticResults, setDiagnosticResults] = useState(null);
     const [isDiagnosing, setIsDiagnosing] = useState(false);
-
+    const [mmgNumber, setMmgNumber] = useState('');
     const handleRunDiagnostics = async () => {
         setIsDiagnosing(true);
         setDiagnosticResults(null);
@@ -4810,49 +4899,41 @@ const AdminContentManagerScreen = ({
         const socialLinksDocRef = doc(db, "settings", "socialLinks");
         const unsubscribe = onSnapshot(socialLinksDocRef, (docSnap) => {
            if (docSnap.exists()) {
-    const data = docSnap.data();
-    // Handle social links array
-    if (data && Array.isArray(data.links)) {
-        const sortedLinks = [...data.links].sort((a, b) => a.name.localeCompare(b.name));
-        setSocialLinks(sortedLinks);
-    } else {
-        setSocialLinks([]);
-    }
+                const data = docSnap.data();
+                // Handle social links array
+                if (data && Array.isArray(data.links)) {
+                    const sortedLinks = [...data.links].sort((a, b) => a.name.localeCompare(b.name));
+                    setSocialLinks(sortedLinks);
+                } else {
+                    setSocialLinks([]);
+                }
 
-    // --- NEW: Handle the leaderboard toggle ---
-    if (data && typeof data.isLeaderboardEnabled === 'boolean') {
-        setIsLeaderboardEnabled(data.isLeaderboardEnabled);
-    } else {
-        setIsLeaderboardEnabled(false); // Default to false if not set
-    }
-        // =========== ADD THE FOLLOWING BLOCK ===========
-    // --- NEW: Handle pricing and ticket toggles ---
-    if (data && typeof data.premiumPrice === 'number') {
-        setPremiumPrice(data.premiumPrice);
-    }
-    if (data && typeof data.ticketPrice === 'number') {
-        setTicketPrice(data.ticketPrice);
-    }
-    if (data && typeof data.isTicketedEvent === 'boolean') {
-        setIsTicketedEvent(data.isTicketedEvent);
-    }
-// =========== END OF CODE BLOCK TO ADD ===========
+                // --- NEW: Handle the leaderboard toggle ---
+                if (data && typeof data.isLeaderboardEnabled === 'boolean') {
+                    setIsLeaderboardEnabled(data.isLeaderboardEnabled);
+                } else {
+                    setIsLeaderboardEnabled(false); // Default to false if not set
+                }
+                // --- NEW: Handle pricing and ticket toggles ---
+                if (data && typeof data.premiumPrice === 'number') {
+                    setPremiumPrice(data.premiumPrice);
+                }
+                if (data && typeof data.ticketPrice === 'number') {
+                    setTicketPrice(data.ticketPrice);
+                }
+                if (data && typeof data.isTicketedEvent === 'boolean') {
+                    setIsTicketedEvent(data.isTicketedEvent);
+                }
+                // --- THIS IS THE FIX ---
+                if (data && typeof data.mmgNumber !== 'undefined') {
+                    setMmgNumber(data.mmgNumber);
+                }
 
-} else {
-    setSocialLinks([]);
-    setIsLeaderboardEnabled(false); // Default to false if doc doesn't exist
-}
-setIsLoading(false);
-        });
-        return () => unsubscribe();
-    }, []);
-    useEffect(() => {
-        const submissionsRef = collection(db, "contactSubmissions");
-        const q = query(submissionsRef, orderBy("submittedAt", "desc"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedSubmissions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setSubmissions(fetchedSubmissions);
-            setIsLoadingSubmissions(false);
+            } else {
+                setSocialLinks([]);
+                setIsLeaderboardEnabled(false); // Default to false if doc doesn't exist
+            }
+            setIsLoading(false);
         });
         return () => unsubscribe();
     }, []);
@@ -4876,8 +4957,8 @@ setIsLoading(false);
     // =========== ADD THE FOLLOWING 3 LINES ===========
     premiumPrice: parseFloat(premiumPrice),
     ticketPrice: parseFloat(ticketPrice),
-    isTicketedEvent: isTicketedEvent
-// =========== END OF CODE BLOCK TO ADD ===========
+    isTicketedEvent: isTicketedEvent,
+    mmgNumber: mmgNumber
 
 }, { merge: true }); showMessage("Changes saved successfully!"); setHasChanges(false); } catch (error) { showMessage(`Error saving changes: ${error.message}`); } finally { setIsSaving(false); } };
 
@@ -4916,7 +4997,7 @@ setIsLoading(false);
     if (isLoading) {
         return <div className="screenContainer"><p className="heading">Loading Site Settings...</p></div>;
     }
-    
+    const currentUserRole = creatorProfile ? creatorProfile.role : 'user';
     return (
         <div className="screenContainer">
             <p className="heading">Site Management</p>
@@ -4994,6 +5075,23 @@ setIsLoading(false);
                         />
                     </div>
                 )}
+            
+                {/* ======================= START: NEW UI ======================= */}
+                {currentUserRole === 'admin' && (
+                     <div className="adminDashboardItem">
+                        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p>
+                        <input 
+                            type="text" 
+                            className="formInput" 
+                            value={mmgNumber} 
+                            onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }}
+                            placeholder="Enter MMG number..."
+                            style={{width: '200px', textAlign: 'right'}} 
+                        />
+                    </div>
+                )}
+                {/* ======================== END: NEW UI ======================== */}
+                        
             </div>
 
             <div className="dashboardSection" style={{marginTop: '20px'}}>
@@ -5952,7 +6050,7 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
     const ContactScreen = ({ setActiveScreen, showMessage, currentUser }) => {
     const [socialLinks, setSocialLinks] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-    
+    const [mmgNumber, setMmgNumber] = useState('');
     const [userName, setUserName] = useState('');
     const [userEmail, setUserEmail] = useState('');
     const [queryType, setQueryType] = useState('General Question');
@@ -5978,6 +6076,7 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
         getDoc(socialLinksDocRef).then(docSnap => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
+                  setMmgNumber(data.mmgNumber || '');
                 if (data && Array.isArray(data.links)) {
                     const enabledLinks = data.links.filter(link => link.isEnabled === true);
                     setSocialLinks(enabledLinks);
@@ -6248,7 +6347,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const { notifications: unreadNotifications, isLoading: notificationsLoading } = useNotifications(currentUser);
             // ======================== END: NEW CODE ========================
             
-             // ======================= START: NEW TOAST STATE AND LOGIC =======================
+              // ======================= START: NEW TOAST STATE AND LOGIC =======================
             const [toastQueue, setToastQueue] = useState([]);
             const [currentToast, setCurrentToast] = useState(null);
             const processedToastIds = useRef(new Set());
@@ -6271,14 +6370,20 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
                 }
             }, [currentToast, toastQueue]);
 
-            const handleDismissToast = () => {
+            // CORRECTED: This function now ONLY handles clicks, for navigation.
+            const handleToastClick = () => {
                 if(currentToast?.link) {
                     const screen = currentToast.link.replace('/', '');
                     setActiveScreen(screen);
                 }
+                setCurrentToast(null); // It also dismisses the toast on click.
+            };
+            
+            // NEW: This function handles the timeout, ONLY dismissing the toast.
+            const handleToastTimeout = () => {
                 setCurrentToast(null);
             };
-            // ======================== END: NEW TOAST STATE AND LOGIC ========================
+// END of REPLACEMENT Block
 
             const [activeCategory, setActiveCategory] = useState('Skits');
             const [message, setMessage] = useState('');
@@ -7331,16 +7436,59 @@ const CreatorDashboardScreen = ({
                             <button className="dashboardButton" onClick={() => setActiveScreen('CreateCampaign')} disabled={hasActiveOrPendingCampaign} style={hasActiveOrPendingCampaign ? {cursor: 'not-allowed', backgroundColor: '#555', color: '#999'} : {}}>Create New</button>
                         </div>
                         <div className="pt-4 border-t border-gray-200 mt-4" style={{borderColor: '#3A3A3A'}}>
-                            {creatorCampaigns.length === 0 ? (<p className="dashboardItem">You have not created any campaigns yet.</p>) : (creatorCampaigns.map(campaign => (
-                                <div key={campaign.id} className="creator-campaign-list-item">
-                                    <img src={campaign.imageUrl || 'https://placehold.co/80x50/3A3A3A/FFF?text=NVA'} alt={campaign.title} className="creator-campaign-thumbnail" onError={(e) => { e.target.src = 'https://placehold.co/80x50/3A3A3A/FFF?text=Error'; }}/>
-                                    <div className="creator-campaign-info">
-                                        <p className="creator-campaign-title">{campaign.title}</p>
-                                        <p className={`creator-campaign-status status-${campaign.status}`}>Status: {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}</p>
+                            {creatorCampaigns.length === 0 ? (
+                                <p className="dashboardItem">You have not created any campaigns yet.</p>
+                            ) : (
+                                creatorCampaigns.map(campaign => (
+                                    <div
+                                        key={campaign.id}
+                                        className="creator-campaign-list-item"
+                                        onClick={() => {
+                                            setSelectedCampaignId(campaign.id);
+                                            setActiveScreen('CampaignDetails');
+                                        }}
+                                        style={{
+                                            cursor: 'pointer',
+                                            flexDirection: 'column',
+                                            alignItems: 'stretch'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                                            <img src={campaign.imageUrl || 'https://placehold.co/80x50/3A3A3A/FFF?text=NVA'} alt={campaign.title} className="creator-campaign-thumbnail" onError={(e) => { e.target.src = 'https://placehold.co/80x50/3A3A3A/FFF?text=Error'; }}/>
+                                            <div className="creator-campaign-info">
+                                                <p className="creator-campaign-title">{campaign.title}</p>
+                                                <p className={`creator-campaign-status status-${campaign.status}`}>Status: {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}</p>
+                                            </div>
+                                        </div>
+                                        
+                                        <div style={{width: '100%', marginTop: '10px'}}>
+                                            <div className="campaignProgressContainer" style={{ height: '8px' }}>
+                                                <div
+                                                    className="campaignProgressBar"
+                                                    style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}
+                                                ></div>
+                                            </div>
+                                            <div className="campaignListStats" style={{marginTop: '4px'}}>
+                                                <span>Raised: <span className="campaignListRaised">${campaign.raised || 0}</span></span>
+                                                <span>Goal: <span className="campaignListGoal">${campaign.goal}</span></span>
+                                            </div>
+                                        </div>
+
+                                        {campaign.status !== 'cancelled' && campaign.status !== 'ended' && (
+                                            <button 
+                                                className="actionButton" 
+                                                style={{backgroundColor: '#DC3545', alignSelf: 'flex-end', marginTop: '10px'}} 
+                                                onClick={(e) => {
+                                                    e.stopPropagation(); // Prevents navigating when clicking the cancel button
+                                                    confirmCancelCampaign(campaign.id, campaign.title);
+                                                }}
+                                            >
+                                                Cancel
+                                            </button>
+                                        )}
                                     </div>
-                                    {campaign.status !== 'cancelled' && campaign.status !== 'ended' && (<button className="actionButton" style={{backgroundColor: '#DC3545'}} onClick={() => confirmCancelCampaign(campaign.id, campaign.title)}>Cancel</button>)}
-                                </div>
-                            )))}
+                                ))
+                            )}
                             {hasActiveOrPendingCampaign && (<p className="smallText" style={{textAlign: 'center', color: '#FFD700', marginTop: '15px'}}>You must cancel or wait for your current campaign to finish before creating a new one.</p>)}
                         </div>
                     </div>
@@ -7567,7 +7715,7 @@ const CreatorDashboardScreen = ({
                         )}
 
                         {/* ======================= START: REPURPOSED TOAST COMPONENT ======================= */}
-                        <NotificationToast notification={currentToast} onDismiss={handleDismissToast} />
+                        <NotificationToast notification={currentToast} onClick={handleToastClick} onTimeout={handleToastTimeout} />
                         {/* ======================== END: REPURPOSED TOAST COMPONENT ======================== */}
 
                         {showVideoModal && (
