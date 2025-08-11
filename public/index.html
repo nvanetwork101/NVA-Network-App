@@ -198,8 +198,14 @@
             display: flex;
             overflow-x: auto; /* Enable horizontal scrolling for tabs */
             -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
-            padding-bottom: 5px; /* Space for scrollbar */
+            padding-bottom: 5px; /* Space for scrollbar if it appears */
         }
+        
+        /* Optional but recommended: Hide the default scrollbar on browsers that support it */
+        .categoryTabs::-webkit-scrollbar {
+            display: none;
+        }
+
         .categoryTab {
             padding: 8px 15px;
             border-radius: 20px;
@@ -212,16 +218,19 @@
             cursor: pointer;
             transition: background-color 0.3s ease;
         }
+
         .categoryTab:hover {
             background-color: #4A4A4A;
         }
+
         .activeCategoryTab {
             background-color: #FFD700; /* Gold highlight for active category */
         }
+
         .categoryTabText {
             color: #FFF;
             font-weight: 600;
-            white-space: nowrap; /* Prevent text wrapping */
+            white-space: nowrap; /* Prevent text from wrapping inside the button */
         }
         .activeCategoryTabText {
             color: #0A0A0A; /* Dark text on gold background */
