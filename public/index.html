@@ -1809,12 +1809,13 @@
         const useNotifications = (currentUser) => {
             const [notifications, setNotifications] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
+            const [pendingDeletes, setPendingDeletes] = useState(new Set()); // Tracks optimistic deletes
 
             useEffect(() => {
                 if (!currentUser) {
                     setNotifications([]);
                     setIsLoading(false);
-                    return () => {}; // Return an empty function for cleanup
+                    return () => {};
                 }
 
                 setIsLoading(true);
@@ -1833,11 +1834,11 @@
                     
                     unique.sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
                     
-                    setNotifications(unique);
+                    // The key change: Filter out any items pending deletion
+                    setNotifications(unique.filter(n => !pendingDeletes.has(n.id)));
                     setIsLoading(false);
                 };
 
-                // Listener for private, targeted notifications
                 const privateNotifRef = collection(db, "notifications");
                 const privateQuery = query(privateNotifRef, where("userId", "==", currentUser.uid), orderBy("timestamp", "desc"), limit(20));
                 const unsubscribePrivate = onSnapshot(privateQuery, (snapshot) => {
@@ -1845,7 +1846,6 @@
                     mergeAndSetNotifications();
                 });
 
-                // Listener for public, broadcast notifications (WITH 5-DAY WINDOW)
                 const broadcastNotifRef = collection(db, "broadcast_notifications");
                 const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
                 const broadcastQuery = query(broadcastNotifRef, where("timestamp", ">", fiveDaysAgo), orderBy("timestamp", "desc"));
@@ -1859,9 +1859,29 @@
                     unsubscribeBroadcast();
                 };
 
-            }, [currentUser]);
+            }, [currentUser, pendingDeletes]); // Re-run if pendingDeletes changes
 
-            return { notifications, isLoading };
+            const markPendingDelete = (id) => {
+                setPendingDeletes(prev => new Set(prev).add(id));
+            };
+
+            const rollbackDelete = (id) => {
+                setPendingDeletes(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(id);
+                    return newSet;
+                });
+            };
+
+            const confirmDelete = (id) => {
+                setPendingDeletes(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(id);
+                    return newSet;
+                });
+            };
+
+            return { notifications, isLoading, setNotifications, markPendingDelete, rollbackDelete, confirmDelete };
         };
 
         const NotificationBell = ({ count, onClick }) => {
@@ -1916,34 +1936,39 @@
             );
         };
 
-        const NotificationInboxScreen = ({ notifications, setActiveScreen, showMessage }) => { // Added showMessage to props
+        const NotificationInboxScreen = ({ notifications, setActiveScreen, showMessage, setNotifications, markPendingDelete, rollbackDelete, confirmDelete }) => {
             const [isDeleting, setIsDeleting] = useState(null);
 
-            const handleDelete = async (e, notification) => {
+            const handleDelete = async (e, notificationToDelete) => {
                 e.stopPropagation();
                 if (isDeleting) return;
-                setIsDeleting(notification.id);
 
-                if (notification.isBroadcast) {
-                    const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
-                    try {
-                         await setDoc(seenRef, { seenAt: new Date() });
-                    } catch (error) {
-                         console.error("Failed to mark broadcast as seen:", error);
-                         showMessage(`Error dismissing: ${error.message}`); // VISIBLE ERROR
-                    } finally {
-                        setIsDeleting(null);
-                    }
-                    return;
-                }
+                setIsDeleting(notificationToDelete.id);
+
+                // Snapshot for rollback is now handled implicitly by the hook
+                const originalNotifications = [...notifications]; 
+
+                // Optimistic UI update using the hook's function
+                markPendingDelete(notificationToDelete.id);
+                setNotifications(prev => prev.filter(n => n.id !== notificationToDelete.id));
 
                 try {
-                    const functions = getFunctions(window.firebaseApp);
-                    const deleteNotificationCallable = httpsCallable(functions, 'deleteNotification');
-                    await deleteNotificationCallable({ notificationId: notification.id });
+                    if (notificationToDelete.isBroadcast) {
+                        const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notificationToDelete.id);
+                        await setDoc(seenRef, { seenAt: new Date() });
+                    } else {
+                        const functions = getFunctions(window.firebaseApp);
+                        const deleteNotificationCallable = httpsCallable(functions, 'deleteNotification');
+                        await deleteNotificationCallable({ notificationId: notificationToDelete.id });
+                    }
+                    // If successful, confirm the delete so the hook can clean up
+                    confirmDelete(notificationToDelete.id);
                 } catch (error) {
                     console.error("Failed to delete notification:", error);
-                    showMessage(`Error deleting: ${error.message}`); // VISIBLE ERROR
+                    showMessage(`Error: ${error.message}`);
+                    // If it fails, roll back using the hook and the local snapshot
+                    rollbackDelete(notificationToDelete.id);
+                    setNotifications(originalNotifications);
                 } finally {
                     setIsDeleting(null);
                 }
@@ -1970,10 +1995,7 @@
                                 <div
                                     key={item.id}
                                     className="adminDashboardItem"
-                                    style={{
-                                        cursor: 'pointer',
-                                        borderLeft: (item.isBroadcast || item.isRead === true) ? '4px solid transparent' : '4px solid #FFD700',
-                                    }}
+                                    style={{ cursor: 'pointer', borderLeft: (item.isBroadcast || item.isRead === true) ? '4px solid transparent' : '4px solid #FFD700' }}
                                     onClick={() => handleNotificationClick(item)}
                                 >
                                     <div style={{ flexGrow: 1, marginRight: '10px' }}>
@@ -6340,7 +6362,8 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             
             // ======================= START: NEW CODE =======================
             // Call our new hook to get a live list of notifications
-            const { notifications: unreadNotifications, isLoading: notificationsLoading } = useNotifications(currentUser);
+            const { notifications: unreadNotifications, isLoading: notificationsLoading, setNotifications, markPendingDelete, rollbackDelete, 
+            confirmDelete } = useNotifications(currentUser);
             // ======================== END: NEW CODE ========================
             
               // ======================= START: NEW TOAST STATE AND LOGIC =======================
@@ -7583,7 +7606,15 @@ const CreatorDashboardScreen = ({
                     return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                 
                 case 'NotificationInbox':
-                        return <NotificationInboxScreen notifications={unreadNotifications} setActiveScreen={setActiveScreen} />;
+                        return <NotificationInboxScreen 
+                            notifications={unreadNotifications} 
+                            setActiveScreen={setActiveScreen} 
+                            showMessage={showMessage} 
+                            setNotifications={setNotifications}
+                            markPendingDelete={markPendingDelete}
+                            rollbackDelete={rollbackDelete}
+                            confirmDelete={confirmDelete}
+                        />;
                 default:
                     return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
             }
