@@ -1917,90 +1917,89 @@
         };
 
         const NotificationInboxScreen = ({ notifications, setActiveScreen }) => {
-        const [isDeleting, setIsDeleting] = useState(null); // To show loading state on the button
+            const [isDeleting, setIsDeleting] = useState(null); // To show loading state on the button
 
-        const handleDelete = async (e, notification) => {
-            alert('Dismiss button clicked!'); // <-- THIS IS THE TEST LINE
-            
-            e.stopPropagation(); // Prevent the main click handler from firing
-            if (isDeleting) return; // Prevent double-clicks
+            const handleDelete = async (e, notification) => {
+                e.stopPropagation(); // Prevent the main click handler from firing
+                if (isDeleting) return; // Prevent double-clicks
 
-            setIsDeleting(notification.id);
+                setIsDeleting(notification.id);
 
-            // For a BROADCAST, we just "mark it as seen" to hide it from the user's view
-            if (notification.isBroadcast) {
-                const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
+                // For a BROADCAST, we just "mark it as seen" to hide it from the user's view
+                if (notification.isBroadcast) {
+                    const seenRef = doc(db, "creators", window.firebaseAuth.currentUser.uid, "seenNotifications", notification.id);
+                    try {
+                         await setDoc(seenRef, { seenAt: new Date() });
+                         // The UI will update automatically due to the real-time listener in useNotifications
+                    } catch (error) {
+                         console.error("Failed to mark broadcast as seen:", error);
+                    } finally {
+                        setIsDeleting(null);
+                    }
+                    return;
+                }
+
+                // For a PRIVATE notification, we call the Cloud Function to delete it
                 try {
-                     await setDoc(seenRef, { seenAt: new Date() });
-                     // The UI will update automatically due to the real-time listener in useNotifications
+                    const functions = getFunctions(window.firebaseApp);
+                    const deleteNotificationCallable = httpsCallable(functions, 'deleteNotification');
+                    await deleteNotificationCallable({ notificationId: notification.id });
+                    // The UI updates automatically because the listener will no longer find the doc
                 } catch (error) {
-                     console.error("Failed to mark broadcast as seen:", error);
+                    console.error("Failed to delete notification:", error);
+                    showMessage(`Error: ${error.message}`); // Show a visible error to the user
                 } finally {
                     setIsDeleting(null);
                 }
-                return;
-            }
+            };
 
-            // For a PRIVATE notification, we call the Cloud Function to delete it
-            try {
-                const functions = getFunctions(window.firebaseApp);
-                const deleteNotificationCallable = httpsCallable(functions, 'deleteNotification');
-                await deleteNotificationCallable({ notificationId: notification.id });
-                // The UI updates automatically because the listener will no longer find the doc
-            } catch (error) {
-                console.error("Failed to delete notification:", error);
-            } finally {
-                setIsDeleting(null);
-            }
-        };
+            const handleNotificationClick = async (notification) => {
+                // This function now only handles marking as read and navigation
+                if (!notification.isBroadcast && !notification.isRead) {
+                    const notifRef = doc(db, "notifications", notification.id);
+                    await updateDoc(notifRef, { isRead: true }).catch(err => console.error("Failed to mark as read", err));
+                }
+                if (notification.link) {
+                    setActiveScreen(notification.link.replace('/', ''));
+                }
+            };
 
-        const handleNotificationClick = async (notification) => {
-            // This function now only handles marking as read and navigation
-            if (!notification.isBroadcast && !notification.isRead) {
-                const notifRef = doc(db, "notifications", notification.id);
-                await updateDoc(notifRef, { isRead: true }).catch(err => console.error("Failed to mark as read", err));
-            }
-            if (notification.link) {
-                setActiveScreen(notification.link.replace('/', ''));
-            }
-        };
-
-        return (
-            <div className="screenContainer">
-                <p className="heading">Notifications</p>
-                <div className="dashboardContentList">
-                    {notifications.length === 0 ? (
-                        <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
-                    ) : (
-                        notifications.map(item => (
-                            <div
-                                key={item.id}
-                                className="adminDashboardItem"
-                                style={{
-                                    cursor: 'pointer',
-                                    borderLeft: (item.isBroadcast || item.isRead === true) ? '4px solid transparent' : '4px solid #FFD700',
-                                }}
-                                onClick={() => handleNotificationClick(item)}
-                            >
-                                <div style={{ flexGrow: 1, marginRight: '10px' }}>
-                                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>{item.message}</p>
-                                    <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
-                                </div>
-                                <button 
-                                    className="adminActionButton reject"
-                                    onClick={(e) => handleDelete(e, item)}
-                                    disabled={isDeleting === item.id}
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Notifications</p>
+                    <div className="dashboardContentList">
+                        {notifications.length === 0 ? (
+                            <p className="dashboardItem" style={{textAlign: 'center'}}>You have no new notifications.</p>
+                        ) : (
+                            notifications.map(item => (
+                                <div
+                                    key={item.id}
+                                    className="adminDashboardItem"
+                                    style={{
+                                        cursor: 'pointer',
+                                        borderLeft: (item.isBroadcast || item.isRead === true) ? '4px solid transparent' : '4px solid #FFD700',
+                                    }}
+                                    onClick={() => handleNotificationClick(item)}
                                 >
-                                    {isDeleting === item.id ? '...' : 'Dismiss'}
-                                </button>
-                            </div>
-                        ))
-                    )}
+                                    <div style={{ flexGrow: 1, marginRight: '10px' }}>
+                                        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>{item.message}</p>
+                                        <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(item.timestamp.toDate()).toLocaleString()}</p>
+                                    </div>
+                                    <button 
+                                        className="adminActionButton reject"
+                                        onClick={(e) => handleDelete(e, item)}
+                                        disabled={isDeleting === item.id}
+                                    >
+                                        {isDeleting === item.id ? '...' : 'Dismiss'}
+                                    </button>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
-            </div>
-        );
-    };
-// END of REPLACEMENT Block (...down to this line)
+            );
+        };
+// END of REPLACEMENT Block
 
           // --- NEW HELPER FUNCTION TO BE ADDED ---
         const extractVideoInfo = (url) => {
