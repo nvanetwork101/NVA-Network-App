@@ -1827,8 +1827,8 @@
                     });
             }, []);
 
-            // NEW: Helper function to permanently mark a broadcast as seen by the user.
-            const markBroadcastAsSeen = async (notificationId) => {
+            // Expose a helper function to be called by the App component
+            const markBroadcastAsSeen = useCallback(async (notificationId) => {
                 if (!currentUser) return;
                 try {
                     const seenRef = doc(db, "creators", currentUser.uid, "seenNotifications", notificationId);
@@ -1836,7 +1836,7 @@
                 } catch (error) {
                     console.error("Failed to mark broadcast as seen:", error);
                 }
-            };
+            }, [currentUser]);
 
             useEffect(() => {
                 if (!currentUser) {
@@ -1854,11 +1854,8 @@
                     const seenSnapshot = await getDocs(seenRef);
                     const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
                     
+                    // The hook now ONLY filters based on what's already in the database.
                     const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
-
-                    // THE FIX: As soon as we identify unseen broadcasts, we mark them as seen
-                    // so they won't be processed as "new" ever again. This is a fire-and-forget action.
-                    unseenBroadcasts.forEach(notif => markBroadcastAsSeen(notif.id));
                     
                     const combined = [...privateNotifications, ...unseenBroadcasts];
                     const filtered = combined.filter(n => !pendingDeletes.has(n.id));
@@ -1892,7 +1889,7 @@
 
             }, [currentUser, pendingDeletes]);
 
-            return { notifications, isLoading, dismissNotification };
+            return { notifications, isLoading, dismissNotification, markBroadcastAsSeen };
         };
 // END of REPLACEMENT Block
 
@@ -6316,7 +6313,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             
             // ======================= START: NEW CODE =======================
             // Call our new hook to get a live list of notifications
-            const { notifications: unreadNotifications, isLoading: notificationsLoading, dismissNotification } = useNotifications(currentUser);
+            const { notifications: unreadNotifications, isLoading: notificationsLoading, dismissNotification, markBroadcastAsSeen } = useNotifications(currentUser);
             // ======================== END: NEW CODE ========================
             
               // ======================= START: NEW TOAST STATE AND LOGIC =======================
@@ -6325,8 +6322,8 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const processedToastIds = useRef(new Set());
 
             useEffect(() => {
-                // Add new, unseen notifications to the toast queue
-                const newNotifications = unreadNotifications.filter(n => !processedToastIds.current.has(n.id) && n.isRead === false);
+                // Find notifications that the toast system hasn't processed in this session yet.
+                const newNotifications = unreadNotifications.filter(n => !processedToastIds.current.has(n.id));
                 if (newNotifications.length > 0) {
                     setToastQueue(prev => [...prev, ...newNotifications]);
                     newNotifications.forEach(n => processedToastIds.current.add(n.id));
@@ -6339,8 +6336,14 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
                     const nextToast = toastQueue[0];
                     setCurrentToast(nextToast);
                     setToastQueue(prev => prev.slice(1));
+
+                    // THE FIX: The moment we decide to show a toast, if it's a broadcast,
+                    // we tell the backend it has been seen.
+                    if (nextToast.isBroadcast) {
+                        markBroadcastAsSeen(nextToast.id);
+                    }
                 }
-            }, [currentToast, toastQueue]);
+            }, [currentToast, toastQueue, markBroadcastAsSeen]);
 
             // CORRECTED: This function now ONLY handles clicks, for navigation.
             const handleToastClick = () => {
