@@ -148,12 +148,12 @@
         }
         .contentGrid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr); /* Create 2 equal-fraction columns */
-            gap: 15px; /* Create a perfect 15px gap between columns and rows */
+            grid-template-columns: repeat(2, 1fr); /* This is the core of the fix: create two equal-width columns. */
+            gap: 15px; /* This robustly handles both horizontal and vertical spacing. */
         }
         .contentCard {
-            /* The width is now controlled by the parent grid, so we remove it. */
-            margin-bottom: 15px;
+            /* We COMPLETELY REMOVE the fragile 'width' calculation. The parent grid now controls the size. */
+            /* We also remove margin-bottom, as 'gap' handles row spacing automatically. */
             background-color: #2A2A2A;
             border-radius: 10px;
             overflow: hidden;
@@ -5638,7 +5638,6 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
             setContent(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             setLoadingContent(false);
         });
-        const liveStreamUrl = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
         return () => unsubscribe();
     }, [activeCategory]);
 
@@ -5646,7 +5645,7 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
     // because we are now using the one passed down from the App component.
 
     const LiveStreamPlayer = () => {
-        if (true) {
+        if (isLive) {
             const { embedUrl, isVertical } = extractVideoInfo(liveStreamUrl);
             const finalEmbedUrl = embedUrl || `${liveStreamUrl}?autoplay=1`;
             return (
