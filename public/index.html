@@ -144,12 +144,12 @@
             margin-top: 20px;
         }
         .contentGrid {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px; /* Explicitly set the gap between items */
+            display: grid;
+            grid-template-columns: repeat(2, 1fr); /* Create 2 equal-fraction columns */
+            gap: 15px; /* Create a perfect 15px gap between columns and rows */
         }
         .contentCard {
-            flex: 1 1 calc(50% - 8px); /* Grow, shrink, and base size. The 8px is a safe half-gap. */
+            /* The width is now controlled by the parent grid, so we remove it. */
             margin-bottom: 15px;
             background-color: #2A2A2A;
             border-radius: 10px;
