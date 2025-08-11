@@ -6480,7 +6480,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
 // =========== START REPLACEMENT ===========
             const [currentUser, setCurrentUser] = useState(null);
             // NOTE: Replace this placeholder URL with the actual URL of your hosted notification sound file.
-            const notificationSoundRef = useRef(new Audio('gs://nvanetworkapp.firebasestorage.app/Notification 2.mp3'));
+            const notificationSoundRef = useRef(new Audio('https://firebasestorage.googleapis.com/v0/b/nvanetworkapp.firebasestorage.app/o/Notification%202.mp3?alt=media&token=0befabd3-3c9d-4aa4-a990-5681591d201a'));
             const [activeScreen, setActiveScreen] = useState('Home');
             const [pledgeContext, setPledgeContext] = useState(null);
             const [pledgeIdForConfirmation, setPledgeIdForConfirmation] = useState(null);
