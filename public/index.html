@@ -2591,19 +2591,13 @@
 
                 if (isFollowing) {
                     // UNFOLLOW LOGIC
-                    const currentFollowerCount = targetUserDoc.data().followerCount || 0;
-                    const newFollowerCount = Math.max(0, currentFollowerCount - 1); // Prevents going below 0
-
-                    const currentFollowingCount = currentUserDoc.data().followingCount || 0;
-                    const newFollowingCount = Math.max(0, currentFollowingCount - 1); // Safety check for our own count
-
                     transaction.delete(targetFollowersRef);
                     transaction.delete(currentUserFollowingRef);
-                    transaction.update(targetUserRef, { followerCount: newFollowerCount });
-                    transaction.update(currentUserRef, { followingCount: newFollowingCount });
+                    transaction.update(targetUserRef, { followerCount: increment(-1) });
+                    transaction.update(currentUserRef, { followingCount: increment(-1) });
 
                 } else {
-                    // FOLLOW LOGIC (no change needed here, but kept for clarity)
+                    // FOLLOW LOGIC (This correctly creates the trigger documents)
                     transaction.set(targetFollowersRef, { followedAt: new Date().toISOString() });
                     transaction.set(currentUserFollowingRef, { followingSince: new Date().toISOString() });
                     transaction.update(targetUserRef, { followerCount: increment(1) });
