@@ -4072,10 +4072,12 @@ const AdminDashboardScreen = ({
                 const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;
                 try {
                     const pledgeRef = doc(collection(db, "paymentPledges"), pledgeId);
+                    // THE FIX: This object now includes the specific event details
                     await setDoc(pledgeRef, {
                         pledgeId, userId: currentUser.uid, userName, userEmail: currentUser.email,
                         paymentType: pledgeContext.type, amount: pledgeContext.amount, status: 'pending',
-                        targetEventId: pledgeContext.targetEventId || null, targetEventTitle: pledgeContext.targetEventTitle || null,
+                        targetEventId: pledgeContext.targetEventId || null, 
+                        targetEventTitle: pledgeContext.targetEventTitle || null,
                         createdAt: new Date().toISOString(),
                     });
                     setPledgeIdForConfirmation(pledgeId);
@@ -5141,48 +5143,19 @@ const AdminContentManagerScreen = ({
 </div>
 
 
-            <div className="dashboardSection">
-                <p className="dashboardSectionTitle">Monetization Settings</p>
-                <div className="adminDashboardItem">
-                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p>
-                    <input 
-                        type="number" 
-                        className="formInput" 
-                        value={premiumPrice} 
-                        onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }}
-                        style={{width: '100px', textAlign: 'right'}} 
-                    />
-                </div>
-                <div className="adminDashboardItem">
-                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Enable One-Time Ticket Sales</p>
-                    <label className="flex items-center cursor-pointer">
-                        <span className="mr-3 text-sm font-medium text-gray-300">{isTicketedEvent ? 'Enabled' : 'Disabled'}</span>
-                        <div className="relative">
-                            <input 
-                                type="checkbox" 
-                                className="sr-only" 
-                                checked={isTicketedEvent} 
-                                onChange={(e) => { setIsTicketedEvent(e.target.checked); setHasChanges(true); }} 
-                            />
-                            <div className={`block w-14 h-8 rounded-full ${isTicketedEvent ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isTicketedEvent ? 'transform translate-x-6' : ''}`}></div>
-                        </div>
-                    </label>
-                </div>
-                {isTicketedEvent && (
-                    <div className="adminDashboardItem">
-                        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Single Event Ticket Price (USD)</p>
-                        <input 
-                            type="number" 
-                            className="formInput" 
-                            value={ticketPrice} 
-                            onChange={(e) => { setTicketPrice(e.target.value); setHasChanges(true); }}
-                            style={{width: '100px', textAlign: 'right'}} 
-                        />
-                    </div>
-                )}
-            
-                {/* ======================= START: NEW UI ======================= */}
+           <div className="dashboardSection">
+    <p className="dashboardSectionTitle">Monetization Settings</p>
+    <div className="adminDashboardItem">
+        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p>
+        <input 
+            type="number" 
+            className="formInput" 
+            value={premiumPrice} 
+            onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }}
+            style={{width: '100px', textAlign: 'right'}} 
+        />
+    </div>
+    {/* The "Enable One-Time Ticket Sales" and "Single Event Ticket Price" controls have been relocated to the Manage Categories screen. */}
                 {currentUserRole === 'admin' && (
                      <div className="adminDashboardItem">
                         <p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p>
@@ -5290,15 +5263,26 @@ const AdminContentManagerScreen = ({
     const [newCategoryOrder, setNewCategoryOrder] = useState(100);
     const [editingCategory, setEditingCategory] = useState(null);
 
+    // State for Live Premiere Management
     const [liveCategoryDoc, setLiveCategoryDoc] = useState(null);
     const [liveUrlInput, setLiveUrlInput] = useState('');
     const [liveStartTimeInput, setLiveStartTimeInput] = useState('');
+    const [liveEventId, setLiveEventId] = useState('');
+    const [liveEventTitle, setLiveEventTitle] = useState('');
+    const [liveEventDescription, setLiveEventDescription] = useState('');
+    const [isTicketedEvent, setIsTicketedEvent] = useState(false); // NEW STATE
+    const [ticketPrice, setTicketPrice] = useState(5.00); // NEW STATE
     
     const [liveCustomThumbnailFile, setLiveCustomThumbnailFile] = useState(null);
     const [liveCustomThumbnailPreview, setLiveCustomThumbnailPreview] = useState('');
     const [liveAutoThumbnailPreview, setLiveAutoThumbnailPreview] = useState('');
     const liveThumbnailInputRef = useRef(null);
     const [isSaving, setIsSaving] = useState(false);
+
+    // State for Box Office Stats
+    const [boxOfficeStats, setBoxOfficeStats] = useState({ ticketsSold: 0, totalRevenue: 0 });
+    const [recentPurchases, setRecentPurchases] = useState([]);
+    const [loadingStats, setLoadingStats] = useState(true);
 
     useEffect(() => {
         const categoriesRef = collection(db, "content_categories");
@@ -5311,6 +5295,11 @@ const AdminContentManagerScreen = ({
                 setLiveCategoryDoc(liveDoc);
                 setLiveUrlInput(liveDoc.liveStreamUrl || '');
                 setLiveCustomThumbnailPreview(liveDoc.liveStreamThumbnailUrl || '');
+                setLiveEventId(liveDoc.liveStreamEventId || '');
+                setLiveEventTitle(liveDoc.liveStreamEventTitle || '');
+                setLiveEventDescription(liveDoc.liveStreamEventDescription || '');
+                setIsTicketedEvent(liveDoc.isTicketedEvent || false); // NEW
+                setTicketPrice(liveDoc.ticketPrice || 5.00); // NEW
                 if (liveDoc.liveStreamStartTime) {
                     const date = liveDoc.liveStreamStartTime.toDate();
                     date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
@@ -5325,196 +5314,89 @@ const AdminContentManagerScreen = ({
     }, []);
 
     useEffect(() => {
-        if (!liveUrlInput) {
-            setLiveAutoThumbnailPreview('');
+        if (!liveEventId) {
+            setBoxOfficeStats({ ticketsSold: 0, totalRevenue: 0 });
+            setRecentPurchases([]);
+            setLoadingStats(false);
             return;
         }
-        const handler = setTimeout(() => {
-            const { thumbnailUrl } = extractVideoInfo(liveUrlInput);
-            setLiveAutoThumbnailPreview(thumbnailUrl || '');
-        }, 500);
-        return () => clearTimeout(handler);
-    }, [liveUrlInput]);
+        setLoadingStats(true);
+        const statsDocRef = doc(db, "statistics", "events", "data", liveEventId);
+        const purchasesRef = collection(db, "statistics", "events", "data", liveEventId, "recentPurchases");
+        const qPurchases = query(purchasesRef, orderBy("approvedAt", "desc"), limit(5));
+        const unsubscribeStats = onSnapshot(statsDocRef, (docSnap) => { if (docSnap.exists()) { setBoxOfficeStats(docSnap.data()); } else { setBoxOfficeStats({ ticketsSold: 0, totalRevenue: 0 }); } setLoadingStats(false); });
+        const unsubscribePurchases = onSnapshot(qPurchases, (snapshot) => { setRecentPurchases(snapshot.docs.map(doc => doc.data())); });
+        return () => { unsubscribeStats(); unsubscribePurchases(); };
+    }, [liveEventId]);
 
-    const handlePremiereThumbFileChange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            setLiveCustomThumbnailFile(file);
-            setLiveCustomThumbnailPreview(URL.createObjectURL(file));
-        }
-    };
+    useEffect(() => { if (!liveUrlInput) { setLiveAutoThumbnailPreview(''); return; } const handler = setTimeout(() => { const { thumbnailUrl } = extractVideoInfo(liveUrlInput); setLiveAutoThumbnailPreview(thumbnailUrl || ''); }, 500); return () => clearTimeout(handler); }, [liveUrlInput]);
+    const handlePremiereThumbFileChange = (e) => { const file = e.target.files[0]; if (file) { setLiveCustomThumbnailFile(file); setLiveCustomThumbnailPreview(URL.createObjectURL(file)); } };
     
     const handleSetLiveEvent = async () => {
-         if (!liveStartTimeInput || !liveUrlInput) {
-            showMessage("Please set both a start time and a valid URL.");
-            return;
-        }
         setIsSaving(true);
         const liveDocRef = doc(db, "content_categories", liveCategoryDoc.id);
         let updatedData = {
             liveStreamUrl: liveUrlInput,
-            liveStreamStartTime: new Date(liveStartTimeInput),
+            liveStreamStartTime: liveStartTimeInput ? new Date(liveStartTimeInput) : null,
+            liveStreamEventId: liveEventId.trim(),
+            liveStreamEventTitle: liveEventTitle.trim(),
+            liveStreamEventDescription: liveEventDescription.trim(),
+            isTicketedEvent: isTicketedEvent, // NEW
+            ticketPrice: parseFloat(ticketPrice), // NEW
             liveStreamThumbnailUrl: liveCustomThumbnailPreview || liveAutoThumbnailPreview || ''
         };
-
-        if (liveCustomThumbnailFile) {
-            try {
-                showMessage("Uploading custom thumbnail...");
-                const filePath = `premiere_thumbnails/${Date.now()}_${liveCustomThumbnailFile.name}`;
-                const storageRef = ref(storage, filePath);
-                const snapshot = await uploadBytes(storageRef, liveCustomThumbnailFile);
-                updatedData.liveStreamThumbnailUrl = await getDownloadURL(snapshot.ref);
-            } catch (error) {
-                showMessage(`Thumbnail upload failed: ${error.message}`);
-                setIsSaving(false);
-                return;
-            }
-        }
-        
-        try {
-            await updateDoc(liveDocRef, updatedData);
-            showMessage("Live Premiere has been set!");
-        } catch (error) {
-            showMessage(`Error: ${error.message}`);
-        } finally {
-            setLiveCustomThumbnailFile(null);
-            if (liveThumbnailInputRef.current) liveThumbnailInputRef.current.value = '';
-            setIsSaving(false);
-        }
+        if (liveCustomThumbnailFile) { try { showMessage("Uploading..."); const filePath = `premiere_thumbnails/${Date.now()}_${liveCustomThumbnailFile.name}`; const storageRef = ref(storage, filePath); const snapshot = await uploadBytes(storageRef, liveCustomThumbnailFile); updatedData.liveStreamThumbnailUrl = await getDownloadURL(snapshot.ref); } catch (error) { showMessage(`Upload failed: ${error.message}`); setIsSaving(false); return; } }
+        try { await updateDoc(liveDocRef, updatedData); showMessage("Live Premiere Event has been updated!"); } catch (error) { showMessage(`Error: ${error.message}`); } 
+        finally { setLiveCustomThumbnailFile(null); if (liveThumbnailInputRef.current) liveThumbnailInputRef.current.value = ''; setIsSaving(false); }
     };
 
-    const handleClearLiveEvent = async () => {
-        setIsSaving(true);
-        try {
-            await updateDoc(doc(db, "content_categories", liveCategoryDoc.id), {
-                liveStreamUrl: '', liveStreamStartTime: null, liveStreamThumbnailUrl: ''
-            });
-            showMessage("Live Premiere has been cleared.");
-        } catch (error) { showMessage(`Error: ${error.message}`); } 
-        finally { setIsSaving(false); }
-    };
-
-    const handleAddCategory = async (e) => {
-        e.preventDefault();
-        if (!newCategoryName.trim()) return;
-        try {
-            await addDoc(collection(db, "content_categories"), { name: newCategoryName.trim(), orderIndex: parseInt(newCategoryOrder, 10), isActive: true, createdAt: new Date().toISOString() });
-            setNewCategoryName(''); setNewCategoryOrder(100);
-        } catch (error) { showMessage(`Error: ${error.message}`); }
-    };
-    
-    const deleteLogic = async (cat) => {
-         try {
-            await deleteDoc(doc(db, "content_categories", cat.id));
-            showMessage(`Category "${cat.name}" deleted.`);
-        } catch (error) { showMessage(`Error: ${error.message}`); }
-    };
-
-    const handleDeleteCategory = (category) => {
-        if (category.name === "Live Premieres") { showMessage("This category cannot be deleted."); return; }
-        setConfirmationTitle("Delete Category?");
-        setConfirmationMessage(`Are you sure you want to permanently delete "${category.name}"?`);
-        setOnConfirmationAction(() => () => deleteLogic(category));
-        setShowConfirmationModal(true);
-    };
-
-    const handleToggleActive = async (category) => {
-         try {
-            await updateDoc(doc(db, "content_categories", category.id), { isActive: !category.isActive });
-        } catch (error) { showMessage(`Error: ${error.message}`); }
-    };
-    
-    const handleSaveEdit = async () => {
-        try {
-            await updateDoc(doc(db, "content_categories", editingCategory.id), { name: editingCategory.name, orderIndex: parseInt(editingCategory.orderIndex, 10) });
-            setEditingCategory(null);
-        } catch (error) { showMessage(`Error: ${error.message}`); }
-    };
-
+    const handleClearLiveEvent = async () => { setIsSaving(true); try { await updateDoc(doc(db, "content_categories", liveCategoryDoc.id), { liveStreamUrl: '', liveStreamStartTime: null, liveStreamThumbnailUrl: '', liveStreamEventId: '', liveStreamEventTitle: '', liveStreamEventDescription: '', isTicketedEvent: false }); showMessage("Live Premiere has been cleared."); } catch (error) { showMessage(`Error: ${error.message}`); } finally { setIsSaving(false); } };
+    const handleAddCategory = async (e) => { e.preventDefault(); if (!newCategoryName.trim()) return; try { await addDoc(collection(db, "content_categories"), { name: newCategoryName.trim(), orderIndex: parseInt(newCategoryOrder, 10), isActive: true, createdAt: new Date().toISOString() }); setNewCategoryName(''); setNewCategoryOrder(100); } catch (error) { showMessage(`Error: ${error.message}`); } };
+    const deleteLogic = async (cat) => { try { await deleteDoc(doc(db, "content_categories", cat.id)); showMessage(`Category "${cat.name}" deleted.`); } catch (error) { showMessage(`Error: ${error.message}`); } };
+    const handleDeleteCategory = (category) => { if (category.name === "Live Premieres") { showMessage("This category cannot be deleted."); return; } setConfirmationTitle("Delete Category?"); setConfirmationMessage(`Are you sure you want to permanently delete "${category.name}"?`); setOnConfirmationAction(() => () => deleteLogic(category)); setShowConfirmationModal(true); };
+    const handleToggleActive = async (category) => { try { await updateDoc(doc(db, "content_categories", category.id), { isActive: !category.isActive }); } catch (error) { showMessage(`Error: ${error.message}`); } };
+    const handleSaveEdit = async () => { try { await updateDoc(doc(db, "content_categories", editingCategory.id), { name: editingCategory.name, orderIndex: parseInt(editingCategory.orderIndex, 10) }); setEditingCategory(null); } catch (error) { showMessage(`Error: ${error.message}`); } };
     const finalThumbnailPreview = liveCustomThumbnailPreview || liveAutoThumbnailPreview;
 
     return (
         <div className="screenContainer">
             <p className="heading">Manage Categories</p>
-            <p className="subHeading">Control the tabs for the Discover screen.</p>
-            
-            <div className="dashboardSection" style={{border: '2px solid #FFD700'}}>
-                <p className="dashboardSectionTitle">Live Premieres Control</p>
+            <p className="subHeading">Control the tabs for the Discover screen and manage live events.</p>
+            <div className="dashboardSection" style={{border: '2px solid #FFD700'}}><p className="dashboardSectionTitle">Live Premiere Event Hub</p>
                  {loading ? <p>Loading controls...</p> : (
-                    <div>
-                        <div className="formGroup">
-                            <label className="formLabel">Scheduled Start Time:</label>
-                            <input type="datetime-local" className="formInput" value={liveStartTimeInput} onChange={(e) => setLiveStartTimeInput(e.target.value)} />
+                    <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px'}}>
+                        <div> {/* Column 1: Event Setup */}
+                            <p className="dashboardSectionTitle" style={{fontSize: '16px', color: '#FFF'}}>Event Setup</p>
+                            <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}><p className="formLabel" style={{marginBottom: 0}}>Enable Ticket Sales</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{isTicketedEvent ? 'Enabled' : 'Disabled'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={isTicketedEvent} onChange={(e) => setIsTicketedEvent(e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${isTicketedEvent ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isTicketedEvent ? 'transform translate-x-6' : ''}`}></div></div></label></div>
+                            <div className="adminDashboardItem" style={{marginTop: '10px'}}><p className="formLabel" style={{marginBottom: 0, flexGrow: 1}}>Ticket Price (USD)</p><input type="number" className="formInput" value={ticketPrice} onChange={(e) => setTicketPrice(e.target.value)} style={{width: '100px', textAlign: 'right'}} disabled={!isTicketedEvent}/></div>
+                            <div className="formGroup"><label className="formLabel">Event ID (Internal, No Spaces):</label><input type="text" className="formInput" value={liveEventId} onChange={(e) => setLiveEventId(e.target.value)} placeholder="e.g., SUMMER_SLAM_2025"/></div>
+                            <div className="formGroup"><label className="formLabel">Event Title (Public):</label><input type="text" className="formInput" value={liveEventTitle} onChange={(e) => setLiveEventTitle(e.target.value)} placeholder="e.g., NVA Summer Comedy Slam"/></div>
+                            <div className="formGroup"><label className="formLabel">Event Description (Public):</label><textarea className="formTextarea" style={{minHeight: '60px'}} value={liveEventDescription} onChange={(e) => setLiveEventDescription(e.target.value)} placeholder="A short, catchy description."></textarea></div>
+                            <div className="formGroup"><label className="formLabel">Scheduled Start Time:</label><input type="datetime-local" className="formInput" value={liveStartTimeInput} onChange={(e) => setLiveStartTimeInput(e.target.value)} /></div>
+                            <div className="formGroup"><label className="formLabel">Embed URL:</label><input type="url" className="formInput" value={liveUrlInput} onChange={(e) => setLiveUrlInput(e.target.value)} /></div>
+                            <div className="formGroup"><label className="formLabel">Thumbnail Preview:</label>{finalThumbnailPreview ? <img src={finalThumbnailPreview} alt="Premiere thumbnail" style={{maxWidth: '200px', borderRadius: '8px', margin: '10px 0', border: '1px solid #444'}}/> : <p className="smallText" style={{textAlign: 'left', color: '#AAA'}}>Paste URL or upload image.</p>}<input type="file" ref={liveThumbnailInputRef} onChange={handlePremiereThumbFileChange} accept="image/*" style={{display: 'none'}} /><button type="button" className="button" style={{backgroundColor: '#3A3A3A', width: 'auto'}} onClick={() => liveThumbnailInputRef.current.click()}><span className="buttonText">Upload Image</span></button></div>
+                            <div className="flex gap-4 mt-4"><button onClick={handleSetLiveEvent} className="button" disabled={isSaving}><span className="buttonText">{isSaving ? 'Saving...' : 'Save Event Settings'}</span></button><button onClick={handleClearLiveEvent} className="button" style={{backgroundColor: '#555'}} disabled={isSaving}><span className="buttonText">{isSaving ? 'Clearing...' : 'Clear All'}</span></button></div>
                         </div>
-                        <div className="formGroup">
-                            <label className="formLabel">Embed URL:</label>
-                            <input type="url" className="formInput" value={liveUrlInput} onChange={(e) => setLiveUrlInput(e.target.value)} />
-                        </div>
-                        
-                        <div className="formGroup">
-                            <label className="formLabel">"Coming Soon" Thumbnail Preview:</label>
-                            {finalThumbnailPreview ? (
-                                <img src={finalThumbnailPreview} alt="Premiere thumbnail preview" style={{maxWidth: '200px', borderRadius: '8px', margin: '10px 0', border: '1px solid #444'}}/>
-                            ) : <p className="smallText" style={{textAlign: 'left', color: '#AAA'}}>No thumbnail generated. Paste a valid URL or upload an image.</p>}
-                            <input type="file" ref={liveThumbnailInputRef} onChange={handlePremiereThumbFileChange} accept="image/*" style={{display: 'none'}} />
-                            <button type="button" className="button" style={{backgroundColor: '#3A3A3A', width: 'auto'}} onClick={() => liveThumbnailInputRef.current.click()}>
-                                <span className="buttonText">Upload Image</span>
-                            </button>
-                        </div>
-
-                        <div className="flex gap-4 mt-4">
-                            <button onClick={handleSetLiveEvent} className="button" disabled={isSaving}>
-                                <span className="buttonText">{isSaving ? 'Saving...' : 'Set / Update Event'}</span>
-                            </button>
-                            <button onClick={handleClearLiveEvent} className="button" style={{backgroundColor: '#555'}} disabled={isSaving}>
-                                <span className="buttonText">{isSaving ? 'Clearing...' : 'Clear Event'}</span>
-                            </button>
+                        <div> {/* Column 2: Box Office Stats */}
+                            <p className="dashboardSectionTitle" style={{fontSize: '16px', color: '#FFF'}}>Box Office: <span style={{color: '#FFD700'}}>{liveEventTitle || 'No Event Set'}</span></p>
+                            {loadingStats ? <p>Loading stats...</p> : (<>
+                                <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'flex-start', background: '#1A1A1A'}}><p className="dashboardItem" style={{fontSize: '12px', color: '#AAA'}}>Total Tickets Sold</p><p className="premiumFeatureTitle" style={{fontSize: '28px'}}>{(boxOfficeStats.ticketsSold || 0).toLocaleString()}</p></div>
+                                <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'flex-start', background: '#1A1A1A', marginTop: '10px'}}><p className="dashboardItem" style={{fontSize: '12px', color: '#AAA'}}>Total Gross Revenue (USD)</p><p className="premiumFeatureTitle" style={{fontSize: '28px'}}>${(boxOfficeStats.totalRevenue || 0).toFixed(2)}</p></div>
+                                <p className="dashboardSectionTitle" style={{fontSize: '14px', color: '#FFF', marginTop: '20px'}}>Recent Purchases</p>
+                                <div className="dashboardContentList">{recentPurchases.length === 0 ? <p className="dashboardItem">No recent purchases for this event.</p> : recentPurchases.map(p => (<div key={p.pledgeId} className="dashboardContentListItem" style={{fontSize: '12px'}}><span>{p.userName}</span><span style={{color: '#AAA'}}>{new Date(p.approvedAt.toDate()).toLocaleString()}</span></div>))}</div>
+                            </>)}
                         </div>
                     </div>
                 )}
             </div>
-
-            <div className="dashboardSection">
-                <p className="dashboardSectionTitle">Add New Category</p>
-                <form onSubmit={handleAddCategory} className="flex items-end gap-4">
-                    <div className="formGroup flex-grow mb-0"><label className="formLabel">Category Name:</label><input type="text" className="formInput" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} required /></div>
-                    <div className="formGroup mb-0"><label className="formLabel">Order:</label><input type="number" className="formInput" value={newCategoryOrder} onChange={(e) => setNewCategoryOrder(e.target.value)} style={{width: '80px'}} /></div>
-                    <button type="submit" className="button m-0"><span className="buttonText">Add</span></button>
-                </form>
-            </div>
-
-            <div className="dashboardSection">
-                <p className="dashboardSectionTitle">Existing Categories</p>
+            <div className="dashboardSection"><p className="dashboardSectionTitle">Add New Category</p><form onSubmit={handleAddCategory} className="flex items-end gap-4"><div className="formGroup flex-grow mb-0"><label className="formLabel">Category Name:</label><input type="text" className="formInput" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} required /></div><div className="formGroup mb-0"><label className="formLabel">Order:</label><input type="number" className="formInput" value={newCategoryOrder} onChange={(e) => setNewCategoryOrder(e.target.value)} style={{width: '80px'}} /></div><button type="submit" className="button m-0"><span className="buttonText">Add</span></button></form></div>
+            <div className="dashboardSection"><p className="dashboardSectionTitle">Existing Categories</p>
                 {loading ? <p>Loading...</p> : (
-                    <div className="dashboardContentList">
-                        {categories.map(cat => (
-                            <div key={cat.id} className="adminDashboardItem" style={{alignItems: 'center', gap: '10px'}}>
-                                {editingCategory && editingCategory.id === cat.id ? (
-                                    <>
-                                        <input type="text" value={editingCategory.name} onChange={(e) => setEditingCategory({...editingCategory, name: e.target.value})} className="formInput flex-grow" disabled={cat.name === "Live Premieres"} />
-                                        <input type="number" value={editingCategory.orderIndex} onChange={(e) => setEditingCategory({...editingCategory, orderIndex: e.target.value})} className="formInput w-20" />
-                                        <button onClick={handleSaveEdit} className="adminActionButton approve">Save</button>
-                                        <button onClick={() => setEditingCategory(null)} className="adminActionButton">Cancel</button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <span className="flex-grow font-bold">{cat.name}</span>
-                                        <span className="text-sm text-gray-400">Order: {cat.orderIndex}</span>
-                                        <span className={`font-bold ${cat.isActive ? 'text-green-400' : 'text-red-400'}`}>{cat.isActive ? 'Active' : 'Inactive'}</span>
-                                        <button onClick={() => handleToggleActive(cat)} className="adminActionButton">{cat.isActive ? 'Deactivate' : 'Activate'}</button>
-                                        <button onClick={() => setEditingCategory({...cat})} className="adminActionButton" disabled={cat.name === "Live Premieres"}>Edit</button>
-                                        <button onClick={() => handleDeleteCategory(cat)} className="adminActionButton reject" disabled={cat.name === "Live Premieres"}>Delete</button>
-                                    </>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                )}
+                    <div className="dashboardContentList">{categories.map(cat => (
+                            <div key={cat.id} className="adminDashboardItem" style={{alignItems: 'center', gap: '10px'}}>{editingCategory && editingCategory.id === cat.id ? (<><input type="text" value={editingCategory.name} onChange={(e) => setEditingCategory({...editingCategory, name: e.target.value})} className="formInput flex-grow" disabled={cat.name === "Live Premieres"} /><input type="number" value={editingCategory.orderIndex} onChange={(e) => setEditingCategory({...editingCategory, orderIndex: e.target.value})} className="formInput w-20" /><button onClick={handleSaveEdit} className="adminActionButton approve">Save</button><button onClick={() => setEditingCategory(null)} className="adminActionButton">Cancel</button></>) : (<><span className="flex-grow font-bold">{cat.name}</span><span className="text-sm text-gray-400">Order: {cat.orderIndex}</span><span className={`font-bold ${cat.isActive ? 'text-green-400' : 'text-red-400'}`}>{cat.isActive ? 'Active' : 'Inactive'}</span><button onClick={() => handleToggleActive(cat)} className="adminActionButton">{cat.isActive ? 'Deactivate' : 'Activate'}</button><button onClick={() => setEditingCategory({...cat})} className="adminActionButton" disabled={cat.name === "Live Premieres"}>Edit</button><button onClick={() => handleDeleteCategory(cat)} className="adminActionButton reject" disabled={cat.name === "Live Premieres"}>Delete</button></>)}</div>))}
+                    </div>)}
             </div>
-            
-            <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF' }}>
-                <span className="buttonText">Back to Admin Dashboard</span>
-            </button>
+            <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF' }}><span className="buttonText">Back to Admin Dashboard</span></button>
         </div>
     );
 };
@@ -5643,16 +5525,15 @@ const AdminContentManagerScreen = ({
         
         // --- FIND and REPLACE the ENTIRE CategoriesScreen component with this block ---
 
-const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, currentUser, handleVideoPress }) => {
+const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, currentUser, creatorProfile, setActiveScreen, handleVideoPress }) => {
     const [categories, setCategories] = useState([]);
     const [activeCategory, setActiveCategory] = useState('Live Premieres');
     const [content, setContent] = useState([]);
     const [loadingCategories, setLoadingCategories] = useState(true);
     const [loadingContent, setLoadingContent] = useState(false);
-    const [liveStreamUrl, setLiveStreamUrl] = useState('');
     
-    // New state to manage the visibility of the "More Content" dropdown
-    const [showMoreMenu, setShowMoreMenu] = useState(false);
+    // State to hold the specific settings for the Live Premiere event
+    const [liveEventSettings, setLiveEventSettings] = useState(null);
 
     useEffect(() => {
         const categoriesRef = collection(db, "content_categories");
@@ -5661,8 +5542,10 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
             const fetchedCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setCategories(fetchedCategories);
             setLoadingCategories(false);
+            
+            // Find and store the specific Live Premieres document
             const liveDoc = fetchedCategories.find(cat => cat.name === 'Live Premieres');
-            setLiveStreamUrl(liveDoc ? liveDoc.liveStreamUrl : '');
+            setLiveEventSettings(liveDoc || null);
         });
         return () => unsubscribe();
     }, []);
@@ -5681,85 +5564,92 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
         return () => unsubscribe();
     }, [activeCategory]);
 
-    const handleCategoryClick = (categoryName) => {
-        setActiveCategory(categoryName);
-        setShowMoreMenu(false); // Close the menu whenever a category is selected
-    };
-
     const LiveStreamPlayer = () => {
-        if (isLive) {
-            const { embedUrl, isVertical } = extractVideoInfo(liveStreamUrl);
-            const finalEmbedUrl = embedUrl || `${liveStreamUrl}?autoplay=1`;
-            return (
-                <div style={{ width: '100%', maxWidth: '900px', margin: '0 auto' }}>
-                    <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
-                        <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe>
+        // Master Access Check Logic
+        const hasAccess = () => {
+            // If the event is not ticketed at all, everyone has access.
+            if (!liveEventSettings?.isTicketedEvent) {
+                return true;
+            }
+            // If it IS ticketed, but the user is not logged in, they don't have access.
+            if (!currentUser || !creatorProfile) {
+                return false;
+            }
+            // Check for an active premium subscription.
+            if (creatorProfile.premiumExpiresAt && creatorProfile.premiumExpiresAt.toDate() > new Date()) {
+                return true; // Premium members always have access.
+            }
+            // Check for a specific ticket for this event.
+            const eventId = liveEventSettings.liveStreamEventId;
+            if (eventId && creatorProfile.purchasedTickets && creatorProfile.purchasedTickets[eventId]) {
+                return true; // They have a ticket for this specific event.
+            }
+            // If none of the above conditions are met, access is denied.
+            return false;
+        };
+
+        const canViewStream = hasAccess();
+
+        // Render "Coming Soon" or "Offline" view if the event is not live
+        if (!isLive) {
+             if (countdownText) {
+                return (
+                    <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}>
+                        {liveThumbnail ? ( <img src={liveThumbnail} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'}} /> ) : ( <div style={{ margin: '0 auto', width: '100%', maxWidth: '480px', height: '250px', backgroundColor: '#2A2A2A', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><p className="heading">Coming Soon</p></div> )}
+                        <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p>
+                        <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p>
                     </div>
-                </div>
-            );
-        }
-        
-        if (countdownText) {
+                );
+            }
             return (
-                <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}>
-                    {liveThumbnail ? (
-                        <img 
-                            src={liveThumbnail} 
-                            alt="Coming Soon" 
-                            style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'}} 
-                        />
-                    ) : (
-                        <div style={{ margin: '0 auto', width: '100%', maxWidth: '480px', height: '250px', backgroundColor: '#2A2A2A', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-                             <p className="heading">Coming Soon</p>
-                        </div>
-                    )}
-                    <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p>
-                    <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p>
+                <div style={{textAlign: 'center', paddingTop: '50px'}}>
+                    <p className="heading">Stream Offline</p>
+                    <p className="subHeading">No live premiere is currently scheduled.</p>
                 </div>
             );
         }
 
-        return (
-            <div style={{textAlign: 'center', paddingTop: '50px'}}>
-                <p className="heading">Stream Offline</p>
-                <p className="subHeading">No live premiere is currently scheduled.</p>
-            </div>
-        );
+        // If the event IS live, check for access
+        if (isLive) {
+            if (canViewStream) {
+                const { embedUrl, isVertical } = extractVideoInfo(liveEventSettings?.liveStreamUrl || '');
+                const finalEmbedUrl = embedUrl || `${liveEventSettings?.liveStreamUrl}?autoplay=1`;
+                return (
+                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                        <div className={`videoModalContent`} style={{position: 'relative', width: '100%', maxWidth: '900px', height: 'calc(100vh - 300px)', minHeight: '400px', boxShadow: 'none', background: 'transparent'}}>
+                            <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`} style={{height: '100%', paddingBottom: 0}}>
+                                <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe>
+                            </div>
+                        </div>
+                    </div>
+                );
+            } else {
+                // Render the Paywall UI
+                return (
+                    <div style={{textAlign: 'center', paddingTop: '50px'}}>
+                         {liveThumbnail && <img src={liveThumbnail} alt="Event" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', opacity: 0.3}} />}
+                        <p className="heading" style={{color: '#FFD700'}}>This is a Premium Event</p>
+                        <p className="subHeading">The live stream has started. Please purchase a ticket or subscribe to view.</p>
+                        <button className="button" onClick={() => setActiveScreen('Premium')}>
+                            <span className="buttonText">Purchase Ticket</span>
+                        </button>
+                    </div>
+                );
+            }
+        }
+        return null; // Should not be reached
     };
-    
-    // Logic to split categories into visible and hidden
-    const visibleCategories = categories.slice(0, 2);
-    const hiddenCategories = categories.slice(2);
 
     return (
         <div className="screenContainer">
             <p className="sectionTitle">Discover Content</p>
             {loadingCategories ? <p>Loading categories...</p> : (
                 <div className="categoryTabs">
-                    {/* Render the first 2 (or fewer) visible categories */}
-                    {visibleCategories.map(category => (
-                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
+                    {categories.map(category => (
+                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => setActiveCategory(category.name)}>
                             <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
                         </button>
                     ))}
-                    
-                    {/* If there are more than 2 categories, render the "More Content" button */}
-                    {hiddenCategories.length > 0 && (
-                        <button className="categoryTab" onClick={() => setShowMoreMenu(!showMoreMenu)}>
-                            <span className="categoryTabText">More Content {showMoreMenu ? '▲' : '▼'}</span>
-                        </button>
-                    )}
-
-                    {/* Conditionally render the dropdown menu */}
-                    {showMoreMenu && hiddenCategories.length > 0 && (
-                        <div className="moreCategoriesMenu">
-                            {hiddenCategories.map(category => (
-                                <button key={category.id} className={`categoryTab moreMenuItem ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
-                                    <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
                 </div>
             )}
             
@@ -7090,27 +6980,35 @@ useEffect(() => {
 
             // =========== START REPLACEMENT ===========
             const PremiumScreen = ({ showMessage, currentUser, setActiveScreen, setPledgeContext }) => {
-                const [monetizationSettings, setMonetizationSettings] = useState({
-                    premiumPrice: 1.99,
-                    ticketPrice: 5.00,
-                    isTicketedEvent: false
-                });
+                const [eventSettings, setEventSettings] = useState(null);
                 const [loading, setLoading] = useState(true);
+                const [premiumPrice, setPremiumPrice] = useState(1.99);
 
                 useEffect(() => {
                     const settingsDocRef = doc(db, "settings", "socialLinks");
-                    const unsubscribe = onSnapshot(settingsDocRef, (docSnap) => {
+                    const unsubscribeSettings = onSnapshot(settingsDocRef, (docSnap) => {
                         if (docSnap.exists()) {
-                            const data = docSnap.data();
-                            setMonetizationSettings({
-                                premiumPrice: data.premiumPrice || 1.99,
-                                ticketPrice: data.ticketPrice || 5.00,
-                                isTicketedEvent: data.isTicketedEvent || false
-                            });
+                            setPremiumPrice(docSnap.data().premiumPrice || 1.99);
+                        }
+                    });
+
+                    // THE DEFINITIVE FIX: Use a query to find the settings document by its name, not by a hardcoded ID.
+                    const categoriesRef = collection(db, "content_categories");
+                    const q = query(categoriesRef, where("name", "==", "Live Premieres"));
+                    const unsubscribeLiveEvent = onSnapshot(q, (snapshot) => {
+                        if (!snapshot.empty) {
+                            // There will only be one document, so we take the first one.
+                            setEventSettings(snapshot.docs[0].data());
+                        } else {
+                            setEventSettings(null);
                         }
                         setLoading(false);
                     });
-                    return () => unsubscribe();
+
+                    return () => {
+                        unsubscribeSettings();
+                        unsubscribeLiveEvent();
+                    };
                 }, []);
 
                 const handlePledge = (type) => {
@@ -7119,24 +7017,24 @@ useEffect(() => {
                         setActiveScreen('Login');
                         return;
                     }
-                    if (type === 'eventTicket' && !monetizationSettings.isTicketedEvent) {
-                        showMessage("There is no ticketed event currently available for purchase.");
-                        return;
-                    }
 
-                    const context = type === 'premium' 
-                        ? { type: 'premium', amount: monetizationSettings.premiumPrice }
-                        : { 
+                    if (type === 'eventTicket') {
+                        if (!eventSettings?.isTicketedEvent) {
+                             showMessage("There is no ticketed event currently available for purchase.");
+                             return;
+                        }
+                        const context = { 
                             type: 'eventTicket',
-                            amount: monetizationSettings.ticketPrice,
-                            // These fields can be expanded later
-                            targetEventId: 'LivePremiere_General', 
-                            targetEventTitle: "Live Premiere Event"
-                          };
-                    
-                    if (type === 'premium' || type === 'eventTicket') {
-                         setPledgeContext(context);
-                         setActiveScreen('SubscriptionPledge');
+                            amount: eventSettings.ticketPrice || 5.00,
+                            targetEventId: eventSettings.liveStreamEventId || 'LivePremiere_General', 
+                            targetEventTitle: eventSettings.liveStreamEventTitle || "Live Premiere Event"
+                        };
+                        setPledgeContext(context);
+                        setActiveScreen('SubscriptionPledge');
+                    } else if (type === 'premium') {
+                        const context = { type: 'premium', amount: premiumPrice };
+                        setPledgeContext(context);
+                        setActiveScreen('SubscriptionPledge');
                     }
                 };
 
@@ -7149,28 +7047,23 @@ useEffect(() => {
                             <p className="premiumFeatureTitle">Premium Subscription</p>
                             <p className="premiumFeatureDescription">Get access to **all** ticketed live events, enjoy ad-free viewing, and receive exclusive perks. The best value for dedicated fans.</p>
                             <button className="button" style={{marginTop: '15px'}} onClick={() => handlePledge('premium')}>
-                                <span className="buttonText">Purchase Subscription</span>
+                                <span className="buttonText">Purchase Subscription - ${premiumPrice.toFixed(2)}</span>
                             </button>
                         </div>
 
                          <div className="premiumFeatureCard" style={{border: '1px solid #CCC'}}>
-                             <p className="premiumFeatureTitle" style={{color: '#CCC'}}>Single Event Ticket</p>
-                            {loading ? (<p className="premiumFeatureDescription">Loading...</p>) : monetizationSettings.isTicketedEvent ? (
+                            {loading ? <p className="premiumFeatureDescription">Loading Event Details...</p> : 
+                            (eventSettings?.isTicketedEvent) ? (
                                 <>
-                                    <p className="premiumFeatureDescription">Purchase a single-use ticket for our next live premiere event.</p>
-                                    {/* --- START: MODIFIED BUTTON STYLE --- */}
+                                    <p className="premiumFeatureTitle" style={{color: '#FFF'}}>{eventSettings.liveStreamEventTitle || "Live Premiere Event"}</p>
+                                    <p className="premiumFeatureDescription" style={{marginBottom: '15px'}}>{eventSettings.liveStreamEventDescription || 'Purchase a single-use ticket for our next live premiere event.'}</p>
                                     <button 
                                         className="button" 
-                                        style={{
-                                            marginTop: '15px', 
-                                            backgroundColor: '#0A0A0A', 
-                                            border: '1px solid #FFD700'
-                                        }} 
+                                        style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }} 
                                         onClick={() => handlePledge('eventTicket')}
                                     >
-                                        <span className="buttonText" style={{color: '#FFD700'}}>Buy Ticket</span>
+                                        <span className="buttonText" style={{color: '#FFD700'}}>Buy Ticket - ${eventSettings.ticketPrice ? eventSettings.ticketPrice.toFixed(2) : '5.00'}</span>
                                     </button>
-                                    {/* --- END: MODIFIED BUTTON STYLE --- */}
                                 </>
                             ) : (<p className="premiumFeatureDescription">There are no new ticketed events scheduled at this time. Please check back later!</p>)}
                         </div>
@@ -7757,7 +7650,11 @@ const CreatorDashboardScreen = ({
         const renderScreen = () => {
             if (activeScreen === 'Discover') {
                 // Render this screen fresh every time, as it needs the live countdown
-                return <CategoriesScreen showMessage={showMessage} isLive={isLive} countdownText={countdownText} liveThumbnail={liveThumbnail} currentUser={currentUser} handleVideoPress={handleVideoPress}/>;
+                return <CategoriesScreen showMessage={showMessage} isLive={isLive} countdownText={countdownText} 
+                liveThumbnail={liveThumbnail} currentUser={currentUser} creatorProfile={creatorProfile} 
+                setActiveScreen={setActiveScreen} handleVideoPress={handleVideoPress}/>;
+            // END of REPLACEMENT Block
+            // 5 lines AFTER the change
             }
             // For all other screens, return the stable, memoized version
             return memoizedScreen;
