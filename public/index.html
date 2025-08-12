@@ -157,7 +157,8 @@
         /* Tablet & Desktop: Switch to a responsive multi-column layout on larger screens */
         @media (min-width: 768px) {
             .contentGrid {
-                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                /* By increasing the minimum, we encourage a 3-column layout on standard desktops. */
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             }
         }
         .contentCard {
@@ -2510,12 +2511,10 @@
     const [profile, setProfile] = useState(null);
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [isContentListExpanded, setIsContentListExpanded] = useState(true);
-    // --- State for the follow system ---
+    
     const [isFollowing, setIsFollowing] = useState(false);
-    const [isFollowLoading, setIsFollowLoading] = useState(false);
+    const [isFollowLoading, setIsFollowLoading] = useState(true); // Start in loading state
 
-    // State for video player
     const [showVideoModal, setShowVideoModal] = useState(false);
     const [currentVideoUrl, setCurrentVideoUrl] = useState('');
     
@@ -2525,8 +2524,8 @@
             return;
         }
         setLoading(true);
+        setIsFollowLoading(true); // Always start loading follow status on profile change
 
-        // --- Real-time listener for the viewed profile ---
         const userDocRef = doc(db, "creators", selectedUserId);
         const unsubscribeProfile = onSnapshot(userDocRef, (userDocSnap) => {
             if (userDocSnap.exists()) {
@@ -2535,30 +2534,27 @@
                 showMessage("This user profile could not be found.");
                 setActiveScreen('DiscoverUsers');
             }
-        }, (error) => {
-            console.error("Error fetching user profile:", error);
-            showMessage("Failed to load user profile.");
-            setActiveScreen('DiscoverUsers');
         });
 
-        // --- Real-time listener for active campaigns ---
         const campaignsRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
         const q = query(campaignsRef, where('creatorId', '==', selectedUserId), where('status', '==', 'active'));
         const unsubscribeCampaigns = onSnapshot(q, (campaignSnapshot) => {
             setCampaigns(campaignSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-            setLoading(false); // Set loading to false after campaigns are also loaded
+            setLoading(false); 
         });
 
-        // --- Real-time listener for the follow status ---
         let unsubscribeFollow = () => {};
         if (currentUser) {
             const followDocRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
             unsubscribeFollow = onSnapshot(followDocRef, (followDocSnap) => {
                 setIsFollowing(followDocSnap.exists());
+                setIsFollowLoading(false); // Status has been determined
             });
+        } else {
+            setIsFollowing(false);
+            setIsFollowLoading(false); // Not logged in, so not following and not loading
         }
 
-        // --- Cleanup all listeners on unmount ---
         return () => {
             unsubscribeProfile();
             unsubscribeCampaigns();
@@ -2566,18 +2562,12 @@
         };
     }, [selectedUserId, currentUser]);
 
-        // --- Function to handle the follow/unfollow action ---
     const handleFollowToggle = async () => {
-        if (!currentUser) {
-            showMessage("Please log in to follow creators.");
-            setActiveScreen('Login');
-            return;
-        }
-        if (currentUser.uid === selectedUserId) {
-            showMessage("You cannot follow yourself.");
-            return;
-        }
-        setIsFollowLoading(true);
+        if (!currentUser) { showMessage("Please log in to follow creators."); setActiveScreen('Login'); return; }
+        if (currentUser.uid === selectedUserId) { showMessage("You cannot follow yourself."); return; }
+        if (isFollowLoading) return; // Prevent clicks while status is unknown
+
+        setIsFollowLoading(true); // Provide immediate feedback that action is in progress
 
         const targetUserRef = doc(db, "creators", selectedUserId);
         const currentUserRef = doc(db, "creators", currentUser.uid);
@@ -2585,60 +2575,33 @@
         const currentUserFollowingRef = doc(db, "creators", currentUser.uid, "following", selectedUserId);
 
         try {
-            await window.runTransaction(db, async (transaction) => {
-                const targetUserDoc = await transaction.get(targetUserRef);
-                const currentUserDoc = await transaction.get(currentUserRef);
-
-                if (!targetUserDoc.exists() || !currentUserDoc.exists()) {
-                    throw "A user document is missing, cannot update follow counts.";
-                }
-
+            await runTransaction(db, async (transaction) => {
                 if (isFollowing) {
                     // UNFOLLOW LOGIC
-                    const currentFollowerCount = targetUserDoc.data().followerCount || 0;
-                    const newFollowerCount = Math.max(0, currentFollowerCount - 1); // Prevents going below 0
-
-                    const currentFollowingCount = currentUserDoc.data().followingCount || 0;
-                    const newFollowingCount = Math.max(0, currentFollowingCount - 1); // Safety check for our own count
-
                     transaction.delete(targetFollowersRef);
                     transaction.delete(currentUserFollowingRef);
-                    transaction.update(targetUserRef, { followerCount: newFollowerCount });
-                    transaction.update(currentUserRef, { followingCount: newFollowingCount });
-
+                    transaction.update(targetUserRef, { followerCount: increment(-1) });
+                    transaction.update(currentUserRef, { followingCount: increment(-1) });
                 } else {
-                    // FOLLOW LOGIC (no change needed here, but kept for clarity)
-                    transaction.set(targetFollowersRef, { followedAt: new Date().toISOString() });
-                    transaction.set(currentUserFollowingRef, { followingSince: new Date().toISOString() });
+                    // FOLLOW LOGIC
+                    transaction.set(targetFollowersRef, { followedAt: new Date() });
+                    transaction.set(currentUserFollowingRef, { followingSince: new Date() });
                     transaction.update(targetUserRef, { followerCount: increment(1) });
                     transaction.update(currentUserRef, { followingCount: increment(1) });
                 }
             });
-            showMessage(isFollowing ? `Unfollowed ${profile.creatorName}` : `You are now following ${profile.creatorName}!`);
+            // The onSnapshot listener will automatically update the UI, so no manual state change is needed here.
         } catch (error) {
             console.error("Error in follow/unfollow transaction:", error);
             showMessage("Something went wrong. Please try again.");
-        } finally {
-            setIsFollowLoading(false);
+            setIsFollowLoading(false); // Re-enable button on error
         }
     };
-
-// --- Function to handle the follow/unfollow action ---
     
-    const handleVideoPress = (url) => {
-        setCurrentVideoUrl(url);
-        setShowVideoModal(true);
-    };
+    const handleVideoPress = (url) => { setCurrentVideoUrl(url); setShowVideoModal(true); };
+    const closeVideoModal = () => { setShowVideoModal(false); setCurrentVideoUrl(''); };
 
-    const closeVideoModal = () => {
-        setShowVideoModal(false);
-        setCurrentVideoUrl('');
-    };
-
-    if (loading) {
-        return (<div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Profile...</p></div>);
-    }
-
+    if (loading) { return (<div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Profile...</p></div>); }
     if (!profile) return null;
 
     return (
@@ -2650,8 +2613,6 @@
                         <div style={{marginLeft: '1rem', flexGrow: 1}}>
                             <p className="dashboardItem" style={{fontSize: '20px', fontWeight: 'bold', color: '#FFF', marginBottom: '5px'}}>{profile.creatorName}</p>
                             <p className="dashboardItem" style={{fontSize: '14px', color: '#AAA'}}>Role: {profile.role}</p>
-                            
-                            {/* --- Follower/Following Counts --- */}
                             <div style={{display: 'flex', gap: '15px', marginTop: '10px'}}>
                                 <p className="dashboardItem"><strong>{profile.followerCount || 0}</strong> Followers</p>
                                 <p className="dashboardItem"><strong>{profile.followingCount || 0}</strong> Following</p>
@@ -2659,11 +2620,10 @@
                         </div>
                     </div>
                     
-                    {/* --- Follow/Unfollow Button --- */}
                     {currentUser && currentUser.uid !== selectedUserId && (
                         <button className="dashboardButton" onClick={handleFollowToggle} disabled={isFollowLoading}
                             style={{ width: '100%', marginTop: '15px', backgroundColor: isFollowing ? '#555' : '#FFD700', color: isFollowing ? '#FFF' : '#0A0A0A', cursor: isFollowLoading ? 'wait' : 'pointer' }}>
-                            {isFollowLoading ? 'Updating...' : (isFollowing ? 'Unfollow' : 'Follow')}
+                            {isFollowLoading ? '...' : (isFollowing ? 'Unfollow' : 'Follow')}
                         </button>
                     )}
                     
@@ -2671,7 +2631,6 @@
                     <p className="dashboardItem"><strong>Categories:</strong> {profile.categories?.length > 0 ? profile.categories.join(', ') : "No categories set."}</p>
                 </div>
 
-                {/* Rest of the component (Featured Content, Campaigns, etc.) remains the same */}
                 <div className="dashboardSection">
                     <p className="dashboardSectionTitle">Featured Content</p>
                     {profile.featuredVideoLink && profile.featuredVideoLink.url ? (
@@ -2682,7 +2641,6 @@
                                 <p className="liveFeedCreator" style={{color: '#FFD700'}}>Click to watch</p>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px', marginTop: '4px' }}>
                             <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                            {/* We need to access the view count from the nested object */}
                             <span>{profile.featuredVideoLink?.viewCount || 0} views</span>
                             </div>
                             </div>
