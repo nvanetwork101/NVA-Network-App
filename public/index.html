@@ -149,12 +149,16 @@
         }
         .contentGrid {
             display: grid;
-            /* This is the magic rule:
-               - auto-fit: Create as many columns as will fit.
-               - minmax(250px, 1fr): Each column must be at least 250px, but can grow to fill space.
-            */
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 15px;
+            /* Mobile First: Default to a strict 2-column layout */
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        /* Tablet & Desktop: Switch to a responsive multi-column layout on larger screens */
+        @media (min-width: 768px) {
+            .contentGrid {
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            }
         }
         .contentCard {
             /* The width is now controlled by the parent grid. */
@@ -2591,13 +2595,19 @@
 
                 if (isFollowing) {
                     // UNFOLLOW LOGIC
+                    const currentFollowerCount = targetUserDoc.data().followerCount || 0;
+                    const newFollowerCount = Math.max(0, currentFollowerCount - 1); // Prevents going below 0
+
+                    const currentFollowingCount = currentUserDoc.data().followingCount || 0;
+                    const newFollowingCount = Math.max(0, currentFollowingCount - 1); // Safety check for our own count
+
                     transaction.delete(targetFollowersRef);
                     transaction.delete(currentUserFollowingRef);
-                    transaction.update(targetUserRef, { followerCount: increment(-1) });
-                    transaction.update(currentUserRef, { followingCount: increment(-1) });
+                    transaction.update(targetUserRef, { followerCount: newFollowerCount });
+                    transaction.update(currentUserRef, { followingCount: newFollowingCount });
 
                 } else {
-                    // FOLLOW LOGIC (This correctly creates the trigger documents)
+                    // FOLLOW LOGIC (no change needed here, but kept for clarity)
                     transaction.set(targetFollowersRef, { followedAt: new Date().toISOString() });
                     transaction.set(currentUserFollowingRef, { followingSince: new Date().toISOString() });
                     transaction.update(targetUserRef, { followerCount: increment(1) });
