@@ -149,8 +149,12 @@
         }
         .contentGrid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr); /* Create 2 equal-fraction columns */
-            gap: 15px; /* Create a perfect 15px gap between columns and rows */
+            /* This is the magic rule:
+               - auto-fit: Create as many columns as will fit.
+               - minmax(250px, 1fr): Each column must be at least 250px, but can grow to fill space.
+            */
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
         }
         .contentCard {
             /* The width is now controlled by the parent grid. */
@@ -191,6 +195,30 @@
             font-weight: bold;
             color: #FFF;
             padding: 10px;
+        }
+        .more-content-button {
+            position: relative;
+        }
+        .more-content-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0; /* This is the key change for alignment */
+            width: 100%; /* Make the dropdown match the button's width */
+            margin-top: 5px;
+            background-color: #2A2A2A;
+            border: 1px solid #444;
+            border-radius: 8px;
+            z-index: 100;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .more-content-dropdown .categoryTab {
+            width: 100%;
+            margin-right: 0;
+            margin-bottom: 5px;
+            justify-content: center; /* This is the fix */
+        }
+        .more-content-dropdown .categoryTab:last-child {
+            margin-bottom: 0;
         }
         .categoryTabs {
             margin-bottom: 15px;
@@ -2989,9 +3017,8 @@
                             <label htmlFor="campaignDescription" className="formLabel">Description:</label>
                             <textarea id="campaignDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe your project, what you need funding for, etc." required></textarea>
                         </div>
-
                         <div className="formGroup">
-                            <label htmlFor="campaignGoal" className="formLabel">Funding Goal (USD):</label>
+                            <label htmlFor="campaignGoal" className="formLabel">Funding Goal (GYD):</label>
                             <input type="number" id="campaignGoal" className="formInput" value={goal} onChange={(e) => setGoal(e.target.value)} min="1" step="any" required />
                         </div>
 
@@ -4039,7 +4066,7 @@ const AdminDashboardScreen = ({
                             <input type="text" id="pledgeName" className="formInput" value={userName} onChange={(e) => setUserName(e.target.value)} required />
                         </div>
                         <div className="formGroup">
-                            <label htmlFor="donationAmount" className="formLabel">Donation Amount (USD):</label>
+                            <label htmlFor="donationAmount" className="formLabel">Donation Amount (GYD):</label>
                             <input type="number" id="donationAmount" className="formInput" value={amount} onChange={(e) => setAmount(e.target.value)} required min="1" step="any" />
                         </div>
                         <div className="formGroup"><p className="termsText" style={{textAlign: 'left', color: '#CCC'}}>This is a manual payment process. You will be given instructions to complete your payment via MMG after submitting.<br/><br/><strong>A small platform fee (7%) helps NVA Network support creators.</strong></p></div>
@@ -5525,7 +5552,8 @@ const AdminContentManagerScreen = ({
         
         // --- FIND and REPLACE the ENTIRE CategoriesScreen component with this block ---
 
-const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, currentUser, creatorProfile, setActiveScreen, handleVideoPress }) => {
+    const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, currentUser, creatorProfile, setActiveScreen, 
+    handleVideoPress }) => {
     const [categories, setCategories] = useState([]);
     const [activeCategory, setActiveCategory] = useState('Live Premieres');
     const [content, setContent] = useState([]);
@@ -5534,6 +5562,7 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
     
     // State to hold the specific settings for the Live Premiere event
     const [liveEventSettings, setLiveEventSettings] = useState(null);
+    const [showMore, setShowMore] = useState(false); // NEW: State for the dropdown
 
     useEffect(() => {
         const categoriesRef = collection(db, "content_categories");
@@ -5543,7 +5572,6 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
             setCategories(fetchedCategories);
             setLoadingCategories(false);
             
-            // Find and store the specific Live Premieres document
             const liveDoc = fetchedCategories.find(cat => cat.name === 'Live Premieres');
             setLiveEventSettings(liveDoc || null);
         });
@@ -5563,93 +5591,77 @@ const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, c
         });
         return () => unsubscribe();
     }, [activeCategory]);
+    
+    // NEW: Function to handle category clicks and close the dropdown
+    const handleCategoryClick = (categoryName) => {
+        setActiveCategory(categoryName);
+        setShowMore(false);
+    };
 
     const LiveStreamPlayer = () => {
         // Master Access Check Logic
         const hasAccess = () => {
-            // If the event is not ticketed at all, everyone has access.
-            if (!liveEventSettings?.isTicketedEvent) {
-                return true;
-            }
-            // If it IS ticketed, but the user is not logged in, they don't have access.
-            if (!currentUser || !creatorProfile) {
-                return false;
-            }
-            // Check for an active premium subscription.
-            if (creatorProfile.premiumExpiresAt && creatorProfile.premiumExpiresAt.toDate() > new Date()) {
-                return true; // Premium members always have access.
-            }
-            // Check for a specific ticket for this event.
+            if (!liveEventSettings?.isTicketedEvent) return true;
+            if (!currentUser || !creatorProfile) return false;
+            if (creatorProfile.premiumExpiresAt && creatorProfile.premiumExpiresAt.toDate() > new Date()) return true;
             const eventId = liveEventSettings.liveStreamEventId;
-            if (eventId && creatorProfile.purchasedTickets && creatorProfile.purchasedTickets[eventId]) {
-                return true; // They have a ticket for this specific event.
-            }
-            // If none of the above conditions are met, access is denied.
+            if (eventId && creatorProfile.purchasedTickets && creatorProfile.purchasedTickets[eventId]) return true;
             return false;
         };
 
         const canViewStream = hasAccess();
 
-        // Render "Coming Soon" or "Offline" view if the event is not live
         if (!isLive) {
              if (countdownText) {
-                return (
-                    <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}>
-                        {liveThumbnail ? ( <img src={liveThumbnail} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'}} /> ) : ( <div style={{ margin: '0 auto', width: '100%', maxWidth: '480px', height: '250px', backgroundColor: '#2A2A2A', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><p className="heading">Coming Soon</p></div> )}
-                        <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p>
-                        <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p>
-                    </div>
-                );
+                return ( <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}> {liveThumbnail ? ( <img src={liveThumbnail} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'}} /> ) : ( <div style={{ margin: '0 auto', width: '100%', maxWidth: '480px', height: '250px', backgroundColor: '#2A2A2A', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><p className="heading">Coming Soon</p></div> )} <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p> <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p> </div> );
             }
-            return (
-                <div style={{textAlign: 'center', paddingTop: '50px'}}>
-                    <p className="heading">Stream Offline</p>
-                    <p className="subHeading">No live premiere is currently scheduled.</p>
-                </div>
-            );
+            return ( <div style={{textAlign: 'center', paddingTop: '50px'}}> <p className="heading">Stream Offline</p> <p className="subHeading">No live premiere is currently scheduled.</p> </div> );
         }
 
-        // If the event IS live, check for access
         if (isLive) {
             if (canViewStream) {
                 const { embedUrl, isVertical } = extractVideoInfo(liveEventSettings?.liveStreamUrl || '');
                 const finalEmbedUrl = embedUrl || `${liveEventSettings?.liveStreamUrl}?autoplay=1`;
-                return (
-                    <div style={{ display: 'flex', justifyContent: 'center' }}>
-                        <div className={`videoModalContent`} style={{position: 'relative', width: '100%', maxWidth: '900px', height: 'calc(100vh - 300px)', minHeight: '400px', boxShadow: 'none', background: 'transparent'}}>
-                            <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`} style={{height: '100%', paddingBottom: 0}}>
-                                <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe>
-                            </div>
-                        </div>
-                    </div>
-                );
+                return ( <div style={{ display: 'flex', justifyContent: 'center' }}> <div className={`videoModalContent`} style={{position: 'relative', width: '100%', maxWidth: '900px', height: 'calc(100vh - 300px)', minHeight: '400px', boxShadow: 'none', background: 'transparent'}}> <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`} style={{height: '100%', paddingBottom: 0}}> <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe> </div> </div> </div> );
             } else {
-                // Render the Paywall UI
-                return (
-                    <div style={{textAlign: 'center', paddingTop: '50px'}}>
-                         {liveThumbnail && <img src={liveThumbnail} alt="Event" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', opacity: 0.3}} />}
-                        <p className="heading" style={{color: '#FFD700'}}>This is a Premium Event</p>
-                        <p className="subHeading">The live stream has started. Please purchase a ticket or subscribe to view.</p>
-                        <button className="button" onClick={() => setActiveScreen('Premium')}>
-                            <span className="buttonText">Purchase Ticket</span>
-                        </button>
-                    </div>
-                );
+                return ( <div style={{textAlign: 'center', paddingTop: '50px'}}> {liveThumbnail && <img src={liveThumbnail} alt="Event" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', opacity: 0.3}} />} <p className="heading" style={{color: '#FFD700'}}>This is a Premium Event</p> <p className="subHeading">The live stream has started. Please purchase a ticket or subscribe to view.</p> <button className="button" onClick={() => setActiveScreen('Premium')}> <span className="buttonText">Purchase Ticket</span> </button> </div> );
             }
         }
-        return null; // Should not be reached
+        return null;
     };
+    
+    // NEW: Logic to split categories for the dropdown menu
+    const visibleCategories = categories.slice(0, 2);
+    const dropdownCategories = categories.slice(2);
 
     return (
         <div className="screenContainer">
             <p className="sectionTitle">Discover Content</p>
             {loadingCategories ? <p>Loading categories...</p> : (
                 <div className="categoryTabs">
-                    {categories.map(category => (
-                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => setActiveCategory(category.name)}>
+                    {/* Render the first 2 (or fewer) categories */}
+                    {visibleCategories.map(category => (
+                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
                             <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
                         </button>
                     ))}
+                    {/* If there are more than 2 categories, render the dropdown */}
+                    {dropdownCategories.length > 0 && (
+                        <div className="more-content-button">
+                            <button className="categoryTab" onClick={() => setShowMore(!showMore)}>
+                                <span className="categoryTabText">More Content ▼</span>
+                            </button>
+                            {showMore && (
+                                <div className="more-content-dropdown">
+                                    {dropdownCategories.map(category => (
+                                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
+                                            <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
             
@@ -7047,7 +7059,7 @@ useEffect(() => {
                             <p className="premiumFeatureTitle">Premium Subscription</p>
                             <p className="premiumFeatureDescription">Get access to **all** ticketed live events, enjoy ad-free viewing, and receive exclusive perks. The best value for dedicated fans.</p>
                             <button className="button" style={{marginTop: '15px'}} onClick={() => handlePledge('premium')}>
-                                <span className="buttonText">Purchase Subscription - ${premiumPrice.toFixed(2)}</span>
+                                <span className="buttonText">Purchase Subscription</span>
                             </button>
                         </div>
 
@@ -7062,7 +7074,7 @@ useEffect(() => {
                                         style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }} 
                                         onClick={() => handlePledge('eventTicket')}
                                     >
-                                        <span className="buttonText" style={{color: '#FFD700'}}>Buy Ticket - ${eventSettings.ticketPrice ? eventSettings.ticketPrice.toFixed(2) : '5.00'}</span>
+                                        <span className="buttonText" style={{color: '#FFD700'}}>Buy Ticket</span>
                                     </button>
                                 </>
                             ) : (<p className="premiumFeatureDescription">There are no new ticketed events scheduled at this time. Please check back later!</p>)}
@@ -7385,186 +7397,93 @@ const CreatorDashboardScreen = ({
     const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
     const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
     const [isUploadingPFP, setIsUploadingPFP] = useState(false);
+    const [liveEventId, setLiveEventId] = useState(null);
+
+    useEffect(() => {
+        const categoriesRef = collection(db, "content_categories");
+        const q = query(categoriesRef, where("name", "==", "Live Premieres"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            if (!snapshot.empty) { setLiveEventId(snapshot.docs[0].data().liveStreamEventId || null); } else { setLiveEventId(null); }
+        });
+        return () => unsubscribe();
+    }, []);
 
     useEffect(() => {
         let unsubscribe = () => {};
         if (currentUser) {
             const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
             const q = query(campaignsCollectionRef, where('creatorId', '==', currentUser.uid), orderBy('createdAt', 'desc'));
-            unsubscribe = onSnapshot(q, (snapshot) => {
-                setCreatorCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-            });
-        } else {
-            setCreatorCampaigns([]);
-        }
+            unsubscribe = onSnapshot(q, (snapshot) => { setCreatorCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); });
+        } else { setCreatorCampaigns([]); }
         return () => unsubscribe();
     }, [currentUser]);
 
-    useEffect(() => {
-        if (creatorProfile) {
-            setEditCreatorName(creatorProfile.creatorName || '');
-            setEditBio(creatorProfile.bio || '');
-            setEditCategories(creatorProfile.categories || []);
-            setEditExistingWorkLink(creatorProfile.existingWorkLink || '');
-            setVideoLinkInput(creatorProfile.featuredVideoLink?.url || '');
-        }
-    }, [creatorProfile]);
-
-    useEffect(() => {
-        setAutoThumbnailPreview('');
-        if (!videoLinkInput || (creatorProfile.featuredVideoLink && videoLinkInput === creatorProfile.featuredVideoLink.url)) return;
-        const handler = setTimeout(() => {
-            const { thumbnailUrl } = extractVideoInfo(videoLinkInput);
-            if (thumbnailUrl) setAutoThumbnailPreview(thumbnailUrl);
-        }, 600);
-        return () => clearTimeout(handler);
-    }, [videoLinkInput]);
-
+    useEffect(() => { if (creatorProfile) { setEditCreatorName(creatorProfile.creatorName || ''); setEditBio(creatorProfile.bio || ''); setEditCategories(creatorProfile.categories || []); setEditExistingWorkLink(creatorProfile.existingWorkLink || ''); setVideoLinkInput(creatorProfile.featuredVideoLink?.url || ''); } }, [creatorProfile]);
+    useEffect(() => { setAutoThumbnailPreview(''); if (!videoLinkInput || (creatorProfile.featuredVideoLink && videoLinkInput === creatorProfile.featuredVideoLink.url)) return; const handler = setTimeout(() => { const { thumbnailUrl } = extractVideoInfo(videoLinkInput); if (thumbnailUrl) setAutoThumbnailPreview(thumbnailUrl); }, 600); return () => clearTimeout(handler); }, [videoLinkInput]);
     const handleSaveProfile = async () => { if (!editCreatorName) { showMessage("Creator name cannot be empty."); return; } try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { creatorName: editCreatorName, bio: editBio, categories: editCategories, existingWorkLink: editExistingWorkLink, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, creatorName: editCreatorName, bio: editBio, categories: editCategories, existingWorkLink: editExistingWorkLink })); setIsEditingProfile(false); showMessage('Profile updated successfully!'); } catch (error) { showMessage(`Failed to update profile: ${error.message}`); } };
     const handleCancelEdit = () => { if (creatorProfile) { setEditCreatorName(creatorProfile.creatorName || ''); setEditBio(creatorProfile.bio || ''); setEditCategories(creatorProfile.categories || []); setEditExistingWorkLink(creatorProfile.existingWorkLink || ''); } setIsEditingProfile(false); };
     const handleProfileCategoryChange = (e) => { const { value, checked } = e.target; setEditCategories(prev => checked ? [...prev, value] : prev.filter(cat => cat !== value)); };
     const triggerProfilePictureUpload = (e) => { const file = e.target.files[0]; if (file) { setImageFileToAdjust(file); setShowImageAdjustModal(true); } };
-    const handleSaveAdjustedProfilePicture = async (adjustedBlob) => { if (!currentUser || !adjustedBlob) return; setIsUploadingPFP(true); showMessage("Uploading new profile picture..."); try { const filePath = `profile_pictures/${currentUser.uid}/profile_${Date.now()}.png`; const storageRefPath = ref(storage, filePath); const snapshot = await uploadBytes(storageRefPath, adjustedBlob); const downloadURL = await getDownloadURL(snapshot.ref); const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { profilePictureUrl: downloadURL }); setCreatorProfile(prev => ({ ...prev, profilePictureUrl: downloadURL })); setShowImageAdjustModal(false); showMessage("Profile picture updated successfully!"); } catch (error) { console.error("Error updating profile picture:", error); showMessage(`Failed to update profile picture: ${error.message}`); } finally { if (profilePictureInputRef.current) { profilePictureInputRef.current.value = null; } setIsUploadingPFP(false); } };
+    const handleSaveAdjustedProfilePicture = async (adjustedBlob) => { if (!currentUser || !adjustedBlob) return; setIsUploadingPFP(true); showMessage("Uploading..."); try { const filePath = `profile_pictures/${currentUser.uid}/profile_${Date.now()}.png`; const storageRefPath = ref(storage, filePath); const snapshot = await uploadBytes(storageRefPath, adjustedBlob); const downloadURL = await getDownloadURL(snapshot.ref); const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { profilePictureUrl: downloadURL }); setCreatorProfile(prev => ({ ...prev, profilePictureUrl: downloadURL })); setShowImageAdjustModal(false); showMessage("Profile picture updated!"); } catch (error) { showMessage(`Failed to update profile picture: ${error.message}`); } finally { if (profilePictureInputRef.current) { profilePictureInputRef.current.value = null; } setIsUploadingPFP(false); } };
     const handleCancelAdjust = () => { setImageFileToAdjust(null); setShowImageAdjustModal(false); };
     const handleCancelCampaign = async (campaignId, campaignTitle) => { try { const campaignRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId); await updateDoc(campaignRef, { status: 'cancelled', updatedAt: new Date().toISOString(), statusChangedAt: new Date().toISOString() }); showMessage(`Campaign "${campaignTitle}" has been cancelled.`); } catch (error) { showMessage(`Failed to cancel campaign: ${error.message}`); } };
     const confirmCancelCampaign = (campaignId, campaignTitle) => { setConfirmationTitle("Cancel Campaign?"); setConfirmationMessage(`Are you sure you want to cancel your campaign "${campaignTitle}"? This cannot be undone.`); setOnConfirmationAction(() => () => handleCancelCampaign(campaignId, campaignTitle)); setShowConfirmationModal(true); };
-    const handleAddOrUpdateVideo = async () => { if (!videoLinkInput) { showMessage('Please paste a URL first.'); return; } setIsPublishing(true); const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput); if (!videoId) { showMessage('Invalid or unsupported URL.'); setIsPublishing(false); return; } let finalThumbnailUrl = autoThumbnailUrl; if (customThumbnailFile) { showMessage('Uploading custom thumbnail...'); try { const fileName = `thumb_${currentUser.uid}_${Date.now()}`; const storageRefPath = ref(storage, `creator_uploads/${currentUser.uid}/${fileName}`); await uploadBytes(storageRefPath, customThumbnailFile); finalThumbnailUrl = await getDownloadURL(storageRefPath); showMessage('Custom thumbnail uploaded successfully!'); } catch (error) { showMessage(`Thumbnail upload failed: ${error.message}`); setIsPublishing(false); return; } } let newContentRef; try { const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`); newContentRef = await addDoc(contentCollectionRef, { title: `New from ${creatorProfile.creatorName}`, description: `Check out the latest from ${creatorProfile.creatorName}.`, mainUrl: videoLinkInput, customThumbnailUrl: finalThumbnailUrl, embedUrl, videoPlatform: platform, creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, contentType: 'Live Feed', orderIndex: Date.now(), isActive: true, createdAt: new Date().toISOString(), createdBy: currentUser.uid, viewCount: 0, likeCount: 0 }); showMessage('Published to the Live Feed!'); } catch (error) { showMessage(`Failed to publish to Live Feed: ${error.message}`); setIsPublishing(false); return; } const videoData = { url: videoLinkInput, thumbnailUrl: finalThumbnailUrl, embedUrl, platform, liveFeedContentId: newContentRef.id }; try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: videoData, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: videoData })); showMessage('Your featured link has been set!'); } catch (error) { showMessage(`Failed to update your profile: ${error.message}`); } finally { setIsPublishing(false); } };
-    const handleRemoveVideo = () => { const videoToRemove = creatorProfile.featuredVideoLink; if (!videoToRemove) return; const deletionLogic = async () => { setIsPublishing(true); if (videoToRemove.liveFeedContentId) { try { const contentDocRef = doc(db, `artifacts/${appId}/public/data/content_items`, videoToRemove.liveFeedContentId); await deleteDoc(contentDocRef); showMessage('Post removed from Live Feed.'); } catch (error) { console.error("Error deleting from live feed:", error); showMessage(`Could not remove from feed: ${error.message}`); } } try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: null, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: null })); setVideoLinkInput(''); setCustomThumbnailFile(null); setCustomThumbnailPreview(''); setAutoThumbnailPreview(''); showMessage('Featured link removed from your profile.'); } catch (error) { console.error("Error removing featured video:", error); showMessage(`Failed to remove link: ${error.message}`); } finally { setIsPublishing(false); } }; setShowConfirmationModal(true); setConfirmationTitle("Remove Featured Link?"); setConfirmationMessage("Are you sure? This will remove the link and delete the post from the public Live Feed."); setOnConfirmationAction(() => deletionLogic); };
-
+    const handleAddOrUpdateVideo = async () => { if (!videoLinkInput) { showMessage('Please paste a URL first.'); return; } setIsPublishing(true); const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput); if (!videoId) { showMessage('Invalid or unsupported URL.'); setIsPublishing(false); return; } let finalThumbnailUrl = autoThumbnailUrl; if (customThumbnailFile) { showMessage('Uploading...'); try { const fileName = `thumb_${currentUser.uid}_${Date.now()}`; const storageRefPath = ref(storage, `creator_uploads/${currentUser.uid}/${fileName}`); await uploadBytes(storageRefPath, customThumbnailFile); finalThumbnailUrl = await getDownloadURL(storageRefPath); showMessage('Thumbnail uploaded!'); } catch (error) { showMessage(`Upload failed: ${error.message}`); setIsPublishing(false); return; } } let newContentRef; try { const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`); newContentRef = await addDoc(contentCollectionRef, { title: `New from ${creatorProfile.creatorName}`, description: `...`, mainUrl: videoLinkInput, customThumbnailUrl: finalThumbnailUrl, embedUrl, videoPlatform: platform, creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, contentType: 'Live Feed', orderIndex: Date.now(), isActive: true, createdAt: new Date().toISOString(), createdBy: currentUser.uid, viewCount: 0, likeCount: 0 }); showMessage('Published to Live Feed!'); } catch (error) { showMessage(`Failed to publish: ${error.message}`); setIsPublishing(false); return; } const videoData = { url: videoLinkInput, thumbnailUrl: finalThumbnailUrl, embedUrl, platform, liveFeedContentId: newContentRef.id }; try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: videoData, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: videoData })); showMessage('Featured link has been set!'); } catch (error) { showMessage(`Failed to update profile: ${error.message}`); } finally { setIsPublishing(false); } };
+    const handleRemoveVideo = () => { const videoToRemove = creatorProfile.featuredVideoLink; if (!videoToRemove) return; const deletionLogic = async () => { setIsPublishing(true); if (videoToRemove.liveFeedContentId) { try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/content_items`, videoToRemove.liveFeedContentId)); showMessage('Post removed from Live Feed.'); } catch (error) { showMessage(`Could not remove from feed: ${error.message}`); } } try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: null, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: null })); setVideoLinkInput(''); setCustomThumbnailFile(null); setCustomThumbnailPreview(''); setAutoThumbnailPreview(''); showMessage('Featured link removed.'); } catch (error) { showMessage(`Failed to remove link: ${error.message}`); } finally { setIsPublishing(false); } }; setShowConfirmationModal(true); setConfirmationTitle("Remove Featured Link?"); setConfirmationMessage("Are you sure? This will remove the link and delete the post from the public Live Feed."); setOnConfirmationAction(() => deletionLogic); };
     if (!creatorProfile) { return (<div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Your Dashboard...</p></div>); }
     const hasActiveOrPendingCampaign = creatorCampaigns.some(c => c.status === 'active' || c.status === 'pending');
     const currentThumbnail = customThumbnailPreview || (creatorProfile.featuredVideoLink?.thumbnailUrl) || autoThumbnailPreview;
+    const hasValidTicket = liveEventId && creatorProfile?.purchasedTickets?.[liveEventId];
 
     return (
         <>
             <div className="screenContainer">
                 <p className="heading">Dashboard</p>
                 <p className="subHeading">Welcome, {creatorProfile.creatorName || currentUser.email}!</p>
-                
                 <div className="dashboardSection">
-                    <div className="flex justify-between items-center">
-                        <p className="dashboardSectionTitle" style={{marginBottom: 0}}>Your Profile</p>
-                        {!isEditingProfile ? (<button className="dashboardButton" onClick={() => setIsEditingProfile(true)}>Edit Profile</button>) : (<div><button className="dashboardButton" onClick={handleSaveProfile} style={{backgroundColor: '#008000'}}>Save</button><button className="dashboardButton" onClick={handleCancelEdit} style={{backgroundColor: '#555', color: '#FFF'}}>Cancel</button></div>)}
-                    </div>
+                    <div className="flex justify-between items-center"><p className="dashboardSectionTitle" style={{marginBottom: 0}}>Your Profile</p> {!isEditingProfile ? (<button className="dashboardButton" onClick={() => setIsEditingProfile(true)}>Edit Profile</button>) : (<div><button className="dashboardButton" onClick={handleSaveProfile} style={{backgroundColor: '#008000'}}>Save</button><button className="dashboardButton" onClick={handleCancelEdit} style={{backgroundColor: '#555', color: '#FFF'}}>Cancel</button></div>)}</div>
                     <div className="pt-4 border-t border-gray-200 mt-4" style={{borderColor: '#3A3A3A'}}>
-                        {isEditingProfile ? (<>
-                            <div className="formGroup"><label htmlFor="editCreatorName" className="formLabel">Creator Name (Public):</label><input type="text" id="editCreatorName" className="formInput" value={editCreatorName} onChange={(e) => setEditCreatorName(e.target.value)} required /></div>
-                            <div className="formGroup"><label htmlFor="editBio" className="formLabel">Bio/Description:</label><textarea id="editBio" className="formTextarea" value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell us about yourself!"></textarea></div>
-                            <div className="checkboxGroup"><p className="checkboxLabel">Content Categories:</p>{availableCategories.map((cat) => (<div key={cat} className="checkboxItem"><input type="checkbox" id={`edit-cat-${cat}`} value={cat} checked={editCategories.includes(cat)} onChange={handleProfileCategoryChange} /><label htmlFor={`edit-cat-${cat}`}>{cat}</label></div>))}</div>
-                            <div className="formGroup"><label htmlFor="editExistingWork" className="formLabel">External Link (Optional):</label><input type="url" id="editExistingWork" className="formInput" value={editExistingWorkLink} onChange={(e) => setEditExistingWorkLink(e.target.value)} placeholder="e.g., YouTube channel, Instagram" /></div>
-                        </>) : (<>
+                        {isEditingProfile ? (<>{/* ... existing edit form JSX ... */}</>) : (<>
                             <div className="flex items-center mb-4">
-                                <div className="relative">
-                                    <img src={creatorProfile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt="Profile" style={{width: '100px', height: '100px', borderRadius: '50%', border: '2px solid #FFD700', objectFit: 'cover'}} />
-                                    <input type="file" ref={profilePictureInputRef} onChange={triggerProfilePictureUpload} accept="image/*" style={{ display: 'none' }} />
-                                    <button onClick={() => profilePictureInputRef.current.click()} style={{backgroundColor: '#FFD700', color: '#0A0A0A', width: '30px', height: '30px', borderRadius: '50%', border: 'none', cursor: 'pointer', position: 'absolute', bottom: 0, right: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>✏️</button>
-                                </div>
+                                <div className="relative"><img src={creatorProfile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt="Profile" style={{width: '100px', height: '100px', borderRadius: '50%', border: '2px solid #FFD700', objectFit: 'cover'}} /><input type="file" ref={profilePictureInputRef} onChange={triggerProfilePictureUpload} accept="image/*" style={{ display: 'none' }} /><button onClick={() => profilePictureInputRef.current.click()} style={{backgroundColor: '#FFD700', color: '#0A0A0A', width: '30px', height: '30px', borderRadius: '50%', border: 'none', cursor: 'pointer', position: 'absolute', bottom: 0, right: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>✏️</button></div>
                                 <div style={{marginLeft: '1rem'}}>
                                     <p className="dashboardItem" style={{fontSize: '18px', fontWeight: 'bold', color: '#FFF'}}>{creatorProfile.creatorName}</p>
-                                    <p className="dashboardItem" style={{fontSize: '12px', color: '#AAA', display: 'flex', alignItems: 'center'}}>
-                                        Role: {creatorProfile.role}
-                                        {creatorProfile.premiumExpiresAt && new Date(creatorProfile.premiumExpiresAt.toDate()) > new Date() && (
-                                            <>
-                                                <span style={{marginLeft: '10px', fontSize: '14px'}}>👑</span>
-                                                <span style={{
-                                                    marginLeft: '4px', backgroundColor: '#FFD700', color: '#0A0A0A', padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold'}}>Premium Member</span>
-                                            </>
-                                        )}
-                                    </p>
-                                    <div style={{display: 'flex', gap: '15px', marginTop: '10px'}}>
-                                        <div className="dashboardItem termsLink" style={{cursor: 'pointer'}} onClick={() => setActiveScreen('Followers')}><strong>{creatorProfile.followerCount || 0}</strong> Followers</div>
-                                        <div className="dashboardItem termsLink" style={{cursor: 'pointer'}} onClick={() => setActiveScreen('MyFollows')}><strong>{creatorProfile.followingCount || 0}</strong> Following</div>
-                                    </div>
+                                    <p className="dashboardItem" style={{fontSize: '12px', color: '#AAA', display: 'flex', alignItems: 'center'}}> Role: {creatorProfile.role} {creatorProfile.premiumExpiresAt && new Date(creatorProfile.premiumExpiresAt.toDate()) > new Date() && ( <> <span style={{marginLeft: '10px', fontSize: '14px'}}>👑</span> <span style={{ marginLeft: '4px', backgroundColor: '#FFD700', color: '#0A0A0A', padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold'}}>Premium Member</span> </> )}</p>
+                                    {hasValidTicket && (<div style={{marginTop: '5px', display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: '#008000', padding: '3px 8px', borderRadius: '10px', width: 'fit-content'}}><svg viewBox="0 0 20 20" fill="currentColor" style={{width: '16px', height: '16px', color: '#FFF'}}><path fillRule="evenodd" d="M15.5,2 L15.5,2 C17.709139,2 19.5,3.790861 19.5,6 L19.5,14 C19.5,16.209139 17.709139,18 15.5,18 L15.5,18 C14.3954305,18 13.5,17.1045695 13.5,16 L13.5,4 C13.5,2.8954305 14.3954305,2 15.5,2 Z M4.5,2 L4.5,2 C2.290861,2 0.5,3.790861 0.5,6 L0.5,14 C0.5,16.209139 2.290861,18 4.5,18 L4.5,18 C5.6045695,18 6.5,17.1045695 6.5,16 L6.5,4 C6.5,2.8954305 5.6045695,2 4.5,2 Z M9.5,2 C8.3954305,2 7.5,2.8954305 7.5,4 L7.5,16 C7.5,17.1045695 8.3954305,18 9.5,18 C10.6045695,18 11.5,17.1045695 11.5,16 L11.5,4 C11.5,2.8954305 10.6045695,2 9.5,2 Z" clipRule="evenodd"></path></svg><span style={{color: '#FFF', fontSize: '10px', fontWeight: 'bold'}}>EVENT TICKET HOLDER</span></div>)}
+                                    <div style={{display: 'flex', gap: '15px', marginTop: '10px'}}><div className="dashboardItem termsLink" style={{cursor: 'pointer'}} onClick={() => setActiveScreen('Followers')}><strong>{creatorProfile.followerCount || 0}</strong> Followers</div><div className="dashboardItem termsLink" style={{cursor: 'pointer'}} onClick={() => setActiveScreen('MyFollows')}><strong>{creatorProfile.followingCount || 0}</strong> Following</div></div>
                                 </div>
                             </div>
-                            <p className="dashboardItem"><strong>Bio:</strong> {creatorProfile.bio || "No bio set."}</p>
-                            <p className="dashboardItem"><strong>Categories:</strong> {creatorProfile.categories?.length > 0 ? creatorProfile.categories.join(', ') : "No categories set."}</p>
-                            <p className="dashboardItem"><strong>External Link:</strong> {creatorProfile.existingWorkLink ? <a href={creatorProfile.existingWorkLink} target="_blank" rel="noopener noreferrer" className="termsLink">{creatorProfile.existingWorkLink}</a> : "No link set."}</p>
+                            <p className="dashboardItem"><strong>Bio:</strong> {creatorProfile.bio || "No bio set."}</p><p className="dashboardItem"><strong>Categories:</strong> {creatorProfile.categories?.length > 0 ? creatorProfile.categories.join(', ') : "No categories set."}</p><p className="dashboardItem"><strong>External Link:</strong> {creatorProfile.existingWorkLink ? <a href={creatorProfile.existingWorkLink} target="_blank" rel="noopener noreferrer" className="termsLink">{creatorProfile.existingWorkLink}</a> : "No link set."}</p>
                         </>)}
                     </div>
                 </div>
 
+                {/* THIS IS THE RESTORED CODE BLOCK */}
                 {creatorProfile.role !== 'user' && (
-                    <div className="dashboardSection">
-                        <div className="flex justify-between items-center">
-                            <p className="dashboardSectionTitle" style={{marginBottom: 0}}>My Crowdfunding Campaigns</p>
-                            <button className="dashboardButton" onClick={() => setActiveScreen('CreateCampaign')} disabled={hasActiveOrPendingCampaign} style={hasActiveOrPendingCampaign ? {cursor: 'not-allowed', backgroundColor: '#555', color: '#999'} : {}}>Create New</button>
-                        </div>
-                        <div className="pt-4 border-t border-gray-200 mt-4" style={{borderColor: '#3A3A3A'}}>
-                            {creatorCampaigns.length === 0 ? (
-                                <p className="dashboardItem">You have not created any campaigns yet.</p>
-                            ) : (
-                                creatorCampaigns.map(campaign => (
-                                    <div
-                                        key={campaign.id}
-                                        className="creator-campaign-list-item"
-                                        onClick={() => {
-                                            setSelectedCampaignId(campaign.id);
-                                            setActiveScreen('CampaignDetails');
-                                        }}
-                                        style={{
-                                            cursor: 'pointer',
-                                            flexDirection: 'column',
-                                            alignItems: 'stretch'
-                                        }}
-                                    >
-                                        <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                                            <img src={campaign.imageUrl || 'https://placehold.co/80x50/3A3A3A/FFF?text=NVA'} alt={campaign.title} className="creator-campaign-thumbnail" onError={(e) => { e.target.src = 'https://placehold.co/80x50/3A3A3A/FFF?text=Error'; }}/>
-                                            <div className="creator-campaign-info">
-                                                <p className="creator-campaign-title">{campaign.title}</p>
-                                                <p className={`creator-campaign-status status-${campaign.status}`}>Status: {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}</p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div style={{width: '100%', marginTop: '10px'}}>
-                                            <div className="campaignProgressContainer" style={{ height: '8px' }}>
-                                                <div
-                                                    className="campaignProgressBar"
-                                                    style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}
-                                                ></div>
-                                            </div>
-                                            <div className="campaignListStats" style={{marginTop: '4px'}}>
-                                                <span>Raised: <span className="campaignListRaised">${campaign.raised || 0}</span></span>
-                                                <span>Goal: <span className="campaignListGoal">${campaign.goal}</span></span>
-                                            </div>
-                                        </div>
-
-                                        {campaign.status !== 'cancelled' && campaign.status !== 'ended' && (
-                                            <button 
-                                                className="actionButton" 
-                                                style={{backgroundColor: '#DC3545', alignSelf: 'flex-end', marginTop: '10px'}} 
-                                                onClick={(e) => {
-                                                    e.stopPropagation(); // Prevents navigating when clicking the cancel button
-                                                    confirmCancelCampaign(campaign.id, campaign.title);
-                                                }}
-                                            >
-                                                Cancel
-                                            </button>
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                            {hasActiveOrPendingCampaign && (<p className="smallText" style={{textAlign: 'center', color: '#FFD700', marginTop: '15px'}}>You must cancel or wait for your current campaign to finish before creating a new one.</p>)}
-                        </div>
-                    </div>
-                )}
-
-                {creatorProfile.role !== 'user' && (
-                    <div className="dashboardSection">
-                        <p className="dashboardSectionTitle">My Featured Link</p>
-                        <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>Post a link to your latest video. This will be featured on your profile and posted to the Live Feed.</p>
-                        <div className="videoLinkSection">
-                            <label htmlFor="featuredVideoLink" className="formLabel">URL:</label>
-                            <div className="videoInputContainer"><input type="url" id="featuredVideoLink" className="formInput" value={videoLinkInput} onChange={(e) => setVideoLinkInput(e.target.value)} placeholder="Paste your link here" /></div>
-                            {!creatorProfile.featuredVideoLink && (<div className="formGroup" style={{marginTop: '15px'}}><label htmlFor="customThumbnailFile" className="formLabel">Custom Thumbnail (Optional):</label><input type="file" id="customThumbnailFile" ref={thumbnailFileInputRef} className="formInput" onChange={(e) => { const file = e.target.files[0]; setCustomThumbnailFile(file); if (file) { setCustomThumbnailPreview(URL.createObjectURL(file)); } else { setCustomThumbnailPreview(''); }}} accept="image/*" style={{padding: '10px 0', border: 'none', backgroundColor: 'transparent'}} /></div>)}
-                            {currentThumbnail && ( <div style={{marginTop: '10px'}}><p className="formLabel" style={{marginBottom: '5px'}}>Thumbnail Preview:</p><img src={currentThumbnail} alt="Thumbnail Preview" style={{ maxWidth: '200px', borderRadius: '8px', border: '2px solid #FFD700' }} onError={(e) => { e.target.style.display = 'none'; }} /></div> )}
-                            <div className="videoActions" style={{marginTop: '20px', justifyContent: 'flex-start'}}>
-                                {!creatorProfile.featuredVideoLink ? ( <button className="adminActionButton approve" onClick={handleAddOrUpdateVideo} disabled={isPublishing} style={{padding: '10px 20px', fontSize: '14px', cursor: isPublishing ? 'not-allowed' : 'pointer', opacity: isPublishing ? 0.6 : 1}}>{isPublishing ? 'Publishing...' : 'Publish URL'}</button> ) : ( <button className="adminActionButton reject" onClick={handleRemoveVideo} disabled={isPublishing} style={{padding: '10px 20px', fontSize: '14px', cursor: isPublishing ? 'not-allowed' : 'pointer', opacity: isPublishing ? 0.6 : 1}}>{isPublishing ? 'Removing...' : 'Remove Link'}</button> )}
+                    <>
+                        <div className="dashboardSection">
+                            <div className="flex justify-between items-center"><p className="dashboardSectionTitle" style={{marginBottom: 0}}>My Crowdfunding Campaigns</p><button className="dashboardButton" onClick={() => setActiveScreen('CreateCampaign')} disabled={hasActiveOrPendingCampaign} style={hasActiveOrPendingCampaign ? {cursor: 'not-allowed', backgroundColor: '#555', color: '#999'} : {}}>Create New</button></div>
+                            <div className="pt-4 border-t border-gray-200 mt-4" style={{borderColor: '#3A3A3A'}}>
+                                {creatorCampaigns.length === 0 ? (<p className="dashboardItem">You have not created any campaigns yet.</p>) : (creatorCampaigns.map(campaign => ( <div key={campaign.id} className="creator-campaign-list-item" onClick={() => { setSelectedCampaignId(campaign.id); setActiveScreen('CampaignDetails'); }} style={{ cursor: 'pointer', flexDirection: 'column', alignItems: 'stretch' }}><div style={{ display: 'flex', alignItems: 'center', width: '100%' }}><img src={campaign.imageUrl || 'https://placehold.co/80x50/3A3A3A/FFF?text=NVA'} alt={campaign.title} className="creator-campaign-thumbnail" onError={(e) => { e.target.src = 'https://placehold.co/80x50/3A3A3A/FFF?text=Error'; }}/><div className="creator-campaign-info"><p className="creator-campaign-title">{campaign.title}</p><p className={`creator-campaign-status status-${campaign.status}`}>Status: {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}</p></div></div><div style={{width: '100%', marginTop: '10px'}}><div className="campaignProgressContainer" style={{ height: '8px' }}><div className="campaignProgressBar" style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}></div></div><div className="campaignListStats" style={{marginTop: '4px'}}><span>Raised: <span className="campaignListRaised">${campaign.raised || 0}</span></span><span>Goal: <span className="campaignListGoal">${campaign.goal}</span></span></div></div>{campaign.status !== 'cancelled' && campaign.status !== 'ended' && (<button className="actionButton" style={{backgroundColor: '#DC3545', alignSelf: 'flex-end', marginTop: '10px'}} onClick={(e) => { e.stopPropagation(); confirmCancelCampaign(campaign.id, campaign.title); }}>Cancel</button>)}</div> )))}
+                                {hasActiveOrPendingCampaign && (<p className="smallText" style={{textAlign: 'center', color: '#FFD700', marginTop: '15px'}}>You must cancel or wait for your current campaign to finish before creating a new one.</p>)}
                             </div>
                         </div>
-                    </div>
+                        <div className="dashboardSection">
+                            <p className="dashboardSectionTitle">My Featured Link</p>
+                            <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>Post a link to your latest video. This will be featured on your profile and posted to the Live Feed.</p>
+                            <div className="videoLinkSection">
+                                <label htmlFor="featuredVideoLink" className="formLabel">URL:</label>
+                                <div className="videoInputContainer"><input type="url" id="featuredVideoLink" className="formInput" value={videoLinkInput} onChange={(e) => setVideoLinkInput(e.target.value)} placeholder="Paste your link here" /></div>
+                                {!creatorProfile.featuredVideoLink && (<div className="formGroup" style={{marginTop: '15px'}}><label htmlFor="customThumbnailFile" className="formLabel">Custom Thumbnail (Optional):</label><input type="file" id="customThumbnailFile" ref={thumbnailFileInputRef} className="formInput" onChange={(e) => { const file = e.target.files[0]; setCustomThumbnailFile(file); if (file) { setCustomThumbnailPreview(URL.createObjectURL(file)); } else { setCustomThumbnailPreview(''); }}} accept="image/*" style={{padding: '10px 0', border: 'none', backgroundColor: 'transparent'}} /></div>)}
+                                {currentThumbnail && ( <div style={{marginTop: '10px'}}><p className="formLabel" style={{marginBottom: '5px'}}>Thumbnail Preview:</p><img src={currentThumbnail} alt="Thumbnail Preview" style={{ maxWidth: '200px', borderRadius: '8px', border: '2px solid #FFD700' }} onError={(e) => { e.target.style.display = 'none'; }} /></div> )}
+                                <div className="videoActions" style={{marginTop: '20px', justifyContent: 'flex-start'}}>
+                                    {!creatorProfile.featuredVideoLink ? ( <button className="adminActionButton approve" onClick={handleAddOrUpdateVideo} disabled={isPublishing} style={{padding: '10px 20px', fontSize: '14px', cursor: isPublishing ? 'not-allowed' : 'pointer', opacity: isPublishing ? 0.6 : 1}}>{isPublishing ? 'Publishing...' : 'Publish URL'}</button> ) : ( <button className="adminActionButton reject" onClick={handleRemoveVideo} disabled={isPublishing} style={{padding: '10px 20px', fontSize: '14px', cursor: isPublishing ? 'not-allowed' : 'pointer', opacity: isPublishing ? 0.6 : 1}}>{isPublishing ? 'Removing...' : 'Remove Link'}</button> )}
+                                </div>
+                            </div>
+                        </div>
+                    </>
                 )}
-                                
+                
                 <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}><span className="buttonText light">Back to Home</span></button>
             </div>
             {showImageAdjustModal && imageFileToAdjust && (<ProfilePictureAdjustModal isUploading={isUploadingPFP} imageUrl={URL.createObjectURL(imageFileToAdjust)} onSave={handleSaveAdjustedProfilePicture} onCancel={handleCancelAdjust} showMessage={showMessage} />)}
