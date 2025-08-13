@@ -159,6 +159,7 @@
             .contentGrid {
                 /* By increasing the minimum, we encourage a 3-column layout on standard desktops. */
                 grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                justify-content: start; /* THIS IS THE FIX */
             }
         }
         .contentCard {
@@ -2510,26 +2511,32 @@
         const UserProfileScreen = ({ selectedUserId, setActiveScreen, setSelectedCampaignId, showMessage, currentUser }) => {
     const [profile, setProfile] = useState(null);
     const [campaigns, setCampaigns] = useState([]);
-    const [loading, setLoading] = useState(true);
-    
     const [isFollowing, setIsFollowing] = useState(false);
-    const [isFollowLoading, setIsFollowLoading] = useState(true); // Start in loading state
-
+    const [isFollowLoading, setIsFollowLoading] = useState(true);
     const [showVideoModal, setShowVideoModal] = useState(false);
     const [currentVideoUrl, setCurrentVideoUrl] = useState('');
-    
+    const [currentContentItem, setCurrentContentItem] = useState(null);
+    const [contentLibrary, setContentLibrary] = useState([]);
+    const [loadingContent, setLoadingContent] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+
     useEffect(() => {
         if (!selectedUserId) {
             setActiveScreen('DiscoverUsers');
             return;
         }
-        setLoading(true);
-        setIsFollowLoading(true); // Always start loading follow status on profile change
+
+        // Reset state on new profile view to prevent showing stale data
+        setProfile(null);
+        setCampaigns([]);
+        setContentLibrary([]);
+        setLoadingContent(true);
+        setIsFollowLoading(true);
 
         const userDocRef = doc(db, "creators", selectedUserId);
-        const unsubscribeProfile = onSnapshot(userDocRef, (userDocSnap) => {
-            if (userDocSnap.exists()) {
-                setProfile({ id: userDocSnap.id, ...userDocSnap.data() });
+        const unsubProfile = onSnapshot(userDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setProfile({ id: docSnap.id, ...docSnap.data() });
             } else {
                 showMessage("This user profile could not be found.");
                 setActiveScreen('DiscoverUsers');
@@ -2537,142 +2544,187 @@
         });
 
         const campaignsRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
-        const q = query(campaignsRef, where('creatorId', '==', selectedUserId), where('status', '==', 'active'));
-        const unsubscribeCampaigns = onSnapshot(q, (campaignSnapshot) => {
-            setCampaigns(campaignSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-            setLoading(false); 
+        const campQuery = query(campaignsRef, where('creatorId', '==', selectedUserId), where('status', '==', 'active'));
+        const unsubCampaigns = onSnapshot(campQuery, (snapshot) => {
+            setCampaigns(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+        
+        const contentRef = collection(db, `artifacts/${appId}/public/data/content_items`);
+        const contentQuery = query(contentRef, where('creatorId', '==', selectedUserId), where('isActive', '==', true));
+        const unsubContent = onSnapshot(contentQuery, (snapshot) => {
+            setContentLibrary(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+            setLoadingContent(false);
         });
 
-        let unsubscribeFollow = () => {};
+        let unsubFollow = () => {};
         if (currentUser) {
+            setIsFollowLoading(true);
             const followDocRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
-            unsubscribeFollow = onSnapshot(followDocRef, (followDocSnap) => {
-                setIsFollowing(followDocSnap.exists());
-                setIsFollowLoading(false); // Status has been determined
+            unsubFollow = onSnapshot(followDocRef, (snap) => {
+                setIsFollowing(snap.exists());
+                setIsFollowLoading(false);
             });
         } else {
             setIsFollowing(false);
-            setIsFollowLoading(false); // Not logged in, so not following and not loading
+            setIsFollowLoading(false);
         }
 
         return () => {
-            unsubscribeProfile();
-            unsubscribeCampaigns();
-            unsubscribeFollow();
+            unsubProfile();
+            unsubCampaigns();
+            unsubContent();
+            unsubFollow();
         };
     }, [selectedUserId, currentUser]);
 
     const handleFollowToggle = async () => {
-        if (!currentUser) { showMessage("Please log in to follow creators."); setActiveScreen('Login'); return; }
+        if (!currentUser) { showMessage("Please log in to follow creators."); return; }
         if (currentUser.uid === selectedUserId) { showMessage("You cannot follow yourself."); return; }
-        if (isFollowLoading) return; // Prevent clicks while status is unknown
+        setIsFollowLoading(true);
 
-        setIsFollowLoading(true); // Provide immediate feedback that action is in progress
-
-        const targetUserRef = doc(db, "creators", selectedUserId);
-        const currentUserRef = doc(db, "creators", currentUser.uid);
-        const targetFollowersRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
-        const currentUserFollowingRef = doc(db, "creators", currentUser.uid, "following", selectedUserId);
-
+        const creatorDocRef = doc(db, "creators", selectedUserId);
+        const followerDocRef = doc(db, "creators", currentUser.uid);
+        const followingSubRef = doc(db, "creators", currentUser.uid, "following", selectedUserId);
+        const followersSubRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
+        
         try {
             await runTransaction(db, async (transaction) => {
+                const creatorDoc = await transaction.get(creatorDocRef);
+                const followerDoc = await transaction.get(followerDocRef);
+                if (!creatorDoc.exists() || !followerDoc.exists()) { throw new Error("User not found"); }
+                
                 if (isFollowing) {
-                    // UNFOLLOW LOGIC
-                    transaction.delete(targetFollowersRef);
-                    transaction.delete(currentUserFollowingRef);
-                    transaction.update(targetUserRef, { followerCount: increment(-1) });
-                    transaction.update(currentUserRef, { followingCount: increment(-1) });
+                    transaction.update(creatorDocRef, { followerCount: increment(-1) });
+                    transaction.update(followerDocRef, { followingCount: increment(-1) });
+                    transaction.delete(followingSubRef);
+                    transaction.delete(followersSubRef);
                 } else {
-                    // FOLLOW LOGIC
-                    transaction.set(targetFollowersRef, { followedAt: new Date() });
-                    transaction.set(currentUserFollowingRef, { followingSince: new Date() });
-                    transaction.update(targetUserRef, { followerCount: increment(1) });
-                    transaction.update(currentUserRef, { followingCount: increment(1) });
+                    transaction.update(creatorDocRef, { followerCount: increment(1) });
+                    transaction.update(followerDocRef, { followingCount: increment(1) });
+                    transaction.set(followingSubRef, { followedAt: new Date() });
+                    transaction.set(followersSubRef, { followedAt: new Date() });
                 }
             });
-            // The onSnapshot listener will automatically update the UI, so no manual state change is needed here.
+            showMessage(isFollowing ? `Unfollowed ${profile.creatorName}` : `Now following ${profile.creatorName}`);
         } catch (error) {
-            console.error("Error in follow/unfollow transaction:", error);
-            showMessage("Something went wrong. Please try again.");
-            setIsFollowLoading(false); // Re-enable button on error
+            showMessage("An error occurred. Please try again.");
+            console.error("Follow toggle error:", error);
+        } finally {
+            // The onSnapshot listener will automatically update the loading state.
         }
     };
     
-    const handleVideoPress = (url) => { setCurrentVideoUrl(url); setShowVideoModal(true); };
-    const closeVideoModal = () => { setShowVideoModal(false); setCurrentVideoUrl(''); };
+    const handleVideoPress = (url, item) => {
+        setCurrentContentItem(item);
+        setCurrentVideoUrl(url);
+        setShowVideoModal(true);
+    };
 
-    if (loading) { return (<div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Profile...</p></div>); }
-    if (!profile) return null;
+    const closeVideoModal = () => {
+        window.history.back();
+    };
+
+    // THIS IS THE CRITICAL FIX: The loading guard is placed at the very top.
+    if (!profile) {
+        return (
+            <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                <p className="heading">Loading Profile...</p>
+            </div>
+        );
+    }
+
+    // All logic below this point can safely assume `profile` is not null.
+    const filteredContent = contentLibrary.filter(item => 
+        !(profile.featuredVideoLink && profile.featuredVideoLink.liveFeedContentId === item.id) &&
+        item.title.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     return (
         <>
             <div className="screenContainer">
                 <div className="dashboardSection">
-                    <div className="flex items-center mb-4">
-                        <img src={profile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt="Profile" style={{width: '100px', height: '100px', borderRadius: '50%', border: '2px solid #FFD700', objectFit: 'cover'}} />
-                        <div style={{marginLeft: '1rem', flexGrow: 1}}>
-                            <p className="dashboardItem" style={{fontSize: '20px', fontWeight: 'bold', color: '#FFF', marginBottom: '5px'}}>{profile.creatorName}</p>
-                            <p className="dashboardItem" style={{fontSize: '14px', color: '#AAA'}}>Role: {profile.role}</p>
-                            <div style={{display: 'flex', gap: '15px', marginTop: '10px'}}>
-                                <p className="dashboardItem"><strong>{profile.followerCount || 0}</strong> Followers</p>
-                                <p className="dashboardItem"><strong>{profile.followingCount || 0}</strong> Following</p>
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
+                        <img src={profile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt="Profile" style={{ width: '100px', height: '100px', borderRadius: '50%', border: '2px solid #FFD700', objectFit: 'cover' }} />
+                        <div style={{ marginLeft: '1rem', flexGrow: 1 }}>
+                            <p className="dashboardItem" style={{ fontSize: '20px', fontWeight: 'bold', color: '#FFF' }}>{profile.creatorName}</p>
+                            <p className="dashboardItem" style={{ fontSize: '14px', color: '#AAA' }}>Role: {profile.role}</p>
+                            {currentUser && currentUser.uid !== selectedUserId && (
+                                <button onClick={handleFollowToggle} disabled={isFollowLoading} className={`follow-button ${isFollowing ? 'following' : 'not-following'}`} style={{ marginTop: '10px' }}>
+                                    {isFollowLoading ? '...' : (isFollowing ? 'Following' : 'Follow')}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                    <div className="follow-stats">
+                        <div className="follow-stat-item"><p className="follow-stat-value">{profile.followerCount || 0}</p><p className="follow-stat-label">Followers</p></div>
+                        <div className="follow-stat-item"><p className="follow-stat-value">{profile.followingCount || 0}</p><p className="follow-stat-label">Following</p></div>
+                    </div>
+                    <p className="dashboardItem" style={{ marginTop: '15px' }}><strong>Bio:</strong> {profile.bio || "No bio set."}</p>
+                    <p className="dashboardItem"><strong>External Link:</strong> {profile.existingWorkLink ? <a href={profile.existingWorkLink} target="_blank" rel="noopener noreferrer" className="termsLink">{profile.existingWorkLink}</a> : "No link set."}</p>
+                </div>
+
+                {profile.featuredVideoLink && profile.featuredVideoLink.url && (
+                    <div className="dashboardSection">
+                        <p className="dashboardSectionTitle">Featured Content</p>
+                        <div className="vertical-carousel-item" style={{ cursor: 'pointer', backgroundColor: '#1A1A1A' }} onClick={() => handleVideoPress(profile.featuredVideoLink.embedUrl, profile.featuredVideoLink)}>
+                            <img src={profile.featuredVideoLink.thumbnailUrl} alt="Featured Video" className="liveFeedThumbnail" />
+                            <div className="liveFeedContent">
+                                <p className="liveFeedTitle">{`Currently Featuring: ${profile.creatorName}'s Choice`}</p>
+                                <p className="liveFeedCreator" style={{ color: '#FFD700' }}>Featured on Profile</p>
                             </div>
                         </div>
                     </div>
-                    
-                    {currentUser && currentUser.uid !== selectedUserId && (
-                        <button className="dashboardButton" onClick={handleFollowToggle} disabled={isFollowLoading}
-                            style={{ width: '100%', marginTop: '15px', backgroundColor: isFollowing ? '#555' : '#FFD700', color: isFollowing ? '#FFF' : '#0A0A0A', cursor: isFollowLoading ? 'wait' : 'pointer' }}>
-                            {isFollowLoading ? '...' : (isFollowing ? 'Unfollow' : 'Follow')}
-                        </button>
+                )}
+
+                {campaigns.length > 0 && (
+                    <div className="dashboardSection">
+                        <p className="dashboardSectionTitle">Active Campaigns</p>
+                        <div className="dashboardContentList">
+                            {campaigns.map(campaign => (
+                                <div key={campaign.id} className="creator-campaign-list-item" onClick={() => { setSelectedCampaignId(campaign.id); setActiveScreen('CampaignDetails'); }} style={{ cursor: 'pointer' }}>
+                                    <img src={campaign.imageUrl || 'https://placehold.co/80x50/3A3A3A/FFF?text=N/A'} alt={campaign.title} className="creator-campaign-thumbnail" />
+                                    <div className="creator-campaign-info">
+                                        <p className="creator-campaign-title">{campaign.title}</p>
+                                        <div className="campaignListStats" style={{ fontSize: '11px' }}>
+                                            <span>Raised: <span className="campaignListRaised">${campaign.raised || 0}</span></span>
+                                            <span>Goal: <span className="campaignListGoal">${campaign.goal}</span></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                
+                <div className="dashboardSection">
+                    <p className="dashboardSectionTitle">Creator's Library</p>
+                    <div className="formGroup"><input type="text" className="formInput" placeholder="Search this creator's content..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+                    {loadingContent ? <p>Loading content...</p> : 
+                        filteredContent.length === 0 ? <p className="dashboardItem">{searchTerm ? "No results found." : "This creator's library is empty."}</p> : (
+                        <div className="contentGrid">
+                            {filteredContent.map(item => (
+                                <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl, item)}>
+                                    <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
+                                        <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+                                        {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                    </div>
+                                    <p className="contentTitle">{item.title}</p>
+                                </div>
+                            ))}
+                        </div>
                     )}
-                    
-                    <p className="dashboardItem" style={{marginTop: '15px'}}><strong>Bio:</strong> {profile.bio || "No bio provided."}</p>
-                    <p className="dashboardItem"><strong>Categories:</strong> {profile.categories?.length > 0 ? profile.categories.join(', ') : "No categories set."}</p>
-                </div>
-
-                <div className="dashboardSection">
-                    <p className="dashboardSectionTitle">Featured Content</p>
-                    {profile.featuredVideoLink && profile.featuredVideoLink.url ? (
-                        <div className="vertical-carousel-item" style={{cursor: 'pointer'}} onClick={() => handleVideoPress(profile.featuredVideoLink.embedUrl || profile.featuredVideoLink.url)}>
-                            <img src={profile.featuredVideoLink.thumbnailUrl || 'https://placehold.co/80x60/3A3A3A/FFF?text=Video'} alt="Featured Video" className="liveFeedThumbnail" />
-                            <div className="liveFeedContent">
-                                <p className="liveFeedTitle">Latest from {profile.creatorName}</p>
-                                <p className="liveFeedCreator" style={{color: '#FFD700'}}>Click to watch</p>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px', marginTop: '4px' }}>
-                            <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                            <span>{profile.featuredVideoLink?.viewCount || 0} views</span>
-                            </div>
-                            </div>
-                        </div>
-                    ) : (<p className="dashboardItem">This creator has not featured any content.</p>)}
-                </div>
-
-                <div className="dashboardSection">
-                    <p className="dashboardSectionTitle">Active Crowdfunding Campaigns</p>
-                    {campaigns.length > 0 ? (campaigns.map(campaign => (
-                        <div key={campaign.id} className="creator-campaign-list-item" style={{cursor: 'pointer'}} onClick={() => { setSelectedCampaignId(campaign.id); setActiveScreen('CampaignDetails'); }}>
-                            <img src={campaign.imageUrl || 'https://placehold.co/80x50/3A3A3A/FFF?text=NVA'} alt={campaign.title} className="creator-campaign-thumbnail" />
-                            <div className="creator-campaign-info">
-                                <p className="creator-campaign-title">{campaign.title}</p>
-                                <p className="creator-campaign-status status-active">Click to view campaign</p>
-                            </div>
-                        </div>
-                    ))) : (<p className="dashboardItem">This creator does not have any active campaigns.</p>)}
                 </div>
 
                 <button className="button" onClick={() => setActiveScreen('DiscoverUsers')} style={{ backgroundColor: '#3A3A3A', color: '#FFF' }}>
                     <span className="buttonText">Back to Search</span>
                 </button>
             </div>
-            {showVideoModal && (<VideoPlayerModal videoUrl={currentVideoUrl} onClose={closeVideoModal} />)}
+            {showVideoModal && (<VideoPlayerModal videoUrl={currentVideoUrl} contentItem={currentContentItem} currentUser={currentUser} showMessage={showMessage} onClose={closeVideoModal} />)}
         </>
     );
 };
 // =================== END: REPLACE THIS ENTIRE COMPONENT ===================
-
-
-
+// --- END: FULL COMPONENT REPLACEMENT ---
 
         // --- START: COMPLETE AND CORRECTED ProfilePictureAdjustModal ---
     const ProfilePictureAdjustModal = ({ isUploading, imageUrl, onSave, onCancel, showMessage }) => {
@@ -6615,28 +6667,7 @@ useEffect(() => {
         clearInterval(countdownInterval);
     };
 }, []);
-
-            
-            const originalCarouselImages = [
-                'https://placehold.co/140x100/A0A0A0/000?text=Comedy+Night',
-                'https://placehold.co/140x100/808080/FFF?text=New+Series',
-                'https://placehold.co/140x100/606060/EEE?text=Exclusive',
-                'https://placehold.co/140x100/404040/DDD?text=Behind+Scenes',
-                'https://placehold.co/140x100/202020/CCC?text=Live+Event',
-            ];
-            const carouselImages = [...originalCarouselImages, ...originalCarouselImages, ...originalCarouselImages];
-
-            const originalLiveFeedContent = [
-                { id: 'lf1', title: 'New Comedy Skit: Dem Boys', creator: 'Street Jokes GY', thumbnail: 'https://placehold.co/80x60/808080/FFF?text=Skit1', url: 'https://www.youtube.com/embed/SKIT_LIVE_1?autoplay=1' },
-                { id: 'lf2', title: 'Interview: Rising Star', creator: 'NVA Insights', thumbnail: 'https://placehold.co/80x60/A0A0A0/000?text=Int1', url: 'https://www.youtube.com/embed/INTERVIEW_LIVE_2?autoplay=1' },
-                { id: 'lf3', title: 'Short Film Trailer: Lost Gold', creator: 'Guyana Films', thumbnail: 'https://placehold.co/80x60/606060/EEE?text=Film1', url: 'https://www.youtube.com/embed/FILM_LIVE_3?autoplay=1' },
-                { id: 'lf4', title: 'Live Music Session: Reggae Vibes', creator: 'Riddim Makers', thumbnail: 'https://placehold.co/80x60/404040/DDD?text=Music1', url: 'https://www.youtube.com/embed/MUSIC_LIVE_4?autoplay=1' },
-                { id: 'lf5', title: 'Behind The Scenes: Drama Shoot', creator: 'Creative Minds', thumbnail: 'https://placehold.co/80x60/202020/CCC?text=BTS1', url: 'https://www.youtube.com/embed/BTS_LIVE_5?autoplay=1' },
-                { id: 'lf6', title: 'Daily Vlog: Life in Georgetown', creator: 'GT Vlogger', thumbnail: 'https://placehold.co/80x60/909090/111?text=Vlog1', url: 'https://www.youtube.com/embed/VLOG_LIVE_6?autoplay=1' },
-            ];
-            const liveFeedItems = [...originalLiveFeedContent, ...originalLiveFeedContent, ...originalLiveFeedContent];
-
-
+                      
             const showMessage = (msg) => {
                 setMessage(msg);
                 setTimeout(() => setMessage(''), 3000);
@@ -6674,285 +6705,219 @@ useEffect(() => {
 
 // START: REPLACEMENT (Your HomeScreen with the Live Feed Fix)
                const HomeScreen = ({ currentUser, showMessage, handleVideoPress, handleLogout, featuredContentSlots }) => {
-        const [enrichedLayout, setEnrichedLayout] = useState({ featured: [], trending: [] });
-        const [displayFeatured, setDisplayFeatured] = useState([]); 
-        const [displayLiveFeed, setDisplayLiveFeed] = useState([]); 
-        const horizontalCarouselRef = useRef(null);
-        const verticalCarouselRef = useRef(null);
-        
-        const [isLayoutLoading, setIsLayoutLoading] = useState(true);
-        const [isLiveFeedLoading, setIsLiveFeedLoading] = useState(true);
-        const loading = isLayoutLoading || isLiveFeedLoading;
+    const [enrichedLayout, setEnrichedLayout] = useState({ featured: [], trending: [] });
+    const [displayFeatured, setDisplayFeatured] = useState([]);
+    const [displayLiveFeed, setDisplayLiveFeed] = useState([]);
+    const horizontalCarouselRef = useRef(null);
+    const verticalCarouselRef = useRef(null);
 
-        useEffect(() => {
-            const layoutDocRef = doc(db, "settings", "homeScreenLayout");
-            // THIS QUERY IS NOW CORRECT AND SECURE
-            const liveFeedQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`), where('contentType', '==', 'Live Feed'), where('isActive', '==', true), orderBy('createdAt', 'desc'), limit(20));
-            
-            let cachedData = { layout: null, autoSlots: featuredContentSlots };
+    const [isLayoutLoading, setIsLayoutLoading] = useState(true);
+    const [isLiveFeedLoading, setIsLiveFeedLoading] = useState(true);
+    const loading = isLayoutLoading || isLiveFeedLoading;
 
-            const processContent = async () => {
-                if (cachedData.layout === null || cachedData.autoSlots === null) return;
+    // State for the two separate data sources for the vertical feed
+    const [adminLiveFeed, setAdminLiveFeed] = useState([]);
+    const [creatorFeaturedFeed, setCreatorFeaturedFeed] = useState([]);
 
-                const enrich = (items, contentMap) => items.map(item => {
-                    if (item.type === 'internal') {
-                        return contentMap.has(item.contentId) ? { ...item, ...contentMap.get(item.contentId) } : null;
-                    }
-                    return item;
-                }).filter(Boolean).sort((a, b) => (a.orderIndex || 99) - (b.orderIndex || 99));
+    // This useEffect handles fetching for ALL carousels now
+    useEffect(() => {
+        const layoutDocRef = doc(db, "settings", "homeScreenLayout");
+        let cachedData = { layout: null, autoSlots: featuredContentSlots };
 
-                const manualTrending = cachedData.layout.trendingItems || [];
-                const autoSlots = [cachedData.autoSlots.slot_1, cachedData.autoSlots.slot_2, cachedData.autoSlots.slot_3]
-                    .filter(slot => slot && slot.content).map(slot => ({ type: 'internal', contentId: slot.content.id, isAuto: true }));
-                const manualTrendingIds = new Set(manualTrending.filter(i => i.type === 'internal').map(i => i.contentId));
-                const uniqueAutoSlots = autoSlots.filter(slot => !manualTrendingIds.has(slot.contentId));
-                
-                const allItems = {
-                    featured: cachedData.layout.featuredItems || [],
-                    trending: [...uniqueAutoSlots, ...manualTrending]
+        const processManualContent = async () => {
+            if (cachedData.layout === null || cachedData.autoSlots === null) return;
+            const manualTrending = cachedData.layout.trendingItems || [];
+            const autoSlots = [cachedData.autoSlots.slot_1, cachedData.autoSlots.slot_2, cachedData.autoSlots.slot_3]
+                .filter(slot => slot && slot.content).map(slot => ({ type: 'internal', contentId: slot.content.id, isAuto: true, orderIndex: -1 }));
+            const manualTrendingIds = new Set(manualTrending.filter(i => i.type === 'internal').map(i => i.contentId));
+            const uniqueAutoSlots = autoSlots.filter(slot => !manualTrendingIds.has(slot.contentId));
+            const combinedTrending = [...uniqueAutoSlots, ...manualTrending];
+            const allItems = { featured: cachedData.layout.featuredItems || [], trending: combinedTrending };
+            const contentIds = [...new Set(Object.values(allItems).flat().filter(i => i.type === 'internal' && i.contentId).map(i => i.contentId))];
+
+            if (contentIds.length === 0) {
+                const finalLayout = { 
+                    featured: (allItems.featured || []).filter(item => item.type === 'external').sort((a,b) => (a.orderIndex || 99) - (b.orderIndex || 99)), 
+                    trending: (allItems.trending || []).filter(item => item.type === 'external').sort((a,b) => (a.orderIndex || 99) - (b.orderIndex || 99))
                 };
-
-                const contentIds = [...new Set(Object.values(allItems).flat().filter(i => i.type === 'internal' && i.contentId).map(i => i.contentId))];
-
-                let contentMap = new Map();
-                if (contentIds.length > 0) {
-                    // THIS QUERY IS ALSO NOW CORRECT AND SECURE
-                    const contentQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`), where('__name__', 'in', contentIds), where('isActive', '==', true));
-                    const contentSnapshots = await getDocs(contentQuery);
-                    const allContentData = contentSnapshots.docs.map(snap => ({ id: snap.id, ...snap.data() }));
-                    contentMap = new Map(allContentData.map(c => [c.id, c]));
-                }
-                
-                const finalLayout = {
-                    featured: enrich(allItems.featured, contentMap),
-                    trending: enrich(allItems.trending, contentMap)
-                };
-                
                 setEnrichedLayout(finalLayout);
-
-                const numFeaturedClones = 3;
-                if (finalLayout.featured.length > numFeaturedClones) {
-                    setDisplayFeatured([...finalLayout.featured, ...finalLayout.featured.slice(0, numFeaturedClones)]);
-                } else {
-                    setDisplayFeatured(finalLayout.featured);
-                }
+                setDisplayFeatured(finalLayout.featured);
                 setIsLayoutLoading(false);
-            };
-
-            const unsubLiveFeed = onSnapshot(liveFeedQuery, (snapshot) => {
-                const liveItems = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                const numLiveFeedClones = 4;
-                if (liveItems.length > numLiveFeedClones) setDisplayLiveFeed([...liveItems, ...liveItems.slice(0, numLiveFeedClones)]);
-                else setDisplayLiveFeed(liveItems);
-                setIsLiveFeedLoading(false);
-            }, (error) => {
-                console.error("Firestore Live Feed Error:", error);
-                showMessage("A database error occurred. You may need to create an index. See console for details.");
-                setIsLiveFeedLoading(false);
-            });
-            
-            const unsubLayout = onSnapshot(layoutDocRef, (docSnap) => {
-                cachedData.layout = docSnap.exists() ? docSnap.data() : { featuredItems: [], trendingItems: [] };
-                processContent();
-            }, (error) => {
-                console.error("Firestore Layout Error:", error);
-                setIsLayoutLoading(false);
-            });
-            
-            cachedData.autoSlots = featuredContentSlots || { slot_1: null, slot_2: null, slot_3: null };
-            processContent();
-
-            return () => { unsubLayout(); unsubLiveFeed(); };
-// END: REPLACEMENT
-        }, [featuredContentSlots]);
-
-        useEffect(() => {
-            const horizontalCarousel = horizontalCarouselRef.current;
-            const verticalCarousel = verticalCarouselRef.current;
-            let horizontalInterval;
-            let verticalInterval;
-
-            const startHorizontalAutoscroll = () => {
-                if (!horizontalCarousel || !horizontalCarousel.children[0] || displayFeatured.length <= 3) {
-                    clearInterval(horizontalInterval);
-                    return;
-                }
-                const itemWidth = horizontalCarousel.children[0].offsetWidth + 15;
-                if (itemWidth <= 15) return;
-
-                const originalItemCount = displayFeatured.length - 3;
-                const originalContentWidth = originalItemCount * itemWidth;
-
-                horizontalInterval = setInterval(() => {
-                    if (horizontalCarousel.scrollLeft >= originalContentWidth - 1) {
-                        horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
-                    } else {
-                        horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
-                    }
-                }, 3000);
-            };
-
-            const startVerticalAutoscroll = () => {
-                if (!verticalCarousel || !verticalCarousel.children[0] || displayLiveFeed.length <= 4) {
-                    clearInterval(verticalInterval);
-                    return;
-                }
-                const itemHeight = verticalCarousel.children[0].offsetHeight + 15;
-                if (itemHeight <= 15) return;
-
-                const originalItemCount = displayLiveFeed.length - 4;
-                const originalContentHeight = originalItemCount * itemHeight;
-
-                verticalInterval = setInterval(() => {
-                    if (verticalCarousel.scrollTop >= originalContentHeight - 1) {
-                        verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
-                    } else {
-                        verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
-                    }
-                }, 3000);
-            };
-
-            clearInterval(horizontalInterval);
-            clearInterval(verticalInterval);
-
-            if (!loading) {
-                setTimeout(() => {
-                    startHorizontalAutoscroll();
-                    startVerticalAutoscroll();
-                }, 100);
-            }
-
-            return () => {
-                clearInterval(horizontalInterval);
-                clearInterval(verticalInterval);
-            };
-        }, [loading, displayFeatured, displayLiveFeed]);
-        const handleHorizontalScroll = (direction) => {
-            const carousel = horizontalCarouselRef.current;
-            if (carousel) {
-                const itemWidth = carousel.children[0]?.offsetWidth + 15;
-                carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' });
-            }
-        };
-        const handleVerticalScroll = (direction) => {
-            const carousel = verticalCarouselRef.current;
-            if (carousel) {
-                const itemHeight = carousel.children[0]?.offsetHeight + 15;
-                carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' });
-            }
-        };
-         const handleItemClick = (item) => {
-            if (!currentUser) {
-                showMessage("Please sign up or log in to engage with content!");
                 return;
             }
 
-            let urlToTest;
-            if (item.type === 'external') {
-                urlToTest = item.externalLink;
+            const promises = contentIds.map(id => getDoc(doc(db, `artifacts/${appId}/public/data/content_items`, id)).catch(() => null));
+            const docSnapshots = await Promise.all(promises);
+            const allContentData = docSnapshots.filter(snap => snap && snap.exists()).map(snap => ({id: snap.id, ...snap.data()}));
+            const contentMap = new Map(allContentData.map(c => [c.id, c]));
+            const enrich = (items) => items.map(item => {
+                if (item.type === 'internal') return contentMap.has(item.contentId) ? { ...item, ...contentMap.get(item.contentId) } : null;
+                return item;
+            }).filter(Boolean).sort((a,b) => (a.orderIndex || 99) - (b.orderIndex || 99));
+
+            const finalLayout = { featured: enrich(allItems.featured), trending: enrich(allItems.trending) };
+            setEnrichedLayout(finalLayout);
+            const numFeaturedClones = 3;
+            if (finalLayout.featured.length > numFeaturedClones) {
+                setDisplayFeatured([...finalLayout.featured, ...finalLayout.featured.slice(0, numFeaturedClones)]);
             } else {
-                urlToTest = item.mainUrl || item.url;
+                setDisplayFeatured(finalLayout.featured);
             }
-
-            if (!urlToTest) {
-                showMessage("This item has no valid link to play.");
-                return;
-            }
-
-            const { embedUrl } = extractVideoInfo(urlToTest);
-
-            if (embedUrl) {
-                handleVideoPress(embedUrl, item);
-            } else {
-                if (item.type === 'external') {
-                     window.open(urlToTest, '_blank');
-                } else {
-                     showMessage("This video cannot be played in-app. It might be from an unsupported source.");
-                }
-            }
+            setIsLayoutLoading(false);
         };
-        return (
-            <div className="screenContainer">
-                <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                }}>
-                    <p className="sectionTitle" style={{ margin: 0, fontSize: '18px', marginTop: '20px' }}>Featured Highlights</p>
-                    <div className="topRightButtonContainer" style={{ position: 'static', top: 'auto', right: 'auto' }}>
-                        {currentUser && (<button className="topButton" onClick={() => setActiveScreen('TopCreators')}>Top Creators</button>)}
-                        <button className="topButton" onClick={() => setActiveScreen('Support')}>Support Us</button>
-                        {currentUser ? (<button className="topButton" onClick={handleLogout}>Logout</button>) : (<button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>)}
-                    </div>
-                </div>
-                <div className="carousel-wrapper">
-                    {displayFeatured.length > 3 && (
-                        <>
-                            <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button>
-                            <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button>
-                        </>
-                    )}
-                    <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
-                        {isLayoutLoading ? Array.from({ length: 5 }).map((_, i) => <div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>)
-                        : displayFeatured.map((item, index) => (
-                            <div key={`${item.id || item.title}-${index}`} className="horizontal-carousel-item" onClick={() => handleItemClick(item)} style={{cursor: 'pointer'}}>
-                                <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="carousel-image" />
-                                {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-                <div className="sectionHeaderWithButton">
-                    <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
-                    {!currentUser && <div style={{display: 'flex', gap: '10px'}}><button className="sectionHeaderButton" onClick={() => setActiveScreen('UserSignUp')}>User Sign Up</button><button className="sectionHeaderButton" onClick={() => setActiveScreen('CreatorSignUp')}>Creator Sign Up</button></div>}
-                </div>
-                {isLayoutLoading ? <p>Loading trending...</p> : (
-                    <div className="contentGrid">
-                    {enrichedLayout.trending.map((item) => (
-                            <div key={item.id || item.title} className="contentCard" onClick={() => handleItemClick(item)}>
-                                <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl || item.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
-                                    <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                    {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
-                                </div>
-                                <p className="contentTitle">{item.title}</p>
-                                {item.type === 'internal' && (
-                                    <div style={{ padding: '0 10px 10px 10px', display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px' }}>
-                                        <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                                        <span>{item.viewCount || 0} views</span>
-                                    </div>
-                                )}
-                            </div>
-                        )
-                    )}
-                </div>
-                )}
-                <div className="sectionHeaderWithButton">
-                    <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
-                    {currentUser && <div style={{display: 'flex', gap: '10px'}}><button className="sectionHeaderButton" onClick={() => setActiveScreen('DiscoverUsers')}>Find Creators</button><button className="sectionHeaderButton" onClick={() => setActiveScreen('Discover')}>Discover All</button></div>}
-                </div>
-                <div className="carousel-wrapper">
-                    {displayLiveFeed.length > 2 && ( <> <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button> <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button> </> )}
-                    <div className="vertical-carousel-container" ref={verticalCarouselRef}>
-                        {isLiveFeedLoading ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="vertical-carousel-item" style={{backgroundColor: '#1A1A1A'}}></div>)
-                        : displayLiveFeed.map((item, index) => (
-                            <div key={item.id ? `${item.id}-${index}` : `${item.title}-${index}`} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleItemClick(item)}>
-                                <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="liveFeedThumbnail" />
-                                <div className="liveFeedContent">
-                                    <p className="liveFeedTitle">{item.title}</p>
-                                    <p className="liveFeedCreator">{item.type === 'internal' ? `by ${item.creatorName}` : 'Promotion'}</p>
-                                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px', marginTop: '4px' }}>
-                                <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                                <span>{item.viewCount || 0} views</span>
-                                </div>
-                                </div>
-                                {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
-                            </div>
-                        ))}
-                    </div>
+        
+        const unsubLayout = onSnapshot(layoutDocRef, (docSnap) => {
+            cachedData.layout = docSnap.exists() ? docSnap.data() : { featuredItems: [], trendingItems: [] };
+            processManualContent();
+        }, (error) => {
+            console.error("Layout fetch failed:", error);
+            cachedData.layout = { featuredItems: [], trendingItems: [] };
+            processManualContent();
+        });
+
+        cachedData.autoSlots = featuredContentSlots || { slot_1: null, slot_2: null, slot_3: null };
+        processManualContent();
+
+        // Query 1: Admin-curated Live Feed
+        const liveFeedQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`), where('isActive', '==', true), where('contentType', '==', 'Live Feed'), orderBy('createdAt', 'desc'), limit(20));
+        const unsubLiveFeed = onSnapshot(liveFeedQuery, (snapshot) => {
+            setAdminLiveFeed(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        }, (error) => {
+            console.error("Admin Live Feed fetch failed:", error);
+            setAdminLiveFeed([]);
+        });
+
+        // Query 2: Creator-selected Featured items
+        const creatorFeaturedQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`), where('isActive', '==', true), where('isFeatured', '==', true), orderBy('createdAt', 'desc'), limit(20));
+        const unsubCreatorFeatured = onSnapshot(creatorFeaturedQuery, (snapshot) => {
+            setCreatorFeaturedFeed(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        }, (error) => {
+            console.error("Creator Featured Feed fetch failed:", error);
+            setCreatorFeaturedFeed([]);
+        });
+        
+        return () => {
+            unsubLayout();
+            unsubLiveFeed();
+            unsubCreatorFeatured();
+        };
+    }, [featuredContentSlots]);
+
+    // This new useEffect is responsible for COMBINING the two feeds into one display list
+    useEffect(() => {
+        setIsLiveFeedLoading(true);
+        const combined = [...adminLiveFeed, ...creatorFeaturedFeed];
+        const uniqueItems = Array.from(new Map(combined.map(item => [item.id, item])).values());
+        uniqueItems.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        
+        const numLiveFeedClones = 4;
+        if (uniqueItems.length > numLiveFeedClones) {
+            setDisplayLiveFeed([...uniqueItems, ...uniqueItems.slice(0, numLiveFeedClones)]);
+        } else {
+            setDisplayLiveFeed(uniqueItems);
+        }
+        setIsLiveFeedLoading(false);
+    }, [adminLiveFeed, creatorFeaturedFeed]);
+
+    useEffect(() => {
+        const horizontalCarousel = horizontalCarouselRef.current;
+        const verticalCarousel = verticalCarouselRef.current;
+        let horizontalInterval;
+        let verticalInterval;
+        const startHorizontalAutoscroll = () => { if (!horizontalCarousel || !horizontalCarousel.children[0] || displayFeatured.length <= 3) { clearInterval(horizontalInterval); return; } const itemWidth = horizontalCarousel.children[0].offsetWidth + 15; if (itemWidth <= 15) return; const originalItemCount = displayFeatured.length - 3; const originalContentWidth = originalItemCount * itemWidth; horizontalInterval = setInterval(() => { if (horizontalCarousel.scrollLeft >= originalContentWidth - 1) { horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' }); } else { horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' }); } }, 3000); };
+        const startVerticalAutoscroll = () => { if (!verticalCarousel || !verticalCarousel.children[0] || displayLiveFeed.length <= 4) { clearInterval(verticalInterval); return; } const itemHeight = verticalCarousel.children[0].offsetHeight + 15; if (itemHeight <= 15) return; const originalItemCount = displayLiveFeed.length - 4; const originalContentHeight = originalItemCount * itemHeight; verticalInterval = setInterval(() => { if (verticalCarousel.scrollTop >= originalContentHeight - 1) { verticalCarousel.scrollTo({ top: 0, behavior: 'instant' }); } else { verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' }); } }, 3000); };
+        clearInterval(horizontalInterval);
+        clearInterval(verticalInterval);
+        if (!loading) { setTimeout(() => { startHorizontalAutoscroll(); startVerticalAutoscroll(); }, 100); }
+        return () => { clearInterval(horizontalInterval); clearInterval(verticalInterval); };
+    }, [loading, displayFeatured, displayLiveFeed]);
+    
+    const handleHorizontalScroll = (direction) => { const carousel = horizontalCarouselRef.current; if (carousel) { const itemWidth = carousel.children[0]?.offsetWidth + 15; carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' }); } };
+    const handleVerticalScroll = (direction) => { const carousel = verticalCarouselRef.current; if (carousel) { const itemHeight = carousel.children[0]?.offsetHeight + 15; carousel.scrollBy({ top: direction === 'up' ? -itemHeight : itemHeight, behavior: 'smooth' }); } };
+    
+    const handleItemClick = (item) => {
+        if (!currentUser) { showMessage("Please sign up or log in to engage with content!"); return; }
+        let urlToTest = (item.type === 'external') ? item.externalLink : (item.mainUrl || item.url);
+        if (!urlToTest) { showMessage("This item has no valid link to play."); return; }
+        const { embedUrl } = extractVideoInfo(urlToTest);
+        if (embedUrl) { handleVideoPress(embedUrl, item); } 
+        else { if (item.type === 'external') { window.open(urlToTest, '_blank'); } else { showMessage("This video cannot be played in-app. It might be from an unsupported source."); } }
+    };
+
+    return (
+        <div className="screenContainer">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <p className="sectionTitle" style={{ margin: 0, fontSize: '18px', marginTop: '20px' }}>Featured Highlights</p>
+                <div className="topRightButtonContainer" style={{ position: 'static', top: 'auto', right: 'auto' }}>
+                    {currentUser && (<button className="topButton" onClick={() => setActiveScreen('TopCreators')}>Top Creators</button>)}
+                    <button className="topButton" onClick={() => setActiveScreen('Support')}>Support Us</button>
+                    {currentUser ? (<button className="topButton" onClick={handleLogout}>Logout</button>) : (<button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>)}
                 </div>
             </div>
-        );
-    };
+            <div className="carousel-wrapper">
+                {displayFeatured.length > 3 && (<><button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button><button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button></>)}
+                <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
+                    {isLayoutLoading ? Array.from({ length: 5 }).map((_, i) => <div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>)
+                    : displayFeatured.map((item, index) => (
+                        <div key={`${item.id || item.title}-${index}`} className="horizontal-carousel-item" onClick={() => handleItemClick(item)} style={{cursor: 'pointer'}}>
+                            <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="carousel-image" />
+                            {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                        </div>
+                    ))}
+                </div>
+            </div>
+            <div className="sectionHeaderWithButton">
+                <p className="sectionTitle" style={{ marginBottom: '0' }}>Trending</p>
+                {!currentUser && <div style={{display: 'flex', gap: '10px'}}><button className="sectionHeaderButton" onClick={() => setActiveScreen('UserSignUp')}>User Sign Up</button><button className="sectionHeaderButton" onClick={() => setActiveScreen('CreatorSignUp')}>Creator Sign Up</button></div>}
+            </div>
+            {isLayoutLoading ? <p>Loading trending...</p> : (
+                <div className="contentGrid">
+                {enrichedLayout.trending.map((item) => (
+                        <div key={item.id || item.title} className="contentCard" onClick={() => handleItemClick(item)}>
+                            <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl || item.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
+                                <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                            </div>
+                            <p className="contentTitle">{item.title}</p>
+                            {item.type === 'internal' && (
+                                <div style={{ padding: '0 10px 10px 10px', display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px' }}>
+                                    <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+                                    <span>{item.viewCount || 0} views</span>
+                                </div>
+                            )}
+                        </div>
+                    )
+                )}
+            </div>
+            )}
+            <div className="sectionHeaderWithButton">
+                <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
+                {currentUser && <div style={{display: 'flex', gap: '10px'}}><button className="sectionHeaderButton" onClick={() => setActiveScreen('DiscoverUsers')}>Find Creators</button><button className="sectionHeaderButton" onClick={() => setActiveScreen('Discover')}>Discover All</button></div>}
+            </div>
+            <div className="carousel-wrapper">
+                {displayLiveFeed.length > 2 && ( <> <button className="carousel-nav-btn prev-vertical" onClick={() => handleVerticalScroll('up')}>▲</button> <button className="carousel-nav-btn next-vertical" onClick={() => handleVerticalScroll('down')}>▼</button> </> )}
+                <div className="vertical-carousel-container" ref={verticalCarouselRef}>
+                    {isLiveFeedLoading ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="vertical-carousel-item" style={{backgroundColor: '#1A1A1A'}}></div>)
+                    : displayLiveFeed.map((item, index) => (
+                        <div key={item.id ? `${item.id}-${index}` : `${item.title}-${index}`} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleItemClick(item)}>
+                            <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="liveFeedThumbnail" />
+                            <div className="liveFeedContent">
+                                <p className="liveFeedTitle">{item.title}</p>
+                                <p className="liveFeedCreator">{item.type === 'internal' ? `by ${item.creatorName}` : 'Promotion'}</p>
+                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px', marginTop: '4px' }}>
+                            <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+                            <span>{item.viewCount || 0} views</span>
+                            </div>
+                            </div>
+                            {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+// --- END: FULL COMPONENT REPLACEMENT ---
 
 
             // =========== START REPLACEMENT ===========
@@ -7494,6 +7459,7 @@ const CreatorDashboardScreen = ({
 
 
                         // START: ADDITION (New MyContentLibraryScreen Component)
+// --- START: FULL COMPONENT REPLACEMENT ---
 const MyContentLibraryScreen = ({
     showMessage,
     setActiveScreen,
@@ -7504,43 +7470,39 @@ const MyContentLibraryScreen = ({
     setConfirmationMessage,
     setOnConfirmationAction
 }) => {
-    // State moved from CreatorDashboardScreen
+    // State for the form
+    const [title, setTitle] = useState('');
+    const [description, setDescription] = useState('');
     const [videoLinkInput, setVideoLinkInput] = useState('');
+    const [contentType, setContentType] = useState('');
+    const [isPublishing, setIsPublishing] = useState(false);
+    
+    // State for thumbnail handling
     const [customThumbnailFile, setCustomThumbnailFile] = useState(null);
     const [customThumbnailPreview, setCustomThumbnailPreview] = useState('');
     const [autoThumbnailPreview, setAutoThumbnailPreview] = useState('');
     const thumbnailFileInputRef = useRef(null);
 
-    // New state for the form
-    const [title, setTitle] = useState('');
-    const [description, setDescription] = useState('');
-    const [contentType, setContentType] = useState('');
-    const [isPublishing, setIsPublishing] = useState(false);
-    
     // State for managing library content
     const [libraryItems, setLibraryItems] = useState([]);
     const [loadingLibrary, setLoadingLibrary] = useState(true);
+    const [searchTerm, setSearchTerm] = useState(''); // For search
+    const [isLibraryExpanded, setIsLibraryExpanded] = useState(false); // For collapse
 
     // State for categories dropdown
     const [availableCategories, setAvailableCategories] = useState([]);
 
-    // Fetch categories for the dropdown, excluding "Live Feed"
     useEffect(() => {
         const categoriesRef = collection(db, "content_categories");
         const q = query(categoriesRef, where("isActive", "==", true), orderBy("orderIndex", "asc"));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedCategories = snapshot.docs
-                .map(doc => doc.data().name)
-                .filter(name => name !== 'Live Feed'); // Explicitly filter out "Live Feed"
+            const fetchedCategories = snapshot.docs.map(doc => doc.data().name).filter(name => name !== 'Live Feed');
             setAvailableCategories(fetchedCategories);
-            if (fetchedCategories.length > 0 && !contentType) {
-                setContentType(fetchedCategories[0]); // Set a default value
-            }
+            if (fetchedCategories.length > 0 && !contentType) { setContentType(fetchedCategories[0]); }
         });
         return () => unsubscribe();
     }, []);
 
-    // Fetch the creator's library items
     useEffect(() => {
         if (!currentUser) return;
         setLoadingLibrary(true);
@@ -7553,7 +7515,6 @@ const MyContentLibraryScreen = ({
         return () => unsubscribe();
     }, [currentUser]);
 
-    // Thumbnail preview logic
     useEffect(() => {
         setAutoThumbnailPreview('');
         if (!videoLinkInput) return;
@@ -7564,90 +7525,169 @@ const MyContentLibraryScreen = ({
         return () => clearTimeout(handler);
     }, [videoLinkInput]);
 
+    const resetForm = () => {
+        setTitle(''); setDescription(''); setVideoLinkInput('');
+        setContentType(availableCategories.length > 0 ? availableCategories[0] : '');
+        setCustomThumbnailFile(null); setCustomThumbnailPreview(''); setAutoThumbnailPreview('');
+        if (thumbnailFileInputRef.current) { thumbnailFileInputRef.current.value = null; }
+    };
+
     const handleAddToLibrary = async () => {
-        // This is the new publishing logic for adding to the library
-        if (!title.trim() || !contentType) {
-            showMessage('A Title and Content Type are required.');
-            return;
+        if (!title.trim() || !contentType) { showMessage('A Title and Content Type are required.'); return; }
+        if (!videoLinkInput.trim()) { showMessage('A video URL is required.'); return; }
+        setIsPublishing(true);
+        showMessage("Saving to library...");
+        const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput);
+        if (!videoId && platform !== 'generic') { showMessage('Could not find a valid video ID in the URL provided.'); setIsPublishing(false); return; }
+        let finalThumbnailUrl = autoThumbnailUrl || 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA';
+        if (customThumbnailFile) {
+            showMessage('Uploading custom thumbnail...');
+            try {
+                const filePath = `content_thumbnails/${currentUser.uid}/${Date.now()}_${customThumbnailFile.name}`;
+                const storageRefPath = ref(storage, filePath);
+                const snapshot = await uploadBytes(storageRefPath, customThumbnailFile);
+                finalThumbnailUrl = await getDownloadURL(snapshot.ref);
+                showMessage('Thumbnail uploaded successfully!');
+            } catch (error) { console.error("Error uploading custom thumbnail:", error); showMessage(`Thumbnail upload failed: ${error.message}`); setIsPublishing(false); return; }
         }
-        // ... (The full publishing logic will be added in a future step)
-        showMessage(`Simulating adding "${title}" to library with category "${contentType}". Full logic pending.`);
+        try {
+            const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
+            await addDoc(contentCollectionRef, {
+                title: title.trim(), description: description.trim(), mainUrl: videoLinkInput,
+                customThumbnailUrl: finalThumbnailUrl, embedUrl: embedUrl, videoPlatform: platform,
+                creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, creatorProfilePictureUrl: creatorProfile.profilePictureUrl || '',
+                contentType: contentType, isActive: true, isFeatured: false, createdAt: new Date().toISOString(),
+                createdBy: currentUser.uid, viewCount: 0, likeCount: 0
+            });
+            showMessage(`"${title.trim()}" was added to your library.`);
+            resetForm();
+        } catch (error) { console.error("Error adding content to library:", error); showMessage(`Failed to save content: ${error.message}`);
+        } finally { setIsPublishing(false); }
+    };
+
+    const handleSetFeatured = async (itemToFeature) => {
+        if (!currentUser || !creatorProfile) return;
+        showMessage("Setting featured link...");
+        const videoData = {
+            url: itemToFeature.mainUrl, thumbnailUrl: itemToFeature.customThumbnailUrl,
+            embedUrl: itemToFeature.embedUrl, platform: itemToFeature.videoPlatform,
+            liveFeedContentId: itemToFeature.id
+        };
+        try {
+            const creatorRef = doc(db, "creators", currentUser.uid);
+            await updateDoc(creatorRef, { featuredVideoLink: videoData, updatedAt: new Date().toISOString() });
+            const contentRef = doc(db, `artifacts/${appId}/public/data/content_items`, itemToFeature.id);
+            await updateDoc(contentRef, { isFeatured: true });
+            const previouslyFeaturedId = creatorProfile.featuredVideoLink?.liveFeedContentId;
+            if (previouslyFeaturedId && previouslyFeaturedId !== itemToFeature.id) {
+                const prevContentRef = doc(db, `artifacts/${appId}/public/data/content_items`, previouslyFeaturedId);
+                await updateDoc(prevContentRef, { isFeatured: false });
+            }
+            showMessage("Your featured link has been updated!");
+        } catch (error) { console.error("Error setting featured link:", error); showMessage(`Failed to set featured link: ${error.message}`); }
+    };
+
+    const handleRemoveFeatured = async () => {
+        if (!currentUser || !creatorProfile.featuredVideoLink) return;
+        showMessage("Removing featured link...");
+        try {
+            const creatorRef = doc(db, "creators", currentUser.uid);
+            await updateDoc(creatorRef, { featuredVideoLink: null, updatedAt: new Date().toISOString() });
+            const contentRef = doc(db, `artifacts/${appId}/public/data/content_items`, creatorProfile.featuredVideoLink.liveFeedContentId);
+            await updateDoc(contentRef, { isFeatured: false });
+            showMessage("Featured link has been removed.");
+        } catch (error) { console.error("Error removing featured link:", error); showMessage(`Failed to remove featured link: ${error.message}`); }
+    };
+
+    const deleteLogic = async (itemToDelete) => {
+        showMessage("Deleting content...");
+        try {
+            if (creatorProfile.featuredVideoLink?.liveFeedContentId === itemToDelete.id) {
+                const creatorRef = doc(db, "creators", currentUser.uid);
+                await updateDoc(creatorRef, { featuredVideoLink: null });
+            }
+            await deleteDoc(doc(db, `artifacts/${appId}/public/data/content_items`, itemToDelete.id));
+            showMessage(`"${itemToDelete.title}" was deleted permanently.`);
+        } catch (error) { console.error("Error deleting content:", error); showMessage(`Failed to delete content: ${error.message}`); }
+    };
+
+    const handleDelete = (itemToDelete) => {
+        setConfirmationTitle("Delete Content?");
+        setConfirmationMessage(`Are you sure you want to permanently delete "${itemToDelete.title}"? This cannot be undone and will remove it from all public feeds.`);
+        setOnConfirmationAction(() => () => deleteLogic(itemToDelete));
+        setShowConfirmationModal(true);
     };
 
     const currentThumbnail = customThumbnailPreview || autoThumbnailPreview;
+    
+    const filteredItems = libraryItems.filter(item => 
+        item.title.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    if (!creatorProfile) { return <div className="screenContainer"><p className="heading">Loading...</p></div>; }
 
     return (
         <div className="screenContainer">
             <p className="heading">My Content Library</p>
             <p className="subHeading">Add to your portfolio and manage what's featured on your profile.</p>
-
-            {/* This is the relocated and enhanced form */}
             <div className="dashboardSection">
                 <p className="dashboardSectionTitle">Add New Content to Library</p>
                 <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>
-                    **Instructions:** Add content here first. Once it's in your library below, you can choose to feature it on the Live Feed or delete it.
+                    **Instructions:** Add content here first. Once it's in your library below, you can choose to feature it or delete it.
                 </p>
                 <div className="videoLinkSection">
-                     <div className="formGroup">
-                        <label htmlFor="contentTitle" className="formLabel">Title:</label>
-                        <input type="text" id="contentTitle" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} required />
-                    </div>
-                     <div className="formGroup">
-                        <label htmlFor="contentDescription" className="formLabel">Description (Optional):</label>
-                        <textarea id="contentDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A brief summary of your content"></textarea>
-                    </div>
-                    <div className="formGroup">
-                        <label htmlFor="contentType" className="formLabel">Content Type:</label>
-                        <select id="contentType" className="formInput" value={contentType} onChange={(e) => setContentType(e.target.value)} required>
-                            <option value="" disabled>-- Select a Category --</option>
-                            {availableCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
-                        </select>
-                    </div>
+                     <div className="formGroup"><label htmlFor="contentTitle" className="formLabel">Title:</label><input type="text" id="contentTitle" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} required /></div>
+                     <div className="formGroup"><label htmlFor="contentDescription" className="formLabel">Description (Optional):</label><textarea id="contentDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A brief summary of your content"></textarea></div>
+                    <div className="formGroup"><label htmlFor="contentType" className="formLabel">Content Type:</label><select id="contentType" className="formInput" value={contentType} onChange={(e) => setContentType(e.target.value)} required><option value="" disabled>-- Select a Category --</option>{availableCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select></div>
                     <label htmlFor="featuredVideoLink" className="formLabel">URL:</label>
-                    <div className="videoInputContainer">
-                        <input type="url" id="featuredVideoLink" className="formInput" value={videoLinkInput} onChange={(e) => setVideoLinkInput(e.target.value)} placeholder="Paste your video link here" />
-                    </div>
-                    <div className="formGroup" style={{marginTop: '15px'}}>
-                        <label htmlFor="customThumbnailFile" className="formLabel">Custom Thumbnail (Optional):</label>
-                        <input type="file" id="customThumbnailFile" ref={thumbnailFileInputRef} className="formInput" onChange={(e) => { const file = e.target.files[0]; setCustomThumbnailFile(file); if (file) { setCustomThumbnailPreview(URL.createObjectURL(file)); } else { setCustomThumbnailPreview(''); }}} accept="image/*" style={{padding: '10px 0', border: 'none', backgroundColor: 'transparent'}} />
-                    </div>
-                    {currentThumbnail && (
-                        <div style={{marginTop: '10px'}}>
-                            <p className="formLabel" style={{marginBottom: '5px'}}>Thumbnail Preview:</p>
-                            <img src={currentThumbnail} alt="Thumbnail Preview" style={{ maxWidth: '200px', borderRadius: '8px', border: '2px solid #FFD700' }} onError={(e) => { e.target.style.display = 'none'; }} />
-                        </div>
-                     )}
-                    <div className="videoActions" style={{marginTop: '20px', justifyContent: 'flex-start'}}>
-                        <button className="adminActionButton approve" onClick={handleAddToLibrary} disabled={isPublishing} style={{padding: '10px 20px', fontSize: '14px'}}>
-                            {isPublishing ? 'Saving...' : 'Add to Library'}
-                        </button>
-                    </div>
+                    <div className="videoInputContainer"><input type="url" id="featuredVideoLink" className="formInput" value={videoLinkInput} onChange={(e) => setVideoLinkInput(e.target.value)} placeholder="Paste your video link here" /></div>
+                    <div className="formGroup" style={{marginTop: '15px'}}><label htmlFor="customThumbnailFile" className="formLabel">Custom Thumbnail (Optional):</label><input type="file" id="customThumbnailFile" ref={thumbnailFileInputRef} className="formInput" onChange={(e) => { const file = e.target.files[0]; setCustomThumbnailFile(file); if (file) { setCustomThumbnailPreview(URL.createObjectURL(file)); } else { setCustomThumbnailPreview(''); }}} accept="image/*" style={{padding: '10px 0', border: 'none', backgroundColor: 'transparent'}} /></div>
+                    {currentThumbnail && ( <div style={{marginTop: '10px'}}><p className="formLabel" style={{marginBottom: '5px'}}>Thumbnail Preview:</p><img src={currentThumbnail} alt="Thumbnail Preview" style={{ maxWidth: '200px', borderRadius: '8px', border: '2px solid #FFD700' }} onError={(e) => { e.target.style.display = 'none'; }} /></div>)}
+                    <div className="videoActions" style={{marginTop: '20px', justifyContent: 'flex-start'}}><button className="adminActionButton approve" onClick={handleAddToLibrary} disabled={isPublishing} style={{padding: '10px 20px', fontSize: '14px'}}>{isPublishing ? 'Saving...' : 'Add to Library'}</button></div>
                 </div>
             </div>
-            
             <div className="dashboardSection" style={{ marginTop: '20px' }}>
-                <p className="dashboardSectionTitle">My Uploads ({libraryItems.length})</p>
-                 <div className="dashboardContentList">
-                    {loadingLibrary ? <p>Loading content...</p> : 
-                        libraryItems.length === 0 ? <p className="dashboardItem">Your library is empty. Add content using the form above.</p> :
-                        libraryItems.map(item => (
-                        <div key={item.id} className="adminDashboardItem">
-                            {/* Library item content will be implemented in a future step */}
-                            <p>{item.title}</p>
-                        </div>
-                    ))}
+                <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsLibraryExpanded(!isLibraryExpanded)}>
+                    <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>My Uploads ({libraryItems.length})</p>
+                    <button className="text-xl font-bold text-white">{isLibraryExpanded ? '▼' : '▶'}</button>
+                </div>
+                <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isLibraryExpanded ? 'max-h-[5000px] mt-4' : 'max-h-0'}`}>
+                    <div className="formGroup">
+                        <input type="text" className="formInput" placeholder="Search your library by title..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                    </div>
+                    <div className="dashboardContentList">
+                        {loadingLibrary ? <p>Loading content...</p> : 
+                            filteredItems.length === 0 ? <p className="dashboardItem">{searchTerm ? `No content matches "${searchTerm}".` : 'Your library is empty.'}</p> :
+                            filteredItems.map(item => (
+                                <div key={item.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
+                                    <div style={{display: 'flex', alignItems: 'center', gap: '15px'}}>
+                                        <img src={item.customThumbnailUrl} alt={item.title} style={{width: '120px', height: '68px', objectFit: 'cover', borderRadius: '5px'}}/>
+                                        <div style={{flexGrow: 1}}>
+                                            <p className="adminDashboardItemTitle">{item.title}</p>
+                                            <p style={{fontSize: '12px', color: '#AAA'}}>Category: {item.contentType}</p>
+                                            {creatorProfile.featuredVideoLink?.liveFeedContentId === item.id && (
+                                                <span style={{ backgroundColor: '#FFD700', color: '#0A0A0A', padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold'}}>Currently Featured</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="videoActions" style={{marginTop: '10px'}}>
+                                        {creatorProfile.featuredVideoLink?.liveFeedContentId === item.id ? (
+                                            <button className="actionButton" onClick={() => handleRemoveFeatured()} style={{backgroundColor: '#FF8C00'}}>Remove Featured</button>
+                                        ) : (
+                                            <button className="actionButton" onClick={() => handleSetFeatured(item)} style={{backgroundColor: '#008000'}}>Set as Featured</button>
+                                        )}
+                                        <button className="actionButton remove" onClick={() => handleDelete(item)}>Delete</button>
+                                    </div>
+                                </div>
+                            ))}
+                    </div>
                 </div>
             </div>
-
-            <button className="button" onClick={() => setActiveScreen('CreatorDashboard')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}>
-                <span className="buttonText light">Back to Dashboard</span>
-            </button>
+            <button className="button" onClick={() => setActiveScreen('CreatorDashboard')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}><span className="buttonText light">Back to Dashboard</span></button>
         </div>
     );
 };
-// END: ADDITION (New MyContentLibraryScreen Component)
-
-
+// --- END: FULL COMPONENT REPLACEMENT ---
 
 // =========== START REPLACEMENT ===========
               const memoizedScreen = React.useMemo(() => {
@@ -7898,4 +7938,3 @@ const MyContentLibraryScreen = ({
     </script>
 </body>
 </html>
-
