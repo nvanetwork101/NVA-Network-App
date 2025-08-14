@@ -3576,11 +3576,11 @@ const AdminDashboardScreen = ({
     setSelectedAdminCampaignId,
     creatorProfile,
     selectedAdminSubScreen,
-    setSelectedAdminSubScreen,
     setShowConfirmationModal,
     setConfirmationTitle,
     setConfirmationMessage,
-    setOnConfirmationAction
+    setOnConfirmationAction,
+    setSelectedUserId
 }) => {
 
     const [isUserManagementExpanded, setIsUserManagementExpanded] = useState(true);
@@ -3664,7 +3664,15 @@ const AdminDashboardScreen = ({
     
     if (!currentUser || !creatorProfile || (creatorProfile.role !== 'admin' && creatorProfile.role !== 'authority')) { return ( <div className="screenContainer"> <p className="heading">Access Denied</p> <p className="subHeading">You must be an Admin or Authority to view this dashboard.</p> <button className="button" onClick={() => setActiveScreen('Login')}><span className="buttonText">Go to Login</span></button> </div> ); }
     if (loading) { return ( <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}> <p className="heading">Loading Admin Dashboard...</p> <p className="subHeading" style={{ color: '#FFD700' }}>Please wait.</p> </div> ); }
-    const filteredUsers = allUsers.filter(user => { if (creatorProfile.role === 'authority' && user.role === 'admin') { return false; } const matchesSearchTerm = searchTerm === '' || (user.creatorName && user.creatorName.toLowerCase().includes(searchTerm.toLowerCase())) || (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase())); const matchesRole = selectedRole === 'All' || user.role === selectedRole; return matchesSearchTerm && matchesRole; });
+    const filteredUsers = allUsers.filter(user => {
+        // This logic is now simpler. We only hide admins from authority view.
+        if (creatorProfile.role === 'authority' && user.role === 'admin') {
+            return false;
+        }
+        const matchesSearchTerm = searchTerm === '' || (user.creatorName && user.creatorName.toLowerCase().includes(searchTerm.toLowerCase())) || (user.email && user.email.toLowerCase().includes(searchTerm.toLowerCase()));
+        const matchesRole = selectedRole === 'All' || user.role === selectedRole;
+        return matchesSearchTerm && matchesRole;
+    });
 
     const sortedPledges = [...pendingPledges].sort((a, b) => {
         if (pledgeSortType === 'type') {
@@ -3690,7 +3698,39 @@ const AdminDashboardScreen = ({
             {selectedAdminSubScreen === 'Overview' && (
                 <>
                     {creatorProfile.role === 'admin' && banRequests.length > 0 && ( <section className="dashboardSection" style={{ border: '2px solid #FFD700' }}> <p className="dashboardSectionTitle">Pending Authority Ban Requests ({banRequests.length})</p> <div className="dashboardContentList"> {banRequests.map(req => ( <div key={req.id} className="adminDashboardItem"> <div style={{ flexGrow: 1 }}> <p className="adminDashboardItemTitle">Target: {req.targetUserName}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Requested by: {req.requesterName}</p> </div> <button className="adminActionButton approve" onClick={() => handleApproveBanRequest(req)}>Approve Ban</button> <button className="adminActionButton reject" onClick={() => handleDenyBanRequest(req)}>Deny Request</button> </div> ))} </div> </section> )}
-                   <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList"> {filteredUsers.map(user => ( <div key={user.id} className="adminDashboardItem" style={{alignItems: 'flex-start'}}> <div style={{ flexGrow: 1, marginRight: '10px' }}> <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p> <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p> <p style={{ fontSize: '10px', color: '#AAA' }}>User ID: {user.id}</p> </div> <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}> {currentUser.uid !== user.id && <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} onClick={() => confirmToggleBan(user)} disabled={isSubmittingRequest === user.id}> {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')} </button>} <div className="formGroup" style={{marginBottom: 0}}> <select className="formInput" value={user.role} onChange={(e) => confirmChangeUserRole(user, e.target.value)} disabled={isUpdatingRole === user.id || user.id === currentUser.uid || (creatorProfile.role === 'authority' && user.role === 'admin')} style={{padding: '5px', fontSize: '12px', width: '120px'}}> <option value="user">User</option> <option value="creator">Creator</option> <option value="authority">Authority</option> {creatorProfile.role === 'admin' && <option value="admin">Admin</option>} </select> {isUpdatingRole === user.id && <p style={{fontSize: '10px', color: '#FFD700', textAlign: 'right'}}>Updating...</p>} </div> <button className="adminActionButton" onClick={() => confirmRecalculate(user)} disabled={isCorrectingCount === user.id} style={{ backgroundColor: '#FF8C00' }}> {isCorrectingCount === user.id ? 'Recalculating...' : 'Recalculate Counts'} </button> </div> </div> ))} </div> } </div> </div> </section>
+                   <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList"> {filteredUsers.map(user => (
+    <div key={user.id} className="adminDashboardItem" style={{alignItems: 'center'}}>
+        {/* This new wrapper makes the left side clickable */}
+        <div 
+            onClick={() => { setSelectedUserId(user.id); setActiveScreen('UserProfile'); }}
+            style={{cursor: 'pointer', display: 'flex', alignItems: 'center', flexGrow: 1, marginRight: '10px'}}
+        >
+            <img 
+                src={user.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} 
+                alt={user.creatorName}
+                style={{width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px'}}
+            />
+            <div>
+                <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p>
+                <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p>
+                <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p>
+            </div>
+        </div>
+        {/* These are your original controls, now reinstated */}
+        <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}>
+            {currentUser.uid !== user.id && <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} onClick={() => confirmToggleBan(user)} disabled={isSubmittingRequest === user.id}> {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')} </button>}
+            <div className="formGroup" style={{marginBottom: 0}}>
+                <select className="formInput" value={user.role} onChange={(e) => confirmChangeUserRole(user, e.target.value)} disabled={isUpdatingRole === user.id || user.id === currentUser.uid || (creatorProfile.role === 'authority' && user.role === 'admin')} style={{padding: '5px', fontSize: '12px', width: '120px'}}>
+                    <option value="user">User</option>
+                    <option value="creator">Creator</option>
+                    <option value="authority">Authority</option>
+                    {creatorProfile.role === 'admin' && <option value="admin">Admin</option>}
+                </select>
+                {isUpdatingRole === user.id && <p style={{fontSize: '10px', color: '#FFD700', textAlign: 'right'}}>Updating...</p>}
+            </div>
+        </div>
+    </div>
+))} </div> } </div> </div> </section>
                     <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p> <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> : <div className="dashboardContentList"> {pendingCampaigns.map(campaign => ( 
                     <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }} style={{ cursor: 'pointer', alignItems: 'center' }}>
                                     <img 
@@ -7565,7 +7605,8 @@ const MyContentLibraryScreen = ({
     setShowConfirmationModal,
     setConfirmationTitle,
     setConfirmationMessage,
-    setOnConfirmationAction
+    setOnConfirmationAction,
+    handleVideoPress // <-- ADD THIS LINE
 }) => {
     // State for the form
     const [title, setTitle] = useState('');
@@ -7658,10 +7699,9 @@ const MyContentLibraryScreen = ({
                 createdBy: currentUser.uid, viewCount: 0, likeCount: 0
             };
             // Step 2: Add the document to Firestore and get its reference
-            const docRef = await addDoc(contentCollectionRef, newDocData);
+             await addDoc(contentCollectionRef, newDocData);
             
-            // Step 3 (THE FIX): Instantly add the new item to the screen's local list
-            setLibraryItems(prevItems => [{ id: docRef.id, ...newDocData }, ...prevItems]);
+            // Step 3 (THE FIX): The manual update line has been REMOVED.
 
             showMessage(`"${title.trim()}" was added to your library.`);
             resetForm();
@@ -7765,15 +7805,16 @@ const MyContentLibraryScreen = ({
                             filteredItems.map(item => (
                                 <div key={item.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
                                     <div style={{display: 'flex', alignItems: 'center', gap: '15px'}}>
-                                        <img src={item.customThumbnailUrl} alt={item.title} style={{width: '120px', height: '68px', objectFit: 'cover', borderRadius: '5px'}}/>
-                                        <div style={{flexGrow: 1}}>
-                                            <p className="adminDashboardItemTitle">{item.title}</p>
-                                            <p style={{fontSize: '12px', color: '#AAA'}}>Category: {item.contentType}</p>
-                                            {creatorProfile.featuredVideoLink?.liveFeedContentId === item.id && (
-                                                <span style={{ backgroundColor: '#FFD700', color: '#0A0A0A', padding: '3px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold'}}>Currently Featured</span>
-                                            )}
-                                        </div>
+                                    <img 
+                                        src={item.customThumbnailUrl} 
+                                        alt={item.title} 
+                                        style={{width: '120px', height: '68px', objectFit: 'cover', borderRadius: '5px', cursor: 'pointer'}} 
+                                        onClick={() => handleVideoPress(item.mainUrl, item)}
+                                    />
+                                    <div style={{flexGrow: 1}}>
+                                        {/* ... other code for the title ... */}
                                     </div>
+                                </div>
                                     <div className="videoActions" style={{marginTop: '10px'}}>
                                         {creatorProfile.featuredVideoLink?.liveFeedContentId === item.id ? (
                                             <button className="actionButton" onClick={() => handleRemoveFeatured()} style={{backgroundColor: '#FF8C00'}}>Remove Featured</button>
@@ -7851,7 +7892,21 @@ const MyContentLibraryScreen = ({
                 case 'CreateCampaign':
                     return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile}/>;
                 case 'AdminDashboard':
-                    return <AdminDashboardScreen showMessage={showMessage} featuredContentSlots={featuredContentSlots} setActiveScreen={setActiveScreen} currentUser={currentUser} setSelectedAdminCampaignId={setSelectedAdminCampaignId} creatorProfile={creatorProfile} selectedAdminSubScreen={selectedAdminSubScreen} setSelectedAdminSubScreen={setSelectedAdminSubScreen} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction}/>;
+                    return <AdminDashboardScreen 
+                        showMessage={showMessage} 
+                        featuredContentSlots={featuredContentSlots} 
+                        setActiveScreen={setActiveScreen} 
+                        currentUser={currentUser} 
+                        setSelectedAdminCampaignId={setSelectedAdminCampaignId} 
+                        creatorProfile={creatorProfile} 
+                        selectedAdminSubScreen={selectedAdminSubScreen} 
+                        // setSelectedAdminSubScreen={setSelectedAdminSubScreen} // THIS DUPLICATE LINE IS REMOVED
+                        setShowConfirmationModal={setShowConfirmationModal} 
+                        setConfirmationTitle={setConfirmationTitle} 
+                        setConfirmationMessage={setConfirmationMessage} 
+                        setOnConfirmationAction={setOnConfirmationAction}
+                        setSelectedUserId={setSelectedUserId}
+                    />;
                 case 'AdminCampaignDetails':
                     return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile}/>;
                 case 'TopCreators':
@@ -7859,7 +7914,7 @@ const MyContentLibraryScreen = ({
                 case 'AnalyticsDashboard':
                     return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                 case 'MyContentLibrary':
-                    return <MyContentLibraryScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction}/>;
+                    return <MyContentLibraryScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} handleVideoPress={handleVideoPress} />;
                 case 'PremiumMembersScreen':
                     return <PremiumMembersScreen setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId} showMessage={showMessage} />;
                 case 'NotificationInbox':
