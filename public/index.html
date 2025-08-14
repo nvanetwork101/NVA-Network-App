@@ -7358,8 +7358,22 @@ const CreatorDashboardScreen = ({
     const handleCancelAdjust = () => { setImageFileToAdjust(null); setShowImageAdjustModal(false); };
     const handleCancelCampaign = async (campaignId, campaignTitle) => { try { const campaignRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId); await updateDoc(campaignRef, { status: 'cancelled', updatedAt: new Date().toISOString(), statusChangedAt: new Date().toISOString() }); showMessage(`Campaign "${campaignTitle}" has been cancelled.`); } catch (error) { showMessage(`Failed to cancel campaign: ${error.message}`); } };
     const confirmCancelCampaign = (campaignId, campaignTitle) => { setConfirmationTitle("Cancel Campaign?"); setConfirmationMessage(`Are you sure you want to cancel your campaign "${campaignTitle}"? This cannot be undone.`); setOnConfirmationAction(() => () => handleCancelCampaign(campaignId, campaignTitle)); setShowConfirmationModal(true); };
-    const handleAddOrUpdateVideo = async () => { if (!videoLinkInput) { showMessage('Please paste a URL first.'); return; } setIsPublishing(true); const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput); if (!videoId) { showMessage('Invalid or unsupported URL.'); setIsPublishing(false); return; } let finalThumbnailUrl = autoThumbnailUrl; if (customThumbnailFile) { showMessage('Uploading...'); try { const fileName = `thumb_${currentUser.uid}_${Date.now()}`; const storageRefPath = ref(storage, `creator_uploads/${currentUser.uid}/${fileName}`); await uploadBytes(storageRefPath, customThumbnailFile); finalThumbnailUrl = await getDownloadURL(storageRefPath); showMessage('Thumbnail uploaded!'); } catch (error) { showMessage(`Upload failed: ${error.message}`); setIsPublishing(false); return; } } let newContentRef; try { const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`); newContentRef = await addDoc(contentCollectionRef, { title: `New from ${creatorProfile.creatorName}`, description: `...`, mainUrl: videoLinkInput, customThumbnailUrl: finalThumbnailUrl, embedUrl, videoPlatform: platform, creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, contentType: 'Live Feed', orderIndex: Date.now(), isActive: true, createdAt: new Date().toISOString(), createdBy: currentUser.uid, viewCount: 0, likeCount: 0 }); showMessage('Published to Live Feed!'); } catch (error) { showMessage(`Failed to publish: ${error.message}`); setIsPublishing(false); return; } const videoData = { url: videoLinkInput, thumbnailUrl: finalThumbnailUrl, embedUrl, platform, liveFeedContentId: newContentRef.id }; try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: videoData, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: videoData })); showMessage('Featured link has been set!'); } catch (error) { showMessage(`Failed to update profile: ${error.message}`); } finally { setIsPublishing(false); } };
-    const handleRemoveVideo = () => { const videoToRemove = creatorProfile.featuredVideoLink; if (!videoToRemove) return; const deletionLogic = async () => { setIsPublishing(true); if (videoToRemove.liveFeedContentId) { try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/content_items`, videoToRemove.liveFeedContentId)); showMessage('Post removed from Live Feed.'); } catch (error) { showMessage(`Could not remove from feed: ${error.message}`); } } try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: null, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: null })); setVideoLinkInput(''); setCustomThumbnailFile(null); setCustomThumbnailPreview(''); setAutoThumbnailPreview(''); showMessage('Featured link removed.'); } catch (error) { showMessage(`Failed to remove link: ${error.message}`); } finally { setIsPublishing(false); } }; setShowConfirmationModal(true); setConfirmationTitle("Remove Featured Link?"); setConfirmationMessage("Are you sure? This will remove the link and delete the post from the public Live Feed."); setOnConfirmationAction(() => deletionLogic); };
+    const handleAddOrUpdateVideo = async () => { if (!videoLinkInput) { showMessage('Please paste a URL first.'); return; } setIsPublishing(true); const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput); if (!videoId) { showMessage('Invalid or unsupported URL.'); setIsPublishing(false); return; } let finalThumbnailUrl = autoThumbnailUrl; if (customThumbnailFile) { showMessage('Uploading...'); try { const fileName = `thumb_${currentUser.uid}_${Date.now()}`; const storageRefPath = ref(storage, `creator_uploads/${currentUser.uid}/${fileName}`); await uploadBytes(storageRefPath, customThumbnailFile); finalThumbnailUrl = await getDownloadURL(storageRefPath); showMessage('Thumbnail uploaded!'); } catch (error) { showMessage(`Upload failed: ${error.message}`); setIsPublishing(false); return; } } let newContentRef; try { const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`); newContentRef = await addDoc(contentCollectionRef, { title: `New from ${creatorProfile.creatorName}`, description: `...`, mainUrl: videoLinkInput, customThumbnailUrl: finalThumbnailUrl, embedUrl, videoPlatform: platform, creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, contentType: 'Live Feed', orderIndex: Date.now(), isActive: true, createdAt: new Date().toISOString(), createdBy: currentUser.uid, viewCount: 0, likeCount: 0 }); const docRef = await addDoc(contentCollectionRef, newDocData); showMessage('Published to Live Feed!'); } catch (error) { showMessage(`Failed to publish: ${error.message}`); setIsPublishing(false); return; } const videoData = { url: videoLinkInput, thumbnailUrl: finalThumbnailUrl, embedUrl, platform, liveFeedContentId: newContentRef.id }; try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: videoData, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: videoData })); showMessage('Featured link has been set!'); } catch (error) { showMessage(`Failed to update profile: ${error.message}`); } finally { setIsPublishing(false); } };
+    const handleRemoveVideo = () => 
+    
+    { const videoToRemove = creatorProfile.featuredVideoLink; 
+    
+    if (!videoToRemove) return; const deletionLogic = async () => 
+    { setIsPublishing(true); if (videoToRemove.liveFeedContentId) 
+    { try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/content_items`, videoToRemove.liveFeedContentId)); 
+    showMessage('Post removed from Live Feed.'); } catch (error) { showMessage(`Could not remove from feed: ${error.message}`); } } 
+    try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: null, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => 
+    ({ ...prev, featuredVideoLink: null })); setVideoLinkInput(''); setCustomThumbnailFile(null); setCustomThumbnailPreview(''); setAutoThumbnailPreview(''); showMessage('Featured link removed.'); } catch (error) 
+    { showMessage(`Failed to remove link: ${error.message}`); } finally { setIsPublishing(false); } }; 
+    setShowConfirmationModal(true); setConfirmationTitle("Remove Featured Link?"); 
+    
+    
+    setConfirmationMessage("Are you sure? This will remove the link and delete the post from the public Live Feed."); setOnConfirmationAction(() => deletionLogic); };
     if (!creatorProfile) { return (<div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Your Dashboard...</p></div>); }
     const hasActiveOrPendingCampaign = creatorCampaigns.some(c => c.status === 'active' || c.status === 'pending');
     const currentThumbnail = customThumbnailPreview || (creatorProfile.featuredVideoLink?.thumbnailUrl) || autoThumbnailPreview;
@@ -7460,6 +7474,7 @@ const CreatorDashboardScreen = ({
 
                         // START: ADDITION (New MyContentLibraryScreen Component)
 // --- START: FULL COMPONENT REPLACEMENT ---
+// ===================== START: FULL COMPONENT REPLACEMENT =====================
 const MyContentLibraryScreen = ({
     showMessage,
     setActiveScreen,
@@ -7487,7 +7502,7 @@ const MyContentLibraryScreen = ({
     const [libraryItems, setLibraryItems] = useState([]);
     const [loadingLibrary, setLoadingLibrary] = useState(true);
     const [searchTerm, setSearchTerm] = useState(''); // For search
-    const [isLibraryExpanded, setIsLibraryExpanded] = useState(false); // For collapse
+    const [isLibraryExpanded, setIsLibraryExpanded] = useState(true); // For collapse
 
     // State for categories dropdown
     const [availableCategories, setAvailableCategories] = useState([]);
@@ -7536,7 +7551,6 @@ const MyContentLibraryScreen = ({
         if (!title.trim() || !contentType) { showMessage('A Title and Content Type are required.'); return; }
         if (!videoLinkInput.trim()) { showMessage('A video URL is required.'); return; }
         setIsPublishing(true);
-        showMessage("Saving to library...");
         const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput);
         if (!videoId && platform !== 'generic') { showMessage('Could not find a valid video ID in the URL provided.'); setIsPublishing(false); return; }
         let finalThumbnailUrl = autoThumbnailUrl || 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA';
@@ -7560,12 +7574,9 @@ const MyContentLibraryScreen = ({
                 contentType: contentType, isActive: true, isFeatured: false, createdAt: new Date().toISOString(),
                 createdBy: currentUser.uid, viewCount: 0, likeCount: 0
             };
-            // Step 2: Add the document to Firestore and get its reference
-            const docRef = await addDoc(contentCollectionRef, newDocData);
+            // Step 2: Add the document to Firestore. The onSnapshot listener will handle the UI update.
+            await addDoc(contentCollectionRef, newDocData);
             
-            // Step 3 (THE FIX): Instantly add the new item to the screen's local list
-            setLibraryItems(prevItems => [{ id: docRef.id, ...newDocData }, ...prevItems]);
-
             showMessage(`"${title.trim()}" was added to your library.`);
             resetForm();
         } catch (error) { console.error("Error adding content to library:", error); showMessage(`Failed to save content: ${error.message}`);
@@ -7694,6 +7705,7 @@ const MyContentLibraryScreen = ({
         </div>
     );
 };
+
 // --- END: FULL COMPONENT REPLACEMENT ---
 
 // =========== START REPLACEMENT ===========
