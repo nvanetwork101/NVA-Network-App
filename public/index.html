@@ -4816,7 +4816,7 @@ const AdminContentManagerScreen = ({
         if (customThumbnailFile) {
             showMessage('Uploading custom thumbnail...');
             try {
-                const fileName = `content_thumbnails/${currentUser.uid}_${Date.now()}_${customThumbnailFile.name}`;
+                const fileName = `content_thumbnails/${currentUser.uid}/${Date.now()}_${customThumbnailFile.name}`;
                 const storageRefPath = ref(storage, fileName);
                 await uploadBytes(storageRefPath, customThumbnailFile);
                 finalThumbnailUrl = await getDownloadURL(storageRefPath);
@@ -7550,15 +7550,22 @@ const MyContentLibraryScreen = ({
                 showMessage('Thumbnail uploaded successfully!');
             } catch (error) { console.error("Error uploading custom thumbnail:", error); showMessage(`Thumbnail upload failed: ${error.message}`); setIsPublishing(false); return; }
         }
-        try {
+       try {
             const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
-            await addDoc(contentCollectionRef, {
+            // Step 1: Prepare the data for the new document
+            const newDocData = {
                 title: title.trim(), description: description.trim(), mainUrl: videoLinkInput,
                 customThumbnailUrl: finalThumbnailUrl, embedUrl: embedUrl, videoPlatform: platform,
                 creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, creatorProfilePictureUrl: creatorProfile.profilePictureUrl || '',
                 contentType: contentType, isActive: true, isFeatured: false, createdAt: new Date().toISOString(),
                 createdBy: currentUser.uid, viewCount: 0, likeCount: 0
-            });
+            };
+            // Step 2: Add the document to Firestore and get its reference
+            const docRef = await addDoc(contentCollectionRef, newDocData);
+            
+            // Step 3 (THE FIX): Instantly add the new item to the screen's local list
+            setLibraryItems(prevItems => [{ id: docRef.id, ...newDocData }, ...prevItems]);
+
             showMessage(`"${title.trim()}" was added to your library.`);
             resetForm();
         } catch (error) { console.error("Error adding content to library:", error); showMessage(`Failed to save content: ${error.message}`);
@@ -7814,10 +7821,7 @@ const MyContentLibraryScreen = ({
         src="https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png"
         alt="NVA Network Logo"
         className="headerLogo"
-         src="YOUR_NEW_FIREBASE_STORAGE_URL_HERE"
-        alt="NVA Network Logo"
-        className="headerLogo"
-        onError={(e) => { e.target.onerror = null; e.target.src='https://firebasestorage.googleapis.com/v0/b/nvanetworkapp.firebasestorage.app/o/Capture.PNG?alt=media&token=7a835e26-225c-492b-a724-a5e46cab994d'; }}
+        onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }}
     />
 </div>
 
@@ -7919,7 +7923,7 @@ const MyContentLibraryScreen = ({
                   </div>
                 );
             } // <--- PASTE THE MISSING CLOSING BRACE HERE
-
+            
                 // --- END OF CORRECTED BLOCK ---
 
                 window.onload = function() {
@@ -7941,4 +7945,3 @@ const MyContentLibraryScreen = ({
     </script>
 </body>
 </html>
-
