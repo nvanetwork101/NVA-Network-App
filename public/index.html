@@ -2124,35 +2124,133 @@
         };
         // ======================= END: UNIFIED NOTIFICATION CODE BLOCK =======================
 
-          // --- NEW HELPER FUNCTION TO BE ADDED ---
-        const extractVideoInfo = (url) => {
-            if (!url) return { videoId: null, thumbnailUrl: null, embedUrl: null, platform: 'unknown', isVertical: false };
-            let videoId = null;
-            let platform = 'unknown';
-            let isVertical = false;
+          // --- START: MASTER REPLACEMENT FOR extractVideoInfo ---
+        const GENERIC_THUMBNAIL_PLACEHOLDER = 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA';
 
-            // YouTube (Standard, Short, Mobile)
+        const extractVideoInfo = (url) => {
+            if (!url || typeof url !== 'string') {
+                return { videoId: null, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl: null, platform: 'unknown', isVertical: false };
+            }
+
+            // 1. YouTube
             const youtubeRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/ ]{11})/;
             const youtubeMatch = url.match(youtubeRegex);
             if (youtubeMatch && youtubeMatch[1]) {
-                videoId = youtubeMatch[1];
-                platform = 'youtube';
-                if (url.includes('/shorts/')) {
-                    isVertical = true;
-                }
-            }
-            // Add other platform regex checks here if needed (e.g., Vimeo, Facebook)
-
-            if (!videoId) {
-                return { videoId: null, thumbnailUrl: null, embedUrl: null, platform: 'unknown', isVertical: false };
+                const videoId = youtubeMatch[1];
+                const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+                const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+                const isVertical = url.includes('/shorts/');
+                return { videoId, thumbnailUrl, embedUrl, platform: 'youtube', isVertical };
             }
 
-            const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-            const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+            // 2. Vimeo
+            const vimeoRegex = /vimeo\.com\/(?:video\/)?(\d+)/;
+            const vimeoMatch = url.match(vimeoRegex);
+            if (vimeoMatch && vimeoMatch[1]) {
+                const videoId = vimeoMatch[1];
+                const thumbnailUrl = GENERIC_THUMBNAIL_PLACEHOLDER;
+                const embedUrl = `https://player.vimeo.com/video/${videoId}?autoplay=1`;
+                return { videoId, thumbnailUrl, embedUrl, platform: 'vimeo', isVertical: false };
+            }
 
-            return { videoId, thumbnailUrl, embedUrl, platform, isVertical };
+            // 3. TikTok
+            const tiktokRegex = /tiktok\.com\/.*\/video\/(\d+)/;
+            const tiktokMatch = url.match(tiktokRegex);
+            if (tiktokMatch && tiktokMatch[1]) {
+                const videoId = tiktokMatch[1];
+                const thumbnailUrl = GENERIC_THUMBNAIL_PLACEHOLDER; 
+                const embedUrl = `https://www.tiktok.com/embed/v2/${videoId}`;
+                return { videoId, thumbnailUrl, embedUrl, platform: 'tiktok', isVertical: true };
+            }
+            
+            // 4. --- NEW: Facebook Video Detection ---
+            // This regex looks for common Facebook video, reel, and watch URLs.
+            const facebookRegex = /facebook\.com\/(?:watch\/?\?v=|.*\/videos\/|.*\/reel\/)(\d+)/;
+            const facebookMatch = url.match(facebookRegex);
+            if(facebookMatch && facebookMatch[1]) {
+                const videoId = facebookMatch[1];
+                // Facebook requires a special embed URL structure using the original URL.
+                const embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&autoplay=true`;
+                return { videoId, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl, platform: 'facebook', isVertical: url.includes('/reel/') };
+            }
+
+            // 5. Generic Fallback (for all other links)
+            return {
+                videoId: null,
+                thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER,
+                embedUrl: url,
+                platform: 'generic',
+                isVertical: false
+            };
         };
+        // --- END: MASTER REPLACEMENT FOR extractVideoInfo ---
 
+              // --- START: NEW DynamicThumbnail Component ---
+        const DynamicThumbnail = ({ item, onClick }) => {
+            const [thumbnailSrc, setThumbnailSrc] = useState(GENERIC_THUMBNAIL_PLACEHOLDER);
+            const [isLoading, setIsLoading] = useState(true);
+
+            useEffect(() => {
+                // This effect runs whenever the 'item' prop changes.
+                setIsLoading(true);
+                let isMounted = true; // Prevents state updates if the component unmounts during fetch
+
+                const fetchThumbnail = async () => {
+                    // Use a local copy of currentUser from the window scope if available
+                    const currentUser = window.firebaseAuth.currentUser; 
+                    const info = extractVideoInfo(item.mainUrl || item.externalLink || item.url);
+
+                    if (item.customThumbnailUrl) {
+                        // A custom thumbnail from the database always takes highest priority.
+                        setThumbnailSrc(item.customThumbnailUrl);
+                    } else if (info.platform === 'youtube') {
+                        // YouTube is synchronous, we can set it directly.
+                        setThumbnailSrc(info.thumbnailUrl);
+                    } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
+                        // For other platforms, we must make an oEmbed API call.
+                        // We will use a free, public CORS proxy for this.
+                        const corsProxy = 'https://cors-anywhere.herokuapp.com/';
+                        let oEmbedUrl = '';
+
+                        if (info.platform === 'tiktok') oEmbedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(item.mainUrl)}`;
+                        if (info.platform === 'vimeo') oEmbedUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(item.mainUrl)}`;
+                        
+                        try {
+                            const response = await fetch(corsProxy + oEmbedUrl);
+                            if (!response.ok) throw new Error('oEmbed request failed');
+                            const data = await response.json();
+                            if (isMounted && data.thumbnail_url) {
+                                setThumbnailSrc(data.thumbnail_url);
+                            }
+                        } catch (error) {
+                            console.error(`Failed to fetch ${info.platform} thumbnail:`, error);
+                            if (isMounted) setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
+                        }
+                    } else {
+                        // For 'generic', 'facebook', or any other unhandled platform, use the placeholder.
+                        setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
+                    }
+                    if (isMounted) setIsLoading(false);
+                };
+
+                fetchThumbnail();
+
+                return () => {
+                    isMounted = false; // Cleanup function
+                };
+            }, [item.id, item.mainUrl]); // Re-run if the item itself changes
+
+            // Render the image with the fetched or default source.
+            return (
+                 <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${thumbnailSrc})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}} onClick={onClick}>
+                    <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+                    {/* The currentUser check needs to be robust, pulling from the global scope */}
+                    {window.firebaseAuth.currentUser && item.id && <LikeButton contentItem={item} currentUser={window.firebaseAuth.currentUser} showMessage={window.showMessage} />}
+                </div>
+            );
+        };
+        // --- END: NEW DynamicThumbnail Component ---
+              
                 // --- CORRECTED AND CONSOLIDATED CONSTANTS ---
                 
         const auth = window.firebaseAuth;
@@ -4811,8 +4909,7 @@ const AdminContentManagerScreen = ({
             videoPlatform = extractedPlatform;
             finalThumbnailUrl = thumbnailUrl;
         } else {
-            finalThumbnailUrl = 'https://placehold.co/150x100/3A3A3A/FFF?text=Generic+Link';
-        }
+            finalThumbnailUrl = GENERIC_THUMBNAIL_PLACEHOLDER;        }
         if (customThumbnailFile) {
             showMessage('Uploading custom thumbnail...');
             try {
@@ -6566,24 +6663,25 @@ useEffect(() => {
         unsubscribeProfile();
         if (user) {
             const creatorDocRef = doc(db, "creators", user.uid);
-            unsubscribeProfile = onSnapshot(creatorDocRef, async (docSnap) => {
-                if (!docSnap.exists()) {
-                    await setDoc(creatorDocRef, { email: user.email, creatorName: user.email.split('@')[0] || "", createdAt: new Date().toISOString(), role: 'user', banned: false, followerCount: 0, followingCount: 0 });
-                } else {
-                    const profileData = docSnap.data();
-                    if (profileData.banned) {
-                        showMessage("Your account has been banned.");
-                        signOut(auth);
-                    } else {
-                        setCreatorProfile(profileData);
-                    }
-                }
-                setAuthLoading(false);
-            }, (error) => {
-                console.error("Profile listener error:", error);
-                signOut(auth);
-                setAuthLoading(false);
-            });
+            unsubscribeProfile = onSnapshot(creatorDocRef, (docSnap) => {
+    // The creation logic is now GONE. This listener ONLY reads.
+    if (docSnap.exists()) {
+        const profileData = docSnap.data();
+        console.log('Auth Listener saw profile with role:', profileData.role); // Diagnostic log
+        if (profileData.banned) {
+            showMessage("Your account has been banned.");
+            signOut(auth);
+        } else {
+            setCreatorProfile(profileData);
+        }
+    }
+    // If doc doesn't exist, it does nothing, because the signup screen is responsible.
+    setAuthLoading(false);
+}, (error) => {
+    console.error("Profile listener error:", error);
+    signOut(auth);
+    setAuthLoading(false);
+});
         } else {
             setCreatorProfile(null);
             setAuthLoading(false);
@@ -6872,23 +6970,22 @@ useEffect(() => {
             </div>
             {isLayoutLoading ? <p>Loading trending...</p> : (
                 <div className="contentGrid">
-                {enrichedLayout.trending.map((item) => (
-                        <div key={item.id || item.title} className="contentCard" onClick={() => handleItemClick(item)}>
-                            <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl || item.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
-                                <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                    {enrichedLayout.trending.map((item) => (
+                            <div key={item.id || item.title} className="contentCard">
+                                {/* This is the line where the new component is correctly used */}
+                                <DynamicThumbnail item={item} onClick={() => handleItemClick(item)} />
+
+                                <p className="contentTitle">{item.title}</p>
+                                {item.type === 'internal' && (
+                                    <div style={{ padding: '0 10px 10px 10px', display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px' }}>
+                                        <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+                                        <span>{item.viewCount || 0} views</span>
+                                    </div>
+                                )}
                             </div>
-                            <p className="contentTitle">{item.title}</p>
-                            {item.type === 'internal' && (
-                                <div style={{ padding: '0 10px 10px 10px', display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px' }}>
-                                    <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                                    <span>{item.viewCount || 0} views</span>
-                                </div>
-                            )}
-                        </div>
-                    )
-                )}
-            </div>
+                        )
+                    )}
+                </div>
             )}
             <div className="sectionHeaderWithButton">
                 <p className="sectionTitle" style={{ marginBottom: '0' }}>Live Feed</p>
@@ -7358,22 +7455,8 @@ const CreatorDashboardScreen = ({
     const handleCancelAdjust = () => { setImageFileToAdjust(null); setShowImageAdjustModal(false); };
     const handleCancelCampaign = async (campaignId, campaignTitle) => { try { const campaignRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaignId); await updateDoc(campaignRef, { status: 'cancelled', updatedAt: new Date().toISOString(), statusChangedAt: new Date().toISOString() }); showMessage(`Campaign "${campaignTitle}" has been cancelled.`); } catch (error) { showMessage(`Failed to cancel campaign: ${error.message}`); } };
     const confirmCancelCampaign = (campaignId, campaignTitle) => { setConfirmationTitle("Cancel Campaign?"); setConfirmationMessage(`Are you sure you want to cancel your campaign "${campaignTitle}"? This cannot be undone.`); setOnConfirmationAction(() => () => handleCancelCampaign(campaignId, campaignTitle)); setShowConfirmationModal(true); };
-    const handleAddOrUpdateVideo = async () => { if (!videoLinkInput) { showMessage('Please paste a URL first.'); return; } setIsPublishing(true); const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput); if (!videoId) { showMessage('Invalid or unsupported URL.'); setIsPublishing(false); return; } let finalThumbnailUrl = autoThumbnailUrl; if (customThumbnailFile) { showMessage('Uploading...'); try { const fileName = `thumb_${currentUser.uid}_${Date.now()}`; const storageRefPath = ref(storage, `creator_uploads/${currentUser.uid}/${fileName}`); await uploadBytes(storageRefPath, customThumbnailFile); finalThumbnailUrl = await getDownloadURL(storageRefPath); showMessage('Thumbnail uploaded!'); } catch (error) { showMessage(`Upload failed: ${error.message}`); setIsPublishing(false); return; } } let newContentRef; try { const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`); newContentRef = await addDoc(contentCollectionRef, { title: `New from ${creatorProfile.creatorName}`, description: `...`, mainUrl: videoLinkInput, customThumbnailUrl: finalThumbnailUrl, embedUrl, videoPlatform: platform, creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, contentType: 'Live Feed', orderIndex: Date.now(), isActive: true, createdAt: new Date().toISOString(), createdBy: currentUser.uid, viewCount: 0, likeCount: 0 }); const docRef = await addDoc(contentCollectionRef, newDocData); showMessage('Published to Live Feed!'); } catch (error) { showMessage(`Failed to publish: ${error.message}`); setIsPublishing(false); return; } const videoData = { url: videoLinkInput, thumbnailUrl: finalThumbnailUrl, embedUrl, platform, liveFeedContentId: newContentRef.id }; try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: videoData, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: videoData })); showMessage('Featured link has been set!'); } catch (error) { showMessage(`Failed to update profile: ${error.message}`); } finally { setIsPublishing(false); } };
-    const handleRemoveVideo = () => 
-    
-    { const videoToRemove = creatorProfile.featuredVideoLink; 
-    
-    if (!videoToRemove) return; const deletionLogic = async () => 
-    { setIsPublishing(true); if (videoToRemove.liveFeedContentId) 
-    { try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/content_items`, videoToRemove.liveFeedContentId)); 
-    showMessage('Post removed from Live Feed.'); } catch (error) { showMessage(`Could not remove from feed: ${error.message}`); } } 
-    try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: null, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => 
-    ({ ...prev, featuredVideoLink: null })); setVideoLinkInput(''); setCustomThumbnailFile(null); setCustomThumbnailPreview(''); setAutoThumbnailPreview(''); showMessage('Featured link removed.'); } catch (error) 
-    { showMessage(`Failed to remove link: ${error.message}`); } finally { setIsPublishing(false); } }; 
-    setShowConfirmationModal(true); setConfirmationTitle("Remove Featured Link?"); 
-    
-    
-    setConfirmationMessage("Are you sure? This will remove the link and delete the post from the public Live Feed."); setOnConfirmationAction(() => deletionLogic); };
+    const handleAddOrUpdateVideo = async () => { if (!videoLinkInput) { showMessage('Please paste a URL first.'); return; } setIsPublishing(true); const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput); if (!videoId) { showMessage('Invalid or unsupported URL.'); setIsPublishing(false); return; } let finalThumbnailUrl = autoThumbnailUrl; if (customThumbnailFile) { showMessage('Uploading...'); try { const fileName = `thumb_${currentUser.uid}_${Date.now()}`; const storageRefPath = ref(storage, `creator_uploads/${currentUser.uid}/${fileName}`); await uploadBytes(storageRefPath, customThumbnailFile); finalThumbnailUrl = await getDownloadURL(storageRefPath); showMessage('Thumbnail uploaded!'); } catch (error) { showMessage(`Upload failed: ${error.message}`); setIsPublishing(false); return; } } let newContentRef; try { const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`); newContentRef = await addDoc(contentCollectionRef, { title: `New from ${creatorProfile.creatorName}`, description: `...`, mainUrl: videoLinkInput, customThumbnailUrl: finalThumbnailUrl, embedUrl, videoPlatform: platform, creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, contentType: 'Live Feed', orderIndex: Date.now(), isActive: true, createdAt: new Date().toISOString(), createdBy: currentUser.uid, viewCount: 0, likeCount: 0 }); showMessage('Published to Live Feed!'); } catch (error) { showMessage(`Failed to publish: ${error.message}`); setIsPublishing(false); return; } const videoData = { url: videoLinkInput, thumbnailUrl: finalThumbnailUrl, embedUrl, platform, liveFeedContentId: newContentRef.id }; try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: videoData, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: videoData })); showMessage('Featured link has been set!'); } catch (error) { showMessage(`Failed to update profile: ${error.message}`); } finally { setIsPublishing(false); } };
+    const handleRemoveVideo = () => { const videoToRemove = creatorProfile.featuredVideoLink; if (!videoToRemove) return; const deletionLogic = async () => { setIsPublishing(true); if (videoToRemove.liveFeedContentId) { try { await deleteDoc(doc(db, `artifacts/${appId}/public/data/content_items`, videoToRemove.liveFeedContentId)); showMessage('Post removed from Live Feed.'); } catch (error) { showMessage(`Could not remove from feed: ${error.message}`); } } try { const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { featuredVideoLink: null, updatedAt: new Date().toISOString() }); setCreatorProfile(prev => ({ ...prev, featuredVideoLink: null })); setVideoLinkInput(''); setCustomThumbnailFile(null); setCustomThumbnailPreview(''); setAutoThumbnailPreview(''); showMessage('Featured link removed.'); } catch (error) { showMessage(`Failed to remove link: ${error.message}`); } finally { setIsPublishing(false); } }; setShowConfirmationModal(true); setConfirmationTitle("Remove Featured Link?"); setConfirmationMessage("Are you sure? This will remove the link and delete the post from the public Live Feed."); setOnConfirmationAction(() => deletionLogic); };
     if (!creatorProfile) { return (<div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Your Dashboard...</p></div>); }
     const hasActiveOrPendingCampaign = creatorCampaigns.some(c => c.status === 'active' || c.status === 'pending');
     const currentThumbnail = customThumbnailPreview || (creatorProfile.featuredVideoLink?.thumbnailUrl) || autoThumbnailPreview;
@@ -7474,7 +7557,6 @@ const CreatorDashboardScreen = ({
 
                         // START: ADDITION (New MyContentLibraryScreen Component)
 // --- START: FULL COMPONENT REPLACEMENT ---
-// ===================== START: FULL COMPONENT REPLACEMENT =====================
 const MyContentLibraryScreen = ({
     showMessage,
     setActiveScreen,
@@ -7502,7 +7584,7 @@ const MyContentLibraryScreen = ({
     const [libraryItems, setLibraryItems] = useState([]);
     const [loadingLibrary, setLoadingLibrary] = useState(true);
     const [searchTerm, setSearchTerm] = useState(''); // For search
-    const [isLibraryExpanded, setIsLibraryExpanded] = useState(true); // For collapse
+    const [isLibraryExpanded, setIsLibraryExpanded] = useState(false); // For collapse
 
     // State for categories dropdown
     const [availableCategories, setAvailableCategories] = useState([]);
@@ -7551,9 +7633,10 @@ const MyContentLibraryScreen = ({
         if (!title.trim() || !contentType) { showMessage('A Title and Content Type are required.'); return; }
         if (!videoLinkInput.trim()) { showMessage('A video URL is required.'); return; }
         setIsPublishing(true);
+        showMessage("Saving to library...");
         const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput);
         if (!videoId && platform !== 'generic') { showMessage('Could not find a valid video ID in the URL provided.'); setIsPublishing(false); return; }
-        let finalThumbnailUrl = autoThumbnailUrl || 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA';
+        let finalThumbnailUrl = autoThumbnailUrl || GENERIC_THUMBNAIL_PLACEHOLDER;
         if (customThumbnailFile) {
             showMessage('Uploading custom thumbnail...');
             try {
@@ -7574,9 +7657,12 @@ const MyContentLibraryScreen = ({
                 contentType: contentType, isActive: true, isFeatured: false, createdAt: new Date().toISOString(),
                 createdBy: currentUser.uid, viewCount: 0, likeCount: 0
             };
-            // Step 2: Add the document to Firestore. The onSnapshot listener will handle the UI update.
-            await addDoc(contentCollectionRef, newDocData);
+            // Step 2: Add the document to Firestore and get its reference
+            const docRef = await addDoc(contentCollectionRef, newDocData);
             
+            // Step 3 (THE FIX): Instantly add the new item to the screen's local list
+            setLibraryItems(prevItems => [{ id: docRef.id, ...newDocData }, ...prevItems]);
+
             showMessage(`"${title.trim()}" was added to your library.`);
             resetForm();
         } catch (error) { console.error("Error adding content to library:", error); showMessage(`Failed to save content: ${error.message}`);
@@ -7705,7 +7791,6 @@ const MyContentLibraryScreen = ({
         </div>
     );
 };
-
 // --- END: FULL COMPONENT REPLACEMENT ---
 
 // =========== START REPLACEMENT ===========
