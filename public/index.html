@@ -2233,6 +2233,50 @@
         };
         // --- END: MASTER REPLACEMENT FOR extractVideoInfo ---
 
+
+                    // --- START: NEW SmartCarouselImage COMPONENT ---
+        const SmartCarouselImage = ({ item, className }) => {
+            const [imageSrc, setImageSrc] = useState(GENERIC_THUMBNAIL_PLACEHOLDER);
+        
+            useEffect(() => {
+                let isMounted = true;
+                const info = extractVideoInfo(item.mainUrl || item.externalLink || item.url);
+        
+                if (item.customThumbnailUrl) {
+                    setImageSrc(item.customThumbnailUrl);
+                } else if (info.platform === 'youtube') {
+                    setImageSrc(info.thumbnailUrl);
+                } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
+                    const fetchOembedThumb = async () => {
+                        try {
+                            const functions = getFunctions(window.firebaseApp);
+                            const oEmbedProxy = httpsCallable(functions, 'oEmbedProxy');
+                            let targetApiUrl = '';
+                            if (info.platform === 'tiktok') targetApiUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(item.mainUrl || item.externalLink)}`;
+                            if (info.platform === 'vimeo') targetApiUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(item.mainUrl || item.externalLink)}`;
+        
+                            const result = await oEmbedProxy({ url: targetApiUrl });
+                            if (isMounted && result.data.thumbnail_url) {
+                                setImageSrc(result.data.thumbnail_url);
+                            }
+                        } catch (error) {
+                            console.error(`Failed to fetch ${info.platform} thumbnail for carousel:`, error);
+                            if (isMounted) setImageSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
+                        }
+                    };
+                    fetchOembedThumb();
+                } else {
+                    setImageSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
+                }
+        
+                return () => { isMounted = false; };
+            }, [item.id, item.mainUrl, item.externalLink, item.customThumbnailUrl]);
+        
+            return <img src={imageSrc} alt={item.title} className={className} onError={(e) => { e.target.onerror = null; e.target.src=GENERIC_THUMBNAIL_PLACEHOLDER; }} />;
+        };
+        // --- END: NEW SmartCarouselImage COMPONENT ---
+
+
               // --- START: NEW DynamicThumbnail Component ---
         const DynamicThumbnail = ({ item, onClick }) => {
             const [thumbnailSrc, setThumbnailSrc] = useState(GENERIC_THUMBNAIL_PLACEHOLDER);
@@ -3789,7 +3833,7 @@ const AdminDashboardScreen = ({
             {selectedAdminSubScreen === 'Overview' && (
                 <>
                     {creatorProfile.role === 'admin' && banRequests.length > 0 && ( <section className="dashboardSection" style={{ border: '2px solid #FFD700' }}> <p className="dashboardSectionTitle">Pending Authority Ban Requests ({banRequests.length})</p> <div className="dashboardContentList"> {banRequests.map(req => ( <div key={req.id} className="adminDashboardItem"> <div style={{ flexGrow: 1 }}> <p className="adminDashboardItemTitle">Target: {req.targetUserName}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Requested by: {req.requesterName}</p> </div> <button className="adminActionButton approve" onClick={() => handleApproveBanRequest(req)}>Approve Ban</button> <button className="adminActionButton reject" onClick={() => handleDenyBanRequest(req)}>Deny Request</button> </div> ))} </div> </section> )}
-                   <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList"> {filteredUsers.map(user => (
+                   <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList" style={{ maxHeight: '50vh', overflowY: 'auto' }}> {filteredUsers.map(user => (
     <div key={user.id} className="adminDashboardItem" style={{alignItems: 'center'}}>
         {/* This new wrapper makes the left side clickable */}
         <div 
@@ -3804,10 +3848,31 @@ const AdminDashboardScreen = ({
             <div>
                 <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p>
                 <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p>
-                <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p>
+                <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Account Status: {user.banned ? 'Banned' : 'Active'}</p>
             </div>
         </div>
-        {/* These are your original controls, now reinstated */}
+
+        {/* This block defines the activity status but does not render anything. */}
+        {(() => {
+            const now = new Date();
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            const lastLoginDate = user.lastLogin ? new Date(user.lastLogin) : null;
+            let activityStatus = { text: 'Inactive', color: '#888' }; // Default for users logged in >30 days ago
+
+            if (!lastLoginDate) {
+                activityStatus = { text: 'Never', color: '#888' };
+            } else if (lastLoginDate > sevenDaysAgo) {
+                activityStatus = { text: 'Active', color: '#00FF00' };
+            } else if (lastLoginDate > thirtyDaysAgo) {
+                activityStatus = { text: 'Recent', color: '#FFD700' };
+            }
+            
+            // This is the only new visual element that will be rendered.
+            return <p style={{ fontSize: '12px', color: activityStatus.color, marginRight: 'auto', alignSelf: 'center' }}><strong>Activity:</strong> {activityStatus.text}</p>;
+        })()}
+
+        {/* These are your original controls, which remain unchanged. */}
         <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}>
             {currentUser.uid !== user.id && <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} onClick={() => confirmToggleBan(user)} disabled={isSubmittingRequest === user.id}> {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')} </button>}
             <div className="formGroup" style={{marginBottom: 0}}>
@@ -4502,12 +4567,40 @@ const AdminDashboardScreen = ({
                     setImagePreview('');
                     return;
                 }
-                const videoInfo = extractVideoInfo(destinationUrl);
-                if (videoInfo && videoInfo.thumbnailUrl) {
-                    setImagePreview(videoInfo.thumbnailUrl);
-                } else {
-                    setImagePreview(destinationUrl);
-                }
+                const handler = setTimeout(() => {
+                    const fetchPreview = async () => {
+                        const info = extractVideoInfo(destinationUrl);
+
+                        if (info.platform === 'youtube') {
+                            setImagePreview(info.thumbnailUrl);
+                        } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
+                            try {
+                                const functions = getFunctions(window.firebaseApp);
+                                const oEmbedProxy = httpsCallable(functions, 'oEmbedProxy');
+                                
+                                let targetApiUrl = '';
+                                if (info.platform === 'tiktok') targetApiUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(destinationUrl)}`;
+                                if (info.platform === 'vimeo') targetApiUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(destinationUrl)}`;
+
+                                const result = await oEmbedProxy({ url: targetApiUrl });
+                                if (result.data && result.data.thumbnail_url) {
+                                    setImagePreview(result.data.thumbnail_url);
+                                } else {
+                                    setImagePreview(GENERIC_THUMBNAIL_PLACEHOLDER);
+                                }
+                            } catch (error) {
+                                console.error(`Failed to fetch ${info.platform} preview for Ad Modal:`, error);
+                                setImagePreview(GENERIC_THUMBNAIL_PLACEHOLDER);
+                            }
+                        } else {
+                            setImagePreview(GENERIC_THUMBNAIL_PLACEHOLDER);
+                        }
+                    };
+
+                    fetchPreview();
+                }, 500); // Wait 500ms after user stops typing
+
+                return () => clearTimeout(handler);
             }, [destinationUrl, imageFile]);
 
             const handleFileChange = (e) => {
@@ -4535,7 +4628,8 @@ const AdminDashboardScreen = ({
                         const finalImageUrl = await getDownloadURL(snapshot.ref);
                         showMessage("Image uploaded successfully!");
                         
-                        // --- CRITICAL FIX: onSave is called *inside* the successful async block ---
+                        // The ONLY job in the success path is to call onSave.
+                        // The parent component will handle closing the modal.
                         onSave({
                             type: 'external',
                             title,
@@ -4543,12 +4637,10 @@ const AdminDashboardScreen = ({
                             imageUrl: finalImageUrl,
                             orderIndex: Date.now()
                         });
-                        setIsUploading(false);
-                        onCancel(); // Close the modal
 
                     } catch (error) {
                         showMessage(`Image upload failed: ${error.message}`);
-                        setIsUploading(false);
+                        setIsUploading(false); // Reset loading state on error.
                     }
                 } else {
                     // This is the path for URL-based images
@@ -4570,10 +4662,10 @@ const AdminDashboardScreen = ({
             return (
                 <div className="confirmationModalOverlay" style={{ zIndex: 3000 }}>
                     <div className="confirmationModalContent" style={{ textAlign: 'left', maxWidth: '500px' }}>
-                        <p className="confirmationModalTitle">Add External Ad/Promotion</p>
+                        <p className="confirmationModalTitle">Add External Link</p>
                         <div className="formGroup">
-                            <label className="formLabel">Ad Title:</label>
-                            <input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Monster Energy Deal" required/>
+                            <label className="formLabel">Link Title:</label>
+                            <input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., My New Music Video" required/>
                         </div>
                         <div className="formGroup">
                             <label className="formLabel">Destination URL:</label>
@@ -4597,7 +4689,7 @@ const AdminDashboardScreen = ({
                         <div className="confirmationModalButtons">
                             <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
                             <button className="confirmationButton confirm" onClick={handleSave} disabled={isUploading}>
-                                {isUploading ? 'Uploading...' : 'Save Ad'}
+                               {isUploading ? 'Uploading...' : 'Save Link'}
                             </button>
                         </div>
                     </div>
@@ -4606,6 +4698,75 @@ const AdminDashboardScreen = ({
         };
         // --- END: NEW COMPONENT ---
 
+                            // --- START: NEW ContentSelectorModal COMPONENT ---
+        const ContentSelectorModal = ({ showMessage, onSelect, onCancel }) => {
+            const [contentItems, setContentItems] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [searchTerm, setSearchTerm] = useState('');
+
+            useEffect(() => {
+                const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
+                const q = query(contentCollectionRef, orderBy('createdAt', 'desc'), limit(100)); // Get latest 100 items
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const fetchedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setContentItems(fetchedItems);
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Error fetching library content for selector:", error);
+                    showMessage("Failed to load content library.");
+                    setLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, []);
+
+            const filteredItems = contentItems.filter(item => 
+                item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.creatorName.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            return (
+                <div className="confirmationModalOverlay" style={{ zIndex: 3000 }}>
+                    <div className="confirmationModalContent" style={{ maxWidth: '600px', textAlign: 'left' }}>
+                        <p className="confirmationModalTitle">Select Content from Library</p>
+                        <div className="formGroup">
+                            <input 
+                                type="text" 
+                                className="formInput" 
+                                placeholder="Search by title or creator..." 
+                                value={searchTerm} 
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <div className="dashboardContentList" style={{ maxHeight: '40vh', overflowY: 'auto' }}>
+                            {loading ? <p>Loading...</p> : 
+                                filteredItems.length === 0 ? <p className="dashboardItem">No content found.</p> :
+                                filteredItems.map(item => (
+                                    <div 
+                                        key={item.id} 
+                                        className="adminDashboardItem" 
+                                        style={{cursor: 'pointer'}} 
+                                        onClick={() => onSelect(item)}
+                                    >
+                                        <img src={item.customThumbnailUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
+                                        <div style={{flexGrow: 1, marginLeft: '10px'}}>
+                                            <p className="adminDashboardItemTitle">{item.title}</p>
+                                            <p style={{fontSize: '12px', color: '#AAA'}}>by {item.creatorName}</p>
+                                        </div>
+                                    </div>
+                                ))
+                            }
+                        </div>
+                        <div className="confirmationModalButtons" style={{justifyContent: 'center', marginTop: '20px'}}>
+                            <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        // --- END: NEW ContentSelectorModal COMPONENT ---
+        
         // --- START: NEW COMPONENT ---
         const AdminCurationModal = ({ curationTarget, showMessage, onCancel, contentItems }) => {
             const [curatedItems, setCuratedItems] = useState([]);
@@ -4728,7 +4889,10 @@ const AdminDashboardScreen = ({
                                         <img src={item.customThumbnailUrl || item.imageUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
                                         <div style={{flexGrow: 1, marginLeft: '10px'}}>
                                             <p className="adminDashboardItemTitle">{item.title}</p>
-                                            <p style={{fontSize: '12px', color: '#AAA'}}>{item.type === 'internal' ? `by ${item.creatorName || '...loading'}` : 'External Ad'}</p>
+                                            {/* This paragraph will now ONLY render if the item is internal, removing the 'External Ad' label entirely. */}
+                                            {item.type === 'internal' && (
+                                                <p style={{fontSize: '12px', color: '#AAA'}}>by {item.creatorName || '...loading'}</p>
+                                            )}
                                         </div>
                                         <div style={{display: 'flex', gap: '5px'}}>
                                             <button onClick={() => handleMove(index, -1)} disabled={index === 0} className="adminActionButton" style={{width: '30px'}}>▲</button>
@@ -4745,7 +4909,7 @@ const AdminDashboardScreen = ({
                                 <span className="buttonText">Add from Library</span>
                             </button>
                              <button className="button" onClick={() => setShowExternalAdModal(true)}>
-                                <span className="buttonText">Add External Ad</span>
+                                <span className="buttonText">Add External Link</span>
                             </button>
                         </div>
 
@@ -5830,36 +5994,81 @@ const AdminContentManagerScreen = ({
         
         // --- FIND and REPLACE the ENTIRE CategoriesScreen component with this block ---
 
-    const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, currentUser, creatorProfile, setActiveScreen, 
-    handleVideoPress }) => {
+    const CategoriesScreen = ({ showMessage, currentUser, creatorProfile, setActiveScreen, handleVideoPress }) => {
+    // State managed internally by this component
+    const [isLive, setIsLive] = useState(false);
+    const [countdownText, setCountdownText] = useState('');
+    const [liveThumbnail, setLiveThumbnail] = useState('');
+    const [liveEventSettings, setLiveEventSettings] = useState(null); // Full event doc
+    
+    // State for managing categories and content
     const [categories, setCategories] = useState([]);
     const [activeCategory, setActiveCategory] = useState('Live Premieres');
     const [content, setContent] = useState([]);
     const [loadingCategories, setLoadingCategories] = useState(true);
     const [loadingContent, setLoadingContent] = useState(false);
-    
-    // State to hold the specific settings for the Live Premiere event
-    const [liveEventSettings, setLiveEventSettings] = useState(null);
-    const [showMore, setShowMore] = useState(false); // NEW: State for the dropdown
+    const [showMore, setShowMore] = useState(false);
 
+    // Effect to get all category tabs AND to run the countdown logic
     useEffect(() => {
         const categoriesRef = collection(db, "content_categories");
         const q = query(categoriesRef, where("isActive", "==", true), orderBy("orderIndex", "asc"));
+        let countdownInterval = null;
+
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setCategories(fetchedCategories);
             setLoadingCategories(false);
-            
+
             const liveDoc = fetchedCategories.find(cat => cat.name === 'Live Premieres');
-            setLiveEventSettings(liveDoc || null);
+            setLiveEventSettings(liveDoc || null); // Store the entire event doc
+
+            clearInterval(countdownInterval); // Clear previous timer on update
+            
+            if (!liveDoc || !liveDoc.liveStreamStartTime) {
+                setIsLive(false);
+                setCountdownText('');
+                setLiveThumbnail('');
+                return;
+            }
+
+            const startTime = liveDoc.liveStreamStartTime.toDate();
+            const liveUrl = liveDoc.liveStreamUrl || '';
+            setLiveThumbnail(liveDoc.liveStreamThumbnailUrl || '');
+
+            countdownInterval = setInterval(() => {
+                const now = new Date();
+                const distance = startTime - now;
+                if (distance < 0) {
+                    clearInterval(countdownInterval);
+                    setCountdownText('');
+                    setIsLive(liveUrl.trim() !== '');
+                } else {
+                    setIsLive(false);
+                    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                    let parts = [];
+                    if (days > 0) parts.push(`${days}d`);
+                    if (hours > 0) parts.push(`${hours}h`);
+                    if (minutes > 0) parts.push(`${minutes}m`);
+                    if (days === 0 && hours === 0 && minutes < 1) parts.push(`${seconds}s`);
+                    else if(days === 0 && hours === 0) parts.push(`${minutes}m`);
+                    setCountdownText(parts.join(' '));
+                }
+            }, 1000);
         });
-        return () => unsubscribe();
+
+        return () => {
+            unsubscribe();
+            clearInterval(countdownInterval);
+        };
     }, []);
 
+    // Effect for fetching content for other tabs
     useEffect(() => {
-        if (!activeCategory || activeCategory === 'Live Premieres') {
-            setContent([]); setLoadingContent(false); return;
-        }
+        if (!activeCategory || activeCategory === 'Live Premieres') { setContent([]); setLoadingContent(false); return; }
         setLoadingContent(true);
         const contentRef = collection(db, `artifacts/${appId}/public/data/content_items`);
         const q = query(contentRef, where('contentType', '==', activeCategory), where('isActive', '==', true), orderBy('createdAt', 'desc'));
@@ -5870,29 +6079,21 @@ const AdminContentManagerScreen = ({
         return () => unsubscribe();
     }, [activeCategory]);
     
-    // NEW: Function to handle category clicks and close the dropdown
-    const handleCategoryClick = (categoryName) => {
-        setActiveCategory(categoryName);
-        setShowMore(false);
-    };
-
+    const handleCategoryClick = (categoryName) => { setActiveCategory(categoryName); setShowMore(false); };
+    
+    // The LiveStreamPlayer sub-component is now entirely self-reliant on this screen's internal state
     const LiveStreamPlayer = () => {
-        // Master Access Check Logic
         const hasAccess = () => {
             if (!liveEventSettings?.isTicketedEvent) return true;
             if (!currentUser || !creatorProfile) return false;
             if (creatorProfile.premiumExpiresAt && creatorProfile.premiumExpiresAt.toDate() > new Date()) return true;
             const eventId = liveEventSettings.liveStreamEventId;
-            if (eventId && creatorProfile.purchasedTickets && creatorProfile.purchasedTickets[eventId]) return true;
-            return false;
+            return eventId && creatorProfile.purchasedTickets && creatorProfile.purchasedTickets[eventId];
         };
-
         const canViewStream = hasAccess();
 
         if (!isLive) {
-             if (countdownText) {
-                return ( <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}> {liveThumbnail ? ( <img src={liveThumbnail} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'}} /> ) : ( <div style={{ margin: '0 auto', width: '100%', maxWidth: '480px', height: '250px', backgroundColor: '#2A2A2A', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><p className="heading">Coming Soon</p></div> )} <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p> <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p> </div> );
-            }
+            if (countdownText) { return ( <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}> {liveThumbnail ? ( <img src={liveThumbnail} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'}} /> ) : ( <div style={{ margin: '0 auto', width: '100%', maxWidth: '480px', height: '250px', backgroundColor: '#2A2A2A', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><p className="heading">Coming Soon</p></div> )} <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p> <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p> </div> ); }
             return ( <div style={{textAlign: 'center', paddingTop: '50px'}}> <p className="heading">Stream Offline</p> <p className="subHeading">No live premiere is currently scheduled.</p> </div> );
         }
 
@@ -5902,83 +6103,88 @@ const AdminContentManagerScreen = ({
                 const finalEmbedUrl = embedUrl || `${liveEventSettings?.liveStreamUrl}?autoplay=1`;
                 return ( <div style={{ display: 'flex', justifyContent: 'center' }}> <div className={`videoModalContent`} style={{position: 'relative', width: '100%', maxWidth: '900px', height: 'calc(100vh - 300px)', minHeight: '400px', boxShadow: 'none', background: 'transparent'}}> <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`} style={{height: '100%', paddingBottom: 0}}> <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe> </div> </div> </div> );
             } else {
-                return ( <div style={{textAlign: 'center', paddingTop: '50px'}}> {liveThumbnail && <img src={liveThumbnail} alt="Event" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', opacity: 0.3}} />} <p className="heading" style={{color: '#FFD700'}}>This is a Premium Event</p> <p className="subHeading">The live stream has started. Please purchase a ticket or subscribe to view.</p> <button className="button" onClick={() => setActiveScreen('Premium')}> <span className="buttonText">Purchase Ticket</span> </button> </div> );
+                return ( <div style={{textAlign: 'center', paddingTop: '50px'}}> {liveThumbnail && <img src={liveThumbnail} alt="Event" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', opacity: 0.3}} />} <p className="heading" style={{color: '#FFD700'}}>This is a Premium Event</p> <p className="subHeading">The live stream has started. Please purchase a ticket or subscribe to view.</p> <button className="button" onClick={() => setActiveScreen('Premium')}> <span className="buttonText">Purchase Access</span> </button> </div> );
             }
         }
         return null;
     };
     
-    // NEW: Logic to split categories for the dropdown menu
     const visibleCategories = categories.slice(0, 2);
     const dropdownCategories = categories.slice(2);
 
-    return (
-        <div className="screenContainer">
-            <p className="sectionTitle">Discover Content</p>
-            {loadingCategories ? <p>Loading categories...</p> : (
-                <div className="categoryTabs">
-                    {/* Render the first 2 (or fewer) categories */}
-                    {visibleCategories.map(category => (
-                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
-                            <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
-                        </button>
-                    ))}
-                    {/* If there are more than 2 categories, render the dropdown */}
-                    {dropdownCategories.length > 0 && (
-                        <div className="more-content-button">
-                            <button className="categoryTab" onClick={() => setShowMore(!showMore)}>
-                                <span className="categoryTabText">More Content ▼</span>
-                            </button>
-                            {showMore && (
-                                <div className="more-content-dropdown">
-                                    {dropdownCategories.map(category => (
-                                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
-                                            <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
-            
-            <div className="categoryContent">
-                {activeCategory === 'Live Premieres' ? (
-                    <LiveStreamPlayer />
-                ) : loadingContent ? (
-                    <p className="paragraph" style={{textAlign: 'center'}}>Loading content...</p>
-                ) : content.length === 0 ? (
-                    <p className="paragraph" style={{textAlign: 'center'}}>There is no content in this category yet.</p>
-                ) : (
-                    <div className="contentGrid">
-                        {content.map((item) => (
-                            <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
-                                <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
-                                    <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
-                                    {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
-                                </div>
-                                <p className="contentTitle">{item.title}</p>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
+    return ( <div className="screenContainer"> <p className="sectionTitle">Discover Content</p> {loadingCategories ? <p>Loading categories...</p> : ( <div className="categoryTabs"> {visibleCategories.map(category => ( <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}> <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span> </button> ))} {dropdownCategories.length > 0 && ( <div className="more-content-button"> <button className="categoryTab" onClick={() => setShowMore(!showMore)}> <span className="categoryTabText">More Content ▼</span> </button> {showMore && ( <div className="more-content-dropdown"> {dropdownCategories.map(category => ( <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}> <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span> </button> ))} </div> )} </div> )} </div> )} <div className="categoryContent"> {activeCategory === 'Live Premieres' ? <LiveStreamPlayer /> : loadingContent ? <p className="paragraph" style={{textAlign: 'center'}}>Loading content...</p> : content.length === 0 ? <p className="paragraph" style={{textAlign: 'center'}}>There is no content in this category yet.</p> : ( <div className="contentGrid"> {content.map((item) => ( <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}> <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}> <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg> {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />} </div> <p className="contentTitle">{item.title}</p> </div> ))} </div> )} </div> </div> );
 };
 
         
         // --- NEW HeaderLiveButton Component ---
-const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
+const HeaderLiveButton = ({ onClick }) => {
+    const [isLive, setIsLive] = useState(false);
+    const [countdownText, setCountdownText] = useState('');
+
+    useEffect(() => {
+        const categoriesRef = collection(db, "content_categories");
+        const q = query(categoriesRef, where("name", "==", "Live Premieres"));
+        let countdownInterval = null;
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            clearInterval(countdownInterval);
+
+            if (snapshot.empty) {
+                setIsLive(false);
+                setCountdownText('');
+                return;
+            }
+
+            const liveDocData = snapshot.docs[0].data();
+            const startTime = liveDocData.liveStreamStartTime ? liveDocData.liveStreamStartTime.toDate() : null;
+            const liveUrl = liveDocData.liveStreamUrl || '';
+            
+            if (!startTime) {
+                setIsLive(false);
+                setCountdownText('');
+                return;
+            }
+
+            countdownInterval = setInterval(() => {
+                const now = new Date();
+                const distance = startTime - now;
+
+                if (distance < 0) {
+                    clearInterval(countdownInterval);
+                    setCountdownText('');
+                    setIsLive(liveUrl.trim() !== '');
+                } else {
+                    setIsLive(false);
+                    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                    
+                    let parts = [];
+                    if (days > 0) parts.push(`${days}d`);
+                    if (hours > 0) parts.push(`${hours}h`);
+                    if (minutes > 0) parts.push(`${minutes}m`);
+                    if (days === 0 && hours === 0 && minutes < 1) parts.push(`${seconds}s`);
+                    else if(days === 0 && hours === 0) parts.push(`${minutes}m`);
+                    
+                    setCountdownText(parts.join(' '));
+                }
+            }, 1000);
+        });
+
+        return () => {
+            unsubscribe();
+            clearInterval(countdownInterval);
+        };
+    }, []);
+
     if (!isLive && !countdownText) {
-        return null; // The button remains invisible if no event is set
+        return null;
     }
 
     return (
         <button className={`header-live-button ${isLive ? 'live' : 'countdown'}`} onClick={onClick}>
             <span>{isLive ? '🔴' : '⏳'}</span>
-            {/* This text is now more descriptive */}
             <span>{isLive ? 'Live Premieres: LIVE NOW' : `Live Premieres In: ${countdownText}`}</span>
         </button>
     );
@@ -6926,13 +7132,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const [confirmationMessage, setConfirmationMessage] = useState('');
             const [onConfirmationAction, setOnConfirmationAction] = useState(null);
             const [featuredContentSlots, setFeaturedContentSlots] = useState(null);
-            // --- MOVED FROM CategoriesScreen to App (GLOBAL STATE) ---
-            const [isLive, setIsLive] = useState(false);
-            const [countdownText, setCountdownText] = useState('');
-            const [liveThumbnail, setLiveThumbnail] = useState('');
-
-           // --- PASTE THIS ENTIRE CORRECTED BLOCK ---
-
+           
 useEffect(() => {
     let unsubscribeProfile = () => {};
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -6982,68 +7182,8 @@ useEffect(() => {
                 });
             return () => unsubscribe(); // Cleanup listener
             }, []);
-           
-            // --- NEW GLOBAL useEffect for Countdown Logic ---
-            useEffect(() => {
-    const categoriesRef = collection(db, "content_categories");
-    const q = query(categoriesRef, where("name", "==", "Live Premieres"));
-    let countdownInterval = null;
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-    console.log('%cLive Premieres data updated in Firestore.', 'color: cyan; font-weight: bold;');
-        clearInterval(countdownInterval);
-
-        if (snapshot.empty) {
-            setIsLive(false);
-            setCountdownText('');
-            setLiveThumbnail(''); // Clear thumbnail
-            return;
-        }
-
-        const liveDocData = snapshot.docs[0].data();
-        const startTime = liveDocData.liveStreamStartTime ? liveDocData.liveStreamStartTime.toDate() : null;
-        const liveUrl = liveDocData.liveStreamUrl || '';
-        setLiveThumbnail(liveDocData.liveStreamThumbnailUrl || ''); // Get thumbnail
-
-        if (!startTime) {
-            setIsLive(false);
-            setCountdownText('');
-            return;
-        }
-
-        countdownInterval = setInterval(() => {
-            const now = new Date();
-            const distance = startTime - now;
-
-            if (distance < 0) {
-                clearInterval(countdownInterval);
-                setCountdownText('');
-                setIsLive(liveUrl.trim() !== '');
-            } else {
-                setIsLive(false);
-                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-                
-                let parts = [];
-                if (days > 0) parts.push(`${days}d`);
-                if (hours > 0) parts.push(`${hours}h`);
-                if (minutes > 0) parts.push(`${minutes}m`);
-                if (days === 0 && hours === 0 && minutes < 1) parts.push(`${seconds}s`);
-                else if(days === 0 && hours === 0) parts.push(`${minutes}m`);
-
-                setCountdownText(parts.join(' '));
-            }
-        }, 1000);
-    });
-
-    return () => {
-        unsubscribe();
-        clearInterval(countdownInterval);
-    };
-}, []);
-                      
+          
+                                 
             const showMessage = (msg) => {
                 setMessage(msg);
                 setTimeout(() => setMessage(''), 3000);
@@ -7236,7 +7376,7 @@ useEffect(() => {
                     {isLayoutLoading ? Array.from({ length: 5 }).map((_, i) => <div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>)
                     : displayFeatured.map((item, index) => (
                         <div key={`${item.id || item.title}-${index}`} className="horizontal-carousel-item" onClick={() => handleItemClick(item)} style={{cursor: 'pointer'}}>
-                            <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="carousel-image" />
+                            <SmartCarouselImage item={item} className="carousel-image" />
                             {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
                         </div>
                     ))}
@@ -7275,10 +7415,13 @@ useEffect(() => {
                     {isLiveFeedLoading ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="vertical-carousel-item" style={{backgroundColor: '#1A1A1A'}}></div>)
                     : displayLiveFeed.map((item, index) => (
                         <div key={item.id ? `${item.id}-${index}` : `${item.title}-${index}`} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleItemClick(item)}>
-                            <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="liveFeedThumbnail" />
+                            <SmartCarouselImage item={item} className="liveFeedThumbnail" />
                             <div className="liveFeedContent">
                                 <p className="liveFeedTitle">{item.title}</p>
-                                <p className="liveFeedCreator">{item.type === 'internal' ? `by ${item.creatorName}` : 'Promotion'}</p>
+                                {/* This paragraph will now ONLY render if the item is internal, removing the 'Promotion' label entirely. */}
+                                {item.type === 'internal' && (
+                                    <p className="liveFeedCreator">by {item.creatorName}</p>
+                                )}
                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px', marginTop: '4px' }}>
                             <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
                             <span>{item.viewCount || 0} views</span>
@@ -7392,11 +7535,11 @@ useEffect(() => {
             const AboutContactScreen = () => (
                 <div className="screenContainer">
                     <p className="heading">About NVA Network</p>
-                    <p className="subHeading">The Caribbean’s first mobile-first entertainment network, dedicated to bringing the best of Guyanese content to a global stage.</p>
+                    <p className="subHeading">The Caribbean’s first mobile-first entertainment network, dedicated to bringing the best of Caribbean content to a global stage.</p>
 
                     <p className="paragraph">
                         NVA Network is committed to empowering local creators and connecting audiences worldwide
-                        with unique and vibrant stories from Guyana. Our mission is to provide a platform for Guyanese
+                        with unique and vibrant stories from Guyana. Our mission is to provide a platform for Caribbean
                         comedians, filmmakers, interviewers, and live event organizers to showcase their talent,
                         reach new audiences, and build sustainable careers.
                     </p>
@@ -7415,8 +7558,8 @@ useEffect(() => {
                 const PLATFORM_FEE_PERCENTAGE = 0.07;
                 return (
                     <div className="screenContainer">
-                        <p className="heading">Support Guyanese Creators!</p>
-                        <p className="subHeading">Help bring more authentic Guyanese content to life.</p>
+                        <p className="heading">Support Caribbean Creators!</p>
+                        <p className="subHeading">Help bring more authentic Caribbean content to life.</p>
                         <p className="paragraph">
                             International crowdfunding platforms often don't support direct bank accounts in Guyana,
                             making it difficult for our talented creators to receive global support.
@@ -7445,7 +7588,7 @@ useEffect(() => {
                         </button>
                         <p className="smallText">(Discover campaigns and support your favorite creators!)</p>
                         <p className="paragraph" style={{ marginTop: '20px' }}>
-                            Your generosity empowers Guyanese voices and helps us build a stronger, more vibrant content ecosystem.
+                            Your generosity empowers Caribbean voices and helps us build a stronger, more vibrant content ecosystem.
                             Thank you for being a part of the NVA Network family!
                         </p>
                         <p className="smallText" style={{ marginTop: '20px', color: '#888' }}>
@@ -8240,13 +8383,10 @@ const MyContentLibraryScreen = ({
 
 // =========== START REPLACEMENT ===========
               const memoizedScreen = React.useMemo(() => {
-                // This special case for the 'Discover' screen is now correctly included.
                 if (activeScreen === 'Discover') {
+                    // This now correctly calls the self-sufficient CategoriesScreen without the old props.
                     return <CategoriesScreen 
                         showMessage={showMessage} 
-                        isLive={isLive} 
-                        countdownText={countdownText} 
-                        liveThumbnail={liveThumbnail} 
                         currentUser={currentUser} 
                         creatorProfile={creatorProfile} 
                         setActiveScreen={setActiveScreen} 
@@ -8263,7 +8403,7 @@ const MyContentLibraryScreen = ({
                     />;
                 }
             
-                // The main switch statement handles all other screens.
+                // The main switch statement remains unchanged, correctly rendering all other screens.
                 switch (activeScreen) {
                     case 'Home':
                         return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots} setActiveScreen={setActiveScreen} />;
@@ -8274,7 +8414,7 @@ const MyContentLibraryScreen = ({
                     case 'DiscoverUsers':
                         return <DiscoverUsersScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} creatorProfile={creatorProfile} setSelectedUserId={setSelectedUserId}/>;
                     case 'UserProfile':
-                        return <UserProfileScreen selectedUserId={selectedUserId} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} showMessage={showMessage} currentUser={currentUser}/>;
+                        return <UserProfileScreen selectedUserId={selectedUserId} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} showMessage={showMessage} currentUser={currentUser} creatorProfile={creatorProfile} />;
                     case 'MyFollows':
                         return <MyFollowsScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId}/>;
                     case 'Followers':
@@ -8323,7 +8463,8 @@ const MyContentLibraryScreen = ({
                     default:
                         return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots} setActiveScreen={setActiveScreen} />;
                 }
-            }, [activeScreen, currentUser, creatorProfile, featuredContentSlots, selectedAdminSubScreen, pledgeIdForConfirmation, isLive, countdownText, liveThumbnail]);
+                // The dependency array is now corrected to remove the deleted variables.
+            }, [activeScreen, currentUser, creatorProfile, featuredContentSlots, selectedAdminSubScreen, pledgeIdForConfirmation, unreadNotifications, hasNewContent]);
 // =========== END REPLACEMENT ===========
 
 
@@ -8354,17 +8495,15 @@ const MyContentLibraryScreen = ({
                 <div className="header">
     <div className="header-content-left">
         {/* Item 1: Tagline (Top) */}
-        <p className="tagline">Guyanese Content to a Global Stage.</p>
+        <p className="tagline">Caribbean Content to a Global Stage.</p>
         
         {/* Item 2: Title (Middle) */}
         <p className="headerTitle">NVA Network</p>
         
         {/* Item 3: Button (Bottom) */}
         <HeaderLiveButton 
-            isLive={isLive} 
-            countdownText={countdownText} 
             onClick={() => setActiveScreen('Discover')}
-        />
+            />
     </div>
     <img
         src="https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png"
