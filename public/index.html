@@ -1788,7 +1788,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInWithCustomToken, signInAnonymously, sendEmailVerification, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs, deleteDoc, limit, increment, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs, deleteDoc, limit, increment, runTransaction, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
         import { getAnalytics, logEvent, setUserId, setUserProperties } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
         // --- START: THE DEFINITIVE FIX ---
@@ -1859,6 +1859,7 @@
         window.signInWithCustomToken = signInWithCustomToken;
         window.signInAnonymously = signInAnonymously;
         window.sendEmailVerification = sendEmailVerification;
+        window.writeBatch = writeBatch;
         window.limit = limit;
       
         // --- START: THE DEFINITIVE FIX ---
@@ -6931,7 +6932,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const [canExit, setCanExit] = useState(false);
             const exitTimer = useRef(null);
             const [showMoreMenu, setShowMoreMenu] = useState(false);
-            
+            const [hasNewFeedContent, setHasNewFeedContent] = useState(false);
             // ======================= START: NEW CODE =======================
             // Call our new hook to get a live list of notifications
             const { notifications: unreadNotifications, isLoading: notificationsLoading, dismissNotification, markBroadcastAsSeen, markNotificationAsRead } = 
@@ -7197,6 +7198,29 @@ useEffect(() => {
     };
 }, []);
                       
+                // ============================= START: ADDITION =============================
+            // This new effect specifically listens for the 'hasNewContent' flag for the feed button dot.
+            useEffect(() => {
+                if (!currentUser) {
+                    setHasNewFeedContent(false); // If logged out, ensure no dot is shown
+                    return;
+                }
+
+                const followingRef = collection(db, "creators", currentUser.uid, "following");
+                const q = query(followingRef, where("hasNewContent", "==", true));
+
+                // onSnapshot creates a real-time listener
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    // If the snapshot is not empty, it means at least one followed creator has new content
+                    setHasNewFeedContent(!snapshot.empty);
+                });
+
+                // Clean up the listener when the component unmounts or the user changes
+                return () => unsubscribe();
+
+            }, [currentUser]); // This effect re-runs whenever the currentUser changes
+// ============================== END: ADDITION ==============================
+          
             const showMessage = (msg) => {
                 setMessage(msg);
                 setTimeout(() => setMessage(''), 3000);
@@ -7231,6 +7255,31 @@ useEffect(() => {
                     showMessage('Failed to log out. Please try again.');
                 }
             };
+
+                // ============================= START: ADDITION =============================
+            const handleNavigateToFeed = async () => {
+                // First, clear any notification flags
+                if (hasNewFeedContent && currentUser) {
+                    const followingRef = collection(db, "creators", currentUser.uid, "following");
+                    const q = query(followingRef, where("hasNewContent", "==", true));
+                    
+                     try {
+                        const snapshot = await getDocs(q);
+                        // This is the corrected line using the modern SDK syntax
+                        const batch = writeBatch(window.firebaseDb); 
+                        snapshot.forEach(doc => {
+                            batch.update(doc.ref, { hasNewContent: false });
+                        });
+                        await batch.commit();
+                        setHasNewFeedContent(false); // Manually set state to false for instant UI update
+                    } catch (error) {
+                        console.error("Error clearing feed notification flags:", error);
+                    }
+                }
+                // Then, navigate to the screen
+                setActiveScreen('FollowingFeed');
+            };
+// ============================== END: ADDITION ==============================
 
 // START: REPLACEMENT (Your HomeScreen with the Live Feed Fix)
                const HomeScreen = ({ currentUser, showMessage, handleVideoPress, handleLogout, featuredContentSlots }) => {
@@ -8487,15 +8536,21 @@ const MyContentLibraryScreen = ({
     )}
     {/* ======================== END: NEW NOTIFICATION BELL ======================== */}
 
-    {currentUser && (
-        <button className="navButton" onClick={() => setActiveScreen('FollowingFeed')} style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
+     {currentUser && (
+        <button className="navButton" onClick={handleNavigateToFeed} style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700', position: 'relative' }}>
              <span className="navButtonText" style={{ color: '#FFD700' }}>My Feed</span>
-        </button>
-    )}
-
-    {currentUser && (
-        <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
-            <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
+             {hasNewFeedContent && (
+                <div style={{
+                    position: 'absolute',
+                    top: '2px',
+                    right: '2px',
+                    width: '10px',
+                    height: '10px',
+                    backgroundColor: '#DC3545', // Red color
+                    borderRadius: '50%',
+                    border: '1px solid #0A0A0A'
+                }}></div>
+             )}
         </button>
     )}
     
