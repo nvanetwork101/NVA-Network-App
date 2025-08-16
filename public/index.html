@@ -1788,10 +1788,13 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInWithCustomToken, signInAnonymously, sendEmailVerification, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs, deleteDoc, limit, increment, runTransaction, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, query, orderBy, onSnapshot, where, getDocs, deleteDoc, limit, increment, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
         import { getAnalytics, logEvent, setUserId, setUserProperties } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
-        import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+        // --- START: THE DEFINITIVE FIX ---
+        // 1. We import the getFunctions function with a new name to avoid conflicts.
+        import { getFunctions as getFirebaseFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
+        // --- END: THE DEFINITIVE FIX ---
         
         // Global Firebase variables (provided by Canvas environment)
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -1812,52 +1815,57 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const storage = getStorage(app); // Initialize Storage
+        const storage = getStorage(app);
         const analytics = getAnalytics(app);
-        window.firebaseAnalytics = analytics; // Export the instance
-        window.logEvent = logEvent; // Export the function
-        window.setUserId = setUserId; // Export the function
-        window.setUserProperties = setUserProperties; // Export the function
 
-        // Export for use in React component
+        // --- START: THE DEFINITIVE FIX ---
+        // 2. Replace 'YOUR_REGION_HERE' with the region you found in Step 1 (e.g., 'us-east1').
+        // This is the most critical part of the fix.
+        const functionsRegion = 'us-central1'; // <--- PASTE YOUR REGION HERE
+        const functions = getFirebaseFunctions(app, functionsRegion);
+        // --- END: THE DEFINITIVE FIX ---
+        
+        window.firebaseAnalytics = analytics;
+        window.logEvent = logEvent;
+        window.setUserId = setUserId;
+        window.setUserProperties = setUserProperties;
         window.firebaseApp = app;
         window.firebaseAuth = auth;
         window.firebaseDb = db;
-        window.firebaseStorage = storage; // Export Storage
-        window.initialAuthToken = initialAuthToken; // Export corrected initialAuthToken
-        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword; // Expose the function itself
-        window.signInWithEmailAndPassword = signInWithEmailAndPassword; // Expose sign-in function
-        window.signOut = signOut; // Expose sign-out function
-        window.onAuthStateChanged = onAuthStateChanged; // Expose auth state listener
-        window.doc = doc; // Expose Firestore doc
-        window.setDoc = setDoc; // Expose Firestore setDoc
-        window.getDoc = getDoc; // Expose Firestore getDoc
-        window.updateDoc = updateDoc; // Expose Firestore updateDoc
-        window.collection = collection; // Expose Firestore collection
-        window.addDoc = addDoc; // Expose Firestore addDoc
-        window.query = query; // Expose Firestore query
-        window.orderBy = orderBy; // Expose Firestore orderBy
-        window.onSnapshot = onSnapshot; // Expose Firestore onSnapshot
-        window.where = where; // Expose where for Firestore queries
-        window.getDocs = getDocs; // Expose getDocs for Firestore queries
-        window.deleteDoc = deleteDoc; // Expose deleteDoc for Firestore
-        window.increment = increment; // Expose the increment function
-        window.runTransaction = runTransaction; // Expose the Transaction function
-        window.ref = ref;
-        window.uploadBytes = uploadBytes;
+        window.firebaseStorage = storage;
+        window.initialAuthToken = initialAuthToken;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.signOut = signOut;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.doc = doc;
+        window.setDoc = setDoc;
+        window.getDoc = getDoc;
+        window.updateDoc = updateDoc;
+        window.collection = collection;
+        window.addDoc = addDoc;
+        window.query = query;
+        window.orderBy = orderBy;
+        window.onSnapshot = onSnapshot;
+        window.where = where;
+        window.getDocs = getDocs;
+        window.deleteDoc = deleteDoc;
+        window.increment = increment;
+        window.runTransaction = runTransaction;
         window.ref = ref;
         window.uploadBytes = uploadBytes;
         window.getDownloadURL = getDownloadURL;
         window.appId = appId;
-        window.writeBatch = writeBatch; // Expose the Write Batch function
-        window.signInWithCustomToken = signInWithCustomToken; // Expose signInWithCustomToken
-        window.signInAnonymously = signInAnonymously; // Expose signInAnonymously
-        window.sendEmailVerification = sendEmailVerification; // Expose verification function
+        window.signInWithCustomToken = signInWithCustomToken;
+        window.signInAnonymously = signInAnonymously;
+        window.sendEmailVerification = sendEmailVerification;
         window.limit = limit;
       
-         // ADD THESE TWO NEW LINES
-        window.getFunctions = getFunctions;
+        // --- START: THE DEFINITIVE FIX ---
+        // 3. We now expose the correctly configured functions instance.
+        window.firebaseFunctions = functions;
         window.httpsCallable = httpsCallable;
+        // --- END: THE DEFINITIVE FIX ---
         window.sendPasswordResetEmail = sendPasswordResetEmail; // Expose password reset function
     </script>
 
@@ -1892,9 +1900,6 @@
                         });
                     });
             }, []);
-
-              
-        // --- END: NEW HOOK ---
 
             // Expose a helper function to be called by the App component
             const markBroadcastAsSeen = useCallback(async (notificationId) => {
@@ -1971,51 +1976,7 @@
 
             return { notifications, isLoading, dismissNotification, markBroadcastAsSeen, markNotificationAsRead };
         };
-
-                 // --- START: ADD THIS ENTIRE NEW HOOK ---
-        const useFollowingStatus = (currentUser) => {
-            const [hasNewContent, setHasNewContent] = useState(false);
-
-            useEffect(() => {
-                if (!currentUser) {
-                    setHasNewContent(false);
-                    return;
-                }
-                const { collection, query, where, onSnapshot, firebaseDb: db } = window;
-                const followingRef = collection(db, "creators", currentUser.uid, "following");
-                const q = query(followingRef, where("hasNewContent", "==", true));
-                const unsubscribe = onSnapshot(q, (snapshot) => {
-                    setHasNewContent(!snapshot.empty);
-                });
-                return () => unsubscribe();
-            }, [currentUser]);
-
-            const clearNewContentFlags = async () => {
-                // This function now has access to the globally exposed 'writeBatch'.
-                const { writeBatch, getDocs, query, where, collection, firebaseDb: db } = window;
-                if (!currentUser || !writeBatch || !db) return; // Safety check
-
-                const followingRef = collection(db, "creators", currentUser.uid, "following");
-                const q = query(followingRef, where("hasNewContent", "==", true));
-                
-                try {
-                    const snapshot = await getDocs(q);
-                    if (snapshot.empty) return;
-
-                    const batch = writeBatch(db); // Correctly initialize the batch
-                    snapshot.forEach(doc => {
-                        batch.update(doc.ref, { hasNewContent: false });
-                    });
-                    await batch.commit();
-                } catch (error) {
-                    console.error("Error clearing new content flags:", error);
-                }
-            };
-
-            return { hasNewContent, clearNewContentFlags };
-        };
-        // --- END: REPLACEMENT for useFollowingStatus hook ---
-
+// END of REPLACEMENT Block
 
         const NotificationBell = ({ count, onClick }) => {
             return (
@@ -2233,8 +2194,7 @@
         };
         // --- END: MASTER REPLACEMENT FOR extractVideoInfo ---
 
-
-                    // --- START: NEW SmartCarouselImage COMPONENT ---
+                // --- START: NEW SmartCarouselImage COMPONENT ---
         const SmartCarouselImage = ({ item, className }) => {
             const [imageSrc, setImageSrc] = useState(GENERIC_THUMBNAIL_PLACEHOLDER);
         
@@ -2276,44 +2236,49 @@
         };
         // --- END: NEW SmartCarouselImage COMPONENT ---
 
-
               // --- START: NEW DynamicThumbnail Component ---
         const DynamicThumbnail = ({ item, onClick }) => {
             const [thumbnailSrc, setThumbnailSrc] = useState(GENERIC_THUMBNAIL_PLACEHOLDER);
             const [isLoading, setIsLoading] = useState(true);
 
             useEffect(() => {
+                // This effect runs whenever the 'item' prop changes.
                 setIsLoading(true);
-                let isMounted = true;
+                let isMounted = true; // Prevents state updates if the component unmounts during fetch
 
                 const fetchThumbnail = async () => {
-                    const currentUser = window.firebaseAuth.currentUser;
+                    // Use a local copy of currentUser from the window scope if available
+                    const currentUser = window.firebaseAuth.currentUser; 
                     const info = extractVideoInfo(item.mainUrl || item.externalLink || item.url);
 
                     if (item.customThumbnailUrl) {
+                        // A custom thumbnail from the database always takes highest priority.
                         setThumbnailSrc(item.customThumbnailUrl);
                     } else if (info.platform === 'youtube') {
+                        // YouTube is synchronous, we can set it directly.
                         setThumbnailSrc(info.thumbnailUrl);
                     } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
-                        // THIS IS THE NEW LOGIC: We call our own Cloud Function.
-                        try {
-                            const functions = getFunctions(window.firebaseApp);
-                            const oEmbedProxy = httpsCallable(functions, 'oEmbedProxy');
-                            
-                            let targetApiUrl = '';
-                            if (info.platform === 'tiktok') targetApiUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(item.mainUrl)}`;
-                            if (info.platform === 'vimeo') targetApiUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(item.mainUrl)}`;
+                        // For other platforms, we must make an oEmbed API call.
+                        // We will use a free, public CORS proxy for this.
+                        const corsProxy = 'https://cors-anywhere.herokuapp.com/';
+                        let oEmbedUrl = '';
 
-                            const result = await oEmbedProxy({ url: targetApiUrl });
-                            
-                            if (isMounted && result.data.thumbnail_url) {
-                                setThumbnailSrc(result.data.thumbnail_url);
+                        if (info.platform === 'tiktok') oEmbedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(item.mainUrl)}`;
+                        if (info.platform === 'vimeo') oEmbedUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(item.mainUrl)}`;
+                        
+                        try {
+                            const response = await fetch(corsProxy + oEmbedUrl);
+                            if (!response.ok) throw new Error('oEmbed request failed');
+                            const data = await response.json();
+                            if (isMounted && data.thumbnail_url) {
+                                setThumbnailSrc(data.thumbnail_url);
                             }
                         } catch (error) {
-                            console.error(`Failed to fetch ${info.platform} thumbnail via proxy:`, error);
+                            console.error(`Failed to fetch ${info.platform} thumbnail:`, error);
                             if (isMounted) setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
                         }
                     } else {
+                        // For 'generic', 'facebook', or any other unhandled platform, use the placeholder.
                         setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
                     }
                     if (isMounted) setIsLoading(false);
@@ -2321,13 +2286,17 @@
 
                 fetchThumbnail();
 
-                return () => { isMounted = false; };
-            }, [item.id, item.mainUrl]);
+                return () => {
+                    isMounted = false; // Cleanup function
+                };
+            }, [item.id, item.mainUrl]); // Re-run if the item itself changes
 
+            // Render the image with the fetched or default source.
             return (
                  <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${thumbnailSrc})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}} onClick={onClick}>
                     <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
-                    {window.firebaseAuth.currentUser && item.id && <LikeButton contentItem={item} currentUser={window.firebaseAuth.currentUser} showMessage={showMessage} />}
+                    {/* The currentUser check needs to be robust, pulling from the global scope */}
+                    {window.firebaseAuth.currentUser && item.id && <LikeButton contentItem={item} currentUser={window.firebaseAuth.currentUser} showMessage={window.showMessage} />}
                 </div>
             );
         };
@@ -2392,25 +2361,6 @@
             }
         };
         
-
-        // Hardcoded content - these will eventually be replaced by dynamic data from Firestore
-        const featuredContent = [
-            { id: '1', title: 'Guyanese Comedy Special', type: 'skit', url: 'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1', creator: 'Comedy Crew' },
-            { id: '2', title: 'Top Guyanese Skits: Best of 2024', type: 'skit', url: 'https://www.youtube.com/embed/oHg5SJYRHA0?autoplay=1', creator: 'Laugh Central' },
-            { id: '3', title: 'Indie Film: "Georgetown Dreams"', type: 'short-film', url: 'https://www.youtube.com/embed/34Na4j8AVgA?autoplay=1', creator: 'Indie Films GY' },
-            { id: '4', title: 'Live Concert Replay: Mashramani', type: 'live-premiere', url: 'https://www.youtube.com/embed/example4?autoplay=1', creator: 'Vibes Ent.' },
-            { id: '5', title: 'Creator Interview: Rise of Talent', type: 'interview', url: 'https://www.youtube.com/embed/example5?autoplay=1', creator: 'NVA Insights' },
-            { id: '6', title: 'Short Film: "The Golden Arrowhead"', type: 'short-film', url: 'https://www.youtube.com/embed/example6?autoplay=1', creator: 'Heritage Films' },
-            { id: '7', title: 'New Skit Series: "Life in GT"', type: 'skit', url: 'https://www.youtube.com/embed/skit7?autoplay=1', creator: 'GT Daily' },
-            { id: '8', title: 'Cooking Show: Guyanese Delights', type: 'skit', url: 'https://www.youtube.com/embed/skit8?autoplay=1', creator: 'Chef Roti' },
-            { id: '9', title: 'Poetry Slam Live: Best of Season', type: 'live-premiere', url: 'https://www.youtube.com/embed/live9?autoplay=1', creator: 'Wordsmiths GY' },
-            { id: '10', title: 'Wildlife Doc: Amazonian Secrets', type: 'documentary', url: 'https://www.youtube.com/embed/doc1?autoplay=1', creator: 'Nature Watch' },
-            { id: '11', title: 'Guyanese Music Spotlight', type: 'music', url: 'https://www.youtube.com/embed/music1?autoplay=1', creator: 'Riddim Connect' },
-            { id: '12', title: 'Interview: Young Entrepreneurs', type: 'interview', url: 'https://www.youtube.com/embed/int1?autoplay=1', creator: 'Business Buzz GY' },
-        ];
-
-
- 
 
         const getYouTubeEmbedUrl = (youtubeUrl) => {
             const videoIdMatch = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/||shorts\/))([^&?#]+)/);
@@ -3096,53 +3046,23 @@
             const [isUploading, setIsUploading] = useState(false);
             const thumbnailInputRef = useRef(null);
 
-            // --- START: REPLACEMENT for the Campaign Thumbnail Preview useEffect ---
+            // Effect to auto-fetch thumbnail from project link
             useEffect(() => {
+                if (!projectLink) {
+                    setAutoThumbnailPreview('');
+                    return;
+                }
                 const handler = setTimeout(() => {
-                    if (!projectLink) {
-                        setAutoThumbnailPreview('');
-                        return;
+                    const { thumbnailUrl } = extractVideoInfo(projectLink);
+                    if (thumbnailUrl) {
+                        setAutoThumbnailPreview(thumbnailUrl);
+                    } else {
+                        setAutoThumbnailPreview(''); // Clear if no thumbnail found
                     }
+                }, 800); // Debounce to avoid fetching on every keystroke
 
-                    const fetchPreview = async () => {
-                        const info = extractVideoInfo(projectLink);
-
-                        if (info.platform === 'youtube') {
-                            setAutoThumbnailPreview(info.thumbnailUrl);
-                        } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
-                            try {
-                                const functions = getFunctions(window.firebaseApp);
-                                const oEmbedProxy = httpsCallable(functions, 'oEmbedProxy');
-                                
-                                let targetApiUrl = '';
-                                if (info.platform === 'tiktok') targetApiUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(projectLink)}`;
-                                if (info.platform === 'vimeo') targetApiUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(projectLink)}`;
-
-                                const result = await oEmbedProxy({ url: targetApiUrl });
-
-                                if (result.data && result.data.thumbnail_url) {
-                                    setAutoThumbnailPreview(result.data.thumbnail_url);
-                                } else {
-                                    setAutoThumbnailPreview(GENERIC_THUMBNAIL_PLACEHOLDER);
-                                }
-                            } catch (error) {
-                                console.error(`Failed to fetch ${info.platform} preview via proxy:`, error);
-                                setAutoThumbnailPreview(GENERIC_THUMBNAIL_PLACEHOLDER);
-                            }
-                        } else {
-                            setAutoThumbnailPreview(GENERIC_THUMBNAIL_PLACEHOLDER);
-                        }
-                    };
-
-                    fetchPreview();
-
-                }, 800); // Wait 800ms after user stops typing before fetching
-
-                return () => {
-                    clearTimeout(handler);
-                };
+                return () => clearTimeout(handler);
             }, [projectLink]);
-            // --- END: REPLACEMENT for the Campaign Thumbnail Preview useEffect ---
 
             const handleFileChange = (e) => {
                 const file = e.target.files[0];
@@ -3779,6 +3699,9 @@ const AdminDashboardScreen = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedRole, setSelectedRole] = useState('All');
     const [pendingCampaigns, setPendingCampaigns] = useState([]);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncResults, setSyncResults] = useState('');
+   
     const [activeCampaigns, setActiveCampaigns] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -3786,30 +3709,7 @@ const AdminDashboardScreen = ({
     const [banRequests, setBanRequests] = useState([]);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(null);
     const [isCorrectingCount, setIsCorrectingCount] = useState(null);
-    const changeUserRoleLogic = async (targetUser, newRole) => {
-        setIsUpdatingRole(targetUser.id);
-        showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`);
-        try {
-            const functions = getFunctions(window.firebaseApp);
-            const setRoleCallable = httpsCallable(functions, 'setRole');
-            
-            // Call the new backend function
-            const result = await setRoleCallable({ 
-                targetUserId: targetUser.id, 
-                role: newRole 
-            });
-
-            // Refresh the user's ID token to get the new custom claim immediately
-            await window.firebaseAuth.currentUser.getIdToken(true);
-            
-            showMessage(result.data.message); // Display success message from the backend
-        } catch (error) {
-            console.error("Error changing user role:", error);
-            showMessage(`Error: ${error.message}`); // Display error from the backend
-        } finally {
-            setIsUpdatingRole(null);
-        }
-    };
+    const changeUserRoleLogic = async (targetUser, newRole) => { setIsUpdatingRole(targetUser.id); showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`); try { const userDocRef = doc(db, "creators", targetUser.id); await updateDoc(userDocRef, { role: newRole }); showMessage(`Success! ${targetUser.creatorName || targetUser.email} is now a(n) ${newRole}.`); } catch (error) { console.error("Error changing user role:", error); showMessage(`Error: ${error.message}`); } finally { setIsUpdatingRole(null); } };
     const confirmChangeUserRole = (targetUser, newRole) => { setConfirmationTitle("Change User Role?"); setConfirmationMessage(`Are you sure you want to change ${targetUser.creatorName || targetUser.email}'s role to "${newRole}"?`); setOnConfirmationAction(() => () => changeUserRoleLogic(targetUser, newRole)); setShowConfirmationModal(true); };
     const toggleBanLogic = async (userToBan) => { if (userToBan.id === currentUser.uid) { showMessage("You cannot ban your own account."); return; } if (creatorProfile.role === 'authority' && userToBan.role === 'authority') { setIsSubmittingRequest(userToBan.id); try { const banRequestRef = collection(db, "banRequests"); await addDoc(banRequestRef, { requesterId: currentUser.uid, requesterName: creatorProfile.creatorName, targetUserId: userToBan.id, targetUserName: userToBan.creatorName || userToBan.email, status: 'pending', timestamp: new Date().toISOString() }); showMessage(`Ban request for ${userToBan.creatorName || userToBan.email} has been submitted for Admin approval.`); } catch (error) { console.error("Error submitting ban request:", error); showMessage(`Failed to submit ban request: ${error.message}`); } finally { setIsSubmittingRequest(null); } return; } if (creatorProfile.role === 'authority' && userToBan.role === 'admin') { showMessage("Authority users cannot ban Admin accounts."); return; } try { const userDocRef = doc(db, "creators", userToBan.id); await updateDoc(userDocRef, { banned: !userToBan.banned, updatedAt: new Date().toISOString() }); showMessage(`${userToBan.banned ? 'Unbanned' : 'Banned'} user: ${userToBan.creatorName || userToBan.email}`); } catch (error) { console.error("Error toggling ban status:", error); showMessage(`Failed to toggle ban status: ${error.message}`); } };
     const confirmToggleBan = (userToBan) => { const action = userToBan.banned ? 'Unban' : 'Ban'; const targetUserText = userToBan.creatorName || userToBan.email; if (creatorProfile.role === 'authority' && userToBan.role === 'authority') { setConfirmationTitle('Request Authority Ban?'); setConfirmationMessage(`This will submit a request for an Admin to ban ${targetUserText}. Proceed?`); } else { setConfirmationTitle(`${action} User?`); setConfirmationMessage(`Are you sure you want to ${action.toLowerCase()} user ${targetUserText}?`); } setOnConfirmationAction(() => () => toggleBanLogic(userToBan)); setShowConfirmationModal(true); };
@@ -3819,7 +3719,26 @@ const AdminDashboardScreen = ({
     const recalculateCountsForUser = async (userToFix) => { setIsCorrectingCount(userToFix.id); showMessage(`Recalculating counts for ${userToFix.creatorName || userToFix.email}...`); try { const followersRef = collection(db, "creators", userToFix.id, "followers"); const followersSnapshot = await getDocs(followersRef); const actualFollowerCount = followersSnapshot.size; const followingRef = collection(db, "creators", userToFix.id, "following"); const followingSnapshot = await getDocs(followingRef); const actualFollowingCount = followingSnapshot.size; await updateDoc(doc(db, "creators", userToFix.id), { followerCount: actualFollowerCount, followingCount: actualFollowingCount }); showMessage(`Counts for ${userToFix.creatorName || userToFix.email} have been corrected.`); } catch (error) { console.error("Error during single-user count correction:", error); showMessage(`Error correcting counts: ${error.message}`); } finally { setIsCorrectingCount(null); } };
     const confirmRecalculate = (userToFix) => { setConfirmationTitle("Recalculate Counts?"); setConfirmationMessage(`This will manually recount followers and following for "${userToFix.creatorName || userToFix.email}" and update their profile. Proceed?`); setOnConfirmationAction(() => () => recalculateCountsForUser(userToFix)); setShowConfirmationModal(true); };
     useEffect(() => { const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`); const qPending = query(campaignsCollectionRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc')); const unsubscribePending = onSnapshot(qPending, (snapshot) => { setPendingCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const qActive = query(campaignsCollectionRef, where('status', '==', 'active'), orderBy('createdAt', 'desc')); const unsubscribeActive = onSnapshot(qActive, (snapshot) => { setActiveCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const usersCollectionRef = collection(db, "creators"); const unsubscribeUsers = onSnapshot(usersCollectionRef, (snapshot) => { setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setLoading(false); }); let unsubscribeBanRequests = () => {}; if (creatorProfile && creatorProfile.role === 'admin') { const banRequestsRef = collection(db, "banRequests"); const q = query(banRequestsRef, where('status', '==', 'pending')); unsubscribeBanRequests = onSnapshot(q, (snapshot) => { setBanRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); } return () => { unsubscribePending(); unsubscribeActive(); unsubscribeUsers(); unsubscribeBanRequests(); }; }, [creatorProfile]);
-    
+    // --- Handler for the new Auth Cleanup Tool ---
+    const handleSyncCleanup = async () => {
+        setIsSyncing(true);
+        setSyncResults('Starting sync process...');
+        showMessage('Starting sync...');
+        try {
+            const functions = getFunctions(window.firebaseApp);
+            const syncCallable = httpsCallable(functions, 'syncAuthenticationWithFirestore');
+            const result = await syncCallable();
+            setSyncResults(result.data.message);
+            showMessage(result.data.message);
+        } catch (error) {
+            console.error("Error during auth sync:", error);
+            const errorMessage = `Error: ${error.message}`;
+            setSyncResults(errorMessage);
+            showMessage(errorMessage);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
     if (!currentUser || !creatorProfile || (creatorProfile.role !== 'admin' && creatorProfile.role !== 'authority')) { return ( <div className="screenContainer"> <p className="heading">Access Denied</p> <p className="subHeading">You must be an Admin or Authority to view this dashboard.</p> <button className="button" onClick={() => setActiveScreen('Login')}><span className="buttonText">Go to Login</span></button> </div> ); }
     if (loading) { return ( <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}> <p className="heading">Loading Admin Dashboard...</p> <p className="subHeading" style={{ color: '#FFD700' }}>Please wait.</p> </div> ); }
     const filteredUsers = allUsers.filter(user => {
@@ -3951,7 +3870,32 @@ const AdminDashboardScreen = ({
                             <span className="buttonText">View All Premium Members 👑</span>
                         </button>
                     </section>
-                   
+                        {/* --- NEW Data & Integrity Tools Section --- */}
+                    <section className="dashboardSection" style={{ border: '2px solid #00FFFF' }}>
+                        <p className="dashboardSectionTitle">Data & Integrity Tools</p>
+                        <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '15px' }}>
+                            Use this tool to remove "phantom" user profiles from your database that no longer have a valid authentication account.
+                        </p>
+                        <button
+                            className="button"
+                            onClick={() => {
+                                // Add a confirmation before running this destructive action
+                                setConfirmationTitle("Confirm User Cleanup");
+                                setConfirmationMessage("This will permanently delete all Firestore user profiles that don't have a matching Authentication account. This action cannot be undone. Are you sure you want to proceed?");
+                                setOnConfirmationAction(() => handleSyncCleanup);
+                                setShowConfirmationModal(true);
+                            }}
+                            disabled={isSyncing}
+                            style={{ backgroundColor: '#008080' }}
+                        >
+                            <span className="buttonText">{isSyncing ? 'Cleaning Up...' : 'Sync Auth & Cleanup Firestore'}</span>
+                        </button>
+                        {syncResults && (
+                            <p className="paragraph" style={{ marginTop: '15px', backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap' }}>
+                                **Last Run Result:**<br/>{syncResults}
+                            </p>
+                        )}
+                    </section>
                     {creatorProfile.role === 'admin' && selectedAdminSubScreen === 'Overview' && (
                         <section className="dashboardSection" style={{border: '2px solid #FFD700'}}>
                             <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPaymentsExpanded, isPaymentsExpanded)}>
@@ -4585,26 +4529,26 @@ const AdminDashboardScreen = ({
             const fileInputRef = useRef(null);
 
             useEffect(() => {
-                if (imageFile) return;
-                if (!destinationUrl) {
-                    setImagePreview('');
-                    return;
-                }
+                if (imageFile) return; // Don't fetch if a custom image is already set
+                
                 const handler = setTimeout(() => {
+                    if (!destinationUrl) {
+                        setImagePreview('');
+                        return;
+                    }
+                    
                     const fetchPreview = async () => {
                         const info = extractVideoInfo(destinationUrl);
-
                         if (info.platform === 'youtube') {
                             setImagePreview(info.thumbnailUrl);
                         } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
                             try {
                                 const functions = getFunctions(window.firebaseApp);
                                 const oEmbedProxy = httpsCallable(functions, 'oEmbedProxy');
-                                
                                 let targetApiUrl = '';
                                 if (info.platform === 'tiktok') targetApiUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(destinationUrl)}`;
                                 if (info.platform === 'vimeo') targetApiUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(destinationUrl)}`;
-
+                                
                                 const result = await oEmbedProxy({ url: targetApiUrl });
                                 if (result.data && result.data.thumbnail_url) {
                                     setImagePreview(result.data.thumbnail_url);
@@ -4612,16 +4556,15 @@ const AdminDashboardScreen = ({
                                     setImagePreview(GENERIC_THUMBNAIL_PLACEHOLDER);
                                 }
                             } catch (error) {
-                                console.error(`Failed to fetch ${info.platform} preview for Ad Modal:`, error);
+                                console.error(`Failed to fetch preview for Ad Modal:`, error);
                                 setImagePreview(GENERIC_THUMBNAIL_PLACEHOLDER);
                             }
                         } else {
                             setImagePreview(GENERIC_THUMBNAIL_PLACEHOLDER);
                         }
                     };
-
                     fetchPreview();
-                }, 500); // Wait 500ms after user stops typing
+                }, 500);
 
                 return () => clearTimeout(handler);
             }, [destinationUrl, imageFile]);
@@ -4640,7 +4583,6 @@ const AdminDashboardScreen = ({
                     return;
                 }
 
-                // If a custom file was uploaded, handle that path first.
                 if (imageFile) {
                     setIsUploading(true);
                     showMessage("Uploading custom image...");
@@ -4650,9 +4592,6 @@ const AdminDashboardScreen = ({
                         const snapshot = await uploadBytes(storageRef, imageFile);
                         const finalImageUrl = await getDownloadURL(snapshot.ref);
                         showMessage("Image uploaded successfully!");
-                        
-                        // The ONLY job in the success path is to call onSave.
-                        // The parent component will handle closing the modal.
                         onSave({
                             type: 'external',
                             title,
@@ -4660,13 +4599,11 @@ const AdminDashboardScreen = ({
                             imageUrl: finalImageUrl,
                             orderIndex: Date.now()
                         });
-
                     } catch (error) {
                         showMessage(`Image upload failed: ${error.message}`);
-                        setIsUploading(false); // Reset loading state on error.
+                        setIsUploading(false);
                     }
                 } else {
-                    // This is the path for URL-based images
                     if (!imagePreview) {
                         showMessage("Could not find a valid image preview. Please upload one.");
                         return;
@@ -4678,7 +4615,6 @@ const AdminDashboardScreen = ({
                         imageUrl: imagePreview,
                         orderIndex: Date.now()
                     });
-                    onCancel(); // Close the modal
                 }
             };
 
@@ -4692,8 +4628,7 @@ const AdminDashboardScreen = ({
                         </div>
                         <div className="formGroup">
                             <label className="formLabel">Destination URL:</label>
-                            <input type="url" className="formInput" value={destinationUrl} onChange={(e) => { setDestinationUrl(e.target.value); setImageFile(null); }} placeholder="https://www.sponsor.com/deal" required/>
-                            <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>The app will try to fetch a preview from this link.</p>
+                            <input type="url" className="formInput" value={destinationUrl} onChange={(e) => { setDestinationUrl(e.target.value); setImageFile(null); }} placeholder="https://www.youtube.com/watch?v=..." required/>
                         </div>
                         <hr style={{borderColor: '#333', margin: '15px 0'}}/>
                         <div className="formGroup">
@@ -4712,7 +4647,7 @@ const AdminDashboardScreen = ({
                         <div className="confirmationModalButtons">
                             <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
                             <button className="confirmationButton confirm" onClick={handleSave} disabled={isUploading}>
-                               {isUploading ? 'Uploading...' : 'Save Link'}
+                                {isUploading ? 'Uploading...' : 'Save Link'}
                             </button>
                         </div>
                     </div>
@@ -4721,7 +4656,7 @@ const AdminDashboardScreen = ({
         };
         // --- END: NEW COMPONENT ---
 
-                            // --- START: NEW ContentSelectorModal COMPONENT ---
+                // --- START: NEW ContentSelectorModal COMPONENT ---
         const ContentSelectorModal = ({ showMessage, onSelect, onCancel }) => {
             const [contentItems, setContentItems] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -4774,7 +4709,7 @@ const AdminDashboardScreen = ({
                                     >
                                         <img src={item.customThumbnailUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
                                         <div style={{flexGrow: 1, marginLeft: '10px'}}>
-                                            <p className="adminDashboardItemTitle">{item.title}</p>
+                                             <p className="adminDashboardItemTitle">{item.title}</p>
                                             <p style={{fontSize: '12px', color: '#AAA'}}>by {item.creatorName}</p>
                                         </div>
                                     </div>
@@ -4789,166 +4724,161 @@ const AdminDashboardScreen = ({
             );
         };
         // --- END: NEW ContentSelectorModal COMPONENT ---
-        
+
         // --- START: NEW COMPONENT ---
         const AdminCurationModal = ({ curationTarget, showMessage, onCancel, contentItems }) => {
-            const [curatedItems, setCuratedItems] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [isSaving, setIsSaving] = useState(false);
-            const [showContentSelector, setShowContentSelector] = useState(false);
-            const [showExternalAdModal, setShowExternalAdModal] = useState(false);
+    const [curatedItems, setCuratedItems] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const [showContentSelector, setShowContentSelector] = useState(false);
+    const [showExternalAdModal, setShowExternalAdModal] = useState(false);
 
-            const targetField = `${curationTarget.toLowerCase().replace(' ', '')}Items`;
+    const targetField = `${curationTarget.toLowerCase().replace(' ', '')}Items`;
 
-            useEffect(() => {
-                const fetchInitialData = async () => {
-                    setLoading(true);
-                    const layoutDocRef = doc(db, "settings", "homeScreenLayout");
-                    try {
-                        const docSnap = await getDoc(layoutDocRef);
-                        if (docSnap.exists()) {
-                            const layoutData = docSnap.data();
-                            const itemsFromDB = layoutData[targetField] || [];
-                            
-                            const enrichedItems = itemsFromDB.map(item => {
-                                if (item.type === 'internal') {
-                                    const fullContent = contentItems.find(ci => ci.id === item.contentId);
-                                    return fullContent ? { ...item, ...fullContent } : null;
-                                }
-                                return item;
-                            }).filter(Boolean); // Filter out nulls for deleted content
-                            setCuratedItems(enrichedItems);
-                        } else {
-                            setCuratedItems([]);
+    useEffect(() => {
+        const fetchInitialData = async () => {
+            setLoading(true);
+            const layoutDocRef = doc(db, "settings", "homeScreenLayout");
+            try {
+                const docSnap = await getDoc(layoutDocRef);
+                if (docSnap.exists()) {
+                    const layoutData = docSnap.data();
+                    const itemsFromDB = layoutData[targetField] || [];
+                    
+                    const enrichedItems = itemsFromDB.map(item => {
+                        if (item.type === 'internal') {
+                            const fullContent = contentItems.find(ci => ci.id === item.contentId);
+                            return fullContent ? { ...item, ...fullContent } : null;
                         }
-                    } catch (error) {
-                        showMessage("Error fetching curation data: " + error.message);
-                        setCuratedItems([]);
-                    } finally {
-                        setLoading(false);
-                    }
-                };
-                
-                fetchInitialData();
-            }, [curationTarget]); // This hook now only re-runs if the target section changes
-
-            const handleMove = (index, direction) => {
-                const newItems = [...curatedItems];
-                const item = newItems[index];
-                const newIndex = index + direction;
-                if (newIndex < 0 || newIndex >= newItems.length) return;
-                newItems.splice(index, 1);
-                newItems.splice(newIndex, 0, item);
-                setCuratedItems(newItems);
-            };
-
-            const handleRemove = (index) => {
-                const newItems = [...curatedItems];
-                newItems.splice(index, 1);
-                setCuratedItems(newItems);
-            };
-
-            const handleSelectInternalContent = (selectedContent) => {
-                const isAlreadyInList = curatedItems.some(item => item.type === 'internal' && item.contentId === selectedContent.id);
-                if (isAlreadyInList) {
-                    showMessage("This content is already in the list.");
-                    return;
+                        return item;
+                    }).filter(Boolean);
+                    setCuratedItems(enrichedItems);
+                } else {
+                    setCuratedItems([]);
                 }
-                const newItem = {
-                    type: 'internal',
-                    contentId: selectedContent.id,
-                    orderIndex: curatedItems.length
-                };
-                setCuratedItems(prev => [...prev, { ...newItem, ...selectedContent }]);
-                setShowContentSelector(false);
-            };
-            
-            const handleSaveExternalAd = (newAd) => {
-                 setCuratedItems(prev => [...prev, newAd]);
-                 setShowExternalAdModal(false);
-            };
-
-            const handleSaveChanges = async () => {
-                setIsSaving(true);
-                showMessage("Saving changes...");
-                
-                const itemsToSave = curatedItems.map((item, index) => {
-                    const baseItem = {
-                        type: item.type,
-                        orderIndex: index
-                    };
-                    if (item.type === 'internal') {
-                        baseItem.contentId = item.contentId;
-                    } else {
-                        baseItem.title = item.title;
-                        baseItem.imageUrl = item.imageUrl;
-                        baseItem.externalLink = item.externalLink;
-                    }
-                    return baseItem;
-                });
-
-                try {
-                    const layoutDocRef = doc(db, "settings", "homeScreenLayout");
-                    await setDoc(layoutDocRef, { [targetField]: itemsToSave }, { merge: true });
-                    showMessage("Curation saved successfully!");
-                    onCancel();
-                } catch (error) {
-                    showMessage(`Error saving: ${error.message}`);
-                } finally {
-                    setIsSaving(false);
-                }
-            };
-
-            return (
-                <div className="confirmationModalOverlay" style={{ zIndex: 2500 }}>
-                    <div className="confirmationModalContent" style={{ maxWidth: '700px', textAlign: 'left' }}>
-                        <p className="confirmationModalTitle">Manage {curationTarget} Section</p>
-                        
-                        <div className="dashboardContentList" style={{ maxHeight: '40vh', overflowY: 'auto', marginBottom: '20px' }}>
-                            {loading ? <p>Loading...</p> : (
-                                curatedItems.length === 0 ? <p className="dashboardItem">This section is empty.</p> :
-                                curatedItems.map((item, index) => (
-                                    <div key={item.id || item.title + index} className="adminDashboardItem">
-                                        <img src={item.customThumbnailUrl || item.imageUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
-                                        <div style={{flexGrow: 1, marginLeft: '10px'}}>
-                                            <p className="adminDashboardItemTitle">{item.title}</p>
-                                            {/* This paragraph will now ONLY render if the item is internal, removing the 'External Ad' label entirely. */}
-                                            {item.type === 'internal' && (
-                                                <p style={{fontSize: '12px', color: '#AAA'}}>by {item.creatorName || '...loading'}</p>
-                                            )}
-                                        </div>
-                                        <div style={{display: 'flex', gap: '5px'}}>
-                                            <button onClick={() => handleMove(index, -1)} disabled={index === 0} className="adminActionButton" style={{width: '30px'}}>▲</button>
-                                            <button onClick={() => handleMove(index, 1)} disabled={index === curatedItems.length - 1} className="adminActionButton" style={{width: '30px'}}>▼</button>
-                                            <button onClick={() => handleRemove(index)} className="adminActionButton reject">Remove</button>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
-                        <div className="flex justify-around gap-4 my-4">
-                            <button className="button" onClick={() => setShowContentSelector(true)}>
-                                <span className="buttonText">Add from Library</span>
-                            </button>
-                             <button className="button" onClick={() => setShowExternalAdModal(true)}>
-                                <span className="buttonText">Add External Link</span>
-                            </button>
-                        </div>
-
-                        <div className="confirmationModalButtons">
-                            <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
-                            <button className="confirmationButton confirm" onClick={handleSaveChanges} disabled={isSaving}>
-                                {isSaving ? 'Saving...' : 'Save Changes'}
-                            </button>
-                        </div>
-
-                        {showContentSelector && <ContentSelectorModal showMessage={showMessage} onSelect={handleSelectInternalContent} onCancel={() => setShowContentSelector(false)} />}
-                        {showExternalAdModal && <AddExternalAdModal showMessage={showMessage} onSave={handleSaveExternalAd} onCancel={() => setShowExternalAdModal(false)} />}
-                    </div>
-                </div>
-            );
+            } catch (error) {
+                showMessage("Error fetching curation data: " + error.message);
+                setCuratedItems([]);
+            } finally {
+                setLoading(false);
+            }
         };
+        fetchInitialData();
+    }, [curationTarget]);
+
+    const handleMove = (index, direction) => {
+        const newItems = [...curatedItems];
+        const item = newItems[index];
+        const newIndex = index + direction;
+        if (newIndex < 0 || newIndex >= newItems.length) return;
+        newItems.splice(index, 1);
+        newItems.splice(newIndex, 0, item);
+        setCuratedItems(newItems);
+    };
+
+    const handleRemove = (index) => {
+        const newItems = [...curatedItems];
+        newItems.splice(index, 1);
+        setCuratedItems(newItems);
+    };
+
+    const handleSelectInternalContent = (selectedContent) => {
+        const isAlreadyInList = curatedItems.some(item => item.type === 'internal' && item.contentId === selectedContent.id);
+        if (isAlreadyInList) {
+            showMessage("This content is already in the list.");
+            return;
+        }
+        const newItem = {
+            type: 'internal',
+            contentId: selectedContent.id,
+            orderIndex: curatedItems.length
+        };
+        setCuratedItems(prev => [...prev, { ...newItem, ...selectedContent }]);
+        setShowContentSelector(false);
+    };
+    
+    const handleSaveExternalAd = (newAd) => {
+         setCuratedItems(prev => [...prev, newAd]);
+         setShowExternalAdModal(false);
+    };
+
+    const handleSaveChanges = async () => {
+        setIsSaving(true);
+        showMessage("Saving changes...");
+        const itemsToSave = curatedItems.map((item, index) => {
+            const baseItem = { type: item.type, orderIndex: index };
+            if (item.type === 'internal') {
+                baseItem.contentId = item.id;
+            } else {
+                baseItem.title = item.title;
+                baseItem.imageUrl = item.imageUrl;
+                baseItem.externalLink = item.externalLink;
+            }
+            return baseItem;
+        });
+        try {
+            const layoutDocRef = doc(db, "settings", "homeScreenLayout");
+            await setDoc(layoutDocRef, { [targetField]: itemsToSave }, { merge: true });
+            showMessage("Curation saved successfully!");
+            onCancel();
+        } catch (error) {
+            showMessage(`Error saving: ${error.message}`);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <div className="confirmationModalOverlay" style={{ zIndex: 2500 }}>
+            <div className="confirmationModalContent" style={{ maxWidth: '700px', textAlign: 'left' }}>
+                <p className="confirmationModalTitle">Manage {curationTarget} Section</p>
+                
+                <div className="dashboardContentList" style={{ maxHeight: '40vh', overflowY: 'auto', marginBottom: '20px' }}>
+                    {loading ? <p>Loading...</p> : (
+                        curatedItems.length === 0 ? <p className="dashboardItem">This section is empty.</p> :
+                        curatedItems.map((item, index) => (
+                            <div key={item.id || item.title + index} className="adminDashboardItem">
+                                <img src={item.customThumbnailUrl || item.imageUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
+                                <div style={{flexGrow: 1, marginLeft: '10px'}}>
+                                    {/* THIS IS THE SYNTAX FIX: The extra '<' is gone. */}
+                                    <p className="adminDashboardItemTitle">{item.title}</p>
+                                    {/* THIS IS THE LABEL FIX: It no longer says "External Ad". */}
+                                    {item.type === 'internal' && (
+                                        <p style={{fontSize: '12px', color: '#AAA'}}>by {item.creatorName || '...loading'}</p>
+                                    )}
+                                </div>
+                                <div style={{display: 'flex', gap: '5px'}}>
+                                    <button onClick={() => handleMove(index, -1)} disabled={index === 0} className="adminActionButton" style={{width: '30px'}}>▲</button>
+                                    <button onClick={() => handleMove(index, 1)} disabled={index === curatedItems.length - 1} className="adminActionButton" style={{width: '30px'}}>▼</button>
+                                    <button onClick={() => handleRemove(index)} className="adminActionButton reject">Remove</button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                <div className="flex justify-around gap-4 my-4">
+                    <button className="button" onClick={() => setShowContentSelector(true)}>
+                        <span className="buttonText">Add from Library</span>
+                    </button>
+                     <button className="button" onClick={() => setShowExternalAdModal(true)}>
+                        <span className="buttonText">Add External Link</span>
+                    </button>
+                </div>
+
+                <div className="confirmationModalButtons">
+                    <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
+                    <button className="confirmationButton confirm" onClick={handleSaveChanges} disabled={isSaving}>
+                        {isSaving ? 'Saving...' : 'Save Changes'}
+                    </button>
+                </div>
+
+                {showContentSelector && <ContentSelectorModal showMessage={showMessage} onSelect={handleSelectInternalContent} onCancel={() => setShowContentSelector(false)} />}
+                {showExternalAdModal && <AddExternalAdModal showMessage={showMessage} onSave={handleSaveExternalAd} onCancel={() => setShowExternalAdModal(false)} />}
+            </div>
+        </div>
+    );
+};
         // --- END: NEW COMPONENT ---
 
 const AdminFeaturedContentManager = ({ featuredContentSlots, showMessage }) => {
@@ -5154,53 +5084,22 @@ const AdminContentManagerScreen = ({
         }
     }, [creatorProfile]);
 
-    // --- START: REPLACEMENT for the Admin Thumbnail Preview useEffect ---
-        useEffect(() => {
-            const handler = setTimeout(() => {
-                if (!mainUrl) {
-                    setAutoThumbnailPreview('');
-                    return;
-                }
+    useEffect(() => {
+        if (!mainUrl) {
+            setAutoThumbnailPreview('');
+            return;
+        }
+        const handler = setTimeout(() => {
+            const { thumbnailUrl } = extractVideoInfo(mainUrl);
+            if (thumbnailUrl) {
+                setAutoThumbnailPreview(thumbnailUrl);
+            } else {
+                setAutoThumbnailPreview('');
+            }
+        }, 800);
 
-                const fetchPreview = async () => {
-                    const info = extractVideoInfo(mainUrl);
-
-                    if (info.platform === 'youtube') {
-                        setAutoThumbnailPreview(info.thumbnailUrl);
-                    } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
-                        try {
-                            const functions = getFunctions(window.firebaseApp);
-                            const oEmbedProxy = httpsCallable(functions, 'oEmbedProxy');
-                            
-                            let targetApiUrl = '';
-                            if (info.platform === 'tiktok') targetApiUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(mainUrl)}`;
-                            if (info.platform === 'vimeo') targetApiUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(mainUrl)}`;
-
-                            const result = await oEmbedProxy({ url: targetApiUrl });
-
-                            if (result.data && result.data.thumbnail_url) {
-                                setAutoThumbnailPreview(result.data.thumbnail_url);
-                            } else {
-                                setAutoThumbnailPreview(GENERIC_THUMBNAIL_PLACEHOLDER);
-                            }
-                        } catch (error) {
-                            console.error(`Failed to fetch ${info.platform} preview via proxy:`, error);
-                            setAutoThumbnailPreview(GENERIC_THUMBNAIL_PLACEHOLDER);
-                        }
-                    } else {
-                        setAutoThumbnailPreview(GENERIC_THUMBNAIL_PLACEHOLDER);
-                    }
-                };
-
-                fetchPreview();
-
-            }, 800);
-
-            return () => {
-                clearTimeout(handler);
-            };
-        }, [mainUrl]);
-        // --- END: REPLACEMENT for the Admin Thumbnail Preview useEffect ---
+        return () => clearTimeout(handler);
+    }, [mainUrl]);
 
     useEffect(() => {
         const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
@@ -5239,7 +5138,6 @@ const AdminContentManagerScreen = ({
         }
     };
 
-    // --- START: REPLACEMENT for handleAddContent function ---
     const handleAddContent = async (e) => {
         e.preventDefault();
         if (!title || !mainUrl || !creatorName || !contentType) {
@@ -5250,14 +5148,16 @@ const AdminContentManagerScreen = ({
             showMessage("You don't have permission to add content.");
             return;
         }
-
-        showMessage("Adding content item...");
-
-        // THE CRITICAL FIX IS HERE:
-        // We now correctly destructure 'platform' from the results.
-        const { embedUrl, platform } = extractVideoInfo(mainUrl);
         let finalThumbnailUrl = '';
-
+        let embedUrl = '';
+        let videoPlatform = 'generic';
+        const { thumbnailUrl, embedUrl: extractedEmbedUrl, platform: extractedPlatform } = extractVideoInfo(mainUrl);
+        if (extractedEmbedUrl) {
+            embedUrl = extractedEmbedUrl;
+            videoPlatform = extractedPlatform;
+            finalThumbnailUrl = thumbnailUrl;
+        } else {
+            finalThumbnailUrl = GENERIC_THUMBNAIL_PLACEHOLDER;        }
         if (customThumbnailFile) {
             showMessage('Uploading custom thumbnail...');
             try {
@@ -5271,10 +5171,7 @@ const AdminContentManagerScreen = ({
                 showMessage(`Failed to upload custom thumbnail: ${error.message}`);
                 return;
             }
-        } else {
-            finalThumbnailUrl = autoThumbnailPreview || GENERIC_THUMBNAIL_PLACEHOLDER;
         }
-        
         try {
             await addDoc(collection(db, `artifacts/${appId}/public/data/content_items`), {
                 title, 
@@ -5282,7 +5179,7 @@ const AdminContentManagerScreen = ({
                 mainUrl, 
                 customThumbnailUrl: finalThumbnailUrl, 
                 embedUrl, 
-                videoPlatform: platform, // <-- And we correctly use 'platform' here.
+                videoPlatform,
                 creatorId: currentUser.uid,
                 creatorName, 
                 contentType, 
@@ -5291,8 +5188,6 @@ const AdminContentManagerScreen = ({
                 createdAt: new Date().toISOString(), 
                 createdBy: currentUser.uid, 
                 createdByName: creatorProfile.creatorName || currentUser.email,
-                viewCount: 0,
-                likeCount: 0
             });
             showMessage('Content item added successfully!');
             resetForm();
@@ -5301,7 +5196,6 @@ const AdminContentManagerScreen = ({
             showMessage(`Failed to add content item: ${error.message}`);
         }
     };
-    // --- END: REPLACEMENT for handleAddContent function ---
 
     const deleteContentLogic = async (id, titleToDelete) => {
         if (!currentUser || (creatorProfile.role !== 'admin' && creatorProfile.role !== 'authority')) {
@@ -5462,6 +5356,7 @@ const AdminContentManagerScreen = ({
     // FINAL VERSION of AdminSiteManagerScreen (with Inbox)
 
         const AdminSiteManagerScreen = ({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile }) => {
+    // --- State Declarations (Preserved & Cleaned) ---
     const [socialLinks, setSocialLinks] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -5473,48 +5368,63 @@ const AdminContentManagerScreen = ({
     const [submissions, setSubmissions] = useState([]);
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
     const [selectedSubmission, setSelectedSubmission] = useState(null);
-      const [diagnosticResults, setDiagnosticResults] = useState(null);
-    const [isDiagnosing, setIsDiagnosing] = useState(false);
     const [mmgNumber, setMmgNumber] = useState('');
+
+    // --- State and Handlers for Diagnostics Tool (Correctly Implemented) ---
+    const [diagnosticResults, setDiagnosticResults] = useState(null);
+    const [isDiagnosing, setIsDiagnosing] = useState(false);
+
     const handleRunDiagnostics = async () => {
         setIsDiagnosing(true);
         setDiagnosticResults(null);
         showMessage("Running system diagnostics...");
         try {
-            const runDiagnosticsCallable = window.httpsCallable(window.firebaseFunctions, 'runSystemDiagnostics');
+            const functions = getFunctions(window.firebaseApp);
+            const runDiagnosticsCallable = httpsCallable(functions, 'runSystemDiagnostics');
             const result = await runDiagnosticsCallable();
             setDiagnosticResults(result.data.diagnosticResults);
             showMessage("Diagnostics complete.");
         } catch (error) {
             console.error("Error running diagnostics:", error);
             showMessage(`Diagnostics failed: ${error.message}`);
-            setDiagnosticResults({ error: error.message });
+            setDiagnosticResults({ error: `Function call failed: ${error.message}` });
         } finally {
             setIsDiagnosing(false);
         }
     };
-    // --- END: PASTE THE DIAGNOSTIC HANDLER FUNCTION HERE ---
-    // useEffect hooks remain unchanged
+
+    const StatusRow = ({ label, result }) => {
+        const isSuccess = result?.toLowerCase().includes('success');
+        const isError = result?.toLowerCase().includes('error') || result?.toLowerCase().includes('failed');
+        const color = isSuccess ? '#00FF00' : isError ? '#DC3545' : '#FFF';
+        
+        return (
+            <tr style={{ borderBottom: '1px solid #3A3A3A' }}>
+                <td style={{ padding: '8px 0', fontWeight: 'bold' }}>{label}:</td>
+                <td style={{ textAlign: 'right', color: color, fontWeight: 'bold' }}>
+                    {result || 'Pending...'}
+                </td>
+            </tr>
+        );
+    };
+    
+    // --- All Your Other Handlers and useEffects (Preserved Exactly) ---
     useEffect(() => {
         const socialLinksDocRef = doc(db, "settings", "socialLinks");
         const unsubscribe = onSnapshot(socialLinksDocRef, (docSnap) => {
            if (docSnap.exists()) {
                 const data = docSnap.data();
-                // Handle social links array
                 if (data && Array.isArray(data.links)) {
                     const sortedLinks = [...data.links].sort((a, b) => a.name.localeCompare(b.name));
                     setSocialLinks(sortedLinks);
                 } else {
                     setSocialLinks([]);
                 }
-
-                // --- NEW: Handle the leaderboard toggle ---
                 if (data && typeof data.isLeaderboardEnabled === 'boolean') {
                     setIsLeaderboardEnabled(data.isLeaderboardEnabled);
                 } else {
-                    setIsLeaderboardEnabled(false); // Default to false if not set
+                    setIsLeaderboardEnabled(false);
                 }
-                // --- NEW: Handle pricing and ticket toggles ---
                 if (data && typeof data.premiumPrice === 'number') {
                     setPremiumPrice(data.premiumPrice);
                 }
@@ -5524,58 +5434,81 @@ const AdminContentManagerScreen = ({
                 if (data && typeof data.isTicketedEvent === 'boolean') {
                     setIsTicketedEvent(data.isTicketedEvent);
                 }
-                // --- THIS IS THE FIX ---
                 if (data && typeof data.mmgNumber !== 'undefined') {
                     setMmgNumber(data.mmgNumber);
                 }
-
             } else {
                 setSocialLinks([]);
-                setIsLeaderboardEnabled(false); // Default to false if doc doesn't exist
+                setIsLeaderboardEnabled(false);
             }
             setIsLoading(false);
         });
-        return () => unsubscribe();
+        
+        // This is your useEffect for contact submissions, preserved.
+        const submissionsRef = collection(db, "contactSubmissions");
+        const q = query(submissionsRef, orderBy("submittedAt", "desc"));
+        const unsubscribeSubmissions = onSnapshot(q, (snapshot) => {
+            setSubmissions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setIsLoadingSubmissions(false);
+        });
+
+        return () => {
+            unsubscribe();
+            unsubscribeSubmissions();
+        };
     }, []);
 
-    // handleUpdateLink and handleSaveChanges remain unchanged
     const handleUpdateField = (fieldName, value) => {
-    if (fieldName === 'isLeaderboardEnabled') {
-        setIsLeaderboardEnabled(value);
-    } else {
-        const [index, field] = fieldName.split('-');
-        const updatedLinks = [...socialLinks];
-        updatedLinks[parseInt(index)][field] = value;
-        setSocialLinks(updatedLinks);
-    }
-    setHasChanges(true);
-};
-    const handleSaveChanges = async () => { if (!hasChanges) return; setIsSaving(true); showMessage("Saving changes..."); try { const socialLinksDocRef = doc(db, "settings", "socialLinks"); await setDoc(socialLinksDocRef, { 
-    links: socialLinks, 
-    isLeaderboardEnabled: isLeaderboardEnabled, 
-    
-    // =========== ADD THE FOLLOWING 3 LINES ===========
-    premiumPrice: parseFloat(premiumPrice),
-    ticketPrice: parseFloat(ticketPrice),
-    isTicketedEvent: isTicketedEvent,
-    mmgNumber: mmgNumber
+        if (fieldName === 'isLeaderboardEnabled') {
+            setIsLeaderboardEnabled(value);
+        } else {
+            const [index, field] = fieldName.split('-');
+            const updatedLinks = [...socialLinks];
+            updatedLinks[parseInt(index)][field] = value;
+            setSocialLinks(updatedLinks);
+        }
+        setHasChanges(true);
+    };
 
-}, { merge: true }); showMessage("Changes saved successfully!"); setHasChanges(false); } catch (error) { showMessage(`Error saving changes: ${error.message}`); } finally { setIsSaving(false); } };
+    const handleSaveChanges = async () => { 
+        if (!hasChanges) return; 
+        setIsSaving(true); 
+        showMessage("Saving changes..."); 
+        try { 
+            const socialLinksDocRef = doc(db, "settings", "socialLinks"); 
+            await setDoc(socialLinksDocRef, { 
+                links: socialLinks, 
+                isLeaderboardEnabled: isLeaderboardEnabled, 
+                premiumPrice: parseFloat(premiumPrice),
+                ticketPrice: parseFloat(ticketPrice),
+                isTicketedEvent: isTicketedEvent,
+                mmgNumber: mmgNumber
+            }, { merge: true }); 
+            showMessage("Changes saved successfully!"); 
+            setHasChanges(false); 
+        } catch (error) { 
+            showMessage(`Error saving changes: ${error.message}`); 
+        } finally { 
+            setIsSaving(false); 
+        } 
+    };
 
-    // handleViewSubmission remains unchanged
     const handleViewSubmission = async (submission) => {
         setSelectedSubmission(submission);
         if (submission.status === 'New') {
-            try { await updateDoc(doc(db, "contactSubmissions", submission.id), { status: 'Read' }); } catch (error) { console.error("Error marking submission as read:", error); }
+            try { 
+                await updateDoc(doc(db, "contactSubmissions", submission.id), { status: 'Read' }); 
+            } catch (error) { 
+                console.error("Error marking submission as read:", error); 
+            }
         }
     };
 
-    // --- NEW: Function to handle deleting a submission ---
     const deleteSubmissionLogic = async (submissionId) => {
         showMessage("Deleting submission...");
         try {
             await deleteDoc(doc(db, "contactSubmissions", submissionId));
-            setSelectedSubmission(null); // Close the modal after deletion
+            setSelectedSubmission(null);
             showMessage("Submission deleted successfully.");
         } catch (error) {
             console.error("Error deleting submission:", error);
@@ -5583,11 +5516,8 @@ const AdminContentManagerScreen = ({
         }
     };
 
-    // --- NEW: Confirmation handler for the delete action ---
     const confirmDeleteSubmission = (submission) => {
-        // First, hide the details modal so the confirmation modal is clear.
         setSelectedSubmission(null);
-        // Now, set up and show the confirmation modal.
         setConfirmationTitle("Delete Submission?");
         setConfirmationMessage(`Are you sure you want to permanently delete this message from "${submission.userName}"? This action cannot be undone.`);
         setOnConfirmationAction(() => () => deleteSubmissionLogic(submission.id));
@@ -5598,10 +5528,12 @@ const AdminContentManagerScreen = ({
         return <div className="screenContainer"><p className="heading">Loading Site Settings...</p></div>;
     }
     const currentUserRole = creatorProfile ? creatorProfile.role : 'user';
+
     return (
         <div className="screenContainer">
             <p className="heading">Site Management</p>
-            {/* ... Social Links Manager JSX remains unchanged ... */}
+            
+            {/* --- All your other JSX sections are preserved exactly --- */}
             <div className="dashboardSection">
                 <div className="flex justify-between items-center mb-4"><p className="dashboardSectionTitle" style={{marginBottom: 0}}>Social Links Manager</p><button className="button" onClick={handleSaveChanges} disabled={!hasChanges || isSaving}><span className="buttonText">{isSaving ? 'Saving...' : 'Save Changes'}</span></button></div>
                 <div className="dashboardContentList">
@@ -5615,54 +5547,32 @@ const AdminContentManagerScreen = ({
             </div>
 
             <div className="dashboardSection">
-    <p className="dashboardSectionTitle">Feature Toggles</p>
-    <div className="adminDashboardItem">
-        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Enable Top Performers Screen</p>
-        <label className="flex items-center cursor-pointer">
-            <span className="mr-3 text-sm font-medium text-gray-300">{isLeaderboardEnabled ? 'Enabled' : 'Disabled'}</span>
-            <div className="relative">
-                <input 
-                    type="checkbox" 
-                    className="sr-only" 
-                    checked={isLeaderboardEnabled} 
-                    onChange={(e) => handleUpdateField('isLeaderboardEnabled', e.target.checked)} 
-                />
-                <div className={`block w-14 h-8 rounded-full ${isLeaderboardEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isLeaderboardEnabled ? 'transform translate-x-6' : ''}`}></div>
+                <p className="dashboardSectionTitle">Feature Toggles</p>
+                <div className="adminDashboardItem">
+                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Enable Top Performers Screen</p>
+                    <label className="flex items-center cursor-pointer">
+                        <span className="mr-3 text-sm font-medium text-gray-300">{isLeaderboardEnabled ? 'Enabled' : 'Disabled'}</span>
+                        <div className="relative">
+                            <input type="checkbox" className="sr-only" checked={isLeaderboardEnabled} onChange={(e) => handleUpdateField('isLeaderboardEnabled', e.target.checked)} />
+                            <div className={`block w-14 h-8 rounded-full ${isLeaderboardEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isLeaderboardEnabled ? 'transform translate-x-6' : ''}`}></div>
+                        </div>
+                    </label>
+                </div>
             </div>
-        </label>
-    </div>
-</div>
 
-
-           <div className="dashboardSection">
-    <p className="dashboardSectionTitle">Monetization Settings</p>
-    <div className="adminDashboardItem">
-        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p>
-        <input 
-            type="number" 
-            className="formInput" 
-            value={premiumPrice} 
-            onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }}
-            style={{width: '100px', textAlign: 'right'}} 
-        />
-    </div>
-    {/* The "Enable One-Time Ticket Sales" and "Single Event Ticket Price" controls have been relocated to the Manage Categories screen. */}
+            <div className="dashboardSection">
+                <p className="dashboardSectionTitle">Monetization Settings</p>
+                <div className="adminDashboardItem">
+                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p>
+                    <input type="number" className="formInput" value={premiumPrice} onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} />
+                </div>
                 {currentUserRole === 'admin' && (
                      <div className="adminDashboardItem">
                         <p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p>
-                        <input 
-                            type="text" 
-                            className="formInput" 
-                            value={mmgNumber} 
-                            onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }}
-                            placeholder="Enter MMG number..."
-                            style={{width: '200px', textAlign: 'right'}} 
-                        />
+                        <input type="text" className="formInput" value={mmgNumber} onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }} placeholder="Enter MMG number..." style={{width: '200px', textAlign: 'right'}} />
                     </div>
                 )}
-                {/* ======================== END: NEW UI ======================== */}
-                        
             </div>
 
             <div className="dashboardSection" style={{marginTop: '20px'}}>
@@ -5691,48 +5601,40 @@ const AdminContentManagerScreen = ({
                         <hr style={{borderColor: '#333', margin: '15px 0'}}/>
                         <p className="paragraph" style={{backgroundColor: '#0A0A0A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap'}}>{selectedSubmission.message}</p>
                         <div className="confirmationModalButtons">
-                            {/* --- THIS IS THE NEW DELETE BUTTON --- */}
                             <button className="confirmationButton cancel" onClick={() => confirmDeleteSubmission(selectedSubmission)}>Delete</button>
                             <button className="confirmationButton confirm" onClick={() => setSelectedSubmission(null)}>Close</button>
                         </div>
                     </div>
                 </div>
             )}
-                {/* --- START: PASTE THE SYSTEM STATUS JSX BLOCK HERE --- */}
+            
+            {/* =========== THIS IS THE CORRECTED AND FINAL UI BLOCK =========== */}
             <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}>
-                <p className="dashboardSectionTitle">System Status</p>
+                <p className="dashboardSectionTitle">System Status & Diagnostics</p>
+                <p className="dashboardItem" style={{color: '#AAA', marginBottom: '15px'}}>Run a comprehensive check on permissions and services. This tool will test your ability to read/write to the database and storage based on your current role.</p>
                 <button
                     className="button"
                     onClick={handleRunDiagnostics}
                     style={{ backgroundColor: '#008080' }}
                     disabled={isDiagnosing}
                 >
-                    <span className="buttonText">{isDiagnosing ? 'Running...' : 'Run System Diagnostics'}</span>
+                    <span className="buttonText">{isDiagnosing ? 'Running...' : 'Run Enhanced Diagnostics'}</span>
                 </button>
                 {diagnosticResults && (
                     <div style={{ marginTop: '15px', color: '#FFF' }}>
-                        {diagnosticResults.error ? (
-                            <p style={{ color: '#DC3545' }}>Error: {diagnosticResults.error}</p>
-                        ) : (
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <tbody>
-                                    <tr style={{ borderBottom: '1px solid #3A3A3A' }}>
-                                        <td style={{ padding: '8px 0', fontWeight: 'bold' }}>Project ID:</td>
-                                        <td style={{ textAlign: 'right' }}>{diagnosticResults.projectID}</td>
-                                    </tr>
-                                    <tr style={{ borderBottom: '1px solid #3A3A3A' }}>
-                                        <td style={{ padding: '8px 0', fontWeight: 'bold' }}>Database Connectivity:</td>
-                                        <td style={{ textAlign: 'right', color: diagnosticResults.dbConnectivity === 'Success' ? '#00FF00' : '#DC3545', fontWeight: 'bold' }}>
-                                            {diagnosticResults.dbConnectivity}
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        )}
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <tbody>
+                                <StatusRow label="Authentication" result={diagnosticResults.authCheck} />
+                                <StatusRow label="Project ID" result={diagnosticResults.projectID} />
+                                <StatusRow label="Database Read" result={diagnosticResults.dbReadTest} />
+                                <StatusRow label="Database Write" result={diagnosticResults.dbWriteTest} />
+                                <StatusRow label="Storage R/W/D" result={diagnosticResults.storageTest} />
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </div>
-            {/* --- END: PASTE THE SYSTEM STATUS JSX BLOCK HERE --- */}
+            {/* =========== END OF THE CORRECTED UI BLOCK =========== */}
         </div>
     );
 };
@@ -6017,81 +5919,36 @@ const AdminContentManagerScreen = ({
         
         // --- FIND and REPLACE the ENTIRE CategoriesScreen component with this block ---
 
-    const CategoriesScreen = ({ showMessage, currentUser, creatorProfile, setActiveScreen, handleVideoPress }) => {
-    // State managed internally by this component
-    const [isLive, setIsLive] = useState(false);
-    const [countdownText, setCountdownText] = useState('');
-    const [liveThumbnail, setLiveThumbnail] = useState('');
-    const [liveEventSettings, setLiveEventSettings] = useState(null); // Full event doc
-    
-    // State for managing categories and content
+    const CategoriesScreen = ({ showMessage, isLive, countdownText, liveThumbnail, currentUser, creatorProfile, setActiveScreen, 
+    handleVideoPress }) => {
     const [categories, setCategories] = useState([]);
     const [activeCategory, setActiveCategory] = useState('Live Premieres');
     const [content, setContent] = useState([]);
     const [loadingCategories, setLoadingCategories] = useState(true);
     const [loadingContent, setLoadingContent] = useState(false);
-    const [showMore, setShowMore] = useState(false);
+    
+    // State to hold the specific settings for the Live Premiere event
+    const [liveEventSettings, setLiveEventSettings] = useState(null);
+    const [showMore, setShowMore] = useState(false); // NEW: State for the dropdown
 
-    // Effect to get all category tabs AND to run the countdown logic
     useEffect(() => {
         const categoriesRef = collection(db, "content_categories");
         const q = query(categoriesRef, where("isActive", "==", true), orderBy("orderIndex", "asc"));
-        let countdownInterval = null;
-
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setCategories(fetchedCategories);
             setLoadingCategories(false);
-
-            const liveDoc = fetchedCategories.find(cat => cat.name === 'Live Premieres');
-            setLiveEventSettings(liveDoc || null); // Store the entire event doc
-
-            clearInterval(countdownInterval); // Clear previous timer on update
             
-            if (!liveDoc || !liveDoc.liveStreamStartTime) {
-                setIsLive(false);
-                setCountdownText('');
-                setLiveThumbnail('');
-                return;
-            }
-
-            const startTime = liveDoc.liveStreamStartTime.toDate();
-            const liveUrl = liveDoc.liveStreamUrl || '';
-            setLiveThumbnail(liveDoc.liveStreamThumbnailUrl || '');
-
-            countdownInterval = setInterval(() => {
-                const now = new Date();
-                const distance = startTime - now;
-                if (distance < 0) {
-                    clearInterval(countdownInterval);
-                    setCountdownText('');
-                    setIsLive(liveUrl.trim() !== '');
-                } else {
-                    setIsLive(false);
-                    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-                    let parts = [];
-                    if (days > 0) parts.push(`${days}d`);
-                    if (hours > 0) parts.push(`${hours}h`);
-                    if (minutes > 0) parts.push(`${minutes}m`);
-                    if (days === 0 && hours === 0 && minutes < 1) parts.push(`${seconds}s`);
-                    else if(days === 0 && hours === 0) parts.push(`${minutes}m`);
-                    setCountdownText(parts.join(' '));
-                }
-            }, 1000);
+            const liveDoc = fetchedCategories.find(cat => cat.name === 'Live Premieres');
+            setLiveEventSettings(liveDoc || null);
         });
-
-        return () => {
-            unsubscribe();
-            clearInterval(countdownInterval);
-        };
+        return () => unsubscribe();
     }, []);
 
-    // Effect for fetching content for other tabs
     useEffect(() => {
-        if (!activeCategory || activeCategory === 'Live Premieres') { setContent([]); setLoadingContent(false); return; }
+        if (!activeCategory || activeCategory === 'Live Premieres') {
+            setContent([]); setLoadingContent(false); return;
+        }
         setLoadingContent(true);
         const contentRef = collection(db, `artifacts/${appId}/public/data/content_items`);
         const q = query(contentRef, where('contentType', '==', activeCategory), where('isActive', '==', true), orderBy('createdAt', 'desc'));
@@ -6102,21 +5959,29 @@ const AdminContentManagerScreen = ({
         return () => unsubscribe();
     }, [activeCategory]);
     
-    const handleCategoryClick = (categoryName) => { setActiveCategory(categoryName); setShowMore(false); };
-    
-    // The LiveStreamPlayer sub-component is now entirely self-reliant on this screen's internal state
+    // NEW: Function to handle category clicks and close the dropdown
+    const handleCategoryClick = (categoryName) => {
+        setActiveCategory(categoryName);
+        setShowMore(false);
+    };
+
     const LiveStreamPlayer = () => {
+        // Master Access Check Logic
         const hasAccess = () => {
             if (!liveEventSettings?.isTicketedEvent) return true;
             if (!currentUser || !creatorProfile) return false;
             if (creatorProfile.premiumExpiresAt && creatorProfile.premiumExpiresAt.toDate() > new Date()) return true;
             const eventId = liveEventSettings.liveStreamEventId;
-            return eventId && creatorProfile.purchasedTickets && creatorProfile.purchasedTickets[eventId];
+            if (eventId && creatorProfile.purchasedTickets && creatorProfile.purchasedTickets[eventId]) return true;
+            return false;
         };
+
         const canViewStream = hasAccess();
 
         if (!isLive) {
-            if (countdownText) { return ( <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}> {liveThumbnail ? ( <img src={liveThumbnail} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'}} /> ) : ( <div style={{ margin: '0 auto', width: '100%', maxWidth: '480px', height: '250px', backgroundColor: '#2A2A2A', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><p className="heading">Coming Soon</p></div> )} <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p> <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p> </div> ); }
+             if (countdownText) {
+                return ( <div style={{textAlign: 'center', paddingTop: '50px', position: 'relative'}}> {liveThumbnail ? ( <img src={liveThumbnail} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)'}} /> ) : ( <div style={{ margin: '0 auto', width: '100%', maxWidth: '480px', height: '250px', backgroundColor: '#2A2A2A', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><p className="heading">Coming Soon</p></div> )} <p className="heading" style={{marginTop: '20px'}}>Premiere Begins In:</p> <p className="subHeading" style={{color: '#FFD700', fontSize: '28px'}}>{countdownText}</p> </div> );
+            }
             return ( <div style={{textAlign: 'center', paddingTop: '50px'}}> <p className="heading">Stream Offline</p> <p className="subHeading">No live premiere is currently scheduled.</p> </div> );
         }
 
@@ -6126,88 +5991,83 @@ const AdminContentManagerScreen = ({
                 const finalEmbedUrl = embedUrl || `${liveEventSettings?.liveStreamUrl}?autoplay=1`;
                 return ( <div style={{ display: 'flex', justifyContent: 'center' }}> <div className={`videoModalContent`} style={{position: 'relative', width: '100%', maxWidth: '900px', height: 'calc(100vh - 300px)', minHeight: '400px', boxShadow: 'none', background: 'transparent'}}> <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`} style={{height: '100%', paddingBottom: 0}}> <iframe src={finalEmbedUrl} allow="autoplay; fullscreen" title="Live Premiere Content"></iframe> </div> </div> </div> );
             } else {
-                return ( <div style={{textAlign: 'center', paddingTop: '50px'}}> {liveThumbnail && <img src={liveThumbnail} alt="Event" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', opacity: 0.3}} />} <p className="heading" style={{color: '#FFD700'}}>This is a Premium Event</p> <p className="subHeading">The live stream has started. Please purchase a ticket or subscribe to view.</p> <button className="button" onClick={() => setActiveScreen('Premium')}> <span className="buttonText">Purchase Access</span> </button> </div> );
+                return ( <div style={{textAlign: 'center', paddingTop: '50px'}}> {liveThumbnail && <img src={liveThumbnail} alt="Event" style={{ display: 'block', margin: '0 auto', width: '100%', maxWidth: '480px', borderRadius: '10px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', opacity: 0.3}} />} <p className="heading" style={{color: '#FFD700'}}>This is a Premium Event</p> <p className="subHeading">The live stream has started. Please purchase a ticket or subscribe to view.</p> <button className="button" onClick={() => setActiveScreen('Premium')}> <span className="buttonText">Purchase Ticket</span> </button> </div> );
             }
         }
         return null;
     };
     
+    // NEW: Logic to split categories for the dropdown menu
     const visibleCategories = categories.slice(0, 2);
     const dropdownCategories = categories.slice(2);
 
-    return ( <div className="screenContainer"> <p className="sectionTitle">Discover Content</p> {loadingCategories ? <p>Loading categories...</p> : ( <div className="categoryTabs"> {visibleCategories.map(category => ( <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}> <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span> </button> ))} {dropdownCategories.length > 0 && ( <div className="more-content-button"> <button className="categoryTab" onClick={() => setShowMore(!showMore)}> <span className="categoryTabText">More Content ▼</span> </button> {showMore && ( <div className="more-content-dropdown"> {dropdownCategories.map(category => ( <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}> <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span> </button> ))} </div> )} </div> )} </div> )} <div className="categoryContent"> {activeCategory === 'Live Premieres' ? <LiveStreamPlayer /> : loadingContent ? <p className="paragraph" style={{textAlign: 'center'}}>Loading content...</p> : content.length === 0 ? <p className="paragraph" style={{textAlign: 'center'}}>There is no content in this category yet.</p> : ( <div className="contentGrid"> {content.map((item) => ( <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}> <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}> <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg> {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />} </div> <p className="contentTitle">{item.title}</p> </div> ))} </div> )} </div> </div> );
+    return (
+        <div className="screenContainer">
+            <p className="sectionTitle">Discover Content</p>
+            {loadingCategories ? <p>Loading categories...</p> : (
+                <div className="categoryTabs">
+                    {/* Render the first 2 (or fewer) categories */}
+                    {visibleCategories.map(category => (
+                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
+                            <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
+                        </button>
+                    ))}
+                    {/* If there are more than 2 categories, render the dropdown */}
+                    {dropdownCategories.length > 0 && (
+                        <div className="more-content-button">
+                            <button className="categoryTab" onClick={() => setShowMore(!showMore)}>
+                                <span className="categoryTabText">More Content ▼</span>
+                            </button>
+                            {showMore && (
+                                <div className="more-content-dropdown">
+                                    {dropdownCategories.map(category => (
+                                        <button key={category.id} className={`categoryTab ${activeCategory === category.name ? 'activeCategoryTab' : ''}`} onClick={() => handleCategoryClick(category.name)}>
+                                            <span className={`categoryTabText ${activeCategory === category.name ? 'activeCategoryTabText' : ''}`}>{category.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+            
+            <div className="categoryContent">
+                {activeCategory === 'Live Premieres' ? (
+                    <LiveStreamPlayer />
+                ) : loadingContent ? (
+                    <p className="paragraph" style={{textAlign: 'center'}}>Loading content...</p>
+                ) : content.length === 0 ? (
+                    <p className="paragraph" style={{textAlign: 'center'}}>There is no content in this category yet.</p>
+                ) : (
+                    <div className="contentGrid">
+                        {content.map((item) => (
+                            <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                                <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
+                                    <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+                                    {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                </div>
+                                <p className="contentTitle">{item.title}</p>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
 };
 
         
         // --- NEW HeaderLiveButton Component ---
-const HeaderLiveButton = ({ onClick }) => {
-    const [isLive, setIsLive] = useState(false);
-    const [countdownText, setCountdownText] = useState('');
-
-    useEffect(() => {
-        const categoriesRef = collection(db, "content_categories");
-        const q = query(categoriesRef, where("name", "==", "Live Premieres"));
-        let countdownInterval = null;
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            clearInterval(countdownInterval);
-
-            if (snapshot.empty) {
-                setIsLive(false);
-                setCountdownText('');
-                return;
-            }
-
-            const liveDocData = snapshot.docs[0].data();
-            const startTime = liveDocData.liveStreamStartTime ? liveDocData.liveStreamStartTime.toDate() : null;
-            const liveUrl = liveDocData.liveStreamUrl || '';
-            
-            if (!startTime) {
-                setIsLive(false);
-                setCountdownText('');
-                return;
-            }
-
-            countdownInterval = setInterval(() => {
-                const now = new Date();
-                const distance = startTime - now;
-
-                if (distance < 0) {
-                    clearInterval(countdownInterval);
-                    setCountdownText('');
-                    setIsLive(liveUrl.trim() !== '');
-                } else {
-                    setIsLive(false);
-                    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-                    
-                    let parts = [];
-                    if (days > 0) parts.push(`${days}d`);
-                    if (hours > 0) parts.push(`${hours}h`);
-                    if (minutes > 0) parts.push(`${minutes}m`);
-                    if (days === 0 && hours === 0 && minutes < 1) parts.push(`${seconds}s`);
-                    else if(days === 0 && hours === 0) parts.push(`${minutes}m`);
-                    
-                    setCountdownText(parts.join(' '));
-                }
-            }, 1000);
-        });
-
-        return () => {
-            unsubscribe();
-            clearInterval(countdownInterval);
-        };
-    }, []);
-
+const HeaderLiveButton = ({ isLive, countdownText, onClick }) => {
     if (!isLive && !countdownText) {
-        return null;
+        return null; // The button remains invisible if no event is set
     }
 
     return (
         <button className={`header-live-button ${isLive ? 'live' : 'countdown'}`} onClick={onClick}>
             <span>{isLive ? '🔴' : '⏳'}</span>
+            {/* This text is now more descriptive */}
             <span>{isLive ? 'Live Premieres: LIVE NOW' : `Live Premieres In: ${countdownText}`}</span>
         </button>
     );
@@ -6539,252 +6399,318 @@ const PremiumMembersScreen = ({ setActiveScreen, setSelectedUserId, showMessage 
 
 
 // --- UPDATED ANALYTICS DASHBOARD ---
-                const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
-            // State for new dashboard sections
-            const [platformStats, setPlatformStats] = useState(null);
-            const [loadingStats, setLoadingStats] = useState(true);
-            const [isRefreshing, setIsRefreshing] = useState(false); // New state for the button
+       const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
+    // State for new dashboard sections
+    const [platformStats, setPlatformStats] = useState(null);
+    const [loadingStats, setLoadingStats] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
-            // State for existing creator performance table
-            const [creators, setCreators] = useState([]);
-            const [loadingCreators, setLoadingCreators] = useState(true);
-            const [timeframe, setTimeframe] = useState('weekly');
-            const [sortBy, setSortBy] = useState('views');
+    // State for existing creator performance table
+    const [creators, setCreators] = useState([]);
+    const [loadingCreators, setLoadingCreators] = useState(true);
+    const [timeframe, setTimeframe] = useState('weekly');
+    const [sortBy, setSortBy] = useState('views');
 
-            // Effect for platform-wide stats (from statistics/platform_overview)
-            useEffect(() => {
-                const statsDocRef = doc(db, "statistics", "platform_overview");
-                const unsubscribe = onSnapshot(statsDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        setPlatformStats(docSnap.data());
-                    } else {
-                        showMessage("Platform statistics not found. Run the backend job.");
-                        setPlatformStats(null);
-                    }
-                    setLoadingStats(false);
-                }, (error) => {
-                    console.error("Error fetching platform stats:", error);
-                    showMessage("Failed to load platform analytics.");
-                    setLoadingStats(false);
-                });
-                return () => unsubscribe();
-            }, []);
+    // Effect for platform-wide stats (from statistics/platform_overview)
+    useEffect(() => {
+        const statsDocRef = doc(db, "statistics", "platform_overview");
+        const unsubscribe = onSnapshot(statsDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setPlatformStats(docSnap.data());
+            } else {
+                showMessage("Platform statistics not found. Run the backend job.");
+                setPlatformStats(null);
+            }
+            setLoadingStats(false);
+        }, (error) => {
+            console.error("Error fetching platform stats:", error);
+            showMessage("Failed to load platform analytics.");
+            setLoadingStats(false);
+        });
+        return () => unsubscribe();
+    }, []);
 
-            // Effect for creator-specific stats (for the bottom table)
-            useEffect(() => {
-                const creatorsQuery = query(collection(db, "creators"));
-                const unsubscribe = onSnapshot(creatorsQuery, (snapshot) => {
-                    const creatorsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                    setCreators(creatorsData);
-                    setLoadingCreators(false);
-                }, (error) => {
-                    console.error("Error fetching creator analytics:", error);
-                    showMessage("Failed to load creator performance data.");
-                    setLoadingCreators(false);
-                });
-                return () => unsubscribe();
-            }, []);
+    // Effect for creator-specific stats (for the bottom table)
+    useEffect(() => {
+        const creatorsQuery = query(collection(db, "creators"));
+        const unsubscribe = onSnapshot(creatorsQuery, (snapshot) => {
+            const creatorsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            setCreators(creatorsData);
+            setLoadingCreators(false);
+        }, (error) => {
+            console.error("Error fetching creator analytics:", error);
+            showMessage("Failed to load creator performance data.");
+            setLoadingCreators(false);
+        });
+        return () => unsubscribe();
+    }, []);
+    
+    // Handler for the "Refresh Now" button
+    const handleRefreshStats = async () => {
+        setIsRefreshing(true);
+        showMessage("Requesting live stats refresh...");
+        try {
+            const functions = getFunctions(window.firebaseApp);
+            const triggerUpdate = httpsCallable(functions, 'triggerPlatformStatsUpdate');
+            await triggerUpdate();
+            showMessage("Stats refreshed successfully! Data will update momentarily.");
+        } catch (error) {
+            console.error("Error triggering stats update:", error);
+            showMessage(`Error: ${error.message}`);
+        } finally {
+            setIsRefreshing(false);
+        }
+    };
+    
+    // Helper sub-component for KPI cards
+    const StatCard = ({ title, value, description }) => (
+        <div className="dashboardSection" style={{ flex: 1, textAlign: 'center', minWidth: '150px' }}>
+            <p className="dashboardItem" style={{ fontSize: '12px', color: '#AAA', marginBottom: 0, textTransform: 'uppercase' }}>{title}</p>
+            <p className="premiumFeatureTitle" style={{ fontSize: '32px', color: '#FFF', margin: '5px 0' }}>{(value || 0).toLocaleString()}</p>
+            {description && <p className="dashboardItem" style={{ fontSize: '12px', color: '#CCC' }}>{description}</p>}
+        </div>
+    );
+
+    // Helper functions for the creator performance table
+    const getMetric = (creator, metric) => {
+        const field = `${timeframe}${metric.charAt(0).toUpperCase() + metric.slice(1)}`;
+        return creator[field] || 0;
+    };
+    const sortedCreators = [...creators].sort((a, b) => getMetric(b, sortBy) - getMetric(a, sortBy));
+    const renderMetricHeader = (metric) => (
+        <th onClick={() => setSortBy(metric)} style={{cursor: 'pointer', textAlign: 'right', padding: '10px'}}>
+            {metric.charAt(0).toUpperCase() + metric.slice(1)} {sortBy === metric ? '▼' : ''}
+        </th>
+    );
+
+    if (loadingStats || loadingCreators) {
+        return <div className="screenContainer" style={{textAlign: 'center'}}><p className="heading">Loading Platform Dashboard...</p></div>;
+    }
+
+    return (
+        <div className="screenContainer">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                    <p className="heading" style={{ margin: 0 }}>Platform Health Dashboard</p>
+                    <p className="subHeading" style={{ margin: '5px 0 0 0', textAlign: 'left' }}>
+                        Last Updated: {platformStats?.lastUpdated ? new Date(platformStats.lastUpdated).toLocaleString() : 'Never'}
+                    </p>
+                </div>
+                <div style={{display: 'flex', gap: '10px'}}>
+                     <button className="button" onClick={handleRefreshStats} disabled={isRefreshing} style={isRefreshing ? {backgroundColor: '#555'} : {}}>
+                        <span className="buttonText">{isRefreshing ? 'Refreshing...' : 'Refresh Now'}</span>
+                    </button>
+                    <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{backgroundColor: '#3A3A3A'}}>
+                        <span className="buttonText">Back to Admin</span>
+                    </button>
+                </div>
+            </div>
             
-            // New handler for the refresh button
-            const handleRefreshStats = async () => {
-                setIsRefreshing(true);
-                showMessage("Requesting live stats refresh...");
+            <div className="dashboardSection" style={{backgroundColor: 'transparent', padding: 0, boxShadow: 'none', marginTop: '20px'}}>
+                <p className="dashboardSectionTitle">Key Performance Indicators</p>
+                <div style={{display: 'flex', gap: '15px', flexWrap: 'wrap'}}>
+                    <StatCard title="Total Users" value={platformStats?.totalUsers} description="All-time registered accounts" />
+                    <StatCard title="Active Users" value={platformStats?.activeUsers} description="Logged in last 30 days" />
+                    <StatCard title="Inactive Users" value={platformStats?.inactiveUsers} description="Not logged in last 30 days" />
+                    <StatCard title="New Users" value={platformStats?.newUsers} description="Joined in last 7 days" />
+                </div>
+            </div>
+            
+            <div className="dashboardSection" style={{backgroundColor: 'transparent', padding: 0, boxShadow: 'none', marginTop: '20px'}}>
+                <p className="dashboardSectionTitle">Platform Breakdown</p>
+                <div style={{display: 'flex', gap: '15px', flexWrap: 'wrap'}}>
+                    <div className="dashboardSection" style={{flex: 1, minWidth: '250px'}}>
+                        <p className="dashboardSectionTitle" style={{fontSize: '16px'}}>User Roles</p>
+                        <table style={{width: '100%'}}><tbody>
+                            {platformStats?.userRoles && Object.entries(platformStats.userRoles).map(([role, count]) => (
+                                <tr key={role} style={{borderBottom: '1px solid #3A3A3A'}}>
+                                    <td style={{padding: '8px 0', textTransform: 'capitalize'}}>{role}</td>
+                                    <td style={{textAlign: 'right', fontWeight: 'bold'}}>{count.toLocaleString()}</td>
+                                </tr>
+                            ))}
+                        </tbody></table>
+                    </div>
+                    <div className="dashboardSection" style={{flex: 1, minWidth: '250px'}}>
+                        <p className="dashboardSectionTitle" style={{fontSize: '16px'}}>Campaign Funnel</p>
+                        <table style={{width: '100%'}}><tbody>
+                            {platformStats?.campaignStatusCounts && Object.entries(platformStats.campaignStatusCounts).map(([status, count]) => (
+                                <tr key={status} style={{borderBottom: '1px solid #3A3A3A'}}>
+                                    <td style={{padding: '8px 0', textTransform: 'capitalize'}}>{status}</td>
+                                    <td style={{textAlign: 'right', fontWeight: 'bold'}}>{count.toLocaleString()}</td>
+                                </tr>
+                            ))}
+                        </tbody></table>
+                    </div>
+                </div>
+            </div>
+
+            <div className="dashboardSection" style={{marginTop: '20px'}}>
+                <p className="dashboardSectionTitle">Creator Performance</p>
+                 <div className="leaderboard-tabs" style={{justifyContent: 'flex-start', marginBottom: '15px'}}>
+                    <p style={{alignSelf: 'center', color: '#AAA', marginRight: '10px'}}>Timeframe:</p>
+                    <button className="button" onClick={() => setTimeframe('daily')} style={{backgroundColor: timeframe === 'daily' ? '#FFD700' : '#3A3A3A', color: timeframe === 'daily' ? '#0A0A0A' : '#FFF'}}>Daily</button>
+                    <button className="button" onClick={() => setTimeframe('weekly')} style={{backgroundColor: timeframe === 'weekly' ? '#FFD700' : '#3A3A3A', color: timeframe === 'weekly' ? '#0A0A0A' : '#FFF'}}>Weekly</button>
+                    <button className="button" onClick={() => setTimeframe('lifetime')} style={{backgroundColor: timeframe === 'lifetime' ? '#FFD700' : '#3A3A3A', color: timeframe === 'lifetime' ? '#0A0A0A' : '#FFF'}}>Lifetime</button>
+                </div>
+                <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                    <thead><tr style={{borderBottom: '1px solid #FFD700'}}>
+                        <th style={{textAlign: 'left', padding: '10px'}}>Creator</th>
+                        {renderMetricHeader('views')}
+                        {renderMetricHeader('likes')}
+                    </tr></thead>
+                    <tbody>
+                        {sortedCreators.map(creator => (
+                            <tr key={creator.id} style={{borderBottom: '1px solid #3A3A3A'}}>
+                                <td style={{padding: '10px', display: 'flex', alignItems: 'center', gap: '10px'}}>
+                                    <img src={creator.profilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} alt={creator.creatorName} style={{width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover'}} />
+                                    <span style={{fontWeight: 'bold'}}>{creator.creatorName}</span>
+                                </td>
+                                <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'views' ? '#FFD700' : '#FFF', padding: '10px'}}>{getMetric(creator, 'views').toLocaleString()}</td>
+                                <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'likes' ? '#FFD700' : '#FFF', padding: '10px'}}>{getMetric(creator, 'likes').toLocaleString()}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+        // REPLACE THE ENTIRE FollowingFeedScreen COMPONENT
+
+const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handleVideoPress, setSelectedUserId }) => {
+            const [loading, setLoading] = useState(true);
+            const [feedItems, setFeedItems] = useState([]);
+            const [lastVisible, setLastVisible] = useState(null); // For pagination
+            const [hasMore, setHasMore] = useState(true); // To know when to stop loading
+
+            // ACTION: Import the startAfter function for pagination
+            const { startAfter } = window;
+
+            const BATCH_SIZE = 15; // Fetch 15 items at a time
+
+            const fetchFeed = async (isInitialLoad = false) => {
+                if (!currentUser) return;
+                
+                let q;
+                const feedRef = collection(db, "creators", currentUser.uid, "feed");
+
+                if (isInitialLoad) {
+                    setLoading(true);
+                    q = query(feedRef, orderBy("createdAt", "desc"), limit(BATCH_SIZE));
+                } else {
+                    if (!lastVisible) { // No more items to load
+                        setHasMore(false);
+                        return;
+                    }
+                    // Use startAfter for pagination
+                    q = query(feedRef, orderBy("createdAt", "desc"), startAfter(lastVisible), limit(BATCH_SIZE));
+                }
+
                 try {
-                    const functions = getFunctions(window.firebaseApp);
-                    const triggerUpdate = httpsCallable(functions, 'triggerPlatformStatsUpdate');
-                    await triggerUpdate();
-                    // The onSnapshot listener will automatically show the new data.
-                    showMessage("Stats refreshed successfully!");
+                    const documentSnapshots = await getDocs(q);
+                    
+                    const newItems = documentSnapshots.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+
+                    // Set the last document for the next fetch
+                    setLastVisible(documentSnapshots.docs[documentSnapshots.docs.length - 1]);
+                    
+                    if (newItems.length < BATCH_SIZE) {
+                        setHasMore(false);
+                    }
+                    
+                    setFeedItems(prevItems => isInitialLoad ? newItems : [...prevItems, ...newItems]);
+
                 } catch (error) {
-                    console.error("Error triggering stats update:", error);
-                    showMessage(`Error: ${error.message}`);
+                    console.error("Error fetching feed: ", error);
+                    showMessage("Could not load your feed.");
                 } finally {
-                    setIsRefreshing(false);
+                    setLoading(false);
                 }
             };
             
-            // Helper sub-component for KPI cards
-            const StatCard = ({ title, value, description }) => (
-                <div className="dashboardSection" style={{ flex: 1, textAlign: 'center', minWidth: '150px' }}>
-                    <p className="dashboardItem" style={{ fontSize: '12px', color: '#AAA', marginBottom: 0, textTransform: 'uppercase' }}>{title}</p>
-                    <p className="premiumFeatureTitle" style={{ fontSize: '32px', color: '#FFF', margin: '5px 0' }}>{(value || 0).toLocaleString()}</p>
-                    {description && <p className="dashboardItem" style={{ fontSize: '12px', color: '#CCC' }}>{description}</p>}
-                </div>
-            );
+            useEffect(() => {
+                fetchFeed(true); // Initial fetch
+            }, [currentUser]);
 
-            // Helper functions for the creator performance table
-            const getMetric = (creator, metric) => {
-                const field = `${timeframe}${metric.charAt(0).toUpperCase() + metric.slice(1)}`;
-                return creator[field] || 0;
-            };
-            const sortedCreators = [...creators].sort((a, b) => getMetric(b, sortBy) - getMetric(a, sortBy));
-            const renderMetricHeader = (metric) => (
-                <th onClick={() => setSortBy(metric)} style={{cursor: 'pointer', textAlign: 'right', padding: '10px'}}>
-                    {metric.charAt(0).toUpperCase() + metric.slice(1)} {sortBy === metric ? '▼' : ''}
-                </th>
-            );
+            // This groups the flat list of feed items by creator for the new UI
+            const groupedFeed = feedItems.reduce((acc, item) => {
+                const creatorId = item.creatorId;
+                if (!acc[creatorId]) {
+                    acc[creatorId] = {
+                        creatorName: item.creatorName,
+                        creatorProfilePictureUrl: item.creatorProfilePictureUrl,
+                        items: []
+                    };
+                }
+                acc[creatorId].items.push(item);
+                return acc;
+            }, {});
 
-            if (loadingStats || loadingCreators) {
-                return <div className="screenContainer" style={{textAlign: 'center'}}><p className="heading">Loading Platform Dashboard...</p></div>;
+            if (loading && feedItems.length === 0) {
+                return <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Your Feed...</p></div>;
+            }
+
+            if (feedItems.length === 0) {
+                return (
+                    <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                        <p className="heading">Your Feed is Empty</p>
+                        <p className="subHeading">Follow creators to see their latest content here.</p>
+                        <button className="button" onClick={() => setActiveScreen('DiscoverUsers')}><span className="buttonText">Discover Creators</span></button>
+                    </div>
+                );
             }
 
             return (
                 <div className="screenContainer">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-                        <div>
-                            <p className="heading" style={{ margin: 0 }}>Platform Health Dashboard</p>
-                            <p className="subHeading" style={{ margin: '5px 0 0 0', textAlign: 'left' }}>
-                                Last Updated: {platformStats?.lastUpdated ? new Date(platformStats.lastUpdated).toLocaleString() : 'Never'}
-                            </p>
-                        </div>
-                        <div style={{display: 'flex', gap: '10px'}}>
-                             <button className="button" onClick={handleRefreshStats} disabled={isRefreshing} style={isRefreshing ? {backgroundColor: '#555'} : {}}>
-                                <span className="buttonText">{isRefreshing ? 'Refreshing...' : 'Refresh Now'}</span>
-                            </button>
-                            <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{backgroundColor: '#3A3A3A'}}>
-                                <span className="buttonText">Back to Admin</span>
-                            </button>
-                        </div>
-                    </div>
-                    
-                    {/* --- KPI Section --- */}
-                    <div className="dashboardSection" style={{backgroundColor: 'transparent', padding: 0, boxShadow: 'none', marginTop: '20px'}}>
-                        <p className="dashboardSectionTitle">Key Performance Indicators</p>
-                        <div style={{display: 'flex', gap: '15px', flexWrap: 'wrap'}}>
-                            <StatCard title="Total Users" value={platformStats?.totalUsers} description="All-time registered accounts" />
-                            <StatCard title="Active Users" value={platformStats?.activeUsers} description="Logged in last 30 days" />
-                            <StatCard title="Inactive Users" value={platformStats?.inactiveUsers} description="Not logged in last 30 days" />
-                            <StatCard title="New Users" value={platformStats?.newUsers} description="Joined in last 7 days" />
-                        </div>
-                    </div>
-                    
-                    {/* --- Platform Breakdown Section --- */}
-                    <div className="dashboardSection" style={{backgroundColor: 'transparent', padding: 0, boxShadow: 'none', marginTop: '20px'}}>
-                        <p className="dashboardSectionTitle">Platform Breakdown</p>
-                        <div style={{display: 'flex', gap: '15px', flexWrap: 'wrap'}}>
-                            {/* User Roles Card */}
-                            <div className="dashboardSection" style={{flex: 1, minWidth: '250px'}}>
-                                <p className="dashboardSectionTitle" style={{fontSize: '16px'}}>User Roles</p>
-                                <table style={{width: '100%'}}>
-                                    <tbody>
-                                        {platformStats?.userRoles && Object.entries(platformStats.userRoles).map(([role, count]) => (
-                                            <tr key={role} style={{borderBottom: '1px solid #3A3A3A'}}>
-                                                <td style={{padding: '8px 0', textTransform: 'capitalize'}}>{role}</td>
-                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{count.toLocaleString()}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                            {/* Campaign Statuses Card */}
-                            <div className="dashboardSection" style={{flex: 1, minWidth: '250px'}}>
-                                <p className="dashboardSectionTitle" style={{fontSize: '16px'}}>Campaign Funnel</p>
-                                <table style={{width: '100%'}}>
-                                    <tbody>
-                                        {platformStats?.campaignStatusCounts && Object.entries(platformStats.campaignStatusCounts).map(([status, count]) => (
-                                            <tr key={status} style={{borderBottom: '1px solid #3A3A3A'}}>
-                                                <td style={{padding: '8px 0', textTransform: 'capitalize'}}>{status}</td>
-                                                <td style={{textAlign: 'right', fontWeight: 'bold'}}>{count.toLocaleString()}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* --- Creator Performance Section --- */}
-                    <div className="dashboardSection" style={{marginTop: '20px'}}>
-                        <p className="dashboardSectionTitle">Creator Performance</p>
-                         <div className="leaderboard-tabs" style={{justifyContent: 'flex-start', marginBottom: '15px'}}>
-                            <p style={{alignSelf: 'center', color: '#AAA', marginRight: '10px'}}>Timeframe:</p>
-                            <button className="button" onClick={() => setTimeframe('daily')} style={{backgroundColor: timeframe === 'daily' ? '#FFD700' : '#3A3A3A', color: timeframe === 'daily' ? '#0A0A0A' : '#FFF'}}>Daily</button>
-                            <button className="button" onClick={() => setTimeframe('weekly')} style={{backgroundColor: timeframe === 'weekly' ? '#FFD700' : '#3A3A3A', color: timeframe === 'weekly' ? '#0A0A0A' : '#FFF'}}>Weekly</button>
-                            <button className="button" onClick={() => setTimeframe('lifetime')} style={{backgroundColor: timeframe === 'lifetime' ? '#FFD700' : '#3A3A3A', color: timeframe === 'lifetime' ? '#0A0A0A' : '#FFF'}}>Lifetime</button>
-                        </div>
-                        <table style={{width: '100%', borderCollapse: 'collapse'}}>
-                            <thead>
-                                <tr style={{borderBottom: '1px solid #FFD700'}}>
-                                    <th style={{textAlign: 'left', padding: '10px'}}>Creator</th>
-                                    {renderMetricHeader('views')}
-                                    {renderMetricHeader('likes')}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {sortedCreators.map(creator => (
-                                    <tr key={creator.id} style={{borderBottom: '1px solid #3A3A3A'}}>
-                                        <td style={{padding: '10px', display: 'flex', alignItems: 'center', gap: '10px'}}>
-                                            <img src={creator.profilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} alt={creator.creatorName} style={{width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover'}} />
-                                            <span style={{fontWeight: 'bold'}}>{creator.creatorName}</span>
-                                        </td>
-                                        <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'views' ? '#FFD700' : '#FFF', padding: '10px'}}>{getMetric(creator, 'views').toLocaleString()}</td>
-                                        <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'likes' ? '#FFD700' : '#FFF', padding: '10px'}}>{getMetric(creator, 'likes').toLocaleString()}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            );
-        };
-        // REPLACE THE ENTIRE FollowingFeedScreen COMPONENT
-
-const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handleVideoPress }) => {
-            const [loading, setLoading] = useState(true);
-            const [feedItems, setFeedItems] = useState([]);
-
-            useEffect(() => {
-                if (!currentUser) return;
-                const feedRef = collection(db, "creators", currentUser.uid, "feed");
-                const q = query(feedRef, orderBy("createdAt", "desc"), limit(50));
-                const unsubscribeFeed = onSnapshot(q, (feedSnapshot) => {
-                    const rawFeedItems = feedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    const followingRef = collection(db, "creators", currentUser.uid, "following");
-                    getDocs(followingRef).then(followingSnapshot => {
-                        const followedIds = new Set(followingSnapshot.docs.map(doc => doc.id));
-                        followedIds.add(currentUser.uid);
-                        const filteredItems = rawFeedItems.filter(item => followedIds.has(item.creatorId));
-                        setFeedItems(filteredItems);
-                        setLoading(false);
-                    });
-                }, (error) => {
-                    console.error("Error fetching following feed: ", error);
-                    showMessage("Could not load your feed. Please try again.");
-                    setLoading(false);
-                });
-                return () => unsubscribeFeed();
-            }, [currentUser]);
-
-            if (loading) { return <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Your Feed...</p></div>; }
-            
-            if (feedItems.length === 0) { return ( <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Your Feed is Empty</p><p className="subHeading">Follow creators to see their latest content here.</p><button className="button" onClick={() => setActiveScreen('DiscoverUsers')}><span className="buttonText">Discover Creators</span></button></div> ); }
-
-            return (
-                <div className="screenContainer">
-                    {/* THIS IS THE NEW HEADER SECTION */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                         <button className="sectionHeaderButton" onClick={() => setActiveScreen('Home')}>← Back to Home</button>
                         <p className="heading" style={{ margin: 0 }}>My Feed</p>
-                        {/* This is an invisible placeholder to keep the title perfectly centered. */}
                         <div style={{ width: '125px' }}></div> 
                     </div>
 
-                    <div className="vertical-carousel-container" style={{ height: 'auto', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto', scrollSnapType: 'none' }}>
-                        {feedItems.map((item) => (
-                            <div key={item.id} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleVideoPress(item.embedUrl, item)}>
-                                <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
-                                <div className="liveFeedContent">
-                                    <p className="liveFeedTitle">{item.title}</p>
-                                    <p className="liveFeedCreator">by {item.creatorName}</p>
+                    <div className="allCampaignsList">
+                        {Object.entries(groupedFeed).map(([creatorId, data]) => (
+                            <div key={creatorId} className="dashboardSection" style={{padding: '10px', borderLeft: '3px solid #FFD700'}}>
+                                <div 
+                                    className="campaignListCreator" 
+                                    style={{marginBottom: '15px', cursor: 'pointer'}}
+                                    onClick={() => { setSelectedUserId(creatorId); setActiveScreen('UserProfile'); }}
+                                >
+                                    <img 
+                                        src={data.creatorProfilePictureUrl || 'https://placehold.co/24x24/555/FFF?text=P'} 
+                                        alt={data.creatorName} 
+                                        className="campaignListCreatorProfilePic"
+                                    />
+                                    <span>Updates from <strong>{data.creatorName}</strong></span>
                                 </div>
-                                {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                
+                                <div className="contentGrid">
+                                    {data.items.map(item => (
+                                        <div key={item.id} className="contentCard" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                                            <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${item.customThumbnailUrl})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}}>
+                                                <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+                                                {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                                            </div>
+                                            <p className="contentTitle">{item.title}</p>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         ))}
                     </div>
+
+                    {hasMore && (
+                        <button className="button" onClick={() => fetchFeed(false)} disabled={loading} style={{marginTop: '20px', width: '100%'}}>
+                            <span className="buttonText">{loading ? 'Loading...' : 'Load More'}</span>
+                        </button>
+                    )}
                 </div>
             );
         };
-// --- END OF NEW COMPONENT DEFINITIONS ---
+// ======================= END: REPLACE THIS ENTIRE COMPONENT =======================
 
 
         // ADD THIS ENTI-RE NEW COMPONENT DEFINITION
@@ -7010,8 +6936,6 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             // Call our new hook to get a live list of notifications
             const { notifications: unreadNotifications, isLoading: notificationsLoading, dismissNotification, markBroadcastAsSeen, markNotificationAsRead } = 
             useNotifications(currentUser);
-            const { hasNewContent, clearNewContentFlags } = useFollowingStatus(currentUser);
-
             // ======================== END: NEW CODE ========================
             
               // ======================= START: NEW TOAST STATE AND LOGIC =======================
@@ -7155,7 +7079,13 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const [confirmationMessage, setConfirmationMessage] = useState('');
             const [onConfirmationAction, setOnConfirmationAction] = useState(null);
             const [featuredContentSlots, setFeaturedContentSlots] = useState(null);
-           
+            // --- MOVED FROM CategoriesScreen to App (GLOBAL STATE) ---
+            const [isLive, setIsLive] = useState(false);
+            const [countdownText, setCountdownText] = useState('');
+            const [liveThumbnail, setLiveThumbnail] = useState('');
+
+           // --- PASTE THIS ENTIRE CORRECTED BLOCK ---
+
 useEffect(() => {
     let unsubscribeProfile = () => {};
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
@@ -7205,8 +7135,68 @@ useEffect(() => {
                 });
             return () => unsubscribe(); // Cleanup listener
             }, []);
-          
-                                 
+           
+            // --- NEW GLOBAL useEffect for Countdown Logic ---
+            useEffect(() => {
+    const categoriesRef = collection(db, "content_categories");
+    const q = query(categoriesRef, where("name", "==", "Live Premieres"));
+    let countdownInterval = null;
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+    console.log('%cLive Premieres data updated in Firestore.', 'color: cyan; font-weight: bold;');
+        clearInterval(countdownInterval);
+
+        if (snapshot.empty) {
+            setIsLive(false);
+            setCountdownText('');
+            setLiveThumbnail(''); // Clear thumbnail
+            return;
+        }
+
+        const liveDocData = snapshot.docs[0].data();
+        const startTime = liveDocData.liveStreamStartTime ? liveDocData.liveStreamStartTime.toDate() : null;
+        const liveUrl = liveDocData.liveStreamUrl || '';
+        setLiveThumbnail(liveDocData.liveStreamThumbnailUrl || ''); // Get thumbnail
+
+        if (!startTime) {
+            setIsLive(false);
+            setCountdownText('');
+            return;
+        }
+
+        countdownInterval = setInterval(() => {
+            const now = new Date();
+            const distance = startTime - now;
+
+            if (distance < 0) {
+                clearInterval(countdownInterval);
+                setCountdownText('');
+                setIsLive(liveUrl.trim() !== '');
+            } else {
+                setIsLive(false);
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                
+                let parts = [];
+                if (days > 0) parts.push(`${days}d`);
+                if (hours > 0) parts.push(`${hours}h`);
+                if (minutes > 0) parts.push(`${minutes}m`);
+                if (days === 0 && hours === 0 && minutes < 1) parts.push(`${seconds}s`);
+                else if(days === 0 && hours === 0) parts.push(`${minutes}m`);
+
+                setCountdownText(parts.join(' '));
+            }
+        }, 1000);
+    });
+
+    return () => {
+        unsubscribe();
+        clearInterval(countdownInterval);
+    };
+}, []);
+                      
             const showMessage = (msg) => {
                 setMessage(msg);
                 setTimeout(() => setMessage(''), 3000);
@@ -7243,7 +7233,7 @@ useEffect(() => {
             };
 
 // START: REPLACEMENT (Your HomeScreen with the Live Feed Fix)
-    const HomeScreen = ({ currentUser, showMessage, handleVideoPress, handleLogout, featuredContentSlots, setActiveScreen }) => {
+               const HomeScreen = ({ currentUser, showMessage, handleVideoPress, handleLogout, featuredContentSlots }) => {
     const [enrichedLayout, setEnrichedLayout] = useState({ featured: [], trending: [] });
     const [displayFeatured, setDisplayFeatured] = useState([]);
     const [displayLiveFeed, setDisplayLiveFeed] = useState([]);
@@ -7438,7 +7428,7 @@ useEffect(() => {
                     {isLiveFeedLoading ? Array.from({ length: 4 }).map((_, i) => <div key={i} className="vertical-carousel-item" style={{backgroundColor: '#1A1A1A'}}></div>)
                     : displayLiveFeed.map((item, index) => (
                         <div key={item.id ? `${item.id}-${index}` : `${item.title}-${index}`} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleItemClick(item)}>
-                            <SmartCarouselImage item={item} className="liveFeedThumbnail" />
+                             <SmartCarouselImage item={item} className="liveFeedThumbnail" />
                             <div className="liveFeedContent">
                                 <p className="liveFeedTitle">{item.title}</p>
                                 {/* This paragraph will now ONLY render if the item is internal, removing the 'Promotion' label entirely. */}
@@ -8160,58 +8150,15 @@ const MyContentLibraryScreen = ({
         return () => unsubscribe();
     }, [currentUser]);
 
-    // --- START: REPLACEMENT for the Thumbnail Preview useEffect ---
-        useEffect(() => {
-            // This is a "debouncer" to prevent API calls on every single keystroke.
-            const handler = setTimeout(() => {
-                if (!videoLinkInput) {
-                    setAutoThumbnailPreview('');
-                    return;
-                }
-
-                // This is the new async function that does the real work.
-                const fetchPreview = async () => {
-                    const info = extractVideoInfo(videoLinkInput);
-
-                    if (info.platform === 'youtube') {
-                        // YouTube is fast and synchronous.
-                        setAutoThumbnailPreview(info.thumbnailUrl);
-                    } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
-                        // For TikTok/Vimeo, we must call our secure Cloud Function proxy.
-                        try {
-                            const functions = getFunctions(window.firebaseApp);
-                            const oEmbedProxy = httpsCallable(functions, 'oEmbedProxy');
-                            
-                            let targetApiUrl = '';
-                            if (info.platform === 'tiktok') targetApiUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(videoLinkInput)}`;
-                            if (info.platform === 'vimeo') targetApiUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(videoLinkInput)}`;
-
-                            const result = await oEmbedProxy({ url: targetApiUrl });
-
-                            if (result.data && result.data.thumbnail_url) {
-                                setAutoThumbnailPreview(result.data.thumbnail_url);
-                            } else {
-                                setAutoThumbnailPreview(GENERIC_THUMBNAIL_PLACEHOLDER);
-                            }
-                        } catch (error) {
-                            console.error(`Failed to fetch ${info.platform} preview via proxy:`, error);
-                            setAutoThumbnailPreview(GENERIC_THUMBNAIL_PLACEHOLDER);
-                        }
-                    } else {
-                        // For everything else, use the placeholder.
-                        setAutoThumbnailPreview(GENERIC_THUMBNAIL_PLACEHOLDER);
-                    }
-                };
-
-                fetchPreview();
-
-            }, 800); // Wait 800ms after the user stops typing.
-
-            return () => {
-                clearTimeout(handler);
-            };
-        }, [videoLinkInput]); // This effect re-runs only when the URL input changes.
-        // --- END: REPLACEMENT for the Thumbnail Preview useEffect ---
+    useEffect(() => {
+        setAutoThumbnailPreview('');
+        if (!videoLinkInput) return;
+        const handler = setTimeout(() => {
+            const { thumbnailUrl } = extractVideoInfo(videoLinkInput);
+            if (thumbnailUrl) setAutoThumbnailPreview(thumbnailUrl);
+        }, 600);
+        return () => clearTimeout(handler);
+    }, [videoLinkInput]);
 
     const resetForm = () => {
         setTitle(''); setDescription(''); setVideoLinkInput('');
@@ -8220,21 +8167,14 @@ const MyContentLibraryScreen = ({
         if (thumbnailFileInputRef.current) { thumbnailFileInputRef.current.value = null; }
     };
 
-    // --- START: REPLACEMENT for handleAddToLibrary function ---
     const handleAddToLibrary = async () => {
         if (!title.trim() || !contentType) { showMessage('A Title and Content Type are required.'); return; }
         if (!videoLinkInput.trim()) { showMessage('A video URL is required.'); return; }
         setIsPublishing(true);
         showMessage("Saving to library...");
-        
-        // This still runs to get the embedUrl and platform info
-        const { videoId, embedUrl, platform } = extractVideoInfo(videoLinkInput);
+        const { videoId, thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput);
         if (!videoId && platform !== 'generic') { showMessage('Could not find a valid video ID in the URL provided.'); setIsPublishing(false); return; }
-
-        let finalThumbnailUrl = '';
-
-        // THE CRITICAL FIX IS HERE:
-        // We now prioritize the thumbnail sources correctly.
+        let finalThumbnailUrl = autoThumbnailUrl || GENERIC_THUMBNAIL_PLACEHOLDER;
         if (customThumbnailFile) {
             showMessage('Uploading custom thumbnail...');
             try {
@@ -8243,41 +8183,28 @@ const MyContentLibraryScreen = ({
                 const snapshot = await uploadBytes(storageRefPath, customThumbnailFile);
                 finalThumbnailUrl = await getDownloadURL(snapshot.ref);
                 showMessage('Thumbnail uploaded successfully!');
-            } catch (error) { 
-                console.error("Error uploading custom thumbnail:", error); 
-                showMessage(`Thumbnail upload failed: ${error.message}`); 
-                setIsPublishing(false); 
-                return; 
-            }
-        } else {
-            // If no custom file, use the fetched preview OR the placeholder as a last resort.
-            finalThumbnailUrl = autoThumbnailPreview || GENERIC_THUMBNAIL_PLACEHOLDER;
+            } catch (error) { console.error("Error uploading custom thumbnail:", error); showMessage(`Thumbnail upload failed: ${error.message}`); setIsPublishing(false); return; }
         }
-
        try {
             const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
+            // Step 1: Prepare the data for the new document
             const newDocData = {
                 title: title.trim(), description: description.trim(), mainUrl: videoLinkInput,
-                customThumbnailUrl: finalThumbnailUrl, // <-- SAVES THE CORRECT THUMBNAIL
-                embedUrl: embedUrl, videoPlatform: platform,
+                customThumbnailUrl: finalThumbnailUrl, embedUrl: embedUrl, videoPlatform: platform,
                 creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, creatorProfilePictureUrl: creatorProfile.profilePictureUrl || '',
                 contentType: contentType, isActive: true, isFeatured: false, createdAt: new Date().toISOString(),
-                viewCount: 0, likeCount: 0
+                createdBy: currentUser.uid, viewCount: 0, likeCount: 0
             };
+            // Step 2: Add the document to Firestore and get its reference
+             await addDoc(contentCollectionRef, newDocData);
             
-            await addDoc(contentCollectionRef, newDocData);
-            // The onSnapshot listener will handle the UI update, so no manual push to state is needed.
+            // Step 3 (THE FIX): The manual update line has been REMOVED.
 
             showMessage(`"${title.trim()}" was added to your library.`);
             resetForm();
-        } catch (error) { 
-            console.error("Error adding content to library:", error); 
-            showMessage(`Failed to save content: ${error.message}`);
-        } finally { 
-            setIsPublishing(false); 
-        }
+        } catch (error) { console.error("Error adding content to library:", error); showMessage(`Failed to save content: ${error.message}`);
+        } finally { setIsPublishing(false); }
     };
-    // --- END: REPLACEMENT for handleAddToLibrary function ---
 
     const handleSetFeatured = async (itemToFeature) => {
         if (!currentUser || !creatorProfile) return;
@@ -8406,17 +8333,6 @@ const MyContentLibraryScreen = ({
 
 // =========== START REPLACEMENT ===========
               const memoizedScreen = React.useMemo(() => {
-                if (activeScreen === 'Discover') {
-                    // This now correctly calls the self-sufficient CategoriesScreen without the old props.
-                    return <CategoriesScreen 
-                        showMessage={showMessage} 
-                        currentUser={currentUser} 
-                        creatorProfile={creatorProfile} 
-                        setActiveScreen={setActiveScreen} 
-                        handleVideoPress={handleVideoPress}
-                    />;
-                }
-
                 if (currentUser && !currentUser.emailVerified) {
                     return <VerificationScreen 
                         currentUser={currentUser} 
@@ -8426,18 +8342,24 @@ const MyContentLibraryScreen = ({
                     />;
                 }
             
-                // The main switch statement remains unchanged, correctly rendering all other screens.
                 switch (activeScreen) {
                     case 'Home':
-                        return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots} setActiveScreen={setActiveScreen} />;
+                        return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
                     case 'FollowingFeed':
-                        return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={setActiveScreen} showMessage={showMessage} handleVideoPress={handleVideoPress}/>;
+                    return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={setActiveScreen} showMessage={showMessage} handleVideoPress={handleVideoPress} setSelectedUserId={setSelectedUserId}/>;
                     case 'Contact':
                         return <ContactScreen setActiveScreen={setActiveScreen} showMessage={showMessage} currentUser={currentUser}/>;
                     case 'DiscoverUsers':
                         return <DiscoverUsersScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} creatorProfile={creatorProfile} setSelectedUserId={setSelectedUserId}/>;
                     case 'UserProfile':
-                        return <UserProfileScreen selectedUserId={selectedUserId} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} showMessage={showMessage} currentUser={currentUser} creatorProfile={creatorProfile} />;
+                    return <UserProfileScreen 
+                        selectedUserId={selectedUserId} 
+                        setActiveScreen={setActiveScreen} 
+                        setSelectedCampaignId={setSelectedCampaignId} 
+                        showMessage={showMessage} 
+                        currentUser={currentUser}
+                        creatorProfile={creatorProfile} // THIS IS THE FIX
+                    />;
                     case 'MyFollows':
                         return <MyFollowsScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId}/>;
                     case 'Followers':
@@ -8448,7 +8370,7 @@ const MyContentLibraryScreen = ({
                         return <UserSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                     case 'CreatorSignUp':
                         return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
-                    case 'ForgotPassword':
+                    case 'ForgotPassword': // <-- THE ONLY ADDITION IS THIS CASE
                         return <ForgotPasswordScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                     case 'Premium':
                         return <PremiumScreen showMessage={showMessage} currentUser={currentUser} setActiveScreen={setActiveScreen} setPledgeContext={setPledgeContext} />;
@@ -8463,14 +8385,38 @@ const MyContentLibraryScreen = ({
                     case 'SubscriptionPledge':
                         return <SubscriptionPledgeScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} />;
                     case 'PendingConfirmation':
-                        if (!pledgeIdForConfirmation) { return <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}><p className="heading">Initializing Secure Session...</p></div>; }
+                        if (!pledgeIdForConfirmation) {
+                            return (
+                                <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
+                                    <p className="heading">Initializing Secure Session...</p>
+                                </div>
+                            );
+                        }
                         return <PendingConfirmationScreen showMessage={showMessage} setActiveScreen={setActiveScreen} pledgeId={pledgeIdForConfirmation} currentUser={currentUser} />;
                     case 'CreatorDashboard':
                         return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setSelectedCampaignId={setSelectedCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction}/>;
                     case 'CreateCampaign':
                         return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile}/>;
+                   case 'CreateCampaign':
+                    return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile}/>;
+// --- START: DEFINITIVE REPLACEMENT BLOCK ---
+                case 'AdminDashboard':
                     case 'AdminDashboard':
-                        return <AdminDashboardScreen showMessage={showMessage} featuredContentSlots={featuredContentSlots} setActiveScreen={setActiveScreen} currentUser={currentUser} setSelectedAdminCampaignId={setSelectedAdminCampaignId} creatorProfile={creatorProfile} selectedAdminSubScreen={selectedAdminSubScreen} setSelectedAdminSubScreen={setSelectedAdminSubScreen} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} setSelectedUserId={setSelectedUserId}/>;
+                    return <AdminDashboardScreen 
+                        showMessage={showMessage} 
+                        featuredContentSlots={featuredContentSlots} 
+                        setActiveScreen={setActiveScreen} 
+                        currentUser={currentUser} 
+                        setSelectedAdminCampaignId={setSelectedAdminCampaignId} 
+                        creatorProfile={creatorProfile} 
+                        selectedAdminSubScreen={selectedAdminSubScreen} 
+                        setSelectedAdminSubScreen={setSelectedAdminSubScreen} // The duplicate is now removed
+                        setShowConfirmationModal={setShowConfirmationModal} 
+                        setConfirmationTitle={setConfirmationTitle} 
+                        setConfirmationMessage={setConfirmationMessage} 
+                        setOnConfirmationAction={setOnConfirmationAction}
+                        setSelectedUserId={setSelectedUserId}
+                    />;
                     case 'AdminCampaignDetails':
                         return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile}/>;
                     case 'TopCreators':
@@ -8484,10 +8430,9 @@ const MyContentLibraryScreen = ({
                     case 'NotificationInbox':
                             return <NotificationInboxScreen notifications={unreadNotifications} setActiveScreen={setActiveScreen} dismissNotification={dismissNotification} />;
                     default:
-                        return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots} setActiveScreen={setActiveScreen} />;
+                        return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
                 }
-                // The dependency array is now corrected to remove the deleted variables.
-            }, [activeScreen, currentUser, creatorProfile, featuredContentSlots, selectedAdminSubScreen, pledgeIdForConfirmation, unreadNotifications, hasNewContent]);
+            }, [activeScreen, currentUser, creatorProfile, featuredContentSlots, selectedAdminSubScreen, pledgeIdForConfirmation]);
 // =========== END REPLACEMENT ===========
 
 
@@ -8503,16 +8448,7 @@ const MyContentLibraryScreen = ({
             // This prevents the race condition after email verification.
             
 // --- END OF THE NEW BLOCK 
-
-       // After initial auth is done, if we have a user but are still waiting for their Firestore profile, show a loading screen.
-            // This prevents the race condition after email verification.
-            if (!authLoading && currentUser && !creatorProfile) {
-                 return (
-                    <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                        <p className="heading">Loading Your Profile...</p>
-                    </div>
-                );
-            }   
+          
             return (
                 <div className="container">
                 <div className="header">
@@ -8525,8 +8461,10 @@ const MyContentLibraryScreen = ({
         
         {/* Item 3: Button (Bottom) */}
         <HeaderLiveButton 
+            isLive={isLive} 
+            countdownText={countdownText} 
             onClick={() => setActiveScreen('Discover')}
-            />
+        />
     </div>
     <img
         src="https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png"
@@ -8550,31 +8488,8 @@ const MyContentLibraryScreen = ({
     {/* ======================== END: NEW NOTIFICATION BELL ======================== */}
 
     {currentUser && (
-        <button 
-            className="navButton" 
-            onClick={() => {
-                setActiveScreen('FollowingFeed');
-                clearNewContentFlags();
-            }} 
-            style={{ 
-                backgroundColor: '#0A0A0A', 
-                border: '1px solid #FFD700', 
-                position: 'relative'
-            }}
-        >
-            <span className="navButtonText" style={{ color: '#FFD700' }}>My Feed</span>
-            {hasNewContent && (
-                <div style={{
-                    position: 'absolute',
-                    top: '5px',
-                    right: '8px',
-                    width: '10px',
-                    height: '10px',
-                    backgroundColor: '#DC3545',
-                    borderRadius: '50%',
-                    border: '1px solid #0A0A0A'
-                }}></div>
-            )}
+        <button className="navButton" onClick={() => setActiveScreen('FollowingFeed')} style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
+             <span className="navButtonText" style={{ color: '#FFD700' }}>My Feed</span>
         </button>
     )}
 
