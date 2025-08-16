@@ -3786,7 +3786,30 @@ const AdminDashboardScreen = ({
     const [banRequests, setBanRequests] = useState([]);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(null);
     const [isCorrectingCount, setIsCorrectingCount] = useState(null);
-    const changeUserRoleLogic = async (targetUser, newRole) => { setIsUpdatingRole(targetUser.id); showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`); try { const userDocRef = doc(db, "creators", targetUser.id); await updateDoc(userDocRef, { role: newRole }); showMessage(`Success! ${targetUser.creatorName || targetUser.email} is now a(n) ${newRole}.`); } catch (error) { console.error("Error changing user role:", error); showMessage(`Error: ${error.message}`); } finally { setIsUpdatingRole(null); } };
+    const changeUserRoleLogic = async (targetUser, newRole) => {
+        setIsUpdatingRole(targetUser.id);
+        showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`);
+        try {
+            const functions = getFunctions(window.firebaseApp);
+            const setRoleCallable = httpsCallable(functions, 'setRole');
+            
+            // Call the new backend function
+            const result = await setRoleCallable({ 
+                targetUserId: targetUser.id, 
+                role: newRole 
+            });
+
+            // Refresh the user's ID token to get the new custom claim immediately
+            await window.firebaseAuth.currentUser.getIdToken(true);
+            
+            showMessage(result.data.message); // Display success message from the backend
+        } catch (error) {
+            console.error("Error changing user role:", error);
+            showMessage(`Error: ${error.message}`); // Display error from the backend
+        } finally {
+            setIsUpdatingRole(null);
+        }
+    };
     const confirmChangeUserRole = (targetUser, newRole) => { setConfirmationTitle("Change User Role?"); setConfirmationMessage(`Are you sure you want to change ${targetUser.creatorName || targetUser.email}'s role to "${newRole}"?`); setOnConfirmationAction(() => () => changeUserRoleLogic(targetUser, newRole)); setShowConfirmationModal(true); };
     const toggleBanLogic = async (userToBan) => { if (userToBan.id === currentUser.uid) { showMessage("You cannot ban your own account."); return; } if (creatorProfile.role === 'authority' && userToBan.role === 'authority') { setIsSubmittingRequest(userToBan.id); try { const banRequestRef = collection(db, "banRequests"); await addDoc(banRequestRef, { requesterId: currentUser.uid, requesterName: creatorProfile.creatorName, targetUserId: userToBan.id, targetUserName: userToBan.creatorName || userToBan.email, status: 'pending', timestamp: new Date().toISOString() }); showMessage(`Ban request for ${userToBan.creatorName || userToBan.email} has been submitted for Admin approval.`); } catch (error) { console.error("Error submitting ban request:", error); showMessage(`Failed to submit ban request: ${error.message}`); } finally { setIsSubmittingRequest(null); } return; } if (creatorProfile.role === 'authority' && userToBan.role === 'admin') { showMessage("Authority users cannot ban Admin accounts."); return; } try { const userDocRef = doc(db, "creators", userToBan.id); await updateDoc(userDocRef, { banned: !userToBan.banned, updatedAt: new Date().toISOString() }); showMessage(`${userToBan.banned ? 'Unbanned' : 'Banned'} user: ${userToBan.creatorName || userToBan.email}`); } catch (error) { console.error("Error toggling ban status:", error); showMessage(`Failed to toggle ban status: ${error.message}`); } };
     const confirmToggleBan = (userToBan) => { const action = userToBan.banned ? 'Unban' : 'Ban'; const targetUserText = userToBan.creatorName || userToBan.email; if (creatorProfile.role === 'authority' && userToBan.role === 'authority') { setConfirmationTitle('Request Authority Ban?'); setConfirmationMessage(`This will submit a request for an Admin to ban ${targetUserText}. Proceed?`); } else { setConfirmationTitle(`${action} User?`); setConfirmationMessage(`Are you sure you want to ${action.toLowerCase()} user ${targetUserText}?`); } setOnConfirmationAction(() => () => toggleBanLogic(userToBan)); setShowConfirmationModal(true); };
