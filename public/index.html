@@ -4419,8 +4419,8 @@ const AdminDashboardScreen = ({
         };
 // END of REPLACEMENT Block
 
-                    // --- START: NEW COMPONENT ---
-        const AddExternalAdModal = ({ showMessage, onSave, onCancel }) => {
+                   // --- START: THIS IS THE CORRECTED AND COMPLETE COMPONENT ---
+        const AddExternalAdModal = ({ currentUser, showMessage, onSave, onCancel }) => {
             const [title, setTitle] = useState('');
             const [destinationUrl, setDestinationUrl] = useState('');
             const [imageFile, setImageFile] = useState(null);
@@ -4451,22 +4451,26 @@ const AdminDashboardScreen = ({
             };
 
             const handleSave = async () => {
+                if (!currentUser) {
+                    showMessage("Authentication error. Cannot upload. Please log in again.");
+                    return;
+                }
                 if (!title || !destinationUrl) {
                     showMessage("A Title and Destination URL are required.");
                     return;
                 }
 
-                 if (imageFile) {
+                if (imageFile) {
                     setIsUploading(true);
                     showMessage("Uploading custom image...");
                     try {
-                        const filePath = `external_ads/${Date.now()}_${imageFile.name}`;
+                        // THE FIX: The upload path now includes the admin's UID, matching the new security rule.
+                        const filePath = `external_ads/${currentUser.uid}/${Date.now()}_${imageFile.name}`;
                         const storageRef = ref(storage, filePath);
                         const snapshot = await uploadBytes(storageRef, imageFile);
                         const finalImageUrl = await getDownloadURL(snapshot.ref);
                         showMessage("Image uploaded successfully!");
                         
-                        // --- CRITICAL FIX: onSave is called *inside* the successful async block ---
                         onSave({
                             type: 'external',
                             title,
@@ -4475,14 +4479,13 @@ const AdminDashboardScreen = ({
                             orderIndex: Date.now()
                         });
                         setIsUploading(false);
-                        onCancel(); // Close the modal
+                        onCancel();
 
                     } catch (error) {
                         showMessage(`Image upload failed: ${error.message}`);
                         setIsUploading(false);
                     }
                 } else {
-                    // This is the path for URL-based images
                     if (!imagePreview) {
                         showMessage("Could not find a valid image preview. Please upload one.");
                         return;
@@ -4494,7 +4497,7 @@ const AdminDashboardScreen = ({
                         imageUrl: imagePreview,
                         orderIndex: Date.now()
                     });
-                    onCancel(); // Close the modal
+                    onCancel();
                 }
             };
 
@@ -4535,8 +4538,8 @@ const AdminDashboardScreen = ({
                 </div>
             );
         };
-        // --- END: NEW COMPONENT ---
-
+        // --- END: THIS IS THE CORRECTED AND COMPLETE COMPONENT ---
+  
         // --- START: NEW COMPONENT ---
         const AdminCurationModal = ({ curationTarget, showMessage, onCancel, contentItems }) => {
             const [curatedItems, setCuratedItems] = useState([]);
