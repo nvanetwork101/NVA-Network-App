@@ -4419,8 +4419,10 @@ const AdminDashboardScreen = ({
         };
 // END of REPLACEMENT Block
 
-                   // --- START: THIS IS THE CORRECTED AND COMPLETE COMPONENT ---
-        const AddExternalAdModal = ({ currentUser, showMessage, onSave, onCancel }) => {
+
+
+                    // --- START: NEW COMPONENT ---
+        const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
             const [title, setTitle] = useState('');
             const [destinationUrl, setDestinationUrl] = useState('');
             const [imageFile, setImageFile] = useState(null);
@@ -4435,10 +4437,10 @@ const AdminDashboardScreen = ({
                     return;
                 }
                 const videoInfo = extractVideoInfo(destinationUrl);
-                if (videoInfo && videoInfo.thumbnailUrl) {
+                if (videoInfo && videoInfo.thumbnailUrl !== GENERIC_THUMBNAIL_PLACEHOLDER) {
                     setImagePreview(videoInfo.thumbnailUrl);
                 } else {
-                    setImagePreview(destinationUrl);
+                    setImagePreview('');
                 }
             }, [destinationUrl, imageFile]);
 
@@ -4451,10 +4453,6 @@ const AdminDashboardScreen = ({
             };
 
             const handleSave = async () => {
-                if (!currentUser) {
-                    showMessage("Authentication error. Cannot upload. Please log in again.");
-                    return;
-                }
                 if (!title || !destinationUrl) {
                     showMessage("A Title and Destination URL are required.");
                     return;
@@ -4464,8 +4462,7 @@ const AdminDashboardScreen = ({
                     setIsUploading(true);
                     showMessage("Uploading custom image...");
                     try {
-                        // THE FIX: The upload path now includes the admin's UID, matching the new security rule.
-                        const filePath = `external_ads/${currentUser.uid}/${Date.now()}_${imageFile.name}`;
+                        const filePath = `curated_thumbnails/${Date.now()}_${imageFile.name}`;
                         const storageRef = ref(storage, filePath);
                         const snapshot = await uploadBytes(storageRef, imageFile);
                         const finalImageUrl = await getDownloadURL(snapshot.ref);
@@ -4486,15 +4483,11 @@ const AdminDashboardScreen = ({
                         setIsUploading(false);
                     }
                 } else {
-                    if (!imagePreview) {
-                        showMessage("Could not find a valid image preview. Please upload one.");
-                        return;
-                    }
                     onSave({
                         type: 'external',
                         title,
                         externalLink: destinationUrl,
-                        imageUrl: imagePreview,
+                        imageUrl: imagePreview || GENERIC_THUMBNAIL_PLACEHOLDER,
                         orderIndex: Date.now()
                     });
                     onCancel();
@@ -4504,14 +4497,14 @@ const AdminDashboardScreen = ({
             return (
                 <div className="confirmationModalOverlay" style={{ zIndex: 3000 }}>
                     <div className="confirmationModalContent" style={{ textAlign: 'left', maxWidth: '500px' }}>
-                        <p className="confirmationModalTitle">Add External Ad/Promotion</p>
+                        <p className="confirmationModalTitle">Add External Link</p>
                         <div className="formGroup">
-                            <label className="formLabel">Ad Title:</label>
-                            <input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Monster Energy Deal" required/>
+                            <label className="formLabel">Title:</label>
+                            <input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Summer Festival Tickets" required/>
                         </div>
                         <div className="formGroup">
                             <label className="formLabel">Destination URL:</label>
-                            <input type="url" className="formInput" value={destinationUrl} onChange={(e) => { setDestinationUrl(e.target.value); setImageFile(null); }} placeholder="https://www.sponsor.com/deal" required/>
+                            <input type="url" className="formInput" value={destinationUrl} onChange={(e) => { setDestinationUrl(e.target.value); setImageFile(null); }} placeholder="https://www.externalsite.com/page" required/>
                             <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>The app will try to fetch a preview from this link.</p>
                         </div>
                         <hr style={{borderColor: '#333', margin: '15px 0'}}/>
@@ -4531,22 +4524,70 @@ const AdminDashboardScreen = ({
                         <div className="confirmationModalButtons">
                             <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
                             <button className="confirmationButton confirm" onClick={handleSave} disabled={isUploading}>
-                                {isUploading ? 'Uploading...' : 'Save Ad'}
+                                {isUploading ? 'Uploading...' : 'Save Link'}
                             </button>
                         </div>
                     </div>
                 </div>
             );
         };
-        // --- END: THIS IS THE CORRECTED AND COMPLETE COMPONENT ---
-  
-               // --- START: THIS IS THE CORRECTED AND COMPLETE COMPONENT ---
-        const AdminCurationModal = ({ currentUser, curationTarget, showMessage, onCancel, contentItems }) => {
+        
+        const ContentSelectorModal = ({ onSelect, onCancel, showMessage }) => {
+            const [contentItems, setContentItems] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [searchTerm, setSearchTerm] = useState('');
+
+            useEffect(() => {
+                const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
+                const q = query(contentCollectionRef, orderBy('createdAt', 'desc'));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    setContentItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setLoading(false);
+                }, (error) => {
+                    showMessage("Failed to load content library.");
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const filteredItems = contentItems.filter(item =>
+                item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.creatorName.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            return (
+                <div className="confirmationModalOverlay" style={{ zIndex: 4000 }}>
+                    <div className="confirmationModalContent" style={{ maxWidth: '600px', textAlign: 'left' }}>
+                        <p className="confirmationModalTitle">Select Content from Library</p>
+                        <div className="formGroup">
+                            <input type="text" className="formInput" placeholder="Search by title or creator..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                        </div>
+                        <div className="dashboardContentList" style={{ maxHeight: '40vh', overflowY: 'auto', marginBottom: '20px' }}>
+                            {loading ? <p>Loading...</p> : filteredItems.map(item => (
+                                <div key={item.id} className="adminDashboardItem" style={{ cursor: 'pointer' }} onClick={() => onSelect(item)}>
+                                    <img src={item.customThumbnailUrl} style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px' }}/>
+                                    <div style={{ flexGrow: 1, marginLeft: '10px' }}>
+                                        <p className="adminDashboardItemTitle">{item.title}</p>
+                                        <p style={{ fontSize: '12px', color: '#AAA' }}>by {item.creatorName}</p>
+                                    </div>
+                                    <button className="adminActionButton approve">Select</button>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="confirmationModalButtons">
+                            <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminCurationModal = ({ curationTarget, showMessage, onCancel, contentItems }) => {
             const [curatedItems, setCuratedItems] = useState([]);
             const [loading, setLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
             const [showContentSelector, setShowContentSelector] = useState(false);
-            const [showExternalAdModal, setShowExternalAdModal] = useState(false);
+            const [showExternalLinkModal, setShowExternalLinkModal] = useState(false);
 
             const targetField = `${curationTarget.toLowerCase().replace(' ', '')}Items`;
 
@@ -4566,21 +4607,19 @@ const AdminDashboardScreen = ({
                                     return fullContent ? { ...item, ...fullContent } : null;
                                 }
                                 return item;
-                            }).filter(Boolean); // Filter out nulls for deleted content
+                            }).filter(Boolean);
                             setCuratedItems(enrichedItems);
                         } else {
                             setCuratedItems([]);
                         }
                     } catch (error) {
                         showMessage("Error fetching curation data: " + error.message);
-                        setCuratedItems([]);
                     } finally {
                         setLoading(false);
                     }
                 };
-                
                 fetchInitialData();
-            }, [curationTarget]);
+            }, [curationTarget, contentItems]);
 
             const handleMove = (index, direction) => {
                 const newItems = [...curatedItems];
@@ -4607,15 +4646,16 @@ const AdminDashboardScreen = ({
                 const newItem = {
                     type: 'internal',
                     contentId: selectedContent.id,
-                    orderIndex: curatedItems.length
+                    orderIndex: curatedItems.length,
+                    ...selectedContent
                 };
-                setCuratedItems(prev => [...prev, { ...newItem, ...selectedContent }]);
+                setCuratedItems(prev => [...prev, newItem]);
                 setShowContentSelector(false);
             };
             
-            const handleSaveExternalAd = (newAd) => {
-                 setCuratedItems(prev => [...prev, newAd]);
-                 setShowExternalAdModal(false);
+            const handleSaveExternalLink = (newLink) => {
+                 setCuratedItems(prev => [...prev, newLink]);
+                 setShowExternalLinkModal(false);
             };
 
             const handleSaveChanges = async () => {
@@ -4662,7 +4702,7 @@ const AdminDashboardScreen = ({
                                         <img src={item.customThumbnailUrl || item.imageUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
                                         <div style={{flexGrow: 1, marginLeft: '10px'}}>
                                             <p className="adminDashboardItemTitle">{item.title}</p>
-                                            <p style={{fontSize: '12px', color: '#AAA'}}>{item.type === 'internal' ? `by ${item.creatorName || '...loading'}` : 'External Ad'}</p>
+                                            <p style={{fontSize: '12px', color: '#AAA'}}>{item.type === 'internal' ? `by ${item.creatorName || '...loading'}` : 'External Link'}</p>
                                         </div>
                                         <div style={{display: 'flex', gap: '5px'}}>
                                             <button onClick={() => handleMove(index, -1)} disabled={index === 0} className="adminActionButton" style={{width: '30px'}}>▲</button>
@@ -4678,8 +4718,8 @@ const AdminDashboardScreen = ({
                             <button className="button" onClick={() => setShowContentSelector(true)}>
                                 <span className="buttonText">Add from Library</span>
                             </button>
-                             <button className="button" onClick={() => setShowExternalAdModal(true)}>
-                                <span className="buttonText">Add External Ad</span>
+                             <button className="button" onClick={() => setShowExternalLinkModal(true)}>
+                                <span className="buttonText">Add External URL</span>
                             </button>
                         </div>
 
@@ -4691,140 +4731,97 @@ const AdminDashboardScreen = ({
                         </div>
 
                         {showContentSelector && <ContentSelectorModal showMessage={showMessage} onSelect={handleSelectInternalContent} onCancel={() => setShowContentSelector(false)} />}
-                        
-                        {/* THIS IS THE CRITICAL CHANGE: passing currentUser down */}
-                        {showExternalAdModal && <AddExternalAdModal currentUser={currentUser} showMessage={showMessage} onSave={handleSaveExternalAd} onCancel={() => setShowExternalAdModal(false)} />}
+                        {showExternalLinkModal && <AddExternalLinkModal showMessage={showMessage} onSave={handleSaveExternalLink} onCancel={() => setShowExternalLinkModal(false)} />}
                     </div>
                 </div>
             );
         };
-        // --- END: THIS IS THE CORRECTED AND COMPLETE COMPONENT ---
 
-const AdminFeaturedContentManager = ({ featuredContentSlots, showMessage }) => {
-    const [showModal, setShowModal] = useState(false);
-    const [editingSlot, setEditingSlot] = useState(null);
-    const [isSaving, setIsSaving] = useState(null);
+        const AdminFeaturedContentManager = ({ featuredContentSlots, showMessage }) => {
+            const [showModal, setShowModal] = useState(false);
+            const [editingSlot, setEditingSlot] = useState(null);
+            const [isSaving, setIsSaving] = useState(null);
 
-    const handleUnlock = async (slotKey) => {
-    setIsSaving(slotKey);
-    showMessage("Unlocking and recalculating slot...");
-    try {
-        const slotNumber = parseInt(slotKey.split('_')[1], 10);
-        
-        // 1. Get the current leaderboard
-        const leaderboardDocRef = doc(db, "leaderboard", "topPerformers");
-        const leaderboardDoc = await getDoc(leaderboardDocRef);
-        if (!leaderboardDoc.exists() || !leaderboardDoc.data().creators) {
-            throw new Error("Leaderboard data not found.");
-        }
-        const topCreators = leaderboardDoc.data().creators;
-        const targetCreator = topCreators[slotNumber - 1];
-
-        let newContent = null;
-        if (targetCreator) {
-            // 2. Find the best weekly content for that creator
-            const contentQuery = query(
-                collection(db, `artifacts/${appId}/public/data/content_items`), 
-                where('creatorId', '==', targetCreator.id),
-                where('isActive', '==', true),
-                orderBy('createdAt', 'desc'),
-                limit(20)
-            );
-            const contentSnapshot = await getDocs(contentQuery);
-            let bestScore = -1;
-            
-            contentSnapshot.forEach(docSnap => {
-                const content = docSnap.data();
-                const score = (content.viewCount || 0) + ((content.likeCount || 0) * 5);
-                if (score > bestScore) {
-                    bestScore = score;
-                    newContent = {id: docSnap.id, ...content};
+            const handleUnlock = async (slotKey) => {
+                setIsSaving(slotKey);
+                showMessage("Unlocking and reverting slot...");
+                try {
+                    const slotNumber = parseInt(slotKey.split('_')[1], 10);
+                    // In this new system, unlocking simply means removing the manual override.
+                    // The backend will handle recalculating the top creator.
+                    // For the frontend, we just need to set the content to null and unlock.
+                    const slotsDocRef = doc(db, "settings", "featuredContentSlots");
+                    await updateDoc(slotsDocRef, {
+                        [`${slotKey}.isLocked`]: false,
+                        [`${slotKey}.content`]: null // Let the backend recalculate
+                    });
+                    showMessage(`Slot #${slotNumber} unlocked and will now update automatically.`);
+                } catch (error) {
+                    showMessage("Error unlocking slot: " + error.message);
+                } finally {
+                    setIsSaving(null);
                 }
-            });
-        }
-        
-        // 3. Update the slot with the new content and unlock it
-        const slotsDocRef = doc(db, "settings", "featuredContentSlots");
-        await updateDoc(slotsDocRef, {
-            [`${slotKey}.isLocked`]: false,
-            [`${slotKey}.content`]: newContent
-        });
+            };
 
-        showMessage(`Slot #${slotNumber} unlocked and reverted to automatic selection.`);
-
-    } catch (error) {
-        showMessage("Error unlocking slot: " + error.message);
-        console.error("Unlock error:", error);
-    } finally {
-        setIsSaving(null);
-    }
-};
-
-    const handleSelectContent = async (selectedContent) => {
-        if (!editingSlot) return;
-        setIsSaving(editingSlot);
-        setShowModal(false);
-        try {
-            const slotsDocRef = doc(db, "settings", "featuredContentSlots");
-            await updateDoc(slotsDocRef, {
-                [`${editingSlot}.content`]: selectedContent,
-                [`${editingSlot}.isLocked`]: true
-            });
-            showMessage(`Slot #${editingSlot.split('_')[1]} has been manually updated.`);
-        } catch (error) {
-            showMessage("Error updating slot: " + error.message);
-        } finally {
-            setIsSaving(null);
-            setEditingSlot(null);
-        }
-    };
-
-    const slots = featuredContentSlots ? [
-        { key: 'slot_1', data: featuredContentSlots.slot_1 },
-        { key: 'slot_2', data: featuredContentSlots.slot_2 },
-        { key: 'slot_3', data: featuredContentSlots.slot_3 }
-    ] : [];
-
-    return (
-        <div className="dashboardSection" style={{border: '2px solid #FFD700'}}>
-            <p className="dashboardSectionTitle">Top Creators Content Slots</p>
-            <p className="dashboardItem" style={{color: '#AAA', marginBottom: '15px'}}>Manually override the content featured on the "Top Creators" screen.</p>
+            const handleSelectContent = async (selectedContent) => {
+                if (!editingSlot) return;
+                setIsSaving(editingSlot);
+                setShowModal(false);
+                try {
+                    const slotsDocRef = doc(db, "settings", "featuredContentSlots");
+                    await updateDoc(slotsDocRef, {
+                        [`${editingSlot}.content`]: selectedContent,
+                        [`${editingSlot}.isLocked`]: true
+                    });
+                    showMessage(`Slot #${editingSlot.split('_')[1]} has been manually updated.`);
+                } catch (error) {
+                    showMessage("Error updating slot: " + error.message);
+                } finally {
+                    setIsSaving(null);
+                    setEditingSlot(null);
+                }
+            };
             
-            <div className="dashboardContentList">
-                {slots.map((slot, index) => (
-                    <div key={slot.key} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'flex-start', gap: '10px'}}>
-                        <p className="adminDashboardItemTitle">Slot #{index + 1} <span style={{fontSize: '12px', color: slot.data?.isLocked ? '#00FF00' : '#FFD700'}}>({slot.data?.isLocked ? 'Locked' : 'Automatic'})</span></p>
-                       <div style={{display: 'flex', width: '100%', alignItems: 'center', gap: '10px'}}>
-    {/* This part now ONLY renders the content details, or a message if empty */}
-    <div style={{flexGrow: 1, display: 'flex', alignItems: 'center', gap: '10px'}}>
-        {slot.data?.content ? (
-            <>
-                <img src={slot.data.content.customThumbnailUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
-                <div>
-                    <p style={{fontWeight: 'bold'}}>{slot.data.content.title}</p>
-                    <p style={{fontSize: '12px', color: '#CCC'}}>by {slot.data.content.creatorName}</p>
-                </div>
-            </>
-        ) : <p className="dashboardItem">This slot is currently empty.</p>}
-    </div>
-    
-    {/* This part now ONLY renders the buttons, which are always visible */}
-    <div style={{display: 'flex', gap: '10px'}}>
-        {isSaving === slot.key ? <p>Saving...</p> : <>
-            {slot.data?.isLocked && <button className="adminActionButton" onClick={() => handleUnlock(slot.key)}>Unlock</button>}
-            <button className="adminActionButton approve" onClick={() => { setEditingSlot(slot.key); setShowModal(true); }}>Change</button>
-        </>}
-    </div>
-</div>
+            // Generate keys for 6 slots
+            const slotKeys = Array.from({ length: 6 }, (_, i) => `slot_${i + 1}`);
+            const slots = featuredContentSlots ? slotKeys.map(key => ({ key, data: featuredContentSlots[key] })) : [];
+
+            return (
+                <div className="dashboardSection" style={{border: '2px solid #FFD700'}}>
+                    <p className="dashboardSectionTitle">Top Creators Content Slots</p>
+                    <p className="dashboardItem" style={{color: '#AAA', marginBottom: '15px'}}>Manually override the content featured on the "Top Creators" screen.</p>
+                    
+                    <div className="dashboardContentList">
+                        {slots.map((slot, index) => (
+                            <div key={slot.key} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'flex-start', gap: '10px'}}>
+                                <p className="adminDashboardItemTitle">Slot #{index + 1} <span style={{fontSize: '12px', color: slot.data?.isLocked ? '#00FF00' : '#FFD700'}}>({slot.data?.isLocked ? 'Locked' : 'Automatic'})</span></p>
+                                <div style={{display: 'flex', width: '100%', alignItems: 'center', gap: '10px'}}>
+                                    <div style={{flexGrow: 1, display: 'flex', alignItems: 'center', gap: '10px'}}>
+                                        {slot.data?.content ? (
+                                            <>
+                                                <img src={slot.data.content.customThumbnailUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}}/>
+                                                <div>
+                                                    <p style={{fontWeight: 'bold'}}>{slot.data.content.title}</p>
+                                                    <p style={{fontSize: '12px', color: '#CCC'}}>by {slot.data.content.creatorName}</p>
+                                                </div>
+                                            </>
+                                        ) : <p className="dashboardItem">This slot is currently empty or updating automatically.</p>}
+                                    </div>
+                                    <div style={{display: 'flex', gap: '10px'}}>
+                                        {isSaving === slot.key ? <p>Saving...</p> : <>
+                                            {slot.data?.isLocked && <button className="adminActionButton" onClick={() => handleUnlock(slot.key)}>Unlock</button>}
+                                            <button className="adminActionButton approve" onClick={() => { setEditingSlot(slot.key); setShowModal(true); }}>Change</button>
+                                        </>}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                ))}
-            </div>
 
-            {showModal && <ContentSelectorModal onSelect={handleSelectContent} onCancel={() => setShowModal(false)} showMessage={showMessage} />}
-        </div>
-    );
-};
-
+                    {showModal && <ContentSelectorModal onSelect={handleSelectContent} onCancel={() => setShowModal(false)} showMessage={showMessage} />}
+                </div>
+            );
+        };
 
 const AdminContentManagerScreen = ({
     showMessage,
@@ -4839,7 +4836,7 @@ const AdminContentManagerScreen = ({
 }) => {
     const [contentItems, setContentItems] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [isContentListExpanded, setIsContentListExpanded] = useState(true); // <-- THIS LINE IS THE FIX
+    const [isContentListExpanded, setIsContentListExpanded] = useState(true);
 
     const [title, setTitle] = useState('');
     const [mainUrl, setMainUrl] = useState('');
@@ -4864,28 +4861,28 @@ const AdminContentManagerScreen = ({
         setShowCurationModal(true);
     };
 
-            useEffect(() => {
-            const categoriesRef = collection(db, "content_categories");
-            const systemCategories = ['Featured', 'Trending']; 
+    useEffect(() => {
+        const categoriesRef = collection(db, "content_categories");
+        const systemCategories = ['Featured', 'Trending']; 
 
-            const q = query(
-                categoriesRef, 
-                where("isActive", "==", true), 
-                orderBy("orderIndex", "asc")
-            );
+        const q = query(
+            categoriesRef, 
+            where("isActive", "==", true), 
+            orderBy("orderIndex", "asc")
+        );
+        
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedCategories = snapshot.docs
+                .map(doc => doc.data().name)
+                .filter(name => !systemCategories.includes(name));
             
-            const unsubscribe = onSnapshot(q, (snapshot) => {
-                const fetchedCategories = snapshot.docs
-                    .map(doc => doc.data().name)
-                    .filter(name => !systemCategories.includes(name));
-                
-                const finalCategories = [...fetchedCategories, 'Live Feed'];
-                
-                setAvailableCategories(finalCategories);
-            });
+            const finalCategories = [...fetchedCategories, 'Live Feed'];
             
-            return () => unsubscribe();
-        }, []);
+            setAvailableCategories(finalCategories);
+        });
+        
+        return () => unsubscribe();
+    }, []);
 
     useEffect(() => {
         if (availableCategories.length > 0 && !availableCategories.includes(contentType)) {
@@ -5160,14 +5157,13 @@ const AdminContentManagerScreen = ({
             </div>
             
             {showCurationModal && (
-    <AdminCurationModal 
-        currentUser={currentUser}
-        curationTarget={curationTarget}
-        showMessage={showMessage}
-        onCancel={() => setShowCurationModal(false)}
-        contentItems={contentItems}
-    />
-)}
+                <AdminCurationModal 
+                    curationTarget={curationTarget}
+                    showMessage={showMessage}
+                    onCancel={() => setShowCurationModal(false)}
+                    contentItems={contentItems}
+                />
+            )}
         </div>
     );
 };
