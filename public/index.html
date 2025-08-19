@@ -4540,8 +4540,8 @@ const AdminDashboardScreen = ({
         };
         // --- END: THIS IS THE CORRECTED AND COMPLETE COMPONENT ---
   
-        // --- START: NEW COMPONENT ---
-        const AdminCurationModal = ({ curationTarget, showMessage, onCancel, contentItems }) => {
+               // --- START: THIS IS THE CORRECTED AND COMPLETE COMPONENT ---
+        const AdminCurationModal = ({ currentUser, curationTarget, showMessage, onCancel, contentItems }) => {
             const [curatedItems, setCuratedItems] = useState([]);
             const [loading, setLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
@@ -4580,7 +4580,7 @@ const AdminDashboardScreen = ({
                 };
                 
                 fetchInitialData();
-            }, [curationTarget]); // This hook now only re-runs if the target section changes
+            }, [curationTarget]);
 
             const handleMove = (index, direction) => {
                 const newItems = [...curatedItems];
@@ -4691,12 +4691,14 @@ const AdminDashboardScreen = ({
                         </div>
 
                         {showContentSelector && <ContentSelectorModal showMessage={showMessage} onSelect={handleSelectInternalContent} onCancel={() => setShowContentSelector(false)} />}
-                        {showExternalAdModal && <AddExternalAdModal showMessage={showMessage} onSave={handleSaveExternalAd} onCancel={() => setShowExternalAdModal(false)} />}
+                        
+                        {/* THIS IS THE CRITICAL CHANGE: passing currentUser down */}
+                        {showExternalAdModal && <AddExternalAdModal currentUser={currentUser} showMessage={showMessage} onSave={handleSaveExternalAd} onCancel={() => setShowExternalAdModal(false)} />}
                     </div>
                 </div>
             );
         };
-        // --- END: NEW COMPONENT ---
+        // --- END: THIS IS THE CORRECTED AND COMPLETE COMPONENT ---
 
 const AdminFeaturedContentManager = ({ featuredContentSlots, showMessage }) => {
     const [showModal, setShowModal] = useState(false);
@@ -5158,13 +5160,14 @@ const AdminContentManagerScreen = ({
             </div>
             
             {showCurationModal && (
-                <AdminCurationModal 
-                    curationTarget={curationTarget}
-                    showMessage={showMessage}
-                    onCancel={() => setShowCurationModal(false)}
-                    contentItems={contentItems}
-                />
-            )}
+    <AdminCurationModal 
+        currentUser={currentUser}
+        curationTarget={curationTarget}
+        showMessage={showMessage}
+        onCancel={() => setShowCurationModal(false)}
+        contentItems={contentItems}
+    />
+)}
         </div>
     );
 };
