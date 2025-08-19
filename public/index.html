@@ -7836,26 +7836,55 @@ const MyContentLibraryScreen = ({
         } finally { setIsPublishing(false); }
     };
 
-    const handleSetFeatured = async (itemToFeature) => {
+   const handleSetFeatured = async (itemToFeature) => {
         if (!currentUser || !creatorProfile) return;
         showMessage("Setting featured link...");
-        const videoData = {
-            url: itemToFeature.mainUrl, thumbnailUrl: itemToFeature.customThumbnailUrl,
-            embedUrl: itemToFeature.embedUrl, platform: itemToFeature.videoPlatform,
-            liveFeedContentId: itemToFeature.id
-        };
+
+        const db = window.firebaseDb; // Ensure we have the db instance
+        const runTransaction = window.runTransaction; // Get the transaction function
+
         try {
-            const creatorRef = doc(db, "creators", currentUser.uid);
-            await updateDoc(creatorRef, { featuredVideoLink: videoData, updatedAt: new Date().toISOString() });
-            const contentRef = doc(db, `artifacts/${appId}/public/data/content_items`, itemToFeature.id);
-            await updateDoc(contentRef, { isFeatured: true });
-            const previouslyFeaturedId = creatorProfile.featuredVideoLink?.liveFeedContentId;
-            if (previouslyFeaturedId && previouslyFeaturedId !== itemToFeature.id) {
-                const prevContentRef = doc(db, `artifacts/${appId}/public/data/content_items`, previouslyFeaturedId);
-                await updateDoc(prevContentRef, { isFeatured: false });
-            }
+            await runTransaction(db, async (transaction) => {
+                // Define all document references
+                const creatorRef = doc(db, "creators", currentUser.uid);
+                const contentToFeatureRef = doc(db, `artifacts/${appId}/public/data/content_items`, itemToFeature.id);
+                
+                // 1. VERIFY the document we want to feature actually exists before doing anything else.
+                const contentDoc = await transaction.get(contentToFeatureRef);
+                if (!contentDoc.exists()) {
+                    throw new Error("The selected content item could not be found in the database. It may have been deleted.");
+                }
+
+                // 2. Un-feature the previously featured item, if one exists
+                const previouslyFeaturedId = creatorProfile.featuredVideoLink?.liveFeedContentId;
+                if (previouslyFeaturedId && previouslyFeaturedId !== itemToFeature.id) {
+                    const prevContentRef = doc(db, `artifacts/${appId}/public/data/content_items`, previouslyFeaturedId);
+                    transaction.update(prevContentRef, { isFeatured: false });
+                }
+
+                // 3. Feature the new item
+                transaction.update(contentToFeatureRef, { isFeatured: true });
+
+                // 4. Update the creator's profile with the new featured link details
+                const videoData = {
+                    url: itemToFeature.mainUrl,
+                    thumbnailUrl: itemToFeature.customThumbnailUrl,
+                    embedUrl: itemToFeature.embedUrl,
+                    platform: itemToFeature.videoPlatform,
+                    liveFeedContentId: itemToFeature.id
+                };
+                transaction.update(creatorRef, {
+                    featuredVideoLink: videoData,
+                    updatedAt: new Date().toISOString()
+                });
+            });
+
             showMessage("Your featured link has been updated!");
-        } catch (error) { console.error("Error setting featured link:", error); showMessage(`Failed to set featured link: ${error.message}`); }
+
+        } catch (error) {
+            console.error("Error in handleSetFeatured transaction:", error);
+            showMessage(`Failed to set featured link: ${error.message}`);
+        }
     };
 
     const handleRemoveFeatured = async () => {
