@@ -7463,7 +7463,7 @@ const MyContentLibraryScreen = ({
     setConfirmationTitle,
     setConfirmationMessage,
     setOnConfirmationAction,
-    handleVideoPress // <-- ADD THIS LINE
+    handleVideoPress
 }) => {
     // State for the form
     const [title, setTitle] = useState('');
@@ -7481,8 +7481,9 @@ const MyContentLibraryScreen = ({
     // State for managing library content
     const [libraryItems, setLibraryItems] = useState([]);
     const [loadingLibrary, setLoadingLibrary] = useState(true);
-    const [searchTerm, setSearchTerm] = useState(''); // For search
-    const [isLibraryExpanded, setIsLibraryExpanded] = useState(false); // For collapse
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isLibraryExpanded, setIsLibraryExpanded] = useState(true);
+    const [isUpdatingFeature, setIsUpdatingFeature] = useState(null); // Tracks which item is being updated
 
     // State for categories dropdown
     const [availableCategories, setAvailableCategories] = useState([]);
@@ -7542,93 +7543,62 @@ const MyContentLibraryScreen = ({
                 const storageRefPath = ref(storage, filePath);
                 const snapshot = await uploadBytes(storageRefPath, customThumbnailFile);
                 finalThumbnailUrl = await getDownloadURL(snapshot.ref);
-                showMessage('Thumbnail uploaded successfully!');
-            } catch (error) { console.error("Error uploading custom thumbnail:", error); showMessage(`Thumbnail upload failed: ${error.message}`); setIsPublishing(false); return; }
+            } catch (error) { showMessage(`Thumbnail upload failed: ${error.message}`); setIsPublishing(false); return; }
         }
        try {
             const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
-            // Step 1: Prepare the data for the new document
-            const newDocData = {
+            await addDoc(contentCollectionRef, {
                 title: title.trim(), description: description.trim(), mainUrl: videoLinkInput,
                 customThumbnailUrl: finalThumbnailUrl, embedUrl: embedUrl, videoPlatform: platform,
                 creatorId: currentUser.uid, creatorName: creatorProfile.creatorName, creatorProfilePictureUrl: creatorProfile.profilePictureUrl || '',
                 contentType: contentType, isActive: true, isFeatured: false, createdAt: new Date().toISOString(),
                 createdBy: currentUser.uid, viewCount: 0, likeCount: 0
-            };
-            // Step 2: Add the document to Firestore and get its reference
-             await addDoc(contentCollectionRef, newDocData);
-            
-            // Step 3 (THE FIX): The manual update line has been REMOVED.
-
+            });
             showMessage(`"${title.trim()}" was added to your library.`);
             resetForm();
-        } catch (error) { console.error("Error adding content to library:", error); showMessage(`Failed to save content: ${error.message}`);
+        } catch (error) { showMessage(`Failed to save content: ${error.message}`);
         } finally { setIsPublishing(false); }
     };
 
-   const handleSetFeatured = async (itemToFeature) => {
-        if (!currentUser || !creatorProfile) return;
-        showMessage("Setting featured link...");
+    const handleSetFeatured = async (itemToFeature) => {
+        setIsUpdatingFeature(itemToFeature.id);
         try {
-            await runTransaction(db, async (transaction) => {
-                const creatorRef = doc(db, "creators", currentUser.uid);
-                const contentToFeatureRef = doc(db, `artifacts/${appId}/public/data/content_items`, itemToFeature.id);
-                const contentDoc = await transaction.get(contentToFeatureRef);
-                if (!contentDoc.exists()) {
-                    throw new Error("The selected content item could not be found. It may have been deleted.");
-                }
-                const previouslyFeaturedId = creatorProfile.featuredVideoLink?.liveFeedContentId;
-                if (previouslyFeaturedId && previouslyFeaturedId !== itemToFeature.id) {
-                    const prevContentRef = doc(db, `artifacts/${appId}/public/data/content_items`, previouslyFeaturedId);
-                    const prevContentDoc = await transaction.get(prevContentRef);
-                    if (prevContentDoc.exists()) {
-                        transaction.update(prevContentRef, { isFeatured: false });
-                    } else {
-                        console.log("Previously featured item not found, proceeding without updating it.");
-                    }
-                }
-                transaction.update(contentToFeatureRef, { isFeatured: true });
-                const videoData = {
-                    url: itemToFeature.mainUrl,
-                    thumbnailUrl: itemToFeature.customThumbnailUrl,
-                    embedUrl: itemToFeature.embedUrl,
-                    platform: itemToFeature.videoPlatform,
-                    liveFeedContentId: itemToFeature.id
-                };
-                transaction.update(creatorRef, {
-                    featuredVideoLink: videoData,
-                    updatedAt: new Date().toISOString()
-                });
-            });
-            showMessage("Your featured link has been updated!");
+            const setFeaturedFunction = httpsCallable(functions, 'setFeaturedContent');
+            const result = await setFeaturedFunction({ contentId: itemToFeature.id, appId: appId });
+            showMessage(result.data.message);
         } catch (error) {
-            console.error("Error in handleSetFeatured transaction:", error);
-            showMessage(`Failed to set featured link: ${error.message}`);
+            console.error("Error calling setFeaturedContent function:", error);
+            showMessage(`Error: ${error.message}`);
+        } finally {
+            setIsUpdatingFeature(null);
         }
     };
 
     const handleRemoveFeatured = async () => {
-        if (!currentUser || !creatorProfile.featuredVideoLink) return;
-        showMessage("Removing featured link...");
+        if (!creatorProfile.featuredVideoLink) return;
+        setIsUpdatingFeature(creatorProfile.featuredVideoLink.liveFeedContentId);
         try {
-            const creatorRef = doc(db, "creators", currentUser.uid);
-            await updateDoc(creatorRef, { featuredVideoLink: null, updatedAt: new Date().toISOString() });
-            const contentRef = doc(db, `artifacts/${appId}/public/data/content_items`, creatorProfile.featuredVideoLink.liveFeedContentId);
-            await updateDoc(contentRef, { isFeatured: false });
-            showMessage("Featured link has been removed.");
-        } catch (error) { console.error("Error removing featured link:", error); showMessage(`Failed to remove featured link: ${error.message}`); }
+            const removeFeaturedFunction = httpsCallable(functions, 'removeFeaturedContent');
+            const result = await removeFeaturedFunction({ appId: appId });
+            showMessage(result.data.message);
+        } catch (error) {
+            console.error("Error calling removeFeaturedContent function:", error);
+            showMessage(`Error: ${error.message}`);
+        } finally {
+            setIsUpdatingFeature(null);
+        }
     };
 
     const deleteLogic = async (itemToDelete) => {
         showMessage("Deleting content...");
         try {
             if (creatorProfile.featuredVideoLink?.liveFeedContentId === itemToDelete.id) {
-                const creatorRef = doc(db, "creators", currentUser.uid);
-                await updateDoc(creatorRef, { featuredVideoLink: null });
+                const removeFeaturedFunction = httpsCallable(functions, 'removeFeaturedContent');
+                await removeFeaturedFunction({ appId: appId });
             }
             await deleteDoc(doc(db, `artifacts/${appId}/public/data/content_items`, itemToDelete.id));
             showMessage(`"${itemToDelete.title}" was deleted permanently.`);
-        } catch (error) { console.error("Error deleting content:", error); showMessage(`Failed to delete content: ${error.message}`); }
+        } catch (error) { showMessage(`Failed to delete content: ${error.message}`); }
     };
 
     const handleDelete = (itemToDelete) => {
@@ -7652,10 +7622,7 @@ const MyContentLibraryScreen = ({
             <p className="subHeading">Add to your portfolio and manage what's featured on your profile.</p>
             <div className="dashboardSection">
                 <p className="dashboardSectionTitle">Add New Content to Library</p>
-                <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>
-                    **Instructions:** Add content here first. Once it's in your library below, you can choose to feature it or delete it.
-                </p>
-                <div className="videoLinkSection">
+                 <div className="videoLinkSection">
                      <div className="formGroup"><label htmlFor="contentTitle" className="formLabel">Title:</label><input type="text" id="contentTitle" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} required /></div>
                      <div className="formGroup"><label htmlFor="contentDescription" className="formLabel">Description (Optional):</label><textarea id="contentDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A brief summary of your content"></textarea></div>
                     <div className="formGroup"><label htmlFor="contentType" className="formLabel">Content Type:</label><select id="contentType" className="formInput" value={contentType} onChange={(e) => setContentType(e.target.value)} required><option value="" disabled>-- Select a Category --</option>{availableCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select></div>
@@ -7681,36 +7648,22 @@ const MyContentLibraryScreen = ({
                             filteredItems.map(item => (
                                 <div key={item.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
                                     <div style={{display: 'flex', alignItems: 'center', gap: '15px'}}>
-                                    <img 
-                                        src={item.customThumbnailUrl} 
-                                        alt={item.title} 
-                                        style={{width: '120px', height: '68px', objectFit: 'cover', borderRadius: '5px', cursor: 'pointer'}} 
-                                        onClick={() => handleVideoPress(item.mainUrl, item)}
-                                    />
-                                    <div style={{flexGrow: 1}}>
-                                        {/* ... other code for the title ... */}
+                                        <img src={item.customThumbnailUrl} alt={item.title} style={{width: '120px', height: '68px', objectFit: 'cover', borderRadius: '5px', cursor: 'pointer'}} onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)} />
+                                        <div style={{flexGrow: 1}}>
+                                            <p className="adminDashboardItemTitle">{item.title}</p>
+                                            <p style={{fontSize: '12px', color: '#CCC'}}>Type: {item.contentType}</p>
+                                        </div>
                                     </div>
-                                </div>
-                                     <div className="videoActions" style={{marginTop: '10px'}}>
+                                    <div className="videoActions" style={{marginTop: '10px'}}>
                                         {creatorProfile.featuredVideoLink?.liveFeedContentId === item.id ? (
-                                            <button className="actionButton" onClick={() => handleRemoveFeatured()} style={{backgroundColor: '#FF8C00'}}>Remove Featured</button>
+                                            <button className="actionButton" onClick={handleRemoveFeatured} disabled={isUpdatingFeature === item.id} style={{backgroundColor: '#FF8C00'}}>
+                                                {isUpdatingFeature === item.id ? '...' : 'Remove Featured'}
+                                            </button>
                                         ) : (
-                                            <button className="actionButton" onClick={() => handleSetFeatured(item)} style={{backgroundColor: '#008000'}}>Set as Featured</button>
+                                            <button className="actionButton" onClick={() => handleSetFeatured(item)} disabled={isUpdatingFeature === item.id} style={{backgroundColor: '#008000'}}>
+                                                {isUpdatingFeature === item.id ? '...' : 'Set as Featured'}
+                                            </button>
                                         )}
-
-                                        {/* --- THIS IS THE ONLY ADDITION --- */}
-                                        <button 
-                                            className="actionButton" 
-                                            style={{backgroundColor: '#00FFFF', color: '#000'}} 
-                                            onClick={() => {
-                                                const path = `artifacts/${appId}/public/data/content_items/${item.id}`;
-                                                console.log("DEBUG PATH:", path);
-                                                showMessage("Path logged to console.");
-                                            }}
-                                        >
-                                            Debug Path
-                                        </button>
-                                        
                                         <button className="actionButton remove" onClick={() => handleDelete(item)}>Delete</button>
                                     </div>
                                 </div>
@@ -7718,10 +7671,6 @@ const MyContentLibraryScreen = ({
                     </div>
                 </div>
             </div>
-           
-           
-           
-           
             <button className="button" onClick={() => setActiveScreen('CreatorDashboard')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}><span className="buttonText light">Back to Dashboard</span></button>
         </div>
     );
