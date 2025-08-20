@@ -1794,7 +1794,7 @@
         import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-functions.js";
         
         // Global Firebase variables (provided by Canvas environment)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+         const appId = 'production-app-id'; // Use a consistent, hardcoded ID to stabilize database paths.
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // Your web app's Firebase configuration
@@ -1812,8 +1812,9 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const storage = getStorage(app); // Initialize Storage
+         const storage = getStorage(app); // Initialize Storage
         const analytics = getAnalytics(app);
+        const functions = getFunctions(app); // <-- ADD THIS LINE TO CREATE THE SERVICE
         window.firebaseAnalytics = analytics; // Export the instance
         window.logEvent = logEvent; // Export the function
         window.setUserId = setUserId; // Export the function
@@ -1822,6 +1823,7 @@
         // Export for use in React component
         window.firebaseApp = app;
         window.firebaseAuth = auth;
+        window.firebaseFunctions = functions; // <-- AND ADD THIS LINE TO EXPOSE IT
         window.firebaseDb = db;
         window.firebaseStorage = storage; // Export Storage
         window.initialAuthToken = initialAuthToken; // Export corrected initialAuthToken
@@ -2191,61 +2193,56 @@
             const [isLoading, setIsLoading] = useState(true);
 
             useEffect(() => {
-                // This effect runs whenever the 'item' prop changes.
                 setIsLoading(true);
-                let isMounted = true; // Prevents state updates if the component unmounts during fetch
+                let isMounted = true;
 
                 const fetchThumbnail = async () => {
-                    // Use a local copy of currentUser from the window scope if available
-                    const currentUser = window.firebaseAuth.currentUser; 
-                    const info = extractVideoInfo(item.mainUrl || item.externalLink || item.url);
-
                     if (item.customThumbnailUrl) {
-                        // A custom thumbnail from the database always takes highest priority.
-                        setThumbnailSrc(item.customThumbnailUrl);
-                    } else if (info.platform === 'youtube') {
-                        // YouTube is synchronous, we can set it directly.
-                        setThumbnailSrc(info.thumbnailUrl);
-                    } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
-                        // For other platforms, we must make an oEmbed API call.
-                        // We will use a free, public CORS proxy for this.
-                        const corsProxy = 'https://cors-anywhere.herokuapp.com/';
-                        let oEmbedUrl = '';
-
-                        if (info.platform === 'tiktok') oEmbedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(item.mainUrl)}`;
-                        if (info.platform === 'vimeo') oEmbedUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(item.mainUrl)}`;
+                        if (isMounted) setThumbnailSrc(item.customThumbnailUrl);
+                    } else if (item.imageUrl) {
+                        if (isMounted) setThumbnailSrc(item.imageUrl);
+                    } else {
+                        const info = extractVideoInfo(item.mainUrl || item.externalLink);
                         
-                        try {
-                            const response = await fetch(corsProxy + oEmbedUrl);
-                            if (!response.ok) throw new Error('oEmbed request failed');
-                            const data = await response.json();
-                            if (isMounted && data.thumbnail_url) {
-                                setThumbnailSrc(data.thumbnail_url);
+                        if (info.platform === 'youtube') {
+                            if (isMounted) setThumbnailSrc(info.thumbnailUrl);
+                        } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
+                            try {
+                                const functions = window.getFunctions(window.firebaseApp);
+                                const oEmbedProxyCallable = window.httpsCallable(functions, 'oEmbedProxy');
+                                
+                                let oEmbedUrl = '';
+                                if (info.platform === 'tiktok') oEmbedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(item.mainUrl || item.externalLink)}`;
+                                if (info.platform === 'vimeo') oEmbedUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(item.mainUrl || item.externalLink)}`;
+
+                                const result = await oEmbedProxyCallable({ url: oEmbedUrl });
+                                const data = result.data;
+
+                                if (isMounted && data && data.thumbnail_url) {
+                                    setThumbnailSrc(data.thumbnail_url);
+                                } else {
+                                     if (isMounted) setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
+                                }
+                            } catch (error) {
+                                console.error(`Cloud Function call to fetch ${info.platform} thumbnail failed:`, error);
+                                if (isMounted) setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
                             }
-                        } catch (error) {
-                            console.error(`Failed to fetch ${info.platform} thumbnail:`, error);
+                        } else {
                             if (isMounted) setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
                         }
-                    } else {
-                        // For 'generic', 'facebook', or any other unhandled platform, use the placeholder.
-                        setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
                     }
                     if (isMounted) setIsLoading(false);
                 };
 
                 fetchThumbnail();
 
-                return () => {
-                    isMounted = false; // Cleanup function
-                };
-            }, [item.id, item.mainUrl]); // Re-run if the item itself changes
+                return () => { isMounted = false; };
+            }, [item.id, item.mainUrl, item.externalLink, item.imageUrl, item.customThumbnailUrl]);
 
-            // Render the image with the fetched or default source.
             return (
                  <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${thumbnailSrc})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}} onClick={onClick}>
                     <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
-                    {/* The currentUser check needs to be robust, pulling from the global scope */}
-                    {window.firebaseAuth.currentUser && item.id && <LikeButton contentItem={item} currentUser={window.firebaseAuth.currentUser} showMessage={window.showMessage} />}
+                    {window.firebaseAuth.currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={window.firebaseAuth.currentUser} showMessage={window.showMessage} />}
                 </div>
             );
         };
@@ -2255,6 +2252,7 @@
                 
         const auth = window.firebaseAuth;
         const db = window.firebaseDb;
+        const functions = window.firebaseFunctions; // <-- ADD THIS LINE
         const increment = window.increment;
         const storage = window.firebaseStorage;
         const analytics = window.firebaseAnalytics; // Get analytics instance
@@ -3598,7 +3596,7 @@ const AdminDashboardScreen = ({
     setSelectedAdminCampaignId,
     creatorProfile,
     selectedAdminSubScreen,
-    setSelectedAdminSubScreen, // <-- THIS IS THE ONLY CHANGE. THE MISSING PROP IS NOW ADDED.
+    setSelectedAdminSubScreen,
     setShowConfirmationModal,
     setConfirmationTitle,
     setConfirmationMessage,
@@ -3640,27 +3638,23 @@ const AdminDashboardScreen = ({
         }
     };
 
-    // START of REPLACEMENT Block
-        const denyPledgeLogic = async (pledgeId) => {
-            showMessage(`Denying pledge...`);
-            try {
-                // The ONLY job of this function now is to delete the pledge.
-                // The onPledgeDelete backend trigger will automatically send the notification.
-                await deleteDoc(doc(db, "paymentPledges", pledgeId));
-                showMessage("Pledge denied and removed successfully.");
-            } catch (error) {
-                console.error("Error denying pledge:", error);
-                showMessage(`Error denying pledge: ${error.message}`);
-            }
-        };
-    
-        const confirmDenyPledge = (pledge) => {
-            setConfirmationTitle("Deny Pledge?");
-            setConfirmationMessage(`Are you sure you want to deny and permanently delete this pledge from ${pledge.userName} for $${pledge.amount.toFixed(2)}? This action will notify the user and cannot be undone.`);
-            setOnConfirmationAction(() => () => denyPledgeLogic(pledge.id));
-            setShowConfirmationModal(true);
-        };
-       // END of REPLACEMENT Block
+    const denyPledgeLogic = async (pledgeId) => {
+        showMessage(`Denying pledge...`);
+        try {
+            await deleteDoc(doc(db, "paymentPledges", pledgeId));
+            showMessage("Pledge denied and removed successfully.");
+        } catch (error) {
+            console.error("Error denying pledge:", error);
+            showMessage(`Error denying pledge: ${error.message}`);
+        }
+    };
+
+    const confirmDenyPledge = (pledge) => {
+        setConfirmationTitle("Deny Pledge?");
+        setConfirmationMessage(`Are you sure you want to deny and permanently delete this pledge from ${pledge.userName} for $${pledge.amount.toFixed(2)}? This action will notify the user and cannot be undone.`);
+        setOnConfirmationAction(() => () => denyPledgeLogic(pledge.id));
+        setShowConfirmationModal(true);
+    };
 
     const [isPendingCampaignsExpanded, setIsPendingCampaignsExpanded] = useState(true);
     const [isActiveCampaignsExpanded, setIsActiveCampaignsExpanded] = useState(true);
@@ -3670,10 +3664,9 @@ const AdminDashboardScreen = ({
     const [activeCampaigns, setActiveCampaigns] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
     const [loading, setLoading] = useState(true);
-        const [isUpdatingRole, setIsUpdatingRole] = useState(null);
+    const [isUpdatingRole, setIsUpdatingRole] = useState(null);
     const [banRequests, setBanRequests] = useState([]);
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(null);
-    const [isCorrectingCount, setIsCorrectingCount] = useState(null);
     const changeUserRoleLogic = async (targetUser, newRole) => { setIsUpdatingRole(targetUser.id); showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`); try { const userDocRef = doc(db, "creators", targetUser.id); await updateDoc(userDocRef, { role: newRole }); showMessage(`Success! ${targetUser.creatorName || targetUser.email} is now a(n) ${newRole}.`); } catch (error) { console.error("Error changing user role:", error); showMessage(`Error: ${error.message}`); } finally { setIsUpdatingRole(null); } };
     const confirmChangeUserRole = (targetUser, newRole) => { setConfirmationTitle("Change User Role?"); setConfirmationMessage(`Are you sure you want to change ${targetUser.creatorName || targetUser.email}'s role to "${newRole}"?`); setOnConfirmationAction(() => () => changeUserRoleLogic(targetUser, newRole)); setShowConfirmationModal(true); };
     const toggleBanLogic = async (userToBan) => { if (userToBan.id === currentUser.uid) { showMessage("You cannot ban your own account."); return; } if (creatorProfile.role === 'authority' && userToBan.role === 'authority') { setIsSubmittingRequest(userToBan.id); try { const banRequestRef = collection(db, "banRequests"); await addDoc(banRequestRef, { requesterId: currentUser.uid, requesterName: creatorProfile.creatorName, targetUserId: userToBan.id, targetUserName: userToBan.creatorName || userToBan.email, status: 'pending', timestamp: new Date().toISOString() }); showMessage(`Ban request for ${userToBan.creatorName || userToBan.email} has been submitted for Admin approval.`); } catch (error) { console.error("Error submitting ban request:", error); showMessage(`Failed to submit ban request: ${error.message}`); } finally { setIsSubmittingRequest(null); } return; } if (creatorProfile.role === 'authority' && userToBan.role === 'admin') { showMessage("Authority users cannot ban Admin accounts."); return; } try { const userDocRef = doc(db, "creators", userToBan.id); await updateDoc(userDocRef, { banned: !userToBan.banned, updatedAt: new Date().toISOString() }); showMessage(`${userToBan.banned ? 'Unbanned' : 'Banned'} user: ${userToBan.creatorName || userToBan.email}`); } catch (error) { console.error("Error toggling ban status:", error); showMessage(`Failed to toggle ban status: ${error.message}`); } };
@@ -3681,14 +3674,12 @@ const AdminDashboardScreen = ({
     const handleApproveBanRequest = async (request) => { try { const userToBanRef = doc(db, "creators", request.targetUserId); const requestRef = doc(db, "banRequests", request.id); await updateDoc(userToBanRef, { banned: true }); await deleteDoc(requestRef); showMessage(`Request approved. User ${request.targetUserName} has been banned.`); } catch (error) { console.error("Error approving ban request:", error); showMessage(`Failed to approve ban request: ${error.message}`); } };
     const handleDenyBanRequest = async (request) => { try { await deleteDoc(doc(db, "banRequests", request.id)); showMessage(`Request to ban ${request.targetUserName} has been denied.`); } catch (error) { console.error("Error denying ban request:", error); showMessage(`Failed to deny ban request: ${error.message}`); } };
     const toggleSection = (setterFunction, currentState) => { setterFunction(!currentState); };
-    const recalculateCountsForUser = async (userToFix) => { setIsCorrectingCount(userToFix.id); showMessage(`Recalculating counts for ${userToFix.creatorName || userToFix.email}...`); try { const followersRef = collection(db, "creators", userToFix.id, "followers"); const followersSnapshot = await getDocs(followersRef); const actualFollowerCount = followersSnapshot.size; const followingRef = collection(db, "creators", userToFix.id, "following"); const followingSnapshot = await getDocs(followingRef); const actualFollowingCount = followingSnapshot.size; await updateDoc(doc(db, "creators", userToFix.id), { followerCount: actualFollowerCount, followingCount: actualFollowingCount }); showMessage(`Counts for ${userToFix.creatorName || userToFix.email} have been corrected.`); } catch (error) { console.error("Error during single-user count correction:", error); showMessage(`Error correcting counts: ${error.message}`); } finally { setIsCorrectingCount(null); } };
-    const confirmRecalculate = (userToFix) => { setConfirmationTitle("Recalculate Counts?"); setConfirmationMessage(`This will manually recount followers and following for "${userToFix.creatorName || userToFix.email}" and update their profile. Proceed?`); setOnConfirmationAction(() => () => recalculateCountsForUser(userToFix)); setShowConfirmationModal(true); };
+
     useEffect(() => { const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`); const qPending = query(campaignsCollectionRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc')); const unsubscribePending = onSnapshot(qPending, (snapshot) => { setPendingCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const qActive = query(campaignsCollectionRef, where('status', '==', 'active'), orderBy('createdAt', 'desc')); const unsubscribeActive = onSnapshot(qActive, (snapshot) => { setActiveCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); const usersCollectionRef = collection(db, "creators"); const unsubscribeUsers = onSnapshot(usersCollectionRef, (snapshot) => { setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setLoading(false); }); let unsubscribeBanRequests = () => {}; if (creatorProfile && creatorProfile.role === 'admin') { const banRequestsRef = collection(db, "banRequests"); const q = query(banRequestsRef, where('status', '==', 'pending')); unsubscribeBanRequests = onSnapshot(q, (snapshot) => { setBanRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); } return () => { unsubscribePending(); unsubscribeActive(); unsubscribeUsers(); unsubscribeBanRequests(); }; }, [creatorProfile]);
     
     if (!currentUser || !creatorProfile || (creatorProfile.role !== 'admin' && creatorProfile.role !== 'authority')) { return ( <div className="screenContainer"> <p className="heading">Access Denied</p> <p className="subHeading">You must be an Admin or Authority to view this dashboard.</p> <button className="button" onClick={() => setActiveScreen('Login')}><span className="buttonText">Go to Login</span></button> </div> ); }
     if (loading) { return ( <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}> <p className="heading">Loading Admin Dashboard...</p> <p className="subHeading" style={{ color: '#FFD700' }}>Please wait.</p> </div> ); }
     const filteredUsers = allUsers.filter(user => {
-        // This logic is now simpler. We only hide admins from authority view.
         if (creatorProfile.role === 'authority' && user.role === 'admin') {
             return false;
         }
@@ -3699,8 +3690,7 @@ const AdminDashboardScreen = ({
 
     const sortedPledges = [...pendingPledges].sort((a, b) => {
         if (pledgeSortType === 'type') {
-            if (a.paymentType < b.paymentType) return -1;
-            if (a.paymentType > b.paymentType) return 1;
+            return a.paymentType.localeCompare(b.paymentType);
         }
         return new Date(b.createdAt) - new Date(a.createdAt);
     });
@@ -3710,6 +3700,7 @@ const AdminDashboardScreen = ({
             <p className="heading">Admin Dashboard</p>
             <p className="subHeading">Manage users and crowdfunding campaigns.</p>
 
+            {/* THIS IS THE MOVED NAVIGATION BAR. IT IS NOW ALWAYS VISIBLE. */}
             <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', paddingBottom: '20px', flexWrap: 'wrap', position: 'sticky', top: 0, zIndex: 50, backgroundColor: '#0A0A0A' }}>
                 <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Overview</span></button>
                 <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Content</span></button>
@@ -3723,23 +3714,14 @@ const AdminDashboardScreen = ({
                     {creatorProfile.role === 'admin' && banRequests.length > 0 && ( <section className="dashboardSection" style={{ border: '2px solid #FFD700' }}> <p className="dashboardSectionTitle">Pending Authority Ban Requests ({banRequests.length})</p> <div className="dashboardContentList"> {banRequests.map(req => ( <div key={req.id} className="adminDashboardItem"> <div style={{ flexGrow: 1 }}> <p className="adminDashboardItemTitle">Target: {req.targetUserName}</p> <p style={{ fontSize: '12px', color: '#CCC' }}>Requested by: {req.requesterName}</p> </div> <button className="adminActionButton approve" onClick={() => handleApproveBanRequest(req)}>Approve Ban</button> <button className="adminActionButton reject" onClick={() => handleDenyBanRequest(req)}>Deny Request</button> </div> ))} </div> </section> )}
                    <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsUserManagementExpanded, isUserManagementExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>User Management</p> <button className="admin-toggle-button">{isUserManagementExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="user-management-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="userSearch" className="formLabel">Search Users:</label><input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div> <div className="formGroup" style={{ marginBottom: '15px' }}><label htmlFor="roleFilter" className="formLabel">Filter by Role:</label><select id="roleFilter" className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}><option value="All">All Roles</option><option value="user">User</option><option value="creator">Creator</option><option value="admin">Admin</option><option value="authority">Authority</option></select></div> {filteredUsers.length === 0 ? <p className="dashboardItem">No users to display matching your criteria.</p> : <div className="dashboardContentList"> {filteredUsers.map(user => (
     <div key={user.id} className="adminDashboardItem" style={{alignItems: 'center'}}>
-        {/* This new wrapper makes the left side clickable */}
-        <div 
-            onClick={() => { setSelectedUserId(user.id); setActiveScreen('UserProfile'); }}
-            style={{cursor: 'pointer', display: 'flex', alignItems: 'center', flexGrow: 1, marginRight: '10px'}}
-        >
-            <img 
-                src={user.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} 
-                alt={user.creatorName}
-                style={{width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px'}}
-            />
+        <div onClick={() => { setSelectedUserId(user.id); setActiveScreen('UserProfile'); }} style={{cursor: 'pointer', display: 'flex', alignItems: 'center', flexGrow: 1, marginRight: '10px'}}>
+            <img src={user.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} alt={user.creatorName} style={{width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px'}} />
             <div>
                 <p className="adminDashboardItemTitle">{user.creatorName || user.email}</p>
                 <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p>
                 <p style={{ fontSize: '12px', color: user.banned ? '#DC3545' : '#00FF00' }}>Status: {user.banned ? 'Banned' : 'Active'}</p>
             </div>
         </div>
-        {/* These are your original controls, now reinstated */}
         <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end'}}>
             {currentUser.uid !== user.id && <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} onClick={() => confirmToggleBan(user)} disabled={isSubmittingRequest === user.id}> {isSubmittingRequest === user.id ? 'Submitting...' : (user.banned ? 'Unban' : 'Ban')} </button>}
             <div className="formGroup" style={{marginBottom: 0}}>
@@ -3756,11 +3738,7 @@ const AdminDashboardScreen = ({
 ))} </div> } </div> </div> </section>
                     <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p> <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> : <div className="dashboardContentList"> {pendingCampaigns.map(campaign => ( 
                     <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }} style={{ cursor: 'pointer', alignItems: 'center' }}>
-                                    <img 
-                                        src={campaign.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} 
-                                        alt="Campaign Thumbnail"
-                                        style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginRight: '15px' }}
-                                    />
+                                    <img src={campaign.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Campaign Thumbnail" style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginRight: '15px' }} />
                                     <div style={{ flexGrow: 1, marginRight: '10px' }}>
                                         <p className="adminDashboardItemTitle">{campaign.title}</p>
                                         <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
@@ -3773,11 +3751,7 @@ const AdminDashboardScreen = ({
                 </section>
              <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsActiveCampaignsExpanded, isActiveCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p> <button className="admin-toggle-button">{isActiveCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="active-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : <div className="dashboardContentList"> {activeCampaigns.map(campaign => ( 
              <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }} style={{ cursor: 'pointer', alignItems: 'center' }}>
-                                    <img 
-                                        src={campaign.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} 
-                                        alt="Campaign Thumbnail"
-                                        style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginRight: '15px' }}
-                                    />
+                                    <img src={campaign.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Campaign Thumbnail" style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginRight: '15px' }} />
                                     <div style={{ flexGrow: 1, marginRight: '10px' }}>
                                         <p className="adminDashboardItemTitle">{campaign.title}</p>
                                         <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
@@ -3788,15 +3762,13 @@ const AdminDashboardScreen = ({
                             </div> 
                         </div> 
                     </section>
-                   
                    <section className="dashboardSection">
                          <p className="dashboardSectionTitle">Community Management</p>
                          <button className="button" onClick={() => setActiveScreen('PremiumMembersScreen')} style={{width: '100%', backgroundColor: '#FFD700', color: '#0A0A0A'}}>
                             <span className="buttonText">View All Premium Members 👑</span>
                         </button>
                     </section>
-                   
-                    {creatorProfile.role === 'admin' && selectedAdminSubScreen === 'Overview' && (
+                    {creatorProfile.role === 'admin' && (
                         <section className="dashboardSection" style={{border: '2px solid #FFD700'}}>
                             <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPaymentsExpanded, isPaymentsExpanded)}>
                                 <p className="dashboardSectionTitle" style={{marginBottom: 0}}>Pending Payments ({pendingPledges.length})</p>
@@ -3808,11 +3780,7 @@ const AdminDashboardScreen = ({
                                         <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'date' ? '#FFD700' : '#555', color: pledgeSortType === 'date' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('date')}>Sort by Time</button>
                                         <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'type' ? '#FFD700' : '#555', color: pledgeSortType === 'type' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('type')}>Sort by Type</button>
                                     </div>
-                                    {loadingPledges ? (
-                                        <p className="dashboardItem">Loading pending payments...</p>
-                                    ) : pendingPledges.length === 0 ? (
-                                        <p className="dashboardItem">There are no payments pending review.</p>
-                                    ) : (
+                                    {loadingPledges ? (<p className="dashboardItem">Loading pending payments...</p>) : pendingPledges.length === 0 ? (<p className="dashboardItem">There are no payments pending review.</p>) : (
                                         <div className="dashboardContentList">
                                             {sortedPledges.map(pledge => (
                                                 <div key={pledge.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
@@ -3879,378 +3847,10 @@ const AdminDashboardScreen = ({
                 creatorProfile={creatorProfile}
                 />
             )}
-
         </div>
     );
 };
 // =================== END REPLACEMENT ===================
-
-        const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
-            return (
-                <div className="confirmationModalOverlay">
-                    <div className="confirmationModalContent">
-                        <p className="confirmationModalTitle">{title}</p>
-                        <p className="confirmationModalMessage">{message}</p>
-                        <div className="confirmationModalButtons">
-                            <button className="confirmationButton confirm" onClick={() => {
-                                if (typeof onConfirm === 'function') {
-                                    onConfirm(); // First, run the assigned action
-                                }
-                                onCancel();  // Then, run the function that closes the modal
-                            }}>Confirm</button>
-                            <button className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const AdminCampaignDetailsScreen = ({ showMessage, setActiveScreen, currentUser, selectedAdminCampaignId, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile }) => {
-            const [campaign, setCampaign] = useState(null);
-            const [loading, setLoading] = useState(true);
-            const campaignImageRef = useRef(null);
-
-            useEffect(() => {
-                const fetchCampaignDetails = async () => {
-                    if (!selectedAdminCampaignId) {
-                        showMessage("No campaign selected for review.");
-                        setActiveScreen('AdminDashboard');
-                        return;
-                    }
-
-                    try {
-                        const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, selectedAdminCampaignId);
-                        const docSnap = await getDoc(campaignDocRef);
-
-                        if (docSnap.exists()) {
-                            setCampaign({ id: docSnap.id, ...docSnap.data() });
-                        } else {
-                            showMessage("Campaign not found.");
-                            setActiveScreen('AdminDashboard');
-                        }
-                        setLoading(false);
-                    } catch (error) {
-                        console.error("Error fetching campaign details for admin review:", error);
-                        showMessage("Failed to load campaign details for review. Please try again.");
-                        setLoading(false);
-                        setActiveScreen('AdminDashboard');
-                    }
-                };
-
-                fetchCampaignDetails();
-            }, [selectedAdminCampaignId, setActiveScreen, showMessage]);
-
-               
-            const confirmApprove = () => {
-                // Check if current user is an authority and the campaign creator is an admin
-                if (creatorProfile.role === 'authority' && campaign && campaign.creatorId) {
-                    // Fetch the creator's role to check if they are an "admin"
-                    // This is done via a separate getDoc call to respect Firestore rules that might prevent direct read of creator.role from request.resource
-                    const creatorDocRef = doc(db, "creators", campaign.creatorId);
-                    getDoc(creatorDocRef).then(docSnap => {
-                        if (docSnap.exists() && docSnap.data().role === 'admin') {
-                            showMessage("Authority users cannot approve campaigns created by Admin accounts.");
-                            return;
-                        } else {
-                            setShowConfirmationModal(true);
-                            setConfirmationTitle("Approve Campaign?");
-                            setConfirmationMessage(`Are you sure you want to APPROVE campaign "${campaign.title}"?`);
-                            setOnConfirmationAction(() => handleApproveCampaign);
-                        }
-                    }).catch(error => {
-                        console.error("Error fetching creator role:", error);
-                        showMessage("Could not verify campaign creator's role. Please try again.");
-                    });
-                } else {
-                    setShowConfirmationModal(true);
-                    setConfirmationTitle("Approve Campaign?");
-                    setConfirmationMessage(`Are you sure you want to APPROVE campaign "${campaign.title}"?`);
-                            setOnConfirmationAction(() => handleApproveCampaign);
-                }
-            };
-
-            const handleApproveCampaign = async () => {
-                setShowConfirmationModal(false); // Close modal
-                if (!campaign || !currentUser) return;
-
-                try {
-                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
-                    await updateDoc(campaignDocRef, {
-                        status: 'active',
-                        approvedBy: currentUser.uid,
-                        approvedAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString()
-                    });
-                    showMessage(`Campaign "${campaign.title}" approved successfully!`);
-                    setActiveScreen('AdminDashboard'); // Go back to dashboard
-                } catch (error) {
-                    console.error("Error approving campaign:", error);
-                    showMessage(`Failed to approve campaign: ${error.message}`);
-                }
-            };
-
-            const confirmReject = () => {
-                // Check if current user is an authority and the campaign creator is an admin
-                if (creatorProfile.role === 'authority' && campaign && campaign.creatorId) {
-                    const creatorDocRef = doc(db, "creators", campaign.creatorId);
-                    getDoc(creatorDocRef).then(docSnap => {
-                        if (docSnap.exists() && docSnap.data().role === 'admin') {
-                            showMessage("Authority users cannot reject campaigns created by Admin accounts.");
-                            return;
-                        } else {
-                            setShowConfirmationModal(true);
-                            setConfirmationTitle("Reject Campaign?");
-                            setConfirmationMessage(`Are you sure you want to REJECT campaign "${campaign.title}"?`);
-                            setOnConfirmationAction(() => handleRejectCampaign);
-                        }
-                    }).catch(error => {
-                        console.error("Error fetching creator role:", error);
-                        showMessage("Could not verify campaign creator's role. Please try again.");
-                    });
-                } else {
-                    setShowConfirmationModal(true);
-                    setConfirmationTitle("Reject Campaign?");
-                    setConfirmationMessage(`Are you sure you want to REJECT campaign "${campaign.title}"?`);
-                    setOnConfirmationAction(() => handleRejectCampaign);
-                }
-            };
-
-            const handleRejectCampaign = async () => {
-                setShowConfirmationModal(false); // Close modal
-                if (!campaign || !currentUser) return;
-            
-                try {
-                    // This function now ONLY updates the status. The backend trigger handles the notification.
-                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
-                    await updateDoc(campaignDocRef, {
-                        status: 'rejected',
-                        rejectedBy: currentUser.uid,
-                        rejectedAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString()
-                    });
-            
-                    showMessage(`Campaign "${campaign.title}" rejected. Creator will be notified.`);
-                    setActiveScreen('AdminDashboard'); // Go back to dashboard
-                } catch (error) {
-                    console.error("Error rejecting campaign:", error);
-                    showMessage(`Failed to reject campaign: ${error.message}`);
-                }
-            };
-// END of REPLACEMENT Block
-
-            const confirmEndCampaignByAdmin = () => {
-                // Check if current user is an authority and the campaign creator is an admin
-                if (creatorProfile.role === 'authority' && campaign && campaign.creatorId) {
-                    const creatorDocRef = doc(db, "creators", campaign.creatorId);
-                    getDoc(creatorDocRef).then(docSnap => {
-                        if (docSnap.exists() && docSnap.data().role === 'admin') {
-                            showMessage("Authority users cannot end campaigns created by Admin accounts.");
-                            return;
-                        } else {
-                            setShowConfirmationModal(true);
-                            setConfirmationTitle("End Campaign?");
-                            setConfirmationMessage(`Are you sure you want to manually END campaign "${campaign.title}"? This will set its status to 'ended'.`);
-                            setOnConfirmationAction(() => handleEndCampaignByAdmin);
-                        }
-                    }).catch(error => {
-                        console.error("Error fetching creator role:", error);
-                        showMessage("Could not verify campaign creator's role. Please try again.");
-                    });
-                } else {
-                    setShowConfirmationModal(true);
-                    setConfirmationTitle("End Campaign?");
-                    setConfirmationMessage(`Are you sure you want to manually END campaign "${campaign.title}"? This will set its status to 'ended'.`);
-                    setOnConfirmationAction(() => handleEndCampaignByAdmin);
-                }
-            };
-
-            const handleEndCampaignByAdmin = async () => {
-                setShowConfirmationModal(false); // Close modal
-                if (!campaign || !currentUser) return;
-
-                try {
-                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
-                    await updateDoc(campaignDocRef, {
-                    status: 'ended',
-                    endedByAdmin: currentUser.uid,
-                    endedAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    statusChangedAt: new Date().toISOString() // <-- ADD THIS LINE
-                });
-                    showMessage(`Campaign "${campaign.title}" has been manually ended by admin.`);
-                    setActiveScreen('AdminDashboard'); // Go back to dashboard after action
-                } catch (error) {
-                    console.error("Error ending campaign by admin:", error);
-                    showMessage(`Failed to end campaign: ${error.message}`);
-                }
-            };
-
-            if (loading) {
-                return (
-                    <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
-                        <p className="heading">Loading Campaign Details for Review...</p>
-                        <p className="subHeading" style={{ color: '#FFD700' }}>Please wait.</p>
-                    </div>
-                );
-            }
-
-            if (!campaign) {
-                return null; // Should not happen if loading is false and campaignId is present
-            }
-
-            const createdDate = campaign.createdAt ? new Date(campaign.createdAt).toLocaleDateString() : 'N/A';
-            const endDate = campaign.endDate ? new Date(campaign.endDate).toLocaleDateString() : 'N/A';
-
-            return (
-                <div className="screenContainer">
-                    <p className="heading">Review Campaign</p>
-                    <p className="subHeading">{campaign.title}</p>
-
-                    <div className="dashboardSection">
-                        <p className="dashboardSectionTitle">Campaign Details</p>
-                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '15px' }}>
-                            <img
-                                src={campaign.creatorProfilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=Profile'}
-                                alt={campaign.creatorName}
-                                style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px', border: '2px solid #FFD700' }}
-                                onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/60x60/555/FFF?text=P'; }}
-                            />
-                            <div>
-                                <p className="dashboardItem" style={{ marginBottom: '0' }}>**Creator:** {campaign.creatorName}</p>
-                                <p className="dashboardItem" style={{ fontSize: '12px', color: '#AAA' }}>Creator ID: {campaign.creatorId}</p>
-                            </div>
-                        </div>
-
-                        <p className="dashboardItem">**Description:** {campaign.description}</p>
-                        <p className="dashboardItem">**Funding Goal:** ${campaign.goal}</p>
-                        <p className="dashboardItem">**Current Raised:** ${campaign.raised}</p>
-                        <p className="dashboardItem">**Status:** <span style={{ color: campaign.status === 'pending' ? '#FFD700' : (campaign.status === 'active' ? '#00FF00' : (campaign.status === 'cancelled' ? '#888' : '#DC3545')) }}>{campaign.status}</span></p>
-                        <p className="dashboardItem">**Created On:** {createdDate}</p>
-                        <p className="dashboardItem">**Ends On:** {endDate}</p>
-
-                        {campaign.imageUrl && (
-                            <div style={{ marginTop: '15px' }}>
-                                <p className="formLabel">Project Image/Link:</p>
-                                <img
-                                    ref={campaignImageRef}
-                                    src={campaign.imageUrl}
-                                    alt="Campaign Project"
-                                    style={{ width: '100%', maxWidth: '300px', height: 'auto', borderRadius: '8px', objectFit: 'contain', marginTop: '10px' }}
-                                    onError={(e) => { e.target.style.display = 'none'; showMessage('Project image failed to load.'); }}
-                                />
-                                {/* --- START: MODIFIED PROJECT LINK BUTTON --- */}
-                                {campaign.projectLink && (
-                                    <button
-                                        className="button"
-                                        onClick={() => window.open(campaign.projectLink, '_blank')}
-                                        style={{ backgroundColor: '#3A3A3A', marginTop: '10px', width: 'auto', alignSelf: 'flex-start', padding: '8px 15px', fontSize: '14px' }}
-                                    >
-                                        <span className="buttonText">Review Creator's Project Link</span>
-                                    </button>
-                                )}
-                                {/* --- END: MODIFIED PROJECT LINK BUTTON --- */}
-                            </div>
-                        )}
-                    </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '20px' }}>
-                        {campaign.status === 'pending' && ( // Only show approve/reject for pending
-                            <>
-                                <button
-                                    className="adminActionButton approve"
-                                    onClick={confirmApprove}
-                                >
-                                    Approve Campaign
-                                </button>
-                                <button
-                                    className="adminActionButton reject"
-                                    onClick={confirmReject}
-                                >
-                                    Reject Campaign
-                                </button>
-                            </>
-                        )}
-                        {campaign.status === 'active' && ( // Show End button only for active campaigns
-                            <button
-                                className="adminActionButton"
-                                onClick={confirmEndCampaignByAdmin}
-                                style={{ backgroundColor: '#FF8C00' }} // Orange color for 'End Campaign'
-                            >
-                                End Campaign
-                            </button>
-                        )}
-                    </div>
-
-                    <button
-                        className="button"
-                        onClick={() => setActiveScreen('AdminDashboard')}
-                        style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFF', marginTop: '30px' }}
-                    >
-                        <span className="buttonText light">Back to Admin Dashboard</span>
-                    </button>
-                </div>
-            );
-        };
-
-
-          // =========== START REPLACEMENT ===========
-           const DonationPledgeScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, pledgeContext, setPledgeIdForConfirmation }) => {
-            const [amount, setAmount] = useState('');
-            const [userName, setUserName] = useState((creatorProfile && creatorProfile.creatorName) ? creatorProfile.creatorName : (currentUser ? currentUser.email.split('@')[0] : ''));
-            const [agreedToTerms, setAgreedToTerms] = useState(false);
-            const [isSubmitting, setIsSubmitting] = useState(false);
-
-            const handleSubmitPledge = async (e) => {
-                e.preventDefault();
-                if (!userName.trim()) { showMessage("Please enter your name."); return; }
-                if (!agreedToTerms) { showMessage("You must agree to the terms."); return; }
-                setIsSubmitting(true);
-                
-                const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;
-                const pledgeAmount = parseFloat(amount);
-
-                if (isNaN(pledgeAmount) || pledgeAmount <= 0) {
-                    showMessage("Please enter a valid amount.");
-                    setIsSubmitting(false);
-                    return;
-                }
-
-                try {
-                    const pledgeRef = doc(collection(db, "paymentPledges"), pledgeId);
-                    await setDoc(pledgeRef, {
-                        pledgeId, userId: currentUser.uid, userName, userEmail: currentUser.email,
-                        paymentType: 'donation', amount: pledgeAmount, status: 'pending',
-                        targetCampaignId: pledgeContext.campaignId, targetCampaignTitle: pledgeContext.campaignTitle,
-                        targetCreatorName: pledgeContext.creatorName, createdAt: new Date().toISOString(),
-                    });
-                    setPledgeIdForConfirmation(pledgeId);
-                    setActiveScreen('PendingConfirmation');
-                } catch (error) {
-                    showMessage(`An error occurred: ${error.message}`);
-                    setIsSubmitting(false);
-                }
-            };
-            
-            return (
-                <div className="screenContainer">
-                    <p className="heading">Support a Campaign</p>
-                    <p className="subHeading">{`You are donating to "${pledgeContext.campaignTitle}"`}</p>
-                    <form onSubmit={handleSubmitPledge}>
-                        <div className="formGroup">
-                            <label htmlFor="pledgeName" className="formLabel">Your Name:</label>
-                            <input type="text" id="pledgeName" className="formInput" value={userName} onChange={(e) => setUserName(e.target.value)} required />
-                        </div>
-                        <div className="formGroup">
-                            <label htmlFor="donationAmount" className="formLabel">Donation Amount (GYD):</label>
-                            <input type="number" id="donationAmount" className="formInput" value={amount} onChange={(e) => setAmount(e.target.value)} required min="1" step="any" />
-                        </div>
-                        <div className="formGroup"><p className="termsText" style={{textAlign: 'left', color: '#CCC'}}>This is a manual payment process. You will be given instructions to complete your payment via MMG after submitting.<br/><br/><strong>A small platform fee (7%) helps NVA Network support creators.</strong></p></div>
-                        <div className="formGroup"><div className="checkboxItem"><input type="checkbox" id="agreeToTerms" checked={agreedToTerms} onChange={(e) => setAgreedToTerms(e.target.checked)} required /><label htmlFor="agreeToTerms">I understand and agree to the payment terms.</label></div></div>
-                        <button type="submit" className="button" disabled={isSubmitting}><span className="buttonText">{isSubmitting ? "Generating..." : "Submit Pledge & Get Payment Info"}</span></button>
-                    </form>
-                </div>
-            );
-        };
 // =========== END REPLACEMENT ==========
        
         const SubscriptionPledgeScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, pledgeContext, setPledgeIdForConfirmation }) => {
@@ -5183,9 +4783,15 @@ const AdminContentManagerScreen = ({
     const [submissions, setSubmissions] = useState([]);
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
     const [selectedSubmission, setSelectedSubmission] = useState(null);
-      const [diagnosticResults, setDiagnosticResults] = useState(null);
+    const [diagnosticResults, setDiagnosticResults] = useState(null);
     const [isDiagnosing, setIsDiagnosing] = useState(false);
     const [mmgNumber, setMmgNumber] = useState('');
+
+    // --- START: NEW STATE FOR THE CLEANUP TOOL ---
+    const [isCleaning, setIsCleaning] = useState(false);
+    const [cleanupResults, setCleanupResults] = useState(null);
+    // --- END: NEW STATE FOR THE CLEANUP TOOL ---
+
     const handleRunDiagnostics = async () => {
         setIsDiagnosing(true);
         setDiagnosticResults(null);
@@ -5203,28 +4809,23 @@ const AdminContentManagerScreen = ({
             setIsDiagnosing(false);
         }
     };
-    // --- END: PASTE THE DIAGNOSTIC HANDLER FUNCTION HERE ---
-    // useEffect hooks remain unchanged
+
     useEffect(() => {
         const socialLinksDocRef = doc(db, "settings", "socialLinks");
         const unsubscribe = onSnapshot(socialLinksDocRef, (docSnap) => {
            if (docSnap.exists()) {
                 const data = docSnap.data();
-                // Handle social links array
                 if (data && Array.isArray(data.links)) {
                     const sortedLinks = [...data.links].sort((a, b) => a.name.localeCompare(b.name));
                     setSocialLinks(sortedLinks);
                 } else {
                     setSocialLinks([]);
                 }
-
-                // --- NEW: Handle the leaderboard toggle ---
                 if (data && typeof data.isLeaderboardEnabled === 'boolean') {
                     setIsLeaderboardEnabled(data.isLeaderboardEnabled);
                 } else {
-                    setIsLeaderboardEnabled(false); // Default to false if not set
+                    setIsLeaderboardEnabled(false);
                 }
-                // --- NEW: Handle pricing and ticket toggles ---
                 if (data && typeof data.premiumPrice === 'number') {
                     setPremiumPrice(data.premiumPrice);
                 }
@@ -5234,45 +4835,82 @@ const AdminContentManagerScreen = ({
                 if (data && typeof data.isTicketedEvent === 'boolean') {
                     setIsTicketedEvent(data.isTicketedEvent);
                 }
-                // --- THIS IS THE FIX ---
                 if (data && typeof data.mmgNumber !== 'undefined') {
                     setMmgNumber(data.mmgNumber);
                 }
-
             } else {
                 setSocialLinks([]);
-                setIsLeaderboardEnabled(false); // Default to false if doc doesn't exist
+                setIsLeaderboardEnabled(false);
             }
             setIsLoading(false);
         });
         return () => unsubscribe();
     }, []);
-
-    // handleUpdateLink and handleSaveChanges remain unchanged
-    const handleUpdateField = (fieldName, value) => {
-    if (fieldName === 'isLeaderboardEnabled') {
-        setIsLeaderboardEnabled(value);
-    } else {
-        const [index, field] = fieldName.split('-');
-        const updatedLinks = [...socialLinks];
-        updatedLinks[parseInt(index)][field] = value;
-        setSocialLinks(updatedLinks);
-    }
-    setHasChanges(true);
-};
-    const handleSaveChanges = async () => { if (!hasChanges) return; setIsSaving(true); showMessage("Saving changes..."); try { const socialLinksDocRef = doc(db, "settings", "socialLinks"); await setDoc(socialLinksDocRef, { 
-    links: socialLinks, 
-    isLeaderboardEnabled: isLeaderboardEnabled, 
     
-    // =========== ADD THE FOLLOWING 3 LINES ===========
-    premiumPrice: parseFloat(premiumPrice),
-    ticketPrice: parseFloat(ticketPrice),
-    isTicketedEvent: isTicketedEvent,
-    mmgNumber: mmgNumber
+    // --- START: NEW HANDLER FOR THE CLEANUP TOOL ---
+    const handleCleanup = async () => {
+        setIsCleaning(true);
+        setCleanupResults("Initiating cleanup... This may take a moment.");
+        showMessage("Starting ghost artifact cleanup...");
+        try {
+            const functions = getFunctions(window.firebaseApp);
+            const cleanupCallable = httpsCallable(functions, 'cleanupGhostArtifacts');
+            const result = await cleanupCallable();
+            setCleanupResults(result.data.message);
+            showMessage("Cleanup process finished!");
+        } catch (error) {
+            console.error("Error running cleanup function:", error);
+            const errorMessage = `Cleanup failed: ${error.message}`;
+            setCleanupResults(errorMessage);
+            showMessage(errorMessage);
+        } finally {
+            setIsCleaning(false);
+        }
+    };
 
-}, { merge: true }); showMessage("Changes saved successfully!"); setHasChanges(false); } catch (error) { showMessage(`Error saving changes: ${error.message}`); } finally { setIsSaving(false); } };
+    const confirmCleanup = () => {
+        setConfirmationTitle("Confirm Database Cleanup");
+        setConfirmationMessage("This will permanently delete all old artifact documents that do not match the stable 'production-app-id'. This action is irreversible. Are you absolutely sure you want to proceed?");
+        setOnConfirmationAction(() => () => handleCleanup());
+        setShowConfirmationModal(true);
+    };
+    // --- END: NEW HANDLER FOR THE CLEANUP TOOL ---
 
-    // handleViewSubmission remains unchanged
+    const handleUpdateField = (fieldName, value) => {
+        if (fieldName === 'isLeaderboardEnabled') {
+            setIsLeaderboardEnabled(value);
+        } else {
+            const [index, field] = fieldName.split('-');
+            const updatedLinks = [...socialLinks];
+            updatedLinks[parseInt(index)][field] = value;
+            setSocialLinks(updatedLinks);
+        }
+        setHasChanges(true);
+    };
+
+    const handleSaveChanges = async () => { 
+        if (!hasChanges) return; 
+        setIsSaving(true); 
+        showMessage("Saving changes..."); 
+        try { 
+            const socialLinksDocRef = doc(db, "settings", "socialLinks"); 
+            await setDoc(socialLinksDocRef, { 
+                links: socialLinks, 
+                isLeaderboardEnabled: isLeaderboardEnabled, 
+                premiumPrice: parseFloat(premiumPrice),
+                ticketPrice: parseFloat(ticketPrice),
+                isTicketedEvent: isTicketedEvent,
+                mmgNumber: mmgNumber
+            }, { merge: true }); 
+            showMessage("Changes saved successfully!"); 
+            setHasChanges(false); 
+        } catch (error) { 
+            showMessage(`Error saving changes: ${error.message}`); 
+        } finally { 
+            setIsSaving(false); 
+        } 
+    };
+
     const handleViewSubmission = async (submission) => {
         setSelectedSubmission(submission);
         if (submission.status === 'New') {
@@ -5280,12 +4918,11 @@ const AdminContentManagerScreen = ({
         }
     };
 
-    // --- NEW: Function to handle deleting a submission ---
     const deleteSubmissionLogic = async (submissionId) => {
         showMessage("Deleting submission...");
         try {
             await deleteDoc(doc(db, "contactSubmissions", submissionId));
-            setSelectedSubmission(null); // Close the modal after deletion
+            setSelectedSubmission(null);
             showMessage("Submission deleted successfully.");
         } catch (error) {
             console.error("Error deleting submission:", error);
@@ -5293,11 +4930,8 @@ const AdminContentManagerScreen = ({
         }
     };
 
-    // --- NEW: Confirmation handler for the delete action ---
     const confirmDeleteSubmission = (submission) => {
-        // First, hide the details modal so the confirmation modal is clear.
         setSelectedSubmission(null);
-        // Now, set up and show the confirmation modal.
         setConfirmationTitle("Delete Submission?");
         setConfirmationMessage(`Are you sure you want to permanently delete this message from "${submission.userName}"? This action cannot be undone.`);
         setOnConfirmationAction(() => () => deleteSubmissionLogic(submission.id));
@@ -5308,10 +4942,10 @@ const AdminContentManagerScreen = ({
         return <div className="screenContainer"><p className="heading">Loading Site Settings...</p></div>;
     }
     const currentUserRole = creatorProfile ? creatorProfile.role : 'user';
+
     return (
         <div className="screenContainer">
             <p className="heading">Site Management</p>
-            {/* ... Social Links Manager JSX remains unchanged ... */}
             <div className="dashboardSection">
                 <div className="flex justify-between items-center mb-4"><p className="dashboardSectionTitle" style={{marginBottom: 0}}>Social Links Manager</p><button className="button" onClick={handleSaveChanges} disabled={!hasChanges || isSaving}><span className="buttonText">{isSaving ? 'Saving...' : 'Save Changes'}</span></button></div>
                 <div className="dashboardContentList">
@@ -5325,54 +4959,32 @@ const AdminContentManagerScreen = ({
             </div>
 
             <div className="dashboardSection">
-    <p className="dashboardSectionTitle">Feature Toggles</p>
-    <div className="adminDashboardItem">
-        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Enable Top Performers Screen</p>
-        <label className="flex items-center cursor-pointer">
-            <span className="mr-3 text-sm font-medium text-gray-300">{isLeaderboardEnabled ? 'Enabled' : 'Disabled'}</span>
-            <div className="relative">
-                <input 
-                    type="checkbox" 
-                    className="sr-only" 
-                    checked={isLeaderboardEnabled} 
-                    onChange={(e) => handleUpdateField('isLeaderboardEnabled', e.target.checked)} 
-                />
-                <div className={`block w-14 h-8 rounded-full ${isLeaderboardEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isLeaderboardEnabled ? 'transform translate-x-6' : ''}`}></div>
+                <p className="dashboardSectionTitle">Feature Toggles</p>
+                <div className="adminDashboardItem">
+                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Enable Top Performers Screen</p>
+                    <label className="flex items-center cursor-pointer">
+                        <span className="mr-3 text-sm font-medium text-gray-300">{isLeaderboardEnabled ? 'Enabled' : 'Disabled'}</span>
+                        <div className="relative">
+                            <input type="checkbox" className="sr-only" checked={isLeaderboardEnabled} onChange={(e) => handleUpdateField('isLeaderboardEnabled', e.target.checked)} />
+                            <div className={`block w-14 h-8 rounded-full ${isLeaderboardEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${isLeaderboardEnabled ? 'transform translate-x-6' : ''}`}></div>
+                        </div>
+                    </label>
+                </div>
             </div>
-        </label>
-    </div>
-</div>
-
 
            <div className="dashboardSection">
-    <p className="dashboardSectionTitle">Monetization Settings</p>
-    <div className="adminDashboardItem">
-        <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p>
-        <input 
-            type="number" 
-            className="formInput" 
-            value={premiumPrice} 
-            onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }}
-            style={{width: '100px', textAlign: 'right'}} 
-        />
-    </div>
-    {/* The "Enable One-Time Ticket Sales" and "Single Event Ticket Price" controls have been relocated to the Manage Categories screen. */}
+                <p className="dashboardSectionTitle">Monetization Settings</p>
+                <div className="adminDashboardItem">
+                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p>
+                    <input type="number" className="formInput" value={premiumPrice} onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} />
+                </div>
                 {currentUserRole === 'admin' && (
                      <div className="adminDashboardItem">
                         <p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p>
-                        <input 
-                            type="text" 
-                            className="formInput" 
-                            value={mmgNumber} 
-                            onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }}
-                            placeholder="Enter MMG number..."
-                            style={{width: '200px', textAlign: 'right'}} 
-                        />
+                        <input type="text" className="formInput" value={mmgNumber} onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }} placeholder="Enter MMG number..." style={{width: '200px', textAlign: 'right'}} />
                     </div>
                 )}
-                {/* ======================== END: NEW UI ======================== */}
-                        
             </div>
 
             <div className="dashboardSection" style={{marginTop: '20px'}}>
@@ -5401,14 +5013,35 @@ const AdminContentManagerScreen = ({
                         <hr style={{borderColor: '#333', margin: '15px 0'}}/>
                         <p className="paragraph" style={{backgroundColor: '#0A0A0A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap'}}>{selectedSubmission.message}</p>
                         <div className="confirmationModalButtons">
-                            {/* --- THIS IS THE NEW DELETE BUTTON --- */}
                             <button className="confirmationButton cancel" onClick={() => confirmDeleteSubmission(selectedSubmission)}>Delete</button>
                             <button className="confirmationButton confirm" onClick={() => setSelectedSubmission(null)}>Close</button>
                         </div>
                     </div>
                 </div>
             )}
-                {/* --- START: PASTE THE SYSTEM STATUS JSX BLOCK HERE --- */}
+            
+            {/* --- START: NEW DATA INTEGRITY SECTION --- */}
+            <div className="dashboardSection" style={{ border: '2px solid #FF8C00', marginTop: '20px' }}>
+                <p className="dashboardSectionTitle">Data Integrity Tools</p>
+                <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '15px' }}>
+                    Use these tools to perform database maintenance. These are powerful, destructive actions. Use with caution.
+                </p>
+                <button
+                    className="button"
+                    onClick={confirmCleanup}
+                    style={{ backgroundColor: '#DC3545' }} // Red color for danger
+                    disabled={isCleaning}
+                >
+                    <span className="buttonText">{isCleaning ? 'Cleaning...' : 'Clean Up Ghost Artifacts'}</span>
+                </button>
+                {cleanupResults && (
+                    <p className="paragraph" style={{ marginTop: '15px', backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap' }}>
+                        {cleanupResults}
+                    </p>
+                )}
+            </div>
+            {/* --- END: NEW DATA INTEGRITY SECTION --- */}
+            
             <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}>
                 <p className="dashboardSectionTitle">System Status</p>
                 <button
@@ -5442,11 +5075,9 @@ const AdminContentManagerScreen = ({
                     </div>
                 )}
             </div>
-            {/* --- END: PASTE THE SYSTEM STATUS JSX BLOCK HERE --- */}
         </div>
     );
 };
-
 
 // =================== END: REPLACE THIS ENTIRE COMPONENT ===================
 
@@ -6207,70 +5838,154 @@ const PremiumMembersScreen = ({ setActiveScreen, setSelectedUserId, showMessage 
 
 
 // --- UPDATED ANALYTICS DASHBOARD ---
-        const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
-    const [creators, setCreators] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [timeframe, setTimeframe] = useState('weekly'); // 'daily', 'weekly', 'lifetime'
-    const [sortBy, setSortBy] = useState('views'); // 'views', 'likes'
+       const AnalyticsDashboardScreen = ({ showMessage, setActiveScreen }) => {
+    // State for the new high-level stats
+    const [platformStats, setPlatformStats] = useState(null);
+    const [loadingStats, setLoadingStats] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false); // For the manual trigger button
 
+    // State for the existing creator performance table
+    const [creators, setCreators] = useState([]);
+    const [loadingCreators, setLoadingCreators] = useState(true);
+    const [sortBy, setSortBy] = useState('lifetimeViews'); // Default sort
+
+    // Fetch the pre-aggregated platform overview stats in real-time
     useEffect(() => {
-        // Use a real-time listener to keep the dashboard live
-        const creatorsQuery = query(collection(db, "creators"));
-        const unsubscribe = onSnapshot(creatorsQuery, (snapshot) => {
-            const creatorsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            setCreators(creatorsData);
-            setLoading(false);
+        const statsDocRef = doc(db, "statistics", "platformOverview");
+        const unsubscribeStats = onSnapshot(statsDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setPlatformStats(docSnap.data());
+            } else {
+                setPlatformStats({ notGenerated: true });
+            }
+            setLoadingStats(false);
         }, (error) => {
-            console.error("Error fetching creator analytics:", error);
-            showMessage("Failed to load analytics data.");
-            setLoading(false);
+            console.error("Error fetching platform stats:", error);
+            showMessage("Could not load platform overview statistics.");
+            setLoadingStats(false);
         });
-        return () => unsubscribe(); // Cleanup listener on component unmount
+        return () => unsubscribeStats();
     }, []);
 
-    const getMetric = (creator, metric) => {
-        const field = `${timeframe}${metric.charAt(0).toUpperCase() + metric.slice(1)}`;
-        return creator[field] || 0;
+    // Fetch the detailed creator list for the performance table
+    useEffect(() => {
+        const creatorsQuery = query(collection(db, "creators"));
+        const unsubscribeCreators = onSnapshot(creatorsQuery, (snapshot) => {
+            setCreators(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+            setLoadingCreators(false);
+        }, (error) => {
+            console.error("Error fetching creator list:", error);
+            showMessage("Could not load creator performance data.");
+            setLoadingCreators(false);
+        });
+        return () => unsubscribeCreators();
+    }, []);
+
+    // The new on-demand trigger function
+    const handleManualRefresh = async () => {
+        setIsRefreshing(true);
+        showMessage("Requesting immediate stats refresh...");
+        try {
+            // THE FIX: Use the 'functions' constant instead of 'window.firebaseFunctions'
+            const triggerUpdateCallable = httpsCallable(functions, 'triggerPlatformStatsUpdate');
+            const result = await triggerUpdateCallable();
+            showMessage(result.data.message);
+        } catch (error) {
+            console.error("Error triggering stats update:", error);
+            showMessage(`Error: ${error.message}`);
+        } finally {
+            setIsRefreshing(false);
+        }
     };
 
-    const sortedCreators = [...creators].sort((a, b) => {
-        const metricA = getMetric(a, sortBy);
-        const metricB = getMetric(b, sortBy);
-        return metricB - metricA;
-    });
+    const StatCard = ({ title, value, isLoading }) => (
+        <div className="dashboardSection" style={{ flex: 1, textAlign: 'center', minWidth: '200px' }}>
+            <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '5px' }}>{title}</p>
+            <p className="premiumFeatureTitle" style={{ fontSize: '28px', margin: 0 }}>
+                {isLoading ? '...' : (value ?? 0).toLocaleString()}
+            </p>
+        </div>
+    );
 
-    const renderMetricHeader = (metric) => (
-        <th onClick={() => setSortBy(metric)} style={{cursor: 'pointer', textAlign: 'right'}}>
-            {metric.charAt(0).toUpperCase() + metric.slice(1)} {sortBy === metric ? '▼' : ''}
-        </th>
+    const BreakdownTable = ({ title, data }) => (
+        <div className="dashboardSection" style={{ flex: 1, minWidth: '300px' }}>
+            <p className="dashboardSectionTitle">{title}</p>
+            {Object.entries(data).map(([key, value]) => (
+                <div key={key} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #3A3A3A' }}>
+                    <span style={{ textTransform: 'capitalize' }}>{key}</span>
+                    <span style={{ fontWeight: 'bold' }}>{value.toLocaleString()}</span>
+                </div>
+            ))}
+        </div>
     );
     
-    return (
-        <div className="screenContainer">
-            <p className="heading">Creator Analytics</p>
-            <p className="subHeading">Real-time engagement metrics for all creators.</p>
+    const sortedCreators = [...creators].sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
 
-            <div className="leaderboard-tabs" style={{justifyContent: 'space-between', marginBottom: '25px'}}>
-                <div style={{display: 'flex', gap: '10px'}}>
-                    <p style={{alignSelf: 'center', color: '#AAA'}}>Timeframe:</p>
-                    <button className="button" onClick={() => setTimeframe('daily')} style={{backgroundColor: timeframe === 'daily' ? '#FFD700' : '#3A3A3A', color: timeframe === 'daily' ? '#0A0A0A' : '#FFF'}}>Daily</button>
-                    <button className="button" onClick={() => setTimeframe('weekly')} style={{backgroundColor: timeframe === 'weekly' ? '#FFD700' : '#3A3A3A', color: timeframe === 'weekly' ? '#0A0A0A' : '#FFF'}}>Weekly</button>
-                    <button className="button" onClick={() => setTimeframe('lifetime')} style={{backgroundColor: timeframe === 'lifetime' ? '#FFD700' : '#3A3A3A', color: timeframe === 'lifetime' ? '#0A0A0A' : '#FFF'}}>Lifetime</button>
-                </div>
-                 <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{margin: 0, backgroundColor: '#555'}}>
+    if (loadingStats) {
+        return (
+            <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                <p className="heading">Loading Platform Health...</p>
+            </div>
+        );
+    }
+
+    if (platformStats?.notGenerated) {
+        return (
+            <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
+                <p className="heading">Generating Analytics</p>
+                <p className="subHeading">
+                    The first batch of platform statistics is being compiled.
+                    <br />
+                    This dashboard will be populated after the next scheduled run (within 24 hours).
+                </p>
+                <button className="button" onClick={handleManualRefresh} disabled={isRefreshing} style={{backgroundColor: '#008000'}}>
+                    <span className="buttonText">{isRefreshing ? 'Processing...' : 'Generate Now'}</span>
+                </button>
+                <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{margin: '20px 0 0 0', backgroundColor: '#555'}}>
                     <span className="buttonText">Back to Admin</span>
                 </button>
             </div>
+        );
+    }
 
-            <div className="dashboardSection">
-                <p className="dashboardSectionTitle">Performance ({timeframe.charAt(0).toUpperCase() + timeframe.slice(1)})</p>
-                {loading ? <p>Loading analytics...</p> : (
+    const { totalUsers = 0, activeUsers30Days = 0, newUsers7Days = 0 } = platformStats || {};
+
+    return (
+        <div className="screenContainer">
+            <div className="flex justify-between items-center mb-4">
+                <p className="heading" style={{margin:0}}>Platform Health Dashboard</p>
+                <div>
+                    <button className="button" onClick={handleManualRefresh} disabled={isRefreshing} style={{margin: '0 10px 0 0', backgroundColor: '#FF8C00'}}>
+                         <span className="buttonText">{isRefreshing ? '...' : 'Refresh Stats'}</span>
+                    </button>
+                    <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{margin: 0, backgroundColor: '#555'}}>
+                        <span className="buttonText">Back</span>
+                    </button>
+                </div>
+            </div>
+            <p className="subHeading" style={{textAlign: 'left'}}>A high-level overview of platform activity. Last updated: {platformStats?.lastUpdated ? new Date(platformStats.lastUpdated).toLocaleString() : 'N/A'}</p>
+
+            <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+                <StatCard title="Total Users" value={totalUsers} isLoading={loadingStats} />
+                <StatCard title="Active Users (30d)" value={activeUsers30Days} isLoading={loadingStats} />
+                <StatCard title="Inactive Users" value={totalUsers - activeUsers30Days} isLoading={loadingStats} />
+                <StatCard title="New Users (7d)" value={newUsers7Days} isLoading={loadingStats} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '15px', marginTop: '20px', flexWrap: 'wrap' }}>
+                {platformStats?.userRoleBreakdown && <BreakdownTable title="User Roles" data={platformStats.userRoleBreakdown} />}
+                {platformStats?.campaignStatusBreakdown && <BreakdownTable title="Campaign Funnel" data={platformStats.campaignStatusBreakdown} />}
+            </div>
+
+            <div className="dashboardSection" style={{ marginTop: '20px' }}>
+                <p className="dashboardSectionTitle">Creator Performance (Lifetime)</p>
+                {loadingCreators ? <p>Loading creator data...</p> : (
                     <table style={{width: '100%', borderCollapse: 'collapse'}}>
                         <thead>
                             <tr style={{borderBottom: '1px solid #FFD700'}}>
                                 <th style={{textAlign: 'left', paddingBottom: '10px'}}>Creator</th>
-                                {renderMetricHeader('views')}
-                                {renderMetricHeader('likes')}
+                                <th onClick={() => setSortBy('lifetimeViews')} style={{cursor: 'pointer', textAlign: 'right'}}>Views {sortBy === 'lifetimeViews' && '▼'}</th>
+                                <th onClick={() => setSortBy('lifetimeLikes')} style={{cursor: 'pointer', textAlign: 'right'}}>Likes {sortBy === 'lifetimeLikes' && '▼'}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -6280,8 +5995,8 @@ const PremiumMembersScreen = ({ setActiveScreen, setSelectedUserId, showMessage 
                                         <img src={creator.profilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} alt={creator.creatorName} style={{width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover'}} />
                                         <span style={{fontWeight: 'bold'}}>{creator.creatorName}</span>
                                     </td>
-                                    <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'views' ? '#FFD700' : '#FFF'}}>{getMetric(creator, 'views').toLocaleString()}</td>
-                                    <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'likes' ? '#FFD700' : '#FFF'}}>{getMetric(creator, 'likes').toLocaleString()}</td>
+                                    <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'lifetimeViews' ? '#FFD700' : '#FFF'}}>{(creator.lifetimeViews || 0).toLocaleString()}</td>
+                                    <td style={{textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'lifetimeLikes' ? '#FFD700' : '#FFF'}}>{(creator.lifetimeLikes || 0).toLocaleString()}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -7307,7 +7022,16 @@ const LoginScreen = ({ showMessage, setActiveScreen }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            await signInWithEmailAndPassword(auth, email, password);
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            
+            // ================== START: ADD THIS BLOCK ==================
+            // This is the crucial step to enable "Active User" tracking
+            if (userCredential.user) {
+                const userDocRef = doc(db, "creators", userCredential.user.uid);
+                await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
+            }
+            // =================== END: ADD THIS BLOCK ===================
+
             showMessage(`Logged in as ${email}!`);
             setActiveScreen('CreatorDashboard'); 
         } catch (error) {
@@ -7382,7 +7106,7 @@ const UserSignUpScreen = ({ showMessage, setActiveScreen }) => {
                 role: 'user',
                 banned: false
             });
-
+                
             showMessage(`Account created successfully for ${email}! Please check your inbox to verify your account.`);
             setActiveScreen('VerifyEmail'); // Redirect to the verification screen
         }
@@ -7697,7 +7421,13 @@ const CreatorDashboardScreen = ({
                             <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>This is the content currently featured on your profile and in the Live Feed. Use the manager to change it.</p>
                             {creatorProfile.featuredVideoLink ? (
                                 <div className="vertical-carousel-item" style={{backgroundColor: '#1A1A1A'}}>
-                                    <img src={creatorProfile.featuredVideoLink.thumbnailUrl} alt="Featured Video" className="liveFeedThumbnail" />
+                                    {/* --- THE FIX: We now use DynamicThumbnail to ensure correct fetching --- */}
+                                    <div style={{width: '80px', height: '60px', flexShrink: 0, marginRight: '10px'}}>
+                                         <DynamicThumbnail 
+                                            item={{ mainUrl: creatorProfile.featuredVideoLink.url, imageUrl: creatorProfile.featuredVideoLink.thumbnailUrl }} 
+                                            onClick={() => handleVideoPress(creatorProfile.featuredVideoLink.embedUrl || creatorProfile.featuredVideoLink.url, creatorProfile.featuredVideoLink)} 
+                                        />
+                                    </div>
                                     <div className="liveFeedContent">
                                         <p className="liveFeedTitle">{`Currently Featuring: Your Latest Link`}</p>
                                         <p className="liveFeedCreator" style={{color: '#FFD700'}}>Visible on your profile</p>
@@ -7839,33 +7569,25 @@ const MyContentLibraryScreen = ({
    const handleSetFeatured = async (itemToFeature) => {
         if (!currentUser || !creatorProfile) return;
         showMessage("Setting featured link...");
-
-        const db = window.firebaseDb; // Ensure we have the db instance
-        const runTransaction = window.runTransaction; // Get the transaction function
-
         try {
             await runTransaction(db, async (transaction) => {
-                // Define all document references
                 const creatorRef = doc(db, "creators", currentUser.uid);
                 const contentToFeatureRef = doc(db, `artifacts/${appId}/public/data/content_items`, itemToFeature.id);
-                
-                // 1. VERIFY the document we want to feature actually exists before doing anything else.
                 const contentDoc = await transaction.get(contentToFeatureRef);
                 if (!contentDoc.exists()) {
-                    throw new Error("The selected content item could not be found in the database. It may have been deleted.");
+                    throw new Error("The selected content item could not be found. It may have been deleted.");
                 }
-
-                // 2. Un-feature the previously featured item, if one exists
                 const previouslyFeaturedId = creatorProfile.featuredVideoLink?.liveFeedContentId;
                 if (previouslyFeaturedId && previouslyFeaturedId !== itemToFeature.id) {
                     const prevContentRef = doc(db, `artifacts/${appId}/public/data/content_items`, previouslyFeaturedId);
-                    transaction.update(prevContentRef, { isFeatured: false });
+                    const prevContentDoc = await transaction.get(prevContentRef);
+                    if (prevContentDoc.exists()) {
+                        transaction.update(prevContentRef, { isFeatured: false });
+                    } else {
+                        console.log("Previously featured item not found, proceeding without updating it.");
+                    }
                 }
-
-                // 3. Feature the new item
                 transaction.update(contentToFeatureRef, { isFeatured: true });
-
-                // 4. Update the creator's profile with the new featured link details
                 const videoData = {
                     url: itemToFeature.mainUrl,
                     thumbnailUrl: itemToFeature.customThumbnailUrl,
@@ -7878,9 +7600,7 @@ const MyContentLibraryScreen = ({
                     updatedAt: new Date().toISOString()
                 });
             });
-
             showMessage("Your featured link has been updated!");
-
         } catch (error) {
             console.error("Error in handleSetFeatured transaction:", error);
             showMessage(`Failed to set featured link: ${error.message}`);
@@ -7971,12 +7691,26 @@ const MyContentLibraryScreen = ({
                                         {/* ... other code for the title ... */}
                                     </div>
                                 </div>
-                                    <div className="videoActions" style={{marginTop: '10px'}}>
+                                     <div className="videoActions" style={{marginTop: '10px'}}>
                                         {creatorProfile.featuredVideoLink?.liveFeedContentId === item.id ? (
                                             <button className="actionButton" onClick={() => handleRemoveFeatured()} style={{backgroundColor: '#FF8C00'}}>Remove Featured</button>
                                         ) : (
                                             <button className="actionButton" onClick={() => handleSetFeatured(item)} style={{backgroundColor: '#008000'}}>Set as Featured</button>
                                         )}
+
+                                        {/* --- THIS IS THE ONLY ADDITION --- */}
+                                        <button 
+                                            className="actionButton" 
+                                            style={{backgroundColor: '#00FFFF', color: '#000'}} 
+                                            onClick={() => {
+                                                const path = `artifacts/${appId}/public/data/content_items/${item.id}`;
+                                                console.log("DEBUG PATH:", path);
+                                                showMessage("Path logged to console.");
+                                            }}
+                                        >
+                                            Debug Path
+                                        </button>
+                                        
                                         <button className="actionButton remove" onClick={() => handleDelete(item)}>Delete</button>
                                     </div>
                                 </div>
@@ -7984,6 +7718,10 @@ const MyContentLibraryScreen = ({
                     </div>
                 </div>
             </div>
+           
+           
+           
+           
             <button className="button" onClick={() => setActiveScreen('CreatorDashboard')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}><span className="buttonText light">Back to Dashboard</span></button>
         </div>
     );
@@ -8004,10 +7742,21 @@ const MyContentLibraryScreen = ({
                 switch (activeScreen) {
                     case 'Home':
                         return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
-                    case 'FollowingFeed':
+                     case 'FollowingFeed':
                         return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={setActiveScreen} showMessage={showMessage} handleVideoPress={handleVideoPress}/>;
                     case 'Contact':
                         return <ContactScreen setActiveScreen={setActiveScreen} showMessage={showMessage} currentUser={currentUser}/>;
+                    case 'Discover':
+                        return <CategoriesScreen 
+                            showMessage={showMessage} 
+                            isLive={isLive} 
+                            countdownText={countdownText} 
+                            liveThumbnail={liveThumbnail} 
+                            currentUser={currentUser} 
+                            creatorProfile={creatorProfile} 
+                            setActiveScreen={setActiveScreen} 
+                            handleVideoPress={handleVideoPress} 
+                        />;
                     case 'DiscoverUsers':
                         return <DiscoverUsersScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} creatorProfile={creatorProfile} setSelectedUserId={setSelectedUserId}/>;
                     case 'UserProfile':
