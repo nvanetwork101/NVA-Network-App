@@ -20,6 +20,9 @@
         html {
             overflow-y: scroll; /* This is the definitive fix. It prevents layout shift. */
         }
+        html {
+            overflow-y: scroll; /* This is the definitive fix. It prevents layout shift. */
+        }
         html, body {
             height: 100%;
             margin: 0;
@@ -34,20 +37,18 @@
             -webkit-overflow-scrolling: touch;
         }
         #root {
-            /* The surgical change: We remove 'width: 100%' */
-            /* This allows the 'max-width' to work with the body's 'justify-content: center' */
+            width: 100%; /* Ensure root takes full width of the centered body */
             min-height: 100vh;
             background-color: #0A0A0A;
             display: flex;
             flex-direction: column;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
             max-width: 1200px; /* This now becomes the effective width on large screens */
-            /* We also add this to ensure it takes up the full width on smaller screens */
-            flex-grow: 1; 
         }
         .container {
-            flex: 1;
+            flex: 1; /* This makes the container grow to fill available space */
             background-color: #0A0A0A; /* Dark background */
+            overflow-y: auto; /* The content inside this container will scroll */
             display: flex;
             flex-direction: column;
         }
@@ -1779,6 +1780,69 @@
         }
         /* END: New Follow System Styles */
         
+            /* ====================================================================== */
+        /* ============ START: ADD THIS ENTIRE NEW CSS BLOCK ==================== */
+        /* ====================================================================== */
+
+        /* Custom Scrollbar Styles for a more integrated look */
+        ::-webkit-scrollbar {
+            width: 8px; /* Makes the scrollbar slimmer */
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1A1A1A; /* Sets the track color to match our theme */
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background-color: #4A4A4A; /* A subtle, darker grey for the scrollbar itself */
+            border-radius: 4px;      /* Rounded corners for the scrollbar */
+            border: 2px solid #1A1A1A; /* Creates a padding effect around the thumb */
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: #FFD700; /* On hover, the scrollbar turns gold */
+        }
+        
+        /* ====================================================================== */
+        /* =========== START: ADD THIS ENTIRE NEW CSS BLOCK FOR PFP MODAL ========= */
+        /* ====================================================================== */
+
+        .pfpModalOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85); /* Dark, focused background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2500; /* Above other content, below confirmation modals */
+        }
+
+        .pfpModalContent {
+            position: relative;
+            max-width: 90vw;   /* Ensures image is not too wide on desktop */
+            max-height: 80vh;  /* Ensures image is not too tall on any screen */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .pfpModalImage {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+            border-radius: 10px; /* Soft rounded corners for the image */
+            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.5); /* A nice shadow for depth */
+        }
+
+        /* We can reuse the existing .closeButton style for consistency! */
+
+        /* ====================================================================== */
+        /* ============ END: ADD THIS ENTIRE NEW CSS BLOCK FOR PFP MODAL ========== */
+        /* ====================================================================== */
+
     </style>
 </head>
 <body>
@@ -2127,7 +2191,7 @@
         // ======================= END: UNIFIED NOTIFICATION CODE BLOCK =======================
 
           // --- START: MASTER REPLACEMENT FOR extractVideoInfo ---
-        const GENERIC_THUMBNAIL_PLACEHOLDER = 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA';
+       const GENERIC_THUMBNAIL_PLACEHOLDER = 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA';
 
         const extractVideoInfo = (url) => {
             if (!url || typeof url !== 'string') {
@@ -2150,9 +2214,8 @@
             const vimeoMatch = url.match(vimeoRegex);
             if (vimeoMatch && vimeoMatch[1]) {
                 const videoId = vimeoMatch[1];
-                const thumbnailUrl = GENERIC_THUMBNAIL_PLACEHOLDER;
                 const embedUrl = `https://player.vimeo.com/video/${videoId}?autoplay=1`;
-                return { videoId, thumbnailUrl, embedUrl, platform: 'vimeo', isVertical: false };
+                return { videoId, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl, platform: 'vimeo', isVertical: false };
             }
 
             // 3. TikTok
@@ -2160,23 +2223,20 @@
             const tiktokMatch = url.match(tiktokRegex);
             if (tiktokMatch && tiktokMatch[1]) {
                 const videoId = tiktokMatch[1];
-                const thumbnailUrl = GENERIC_THUMBNAIL_PLACEHOLDER; 
                 const embedUrl = `https://www.tiktok.com/embed/v2/${videoId}`;
-                return { videoId, thumbnailUrl, embedUrl, platform: 'tiktok', isVertical: true };
+                return { videoId, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl, platform: 'tiktok', isVertical: true };
             }
             
-            // 4. --- NEW: Facebook Video Detection ---
-            // This regex looks for common Facebook video, reel, and watch URLs.
+            // 4. Facebook (Reels & Videos)
             const facebookRegex = /facebook\.com\/(?:watch\/?\?v=|.*\/videos\/|.*\/reel\/)(\d+)/;
             const facebookMatch = url.match(facebookRegex);
             if(facebookMatch && facebookMatch[1]) {
                 const videoId = facebookMatch[1];
-                // Facebook requires a special embed URL structure using the original URL.
                 const embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&autoplay=true`;
                 return { videoId, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl, platform: 'facebook', isVertical: url.includes('/reel/') };
             }
 
-            // 5. Generic Fallback (for all other links)
+            // 5. Generic Fallback for all other links
             return {
                 videoId: null,
                 thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER,
@@ -2190,54 +2250,64 @@
               // --- START: NEW DynamicThumbnail Component ---
         const DynamicThumbnail = ({ item, onClick }) => {
             const [thumbnailSrc, setThumbnailSrc] = useState(GENERIC_THUMBNAIL_PLACEHOLDER);
-            const [isLoading, setIsLoading] = useState(true);
-
+            
             useEffect(() => {
-                setIsLoading(true);
-                let isMounted = true;
+                let isCancelled = false;
 
-                const fetchThumbnail = async () => {
-                    if (item.customThumbnailUrl) {
-                        if (isMounted) setThumbnailSrc(item.customThumbnailUrl);
-                    } else if (item.imageUrl) {
-                        if (isMounted) setThumbnailSrc(item.imageUrl);
-                    } else {
-                        const info = extractVideoInfo(item.mainUrl || item.externalLink);
-                        
-                        if (info.platform === 'youtube') {
-                            if (isMounted) setThumbnailSrc(info.thumbnailUrl);
-                        } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
-                            try {
-                                const functions = window.getFunctions(window.firebaseApp);
-                                const oEmbedProxyCallable = window.httpsCallable(functions, 'oEmbedProxy');
-                                
-                                let oEmbedUrl = '';
-                                if (info.platform === 'tiktok') oEmbedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(item.mainUrl || item.externalLink)}`;
-                                if (info.platform === 'vimeo') oEmbedUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(item.mainUrl || item.externalLink)}`;
-
-                                const result = await oEmbedProxyCallable({ url: oEmbedUrl });
-                                const data = result.data;
-
-                                if (isMounted && data && data.thumbnail_url) {
-                                    setThumbnailSrc(data.thumbnail_url);
-                                } else {
-                                     if (isMounted) setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
-                                }
-                            } catch (error) {
-                                console.error(`Cloud Function call to fetch ${info.platform} thumbnail failed:`, error);
-                                if (isMounted) setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
-                            }
-                        } else {
-                            if (isMounted) setThumbnailSrc(GENERIC_THUMBNAIL_PLACEHOLDER);
+                const getThumbnail = async () => {
+                    // Priority 1: Always use an explicit image URL if provided.
+                    if (item.customThumbnailUrl || item.imageUrl) {
+                        if (!isCancelled) {
+                            setThumbnailSrc(item.customThumbnailUrl || item.imageUrl);
                         }
+                        return;
                     }
-                    if (isMounted) setIsLoading(false);
+
+                    const info = extractVideoInfo(item.mainUrl || item.externalLink);
+
+                    // Priority 2: Use YouTube's reliable direct link.
+                    if (info.platform === 'youtube') {
+                        if (!isCancelled) {
+                            setThumbnailSrc(info.thumbnailUrl);
+                        }
+                        return;
+                    }
+
+                    // Priority 3: For platforms that need it, call our secure proxy.
+                    if (info.platform === 'tiktok' || info.platform === 'vimeo') {
+                        try {
+                            const functions = getFunctions(window.firebaseApp);
+                            const oEmbedProxyCallable = httpsCallable(functions, 'oEmbedProxy');
+                            
+                            let oEmbedUrl = '';
+                            if (info.platform === 'tiktok') {
+                                oEmbedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(item.mainUrl || item.externalLink)}`;
+                            }
+                            if (info.platform === 'vimeo') {
+                                oEmbedUrl = `https://vimeo.com/api/oembed.json?url=${encodeURIComponent(item.mainUrl || item.externalLink)}`;
+                            }
+
+                            const result = await oEmbedProxyCallable({ url: oEmbedUrl });
+
+                            if (!isCancelled && result.data && result.data.thumbnail_url) {
+                                setThumbnailSrc(result.data.thumbnail_url);
+                            }
+                        } catch (error) {
+                            console.error("oEmbed fetch failed for", info.platform, error);
+                            // If proxy fails, we will fall back to the placeholder below.
+                        }
+                        return;
+                    }
+                    
+                    // If none of the above worked, do nothing, the placeholder will remain.
                 };
 
-                fetchThumbnail();
+                getThumbnail();
 
-                return () => { isMounted = false; };
-            }, [item.id, item.mainUrl, item.externalLink, item.imageUrl, item.customThumbnailUrl]);
+                return () => {
+                    isCancelled = true;
+                };
+            }, [item.id]); // Re-run only when the item itself changes.
 
             return (
                  <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${thumbnailSrc})`, backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative'}} onClick={onClick}>
@@ -2341,25 +2411,40 @@
 
     useEffect(() => {
         if (!contentItem || !currentUser || viewCountedRef.current) { return; }
+        
         const authorId = contentItem.creatorId || contentItem.createdBy;
         const contentDocId = contentItem.originalContentId || contentItem.id;
-        if (currentUser.uid === authorId) { return; }
+
+        // Do not count a view if the user is watching their own content.
+        if (currentUser.uid === authorId) { 
+            console.log("Creator is viewing their own content. View will not be counted.");
+            return; 
+        }
+
         const timer = setTimeout(async () => {
+            if (viewCountedRef.current) return; // Double-check before firing
+            viewCountedRef.current = true; // Mark as attempted immediately
+
             try {
-                const contentRef = doc(db, `artifacts/${appId}/public/data/content_items`, contentDocId);
-                await updateDoc(contentRef, { viewCount: increment(1) });
-                viewCountedRef.current = true;
+                const incrementViewFunction = httpsCallable(functions, 'incrementViewCount');
+                await incrementViewFunction({
+                    contentId: contentDocId,
+                    appId: appId
+                });
+                console.log(`View count increment request sent for content: ${contentDocId}`);
+                // The onSnapshot listener on the content item will update the view count display automatically.
             } catch (error) {
-                console.error("Error incrementing view count:", error);
+                console.error("Error calling incrementViewCount function:", error);
+                // We don't show a message to the user for this background task.
             }
-        }, 10000);
+        }, 10000); // 10-second timer
+
         return () => { clearTimeout(timer); };
     }, [contentItem, currentUser]);
 
     if (!videoUrl) return null;
 
     const { embedUrl, isVertical } = extractVideoInfo(videoUrl);
-    const finalEmbedUrl = embedUrl;
 
     return (
         <div className="videoModalOverlay">
@@ -2367,17 +2452,16 @@
                 <button className="closeButton" onClick={onClose}>×</button>
                 <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
                     <iframe
-                        src={finalEmbedUrl}
+                        src={embedUrl}
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         allowFullScreen
                         title="Embedded Video Content"
                     ></iframe>
                 </div>
                 
-                {/* --- START: ADDED VIEW COUNT DISPLAY --- */}
                 <div style={{
                     position: 'absolute',
-                    bottom: '20px', // MODIFIED: Set to a higher value for better spacing
+                    bottom: '20px',
                     left: '15px',
                     backgroundColor: 'rgba(10, 10, 10, 0.7)',
                     border: '1px solid #FFD700',
@@ -2396,7 +2480,6 @@
                         {(contentItem?.viewCount || 0).toLocaleString()}
                     </span>
                 </div>
-                {/* --- END: ADDED VIEW COUNT DISPLAY --- */}
 
                 {currentUser && contentItem && contentItem.id && (
                     <LikeButton contentItem={contentItem} currentUser={currentUser} showMessage={showMessage} />
@@ -2407,81 +2490,66 @@
 };
 
 
-                const LikeButton = ({ contentItem, currentUser, showMessage }) => {
+        const LikeButton = ({ contentItem, currentUser, showMessage }) => {
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(contentItem.likeCount || 0);
-    const [isLoading, setIsLoading] = useState(true); // Start in a loading state
+    const [isLoading, setIsLoading] = useState(true);
+    const [isProcessing, setIsProcessing] = useState(false); // New state to prevent double-clicks
 
-    // Determine the correct ID for the original content item
     const contentDocId = contentItem.originalContentId || contentItem.id;
     
-    // This useEffect hook runs once to check if the user has already liked this post.
     useEffect(() => {
         if (!currentUser || !contentDocId) {
             setIsLoading(false);
             return;
         }
-        
         const likeRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}/likes`, currentUser.uid);
-        
-        const unsubscribe = onSnapshot(likeRef, (docSnap) => {
+        const unsubscribeLike = onSnapshot(likeRef, (docSnap) => {
             setIsLiked(docSnap.exists());
             setIsLoading(false);
         });
 
-        return () => unsubscribe(); // Cleanup the listener
-    }, [contentDocId, currentUser]);
-    
-    // This useEffect hook keeps the public like count in sync with the database.
-    useEffect(() => {
-        if (!contentDocId) return;
-
         const contentRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}`);
-        
-        const unsubscribe = onSnapshot(contentRef, (docSnap) => {
+        const unsubscribeContent = onSnapshot(contentRef, (docSnap) => {
             if (docSnap.exists()) {
                 setLikeCount(docSnap.data().likeCount || 0);
             }
         });
 
-        return () => unsubscribe();
-    }, [contentDocId]);
-
+        return () => {
+            unsubscribeLike();
+            unsubscribeContent();
+        };
+    }, [contentDocId, currentUser]);
 
     const handleLike = async (e) => {
-        e.stopPropagation(); // Stop the click from opening the video player.
-        
-        if (!currentUser) {
-            showMessage("Please log in to like content.");
-            return;
-        }
-        if (isLoading) return; // Prevent clicks while loading initial state
+        e.stopPropagation();
+        if (!currentUser) { showMessage("Please log in to like content."); return; }
+        if (isLoading || isProcessing) return; // Prevent clicks while loading or processing
 
-        const contentRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}`);
-        const likeRef = doc(db, `artifacts/${appId}/public/data/content_items/${contentDocId}/likes`, currentUser.uid);
+        setIsProcessing(true);
+        const newLikedState = !isLiked;
 
         // Optimistically update the UI for a fast user experience.
-        const newLikedState = !isLiked;
-        const newLikeCount = newLikedState ? likeCount + 1 : likeCount - 1;
         setIsLiked(newLikedState);
-        setLikeCount(newLikeCount);
+        setLikeCount(prevCount => newLikedState ? prevCount + 1 : prevCount - 1);
 
         try {
-            if (newLikedState) {
-                // User is LIKING the post
-                await setDoc(likeRef, { likedAt: new Date().toISOString() });
-                await updateDoc(contentRef, { likeCount: increment(1) });
-            } else {
-                // User is UNLIKING the post
-                await deleteDoc(likeRef);
-                await updateDoc(contentRef, { likeCount: increment(-1) });
-            }
+            const updateLikeFunction = httpsCallable(functions, 'updateLikeCount');
+            await updateLikeFunction({
+                contentId: contentDocId,
+                appId: appId,
+                isLiking: newLikedState
+            });
+            // The onSnapshot listener will handle the final state, so no success message is needed here.
         } catch (error) {
-            console.error("Error updating like status:", error);
+            console.error("Error calling updateLikeCount function:", error);
             showMessage("An error occurred. Please try again.");
             // If the database update fails, revert the optimistic UI changes.
             setIsLiked(!newLikedState);
-            setLikeCount(likeCount);
+            setLikeCount(prevCount => newLikedState ? prevCount - 1 : prevCount + 1);
+        } finally {
+            setIsProcessing(false);
         }
     };
 
@@ -2490,10 +2558,10 @@
     return (
         <button
             onClick={handleLike}
-            disabled={isLoading} // Disable button until we know the like status
+            disabled={isLoading || isProcessing}
             style={{
                 position: 'absolute',
-                bottom: '20px', // MODIFIED: Set to a higher value for better spacing
+                bottom: '20px',
                 right: '15px',
                 backgroundColor: 'rgba(10, 10, 10, 0.7)',
                 border: '1px solid #FFD700',
@@ -2517,6 +2585,7 @@
         </button>
     );
 };
+
 
                 // --- START OF NEW COMPONENT ---
         // --- START: REPLACEMENT FOR DiscoverUsersScreen ---
@@ -2613,6 +2682,7 @@
     const [isFollowLoading, setIsFollowLoading] = useState(true);
     const [showVideoModal, setShowVideoModal] = useState(false);
     const [currentVideoUrl, setCurrentVideoUrl] = useState('');
+    const [showPfpModal, setShowPfpModal] = useState(false);
 
     // Admin-specific state
     const [isUpdatingRole, setIsUpdatingRole] = useState(false);
@@ -2732,7 +2802,12 @@
                 {/* THIS IS THE ORIGINAL, WORKING PROFILE UI */}
                 <div className="dashboardSection">
                     <div className="flex items-center mb-4">
-                        <img src={profile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt="Profile" style={{width: '100px', height: '100px', borderRadius: '50%', border: '2px solid #FFD700', objectFit: 'cover'}} />
+                        <img 
+                            src={profile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} 
+                            alt="Profile" 
+                            style={{width: '100px', height: '100px', borderRadius: '50%', border: '2px solid #FFD700', objectFit: 'cover', cursor: 'pointer'}} // <<< --- MODIFIED THIS LINE
+                            onClick={() => setShowPfpModal(true)} // <<< --- ADDED THIS LINE
+                        />
                         <div style={{marginLeft: '1rem', flexGrow: 1}}>
                             <p className="dashboardItem" style={{fontSize: '20px', fontWeight: 'bold', color: '#FFF', marginBottom: '5px'}}>{profile.creatorName}</p>
                             <p className="dashboardItem" style={{fontSize: '14px', color: '#AAA'}}>Role: {profile.role}</p>
@@ -2818,6 +2893,7 @@
                 </button>
             </div>
             {showVideoModal && (<VideoPlayerModal videoUrl={currentVideoUrl} onClose={closeVideoModal} />)}
+            {showPfpModal && profile && <ProfilePictureModal imageUrl={profile.profilePictureUrl || 'https://placehold.co/400x400/555/FFF?text=No+Image'} onClose={() => setShowPfpModal(false)} />}
         </>
     );
 };
@@ -3609,6 +3685,8 @@ const AdminDashboardScreen = ({
     const [pendingPledges, setPendingPledges] = useState([]);
     const [loadingPledges, setLoadingPledges] = useState(true);
     const [isPaymentsExpanded, setIsPaymentsExpanded] = useState(true);
+    const [pendingOpportunities, setPendingOpportunities] = useState([]);
+    const [loadingOpportunities, setLoadingOpportunities] = useState(true);
 
     useEffect(() => {
         if (creatorProfile && creatorProfile.role === 'admin') {
@@ -3623,6 +3701,12 @@ const AdminDashboardScreen = ({
         } else {
             setLoadingPledges(false);
         }
+        const opportunitiesRef = collection(db, "opportunities");
+        const qOpportunities = query(opportunitiesRef, where('status', '==', 'pending'), orderBy('createdAt', 'asc'));
+        const unsubscribeOpportunities = onSnapshot(qOpportunities, (snapshot) => {
+            setPendingOpportunities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setLoadingOpportunities(false);
+        });
     }, [creatorProfile]);
 
     const handleApprovePledge = async (pledgeId) => {
@@ -3807,6 +3891,33 @@ const AdminDashboardScreen = ({
                             </div>
                         </section>
                     )}
+                    
+                    {/* ====================================================================== */}
+                    {/* ============== START: ADD THIS NEW UI SECTION ======================== */}
+                    {/* ====================================================================== */}
+                    <section className="dashboardSection" style={{border: '2px solid #00FFFF'}}>
+                        <p className="dashboardSectionTitle">Pending Opportunities ({pendingOpportunities.length})</p>
+                        {loadingOpportunities ? <p>Loading...</p> : (
+                            <div className="dashboardContentList">
+                                {pendingOpportunities.length === 0 ? <p className="dashboardItem">No opportunities pending review.</p> : (
+                                    pendingOpportunities.map(opp => (
+                                        <div key={opp.id} className="adminDashboardItem" style={{cursor: 'pointer'}}>
+                                            <div style={{flexGrow: 1}}>
+                                                <p className="adminDashboardItemTitle">{opp.title}</p>
+                                                <p style={{fontSize: '12px', color: '#CCC'}}>by {opp.providerName}</p>
+                                            </div>
+                                            {/* In a future step, clicking this will go to an AdminOpportunityDetailsScreen */}
+                                            <button className="adminActionButton approve">Review</button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        )}
+                    </section>
+                    {/* ====================================================================== */}
+                    {/* =============== END: ADD THIS NEW UI SECTION ========================= */}
+                    {/* ====================================================================== */}
+                    
                     <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginTop: '30px' }}><span className="buttonText light">Back to Home</span></button>
                 </>
             )}
@@ -5081,6 +5192,312 @@ const AdminContentManagerScreen = ({
 
 // =================== END: REPLACE THIS ENTIRE COMPONENT ===================
 
+
+        // ======================================================================
+// ============ START: ADD THIS ENTIRE NEW COMPONENT BLOCK =============
+// ======================================================================
+
+const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
+    const handleConfirm = () => {
+        onConfirm(); // Execute the action passed in
+        onCancel();  // Close the modal
+    };
+
+    return (
+        <div className="confirmationModalOverlay">
+            <div className="confirmationModalContent">
+                <p className="confirmationModalTitle">{title}</p>
+                <p className="confirmationModalMessage">{message}</p>
+                <div className="confirmationModalButtons">
+                    <button className="confirmationButton cancel" onClick={onCancel}>
+                        Cancel
+                    </button>
+                    <button className="confirmationButton confirm" onClick={handleConfirm}>
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ======================================================================
+// ============== END: ADD THIS ENTIRE NEW COMPONENT BLOCK ==============
+// ======================================================================
+
+
+            // ======================================================================
+// ========= START: ADD THIS ENTIRE NEW AdminCampaignDetailsScreen COMPONENT =========
+// ======================================================================
+
+        const AdminCampaignDetailsScreen = ({ showMessage, setActiveScreen, currentUser, selectedAdminCampaignId, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile }) => {
+            const [campaign, setCampaign] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                if (!selectedAdminCampaignId) {
+                    showMessage("No campaign selected for review.");
+                    setActiveScreen('AdminDashboard');
+                    return;
+                }
+                const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, selectedAdminCampaignId);
+                const unsubscribe = onSnapshot(campaignDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setCampaign({ id: docSnap.id, ...docSnap.data() });
+                    } else {
+                        showMessage("Campaign not found.");
+                        setActiveScreen('AdminDashboard');
+                    }
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, [selectedAdminCampaignId]);
+
+            const handleStatusUpdate = async (newStatus) => {
+                if (!campaign || !currentUser) return;
+                const actionText = newStatus === 'active' ? 'Approving' : 'Rejecting';
+                showMessage(`${actionText} campaign...`);
+                try {
+                    const campaignDocRef = doc(db, `artifacts/${appId}/public/data/campaigns`, campaign.id);
+                    await updateDoc(campaignDocRef, {
+                        status: newStatus,
+                        [`${newStatus}By`]: currentUser.uid,
+                        [`${newStatus}At`]: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
+                    });
+                    showMessage(`Campaign "${campaign.title}" has been ${newStatus}.`);
+                    setActiveScreen('AdminDashboard');
+                } catch (error) {
+                    showMessage(`Failed to update campaign: ${error.message}`);
+                }
+            };
+            
+            const confirmAction = (status) => {
+                const title = status === 'active' ? 'Approve Campaign?' : 'Reject Campaign?';
+                const message = `Are you sure you want to ${status === 'active' ? 'APPROVE' : 'REJECT'} the campaign "${campaign.title}"?`;
+                setConfirmationTitle(title);
+                setConfirmationMessage(message);
+                setOnConfirmationAction(() => () => handleStatusUpdate(status));
+                setShowConfirmationModal(true);
+            };
+
+            if (loading) {
+                return <div className="screenContainer" style={{ textAlign: 'center' }}><p className="heading">Loading Campaign for Review...</p></div>;
+            }
+
+            if (!campaign) return null;
+
+            return (
+                <div className="screenContainer">
+                    <CampaignDetailsScreen 
+                        showMessage={showMessage} 
+                        setActiveScreen={setActiveScreen} 
+                        selectedCampaignId={selectedAdminCampaignId} 
+                        currentUser={currentUser} 
+                        setPledgeContext={() => {}} 
+                    />
+                    <div className="dashboardSection" style={{ border: '2px solid #FFD700' }}>
+                        <p className="dashboardSectionTitle">Admin Actions</p>
+                        <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '20px' }}>
+                            <button className="adminActionButton approve" onClick={() => confirmAction('active')}>Approve Campaign</button>
+                            <button className="adminActionButton reject" onClick={() => confirmAction('rejected')}>Reject Campaign</button>
+                        </div>
+                    </div>
+                     <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}>
+                        <span className="buttonText light">Back to Admin Dashboard</span>
+                    </button>
+                </div>
+            );
+        };
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW AdminCampaignDetailsScreen COMPONENT ==========
+// ======================================================================
+
+
+            // ======================================================================
+// ========= START: ADD THIS ENTIRE NEW BLOCK OF THREE COMPONENTS =========
+// ======================================================================
+
+        const PostOpportunityForm = ({ showMessage, setActiveScreen, currentUser, creatorProfile }) => {
+            const [title, setTitle] = useState('');
+            const [providerName, setProviderName] = useState(creatorProfile?.creatorName || '');
+            const [opportunityType, setOpportunityType] = useState('Casting Call');
+            const [compensationType, setCompensationType] = useState('Paid');
+            const [equipmentProvided, setEquipmentProvided] = useState('Not Applicable');
+            const [location, setLocation] = useState('');
+            const [description, setDescription] = useState('');
+            const [howToApply, setHowToApply] = useState('');
+            const [listingDuration, setListingDuration] = useState(7);
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            
+            const opportunityCategories = ['Casting Call', 'Film & Video Crew', 'Modeling', 'Events & Production Staff', 'Design & Creative', 'Music & Audio', 'Collaboration / TFP', 'Other'];
+            const equipmentRelevantCategories = ['Film & Video Crew', 'Music & Audio', 'Design & Creative'];
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setIsSubmitting(true);
+                try {
+                    const createOpportunityFunction = httpsCallable(functions, 'createOpportunity');
+                    const result = await createOpportunityFunction({
+                        title, providerName, opportunityType, compensationType,
+                        equipmentProvided, location, description, howToApply,
+                        listingDuration: parseInt(listingDuration)
+                    });
+                    showMessage(result.data.message);
+                    setActiveScreen('CreatorDashboard'); // Or a new "My Listings" screen
+                } catch (error) {
+                    console.error("Error creating opportunity:", error);
+                    showMessage(`Error: ${error.message}`);
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            return (
+                <div className="screenContainer">
+                    <p className="heading">Post an Opportunity</p>
+                    <p className="subHeading">Complete the details below to submit your opportunity for review. Listings are active for your chosen duration after approval.</p>
+                    <form onSubmit={handleSubmit}>
+                        <div className="formGroup"><label className="formLabel">Listing Title</label><input type="text" className="formInput" value={title} onChange={e => setTitle(e.target.value)} required /></div>
+                        <div className="formGroup"><label className="formLabel">Your Company/Provider Name</label><input type="text" className="formInput" value={providerName} onChange={e => setProviderName(e.target.value)} required /></div>
+                        <div className="formGroup"><label className="formLabel">Location</label><input type="text" className="formInput" value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g., Georgetown, Remote" required /></div>
+                        <div className="formGroup"><label className="formLabel">Opportunity Type</label><select className="formInput" value={opportunityType} onChange={e => setOpportunityType(e.target.value)}><option disabled>Select a category...</option>{opportunityCategories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                        <div className="formGroup"><label className="formLabel">Compensation</label><select className="formInput" value={compensationType} onChange={e => setCompensationType(e.target.value)}><option value="Paid">Paid</option><option value="Volunteer">Volunteer</option><option value="Stipend">Stipend</option><option value="Collaboration/TFP">Collaboration/TFP</option></select></div>
+                        {equipmentRelevantCategories.includes(opportunityType) && (<div className="formGroup"><label className="formLabel">Equipment</label><select className="formInput" value={equipmentProvided} onChange={e => setEquipmentProvided(e.target.value)}><option value="Provided">Equipment will be provided</option><option value="Owner/Operator Required">Applicant must bring their own</option></select></div>)}
+                        <div className="formGroup"><label className="formLabel">Listing Duration</label><select className="formInput" value={listingDuration} onChange={e => setListingDuration(e.target.value)}><option value="7">1 Week</option><option value="14">2 Weeks</option><option value="21">3 Weeks</option><option value="30">30 Days (Max)</option></select></div>
+                        <div className="formGroup"><label className="formLabel">Detailed Description</label><textarea className="formTextarea" value={description} onChange={e => setDescription(e.target.value)} required></textarea></div>
+                        <div className="formGroup"><label className="formLabel">How to Apply</label><textarea className="formTextarea" value={howToApply} onChange={e => setHowToApply(e.target.value)} placeholder="e.g., Email your portfolio to casting@email.com with the subject 'NVA Lead Role'" required></textarea></div>
+                        <button type="submit" className="button" disabled={isSubmitting}><span className="buttonText">{isSubmitting ? 'Submitting...' : 'Submit for Review'}</span></button>
+                    </form>
+                </div>
+            );
+        };
+
+        const OpportunityDetailsScreen = ({ showMessage, setActiveScreen, selectedOpportunity }) => {
+            if (!selectedOpportunity) {
+                return <div className="screenContainer"><p className="heading">Loading Opportunity...</p></div>;
+            }
+            
+            return (
+                <div className="screenContainer">
+                    <p className="heading">{selectedOpportunity.title}</p>
+                    <p className="subHeading">Posted by {selectedOpportunity.providerName}</p>
+                    <div className="dashboardSection">
+                        <div className="campaignListStats" style={{flexDirection: 'column', alignItems: 'flex-start', gap: '10px'}}>
+                            <p><strong>Type:</strong> <span className="campaignListGoal">{selectedOpportunity.opportunityType}</span></p>
+                            <p><strong>Location:</strong> <span className="campaignListGoal">{selectedOpportunity.location}</span></p>
+                            <p><strong>Compensation:</strong> <span className="campaignListGoal">{selectedOpportunity.compensationType}</span></p>
+                            <p><strong>Equipment:</strong> <span className="campaignListGoal">{selectedOpportunity.equipmentProvided}</span></p>
+                            <p><strong>Posted:</strong> <span className="campaignListGoal">{new Date(selectedOpportunity.createdAt).toLocaleDateString()}</span></p>
+                            <p><strong>Apply By:</strong> <span className="campaignListGoal">{new Date(selectedOpportunity.expiresAt).toLocaleDateString()}</span></p>
+                        </div>
+                    </div>
+                    <div className="dashboardSection">
+                        <p className="dashboardSectionTitle">Description</p>
+                        <p className="paragraph" style={{whiteSpace: 'pre-wrap'}}>{selectedOpportunity.description}</p>
+                    </div>
+                    <div className="dashboardSection" style={{border: '1px solid #FFD700'}}>
+                        <p className="dashboardSectionTitle">How to Apply</p>
+                        <p className="paragraph" style={{whiteSpace: 'pre-wrap'}}>{selectedOpportunity.howToApply}</p>
+                    </div>
+                    <button className="button" onClick={() => setActiveScreen('CreatorConnect')} style={{backgroundColor: '#3A3A3A'}}>
+                        <span className="buttonText light">Back to All Opportunities</span>
+                    </button>
+                </div>
+            );
+        };
+
+        const CreatorConnectScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, setSelectedOpportunity }) => {
+            const [opportunities, setOpportunities] = useState([]);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const opportunitiesRef = collection(db, "opportunities");
+                const q = query(opportunitiesRef, where("status", "==", "active"), orderBy("createdAt", "desc"));
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    setOpportunities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const handlePostClick = () => {
+                if (!currentUser) {
+                    showMessage("Please log in to post an opportunity.");
+                    setActiveScreen('Login');
+                    return;
+                }
+                if (!creatorProfile?.premiumExpiresAt || creatorProfile.premiumExpiresAt.toDate() < new Date()) {
+                    setShowConfirmationModal(true);
+                    setConfirmationTitle("Premium Feature");
+                    setConfirmationMessage("Posting to Creator Connect is a Premium feature. Upgrade your account to post your opportunities.");
+                    setOnConfirmationAction(() => () => setActiveScreen('Premium'));
+                    return;
+                }
+                setActiveScreen('PostOpportunityForm');
+            };
+
+            return (
+                <div className="screenContainer">
+                    <div className="sectionHeaderWithButton">
+                        <p className="heading" style={{margin: 0}}>Creator Connect</p>
+                        <button className="button" onClick={handlePostClick} style={{margin: 0}}>
+                            <span className="buttonText">Post an Opportunity</span>
+                        </button>
+                    </div>
+                    <p className="subHeading" style={{textAlign: 'left'}}>Welcome to the Hub! Premium members can post one active listing at a time. All posts are subject to review before appearing publicly.</p>
+                    {loading ? <p>Loading opportunities...</p> : (
+                        <div className="allCampaignsList">
+                            {opportunities.map(opp => (
+                                <div key={opp.id} className="allCampaignsListItem" onClick={() => { setSelectedOpportunity(opp); setActiveScreen('OpportunityDetails'); }}>
+                                    <div className="campaignListContent">
+                                        <p className="campaignListTitle">{opp.title}</p>
+                                        <p className="campaignListCreator">by {opp.providerName}</p>
+                                        <div className="campaignListStats" style={{marginTop: '10px'}}>
+                                            <span><span className="campaignListGoal">{opp.location}</span></span>
+                                            <span><span className="campaignListRaised">{opp.compensationType}</span></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW BLOCK OF THREE COMPONENTS ==========
+// ======================================================================
+
+            // ======================================================================
+// ========= START: ADD THIS ENTIRE NEW ProfilePictureModal COMPONENT =========
+// ======================================================================
+
+const ProfilePictureModal = ({ imageUrl, onClose }) => {
+    // This allows the user to click the background to close, but not the image itself.
+    const handleOverlayClick = (e) => {
+        if (e.target === e.currentTarget) {
+            onClose();
+        }
+    };
+
+    return (
+        <div className="pfpModalOverlay" onClick={handleOverlayClick}>
+            <div className="pfpModalContent">
+                <img src={imageUrl} alt="Enlarged profile picture" className="pfpModalImage" />
+                <button className="closeButton" onClick={onClose}>×</button>
+            </div>
+        </div>
+    );
+};
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW ProfilePictureModal COMPONENT ==========
+// ======================================================================
+
+
         // REPLACE THE ENTIRE AdminCategoryManagerScreen COMPONENT WITH THIS FINAL VERSION
         const AdminCategoryManagerScreen = ({
     showMessage,
@@ -6012,21 +6429,29 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
     const [loading, setLoading] = useState(true);
     const [feedItems, setFeedItems] = useState([]);
 
+    // Helper function to create relative timestamps
+    const timeAgo = (date) => {
+        const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+        let interval = seconds / 31536000;
+        if (interval > 1) return Math.floor(interval) + " years ago";
+        interval = seconds / 2592000;
+        if (interval > 1) return Math.floor(interval) + " months ago";
+        interval = seconds / 86400;
+        if (interval > 1) return Math.floor(interval) + " days ago";
+        interval = seconds / 3600;
+        if (interval > 1) return Math.floor(interval) + " hours ago";
+        interval = seconds / 60;
+        if (interval > 1) return Math.floor(interval) + " minutes ago";
+        return Math.floor(seconds) + " seconds ago";
+    };
+
     useEffect(() => {
         if (!currentUser) return;
         const feedRef = collection(db, "creators", currentUser.uid, "feed");
         const q = query(feedRef, orderBy("createdAt", "desc"), limit(50));
         const unsubscribeFeed = onSnapshot(q, (feedSnapshot) => {
-            const rawFeedItems = feedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const followingRef = collection(db, "creators", currentUser.uid, "following");
-            getDocs(followingRef).then(followingSnapshot => {
-                const followedIds = new Set(followingSnapshot.docs.map(doc => doc.id));
-                // ALSO include the user's own ID in the set so they see their own posts.
-                followedIds.add(currentUser.uid);
-                const filteredItems = rawFeedItems.filter(item => followedIds.has(item.creatorId));
-                setFeedItems(filteredItems);
-                setLoading(false);
-            });
+            setFeedItems(feedSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setLoading(false);
         }, (error) => {
             console.error("Error fetching following feed: ", error);
             showMessage("Could not load your feed. Please try again.");
@@ -6035,25 +6460,65 @@ const FollowingFeedScreen = ({ currentUser, setActiveScreen, showMessage, handle
         return () => unsubscribeFeed();
     }, [currentUser]);
 
-    if (loading) { return <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading Your Feed...</p></div>; }
+    if (loading) { return <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Loading My Feed...</p></div>; }
     
-    if (feedItems.length === 0) { return ( <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}><p className="heading">Your Feed is Empty</p><p className="subHeading">Follow creators to see their latest content here.</p><button className="button" onClick={() => setActiveScreen('DiscoverUsers')}><span className="buttonText">Discover Creators</span></button></div> ); }
-
     return (
-        <div className="screenContainer">
-            <p className="heading">Following</p>
-            <div className="vertical-carousel-container" style={{ height: 'auto', maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', scrollSnapType: 'none' }}>
-                {feedItems.map((item) => (
-                    // --- THIS IS THE FIX: Changed from <button> to <div> ---
-                    <div key={item.id} className="vertical-carousel-item" style={{position: 'relative', cursor: 'pointer'}} onClick={() => handleVideoPress(item.embedUrl, item)}>
-                        <img src={item.customThumbnailUrl} alt={item.title} className="liveFeedThumbnail" />
-                        <div className="liveFeedContent">
-                            <p className="liveFeedTitle">{item.title}</p>
-                            <p className="liveFeedCreator">by {item.creatorName}</p>
-                        </div>
-                        {currentUser && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+        // THIS IS THE FIX: This container now defines a strict flexbox column layout.
+        <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* THIS IS THE FIXED HEADER. It has a static size ('flex-shrink: 0') and will not scroll. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
+                <button 
+                    onClick={() => setActiveScreen('Home')} 
+                    style={{ background: 'none', border: '1px solid #FFD700', color: '#FFD700', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                    &#x2190;
+                </button>
+                <p className="heading" style={{ margin: 0, textAlign: 'center', flexGrow: 1 }}>My Feed</p>
+                <div style={{ width: '40px' }}></div> {/* Spacer to keep title centered */}
+            </div>
+
+            {/* THIS IS THE NEW SCROLLABLE WRAPPER. It takes up the remaining space ('flex: 1') and scrolls internally. */}
+            <div style={{ flex: '1 1 auto', overflowY: 'auto', paddingRight: '10px' }}>
+                {feedItems.length === 0 ? (
+                    <div style={{ textAlign: 'center', paddingTop: '50px' }}>
+                        <p className="heading">Your Feed is Empty</p>
+                        <p className="subHeading">Follow creators to see their latest content here.</p>
+                        <button className="button" onClick={() => setActiveScreen('DiscoverUsers')}><span className="buttonText">Discover Creators</span></button>
                     </div>
-                ))}
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                        {feedItems.map((item) => (
+                            <div key={item.id} className="dashboardSection" style={{ padding: 0, overflow: 'hidden' }}>
+                                {/* Card Header */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px' }}>
+                                    <img src={item.creatorProfilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} alt={item.creatorName} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                                    <div>
+                                        <p style={{ fontWeight: 'bold', color: '#FFF', margin: 0 }}>{item.creatorName}</p>
+                                        <p style={{ fontSize: '12px', color: '#AAA', margin: 0 }}>{timeAgo(item.createdAt)}</p>
+                                    </div>
+                                </div>
+                                {/* Card Image/Thumbnail */}
+                                <div style={{ cursor: 'pointer', position: 'relative' }} onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                                    <img src={item.customThumbnailUrl} alt={item.title} style={{ width: '100%', display: 'block' }} />
+                                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <svg className="playIcon" viewBox="0 0 24 24" style={{width: '60px', height: '60px', opacity: 0.8}}><path d="M8 5v14l11-7z"></path></svg>
+                                    </div>
+                                </div>
+                                {/* Card Action Bar & Title */}
+                                <div style={{ padding: '10px', position: 'relative' }}>
+                                    <div style={{ position: 'absolute', right: '10px', top: '15px' }}>
+                                        <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />
+                                    </div>
+                                    <p className="contentTitle" style={{ padding: 0, marginBottom: '5px' }}>{item.title}</p>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px' }}>
+                                        <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+                                        <span>{(item.viewCount || 0).toLocaleString()} views</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -6279,7 +6744,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const [canExit, setCanExit] = useState(false);
             const exitTimer = useRef(null);
             const [showMoreMenu, setShowMoreMenu] = useState(false);
-            
+            const [hasNewFollowerContent, setHasNewFollowerContent] = useState(false);
             // ======================= START: NEW CODE =======================
             // Call our new hook to get a live list of notifications
             const { notifications: unreadNotifications, isLoading: notificationsLoading, dismissNotification, markBroadcastAsSeen, markNotificationAsRead } = 
@@ -6419,7 +6884,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             // New state for admin-selected campaign details
             const [selectedAdminCampaignId, setSelectedAdminCampaignId] = useState(null);
             const [selectedAdminSubScreen, setSelectedAdminSubScreen] = useState('Overview'); // 'Overview', 'ContentManagement'
-
+            const [selectedOpportunity, setSelectedOpportunity] = useState(null);
 
             // New state variables for custom confirmation modal
             const [showConfirmationModal, setShowConfirmationModal] = useState(false);
@@ -6544,7 +7009,21 @@ useEffect(() => {
         clearInterval(countdownInterval);
     };
 }, []);
-                      
+
+           useEffect(() => {
+                let unsubscribe = () => {};
+                if (currentUser) {
+                    const followingRef = collection(db, "creators", currentUser.uid, "following");
+                    const q = query(followingRef, where("hasNewContent", "==", true));
+                    unsubscribe = onSnapshot(q, (snapshot) => {
+                        setHasNewFollowerContent(!snapshot.empty);
+                    });
+                } else {
+                    setHasNewFollowerContent(false);
+                }
+                return () => unsubscribe();
+            }, [currentUser]);
+
             const showMessage = (msg) => {
                 setMessage(msg);
                 setTimeout(() => setMessage(''), 3000);
@@ -7776,6 +8255,12 @@ const MyContentLibraryScreen = ({
                     />;
                     case 'AdminCampaignDetails':
                         return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile}/>;
+                    case 'CreatorConnect':
+                        return <CreatorConnectScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setSelectedOpportunity={setSelectedOpportunity} />;
+                    case 'OpportunityDetails':
+                        return <OpportunityDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedOpportunity={selectedOpportunity} />;
+                    case 'PostOpportunityForm':
+                        return <PostOpportunityForm showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} />;
                     case 'TopCreators':
                         return <TopCreatorsScreen featuredContentSlots={featuredContentSlots} handleVideoPress={handleVideoPress} setActiveScreen={setActiveScreen} currentUser={currentUser} showMessage={showMessage}/>;
                     case 'AnalyticsDashboard':
@@ -7807,94 +8292,109 @@ const MyContentLibraryScreen = ({
 // --- END OF THE NEW BLOCK 
           
             return (
-                <div className="container">
-                <div className="header">
-    <div className="header-content-left">
-        {/* Item 1: Tagline (Top) */}
-        <p className="tagline">Guyanese Content to a Global Stage.</p>
-        
-        {/* Item 2: Title (Middle) */}
-        <p className="headerTitle">NVA Network</p>
-        
-        {/* Item 3: Button (Bottom) */}
-        <HeaderLiveButton 
-            isLive={isLive} 
-            countdownText={countdownText} 
-            onClick={() => setActiveScreen('Discover')}
-        />
-    </div>
-    <img
-        src="https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png"
-        alt="NVA Network Logo"
-        className="headerLogo"
-        onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }}
-    />
-</div>
+                <>
+                    <div className="header">
+                        <div className="header-content-left">
+                            <p className="tagline">Guyanese Content to a Global Stage.</p>
+                            <p className="headerTitle">NVA Network</p>
+                            <HeaderLiveButton 
+                                isLive={isLive} 
+                                countdownText={countdownText} 
+                                onClick={() => setActiveScreen('Discover')}
+                            />
+                        </div>
+                        <img
+                            src="https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png"
+                            alt="NVA Network Logo"
+                            className="headerLogo"
+                            onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }}
+                        />
+                    </div>
 
-                    {memoizedScreen}
+                    <div className="container">
+                        {memoizedScreen}
+                    </div>
 
                     <div className="navigationBar" style={{ position: 'relative' }}>
-    <button className="navButton" onClick={() => setActiveScreen('Home')}>
-        <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
-    </button>
-    
-    {/* ======================= START: NEW NOTIFICATION BELL ======================= */}
-    {currentUser && (
-        <NotificationBell count={unreadNotifications.filter(n => n.isRead === false).length} onClick={() => setActiveScreen('NotificationInbox')} />
-    )}
-    {/* ======================== END: NEW NOTIFICATION BELL ======================== */}
+                        <button className="navButton" onClick={() => setActiveScreen('Home')}>
+                            <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
+                        </button>
+                        
+                        {currentUser && (
+                            <NotificationBell count={unreadNotifications.filter(n => n.isRead === false).length} onClick={() => setActiveScreen('NotificationInbox')} />
+                        )}
 
-    {currentUser && (
-        <button className="navButton" onClick={() => setActiveScreen('FollowingFeed')} style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700' }}>
-            <span className="navButtonText" style={{ color: '#FFD700' }}>Following</span>
-        </button>
-    )}
+                        {currentUser && (
+                            <button 
+                                className="navButton" 
+                                onClick={() => {
+                                    const clearFlagsFunction = httpsCallable(functions, 'clearNewContentFlags');
+                                    clearFlagsFunction().catch(error => console.error("Error clearing flags:", error));
+                                    setActiveScreen('FollowingFeed');
+                                }} 
+                                style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700', position: 'relative' }}
+                            >
+                                {hasNewFollowerContent && (
+                                    <span style={{
+                                        position: 'absolute',
+                                        top: '2px',
+                                        right: '5px',
+                                        width: '10px',
+                                        height: '10px',
+                                        backgroundColor: '#DC3545',
+                                        borderRadius: '50%',
+                                        border: '1px solid #FFF'
+                                    }}></span>
+                                )}
+                                <span className="navButtonText" style={{ color: '#FFD700' }}>My Feed</span>
+                            </button>
+                        )}
 
-    {currentUser && (
-        <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
-            <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
-        </button>
-    )}
-    
-    {currentUser && creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && (
-        <button className="navButton" onClick={() => setActiveScreen('AdminDashboard')}>
-            <span className={`navButtonText ${activeScreen === 'AdminDashboard' ? 'activeNavButtonText' : ''}`}>Admin</span>
-        </button>
-    )}
+                        {currentUser && (
+                            <button className="navButton" onClick={() => setActiveScreen('CreatorDashboard')}>
+                                <span className={`navButtonText ${activeScreen === 'CreatorDashboard' ? 'activeNavButtonText' : ''}`}>Dashboard</span>
+                            </button>
+                        )}
+                        
+                        {currentUser && creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && (
+                            <button className="navButton" onClick={() => setActiveScreen('AdminDashboard')}>
+                                <span className={`navButtonText ${activeScreen === 'AdminDashboard' ? 'activeNavButtonText' : ''}`}>Admin</span>
+                            </button>
+                        )}
 
-    <button className="navButton" onClick={() => setShowMoreMenu(!showMoreMenu)}>
-        <span className="navButtonText">More</span>
-    </button>
+                        <button className="navButton" onClick={() => setShowMoreMenu(!showMoreMenu)}>
+                            <span className="navButtonText">More</span>
+                        </button>
 
-    {showMoreMenu && (
-        <div style={{
-            position: 'absolute',
-            bottom: '60px',
-            right: '15px',
-            backgroundColor: '#1A1A1A',
-            borderRadius: '10px',
-            boxShadow: '0 -2px 10px rgba(0,0,0,0.5)',
-            border: '1px solid #333',
-            zIndex: 1100,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '5px',
-            padding: '10px'
-        }}>
-            {currentUser && (
-                <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('Premium'); setShowMoreMenu(false); }}>
-                    <span className="navButtonText">Premium</span>
-                </button>
-            )}
-            <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('About'); setShowMoreMenu(false); }}>
-                <span className="navButtonText">About</span>
-            </button>
-            <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('Contact'); setShowMoreMenu(false); }}>
-                <span className="navButtonText">Contact</span>
-            </button>
-        </div>
-    )}
-</div>
+                        {showMoreMenu && (
+                            <div style={{
+                                position: 'absolute',
+                                bottom: '60px',
+                                right: '15px',
+                                backgroundColor: '#1A1A1A',
+                                borderRadius: '10px',
+                                boxShadow: '0 -2px 10px rgba(0,0,0,0.5)',
+                                border: '1px solid #333',
+                                zIndex: 1100,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '5px',
+                                padding: '10px'
+                            }}>
+                                {currentUser && (
+                                    <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('Premium'); setShowMoreMenu(false); }}>
+                                        <span className="navButtonText">Premium</span>
+                                    </button>
+                                )}
+                                <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('About'); setShowMoreMenu(false); }}>
+                                    <span className="navButtonText">About</span>
+                                </button>
+                                <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('Contact'); setShowMoreMenu(false); }}>
+                                    <span className="navButtonText">Contact</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
 
                     <>
                         {message && (
@@ -7902,21 +8402,16 @@ const MyContentLibraryScreen = ({
                                 <p className="messageText">{message}</p>
                             </div>
                         )}
-
-                        {/* ======================= START: REPURPOSED TOAST COMPONENT ======================= */}
                         <NotificationToast notification={currentToast} onClick={handleToastClick} onTimeout={handleToastTimeout} />
-                        {/* ======================== END: REPURPOSED TOAST COMPONENT ======================== */}
-
                         {showVideoModal && (
-                        <VideoPlayerModal
-                            videoUrl={currentVideoUrl}
-                            onClose={closeVideoModal}
-                            contentItem={currentContentItem}
-                            currentUser={currentUser}
-                            showMessage={showMessage}
-                        />
-                    )}
-                            
+                            <VideoPlayerModal
+                                videoUrl={currentVideoUrl}
+                                onClose={closeVideoModal}
+                                contentItem={currentContentItem}
+                                currentUser={currentUser}
+                                showMessage={showMessage}
+                            />
+                        )}
                         {showConfirmationModal && (
                             <ConfirmationModal
                                 title={confirmationTitle}
@@ -7926,8 +8421,8 @@ const MyContentLibraryScreen = ({
                             />
                         )}
                     </>
-                  </div>
-                );
+                </>
+            );
             } // <--- PASTE THE MISSING CLOSING BRACE HERE
             
                 // --- END OF CORRECTED BLOCK ---
