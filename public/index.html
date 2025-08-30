@@ -9913,6 +9913,7 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
         
 
         function App() {
+            const [isVideoFinished, setIsVideoFinished] = useState(false); // NEW state for video splash screen
 
 // =========== START REPLACEMENT ===========
             const [currentUser, setCurrentUser] = useState(null);
@@ -11665,7 +11666,7 @@ const MyContentLibraryScreen = ({
 // =========== END REPLACEMENT ===========
 
 
-                        if (authLoading) {
+                        if (authLoading || !isVideoFinished) {
                 return (
                     <div className="loading-video-container">
                         <video 
@@ -11674,7 +11675,9 @@ const MyContentLibraryScreen = ({
                             autoPlay 
                             muted 
                             playsInline
-                            loop // Loop the video in case loading takes longer
+                            onEnded={() => setIsVideoFinished(true)}
+                            // This provides a fallback if the video fails to load or play
+                            onError={() => setIsVideoFinished(true)} 
                         >
                         </video>
                     </div>
