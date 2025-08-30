@@ -96,14 +96,12 @@
 
         /* NEW Style for the Logo */
         .headerLogo {
-            position: absolute;
-            right: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            max-height: 90%; /* Use most of the header height */
-            width: auto; /* Maintain aspect ratio */
-            max-width: 40%; /* Prevent it from being too wide on smaller screens */
+            /* We removed absolute positioning to make it a flex item */
+            max-height: 95%; /* Allow it to use slightly more header height */
+            width: auto;     /* Maintain aspect ratio */
+            max-width: 45%;  /* Allow it to be a bit wider on small screens */
             object-fit: contain; /* Ensure the image is not distorted */
+            /* The parent .header's flex properties will handle the alignment */
         }
         .navigationBar {
             display: flex;
@@ -503,7 +501,7 @@
             background-color: rgba(0, 0, 0, 0.8);
             padding: 12px 20px;
             border-radius: 8px;
-            z-index: 1000;
+            z-index: 4000; /* THIS IS THE FIX: Ensures it appears above all modals */
             opacity: 1;
             transition: opacity 0.3s ease-in-out;
             pointer-events: none; /* Allow clicks to pass through */
@@ -1934,7 +1932,7 @@
 
     <!-- 4. Define your React App component (JSX content here) -->
     <script type="text/babel">
-        const { useState, useEffect, useRef, useCallback, useMemo } = React;
+         const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
                 // ======================= START: FINAL NOTIFICATION HOOK =======================
         const useNotifications = (currentUser) => {
@@ -2032,6 +2030,65 @@
             }, [currentUser, pendingDeletes]);
 
             return { notifications, isLoading, dismissNotification, markBroadcastAsSeen, markNotificationAsRead };
+        };
+
+        // --- NEW CURRENCY FORMATTING HELPER FUNCTION ---
+        const formatCurrency = (usdAmount, selectedCurrency, currencyRates) => {
+            const amount = parseFloat(usdAmount);
+            if (isNaN(amount) || !currencyRates) {
+                return `$${(usdAmount || 0).toFixed(2)} USD`;
+            }
+            if (selectedCurrency === 'USD') {
+                return `$${amount.toFixed(2)} USD`;
+            }
+            const rate = currencyRates[selectedCurrency];
+            if (!rate) {
+                return `$${amount.toFixed(2)} USD`;
+            }
+            const convertedAmount = amount * rate;
+            // Basic formatting for GYD, can be expanded for others
+            if (selectedCurrency === 'GYD') {
+                return `$${amount.toFixed(2)} USD (~$${convertedAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })} GYD)`;
+            }
+            // Default formatting for other currencies
+            return `$${amount.toFixed(2)} USD (~${convertedAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${selectedCurrency})`;
+        };
+
+        // --- NEW CURRENCY SELECTOR COMPONENT ---
+        const CurrencySelector = ({ currencyRates, selectedCurrency, onCurrencyChange }) => {
+            if (!currencyRates) {
+                return null; // Don't render if rates haven't loaded
+            }
+
+            // We can define a smaller, more relevant list of currencies to offer.
+            const supportedCurrencies = ['USD', 'GYD', 'CAD', 'GBP', 'EUR'];
+            const availableCurrencies = supportedCurrencies.filter(c => currencyRates[c]);
+
+            return (
+                <select
+                    value={selectedCurrency}
+                    onChange={(e) => onCurrencyChange(e.target.value)}
+                    style={{
+                        backgroundColor: '#FFD700',
+                        color: '#0A0A0A',
+                        padding: '8px 12px',
+                        borderRadius: '25px',
+                        border: 'none',
+                        fontWeight: '600',
+                        fontSize: '14px',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 5px rgba(0, 0, 0, 0.3)',
+                        appearance: 'none', // Removes default dropdown arrow on some systems
+                        textAlign: 'center'
+                    }}
+                >
+                    {availableCurrencies.map(currency => (
+                        <option key={currency} value={currency}>
+                            {currency}
+                        </option>
+                    ))}
+                </select>
+            );
         };
 // END of REPLACEMENT Block
 
@@ -2483,7 +2540,34 @@
                 </div>
 
                 {currentUser && contentItem && contentItem.id && (
-                    <LikeButton contentItem={contentItem} currentUser={currentUser} showMessage={showMessage} />
+                    <div style={{ position: 'absolute', bottom: '20px', right: '15px', display: 'flex', gap: '10px' }}>
+                        <LikeButton contentItem={contentItem} currentUser={currentUser} showMessage={showMessage} />
+                        
+                        {/* THIS IS THE NEW "MORE OPTIONS" BUTTON */}
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                window.dispatchEvent(new CustomEvent('openReportModal', { detail: contentItem }));
+                            }}
+                            title="More options"
+                            style={{
+                                backgroundColor: 'rgba(10, 10, 10, 0.7)',
+                                border: '1px solid #FFD700',
+                                borderRadius: '50%',
+                                width: '32px',
+                                height: '32px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: 'pointer',
+                                color: '#FFF'
+                            }}
+                        >
+                            <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: 'currentColor' }}>
+                                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path>
+                            </svg>
+                        </button>
+                    </div>
                 )}
             </div>
         </div>
@@ -2495,7 +2579,7 @@
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(contentItem.likeCount || 0);
     const [isLoading, setIsLoading] = useState(true);
-    const [isProcessing, setIsProcessing] = useState(false); // New state to prevent double-clicks
+    const [isProcessing, setIsProcessing] = useState(false);
 
     const contentDocId = contentItem.originalContentId || contentItem.id;
     
@@ -2526,12 +2610,10 @@
     const handleLike = async (e) => {
         e.stopPropagation();
         if (!currentUser) { showMessage("Please log in to like content."); return; }
-        if (isLoading || isProcessing) return; // Prevent clicks while loading or processing
+        if (isLoading || isProcessing) return;
 
         setIsProcessing(true);
         const newLikedState = !isLiked;
-
-        // Optimistically update the UI for a fast user experience.
         setIsLiked(newLikedState);
         setLikeCount(prevCount => newLikedState ? prevCount + 1 : prevCount - 1);
 
@@ -2542,11 +2624,9 @@
                 appId: appId,
                 isLiking: newLikedState
             });
-            // The onSnapshot listener will handle the final state, so no success message is needed here.
         } catch (error) {
             console.error("Error calling updateLikeCount function:", error);
             showMessage("An error occurred. Please try again.");
-            // If the database update fails, revert the optimistic UI changes.
             setIsLiked(!newLikedState);
             setLikeCount(prevCount => newLikedState ? prevCount - 1 : prevCount + 1);
         } finally {
@@ -2561,9 +2641,7 @@
             onClick={handleLike}
             disabled={isLoading || isProcessing}
             style={{
-                position: 'absolute',
-                bottom: '20px',
-                right: '15px',
+                // THE POSITIONING STYLES HAVE BEEN REMOVED FROM THIS BLOCK
                 backgroundColor: 'rgba(10, 10, 10, 0.7)',
                 border: '1px solid #FFD700',
                 borderRadius: '50%',
@@ -3266,7 +3344,7 @@
         };
         // --- END OF REPLACEMENT COMPONENT ---
 
-        const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignId }) => {
+        const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignId, selectedCurrency, currencyRates }) => {
             const [campaigns, setCampaigns] = useState([]);
             const [loading, setLoading] = useState(true);
             const [searchTerm, setSearchTerm] = useState('');
@@ -3313,8 +3391,7 @@
             return (
                 <div className="screenContainer">
                     <p className="heading">All Campaigns</p>
-                    <p className="subHeading">Discover and support projects by Guyanese creators!</p>
-
+                    <p className="subHeading">Discover and support projects by Caribbean creators!</p>
                     <div className="formGroup" style={{ marginTop: '10px', marginBottom: '20px' }}>
                         <input
                             type="text"
@@ -3383,7 +3460,7 @@
                                             </div>
                                             <div className="campaignListStats">
                                                 <span>
-                                                    Raised: <span className="campaignListRaised">${campaign.raised}</span>
+                                                    Raised: <span className="campaignListRaised">{formatCurrency(campaign.raised, selectedCurrency, currencyRates)}</span>
                                                     <div className="fee-info-container">
                                                         <span className="fee-info-icon">i</span>
                                                         <div className="fee-info-tooltip">
@@ -3391,7 +3468,7 @@
                                                         </div>
                                                     </div>
                                                 </span>
-                                                <span>Goal: <span className="campaignListGoal">${campaign.goal}</span></span>
+                                                <span>Goal: <span className="campaignListGoal">{formatCurrency(campaign.goal, selectedCurrency, currencyRates)}</span></span>
                                             </div>
                                         </div>
                                     </div>
@@ -3410,7 +3487,7 @@
             );
         };
 
-        const CampaignDetailsScreen = ({ showMessage, setActiveScreen, selectedCampaignId, currentUser, setPledgeContext }) => {
+         const CampaignDetailsScreen = ({ showMessage, setActiveScreen, selectedCampaignId, currentUser, setPledgeContext, selectedCurrency, currencyRates }) => {
             const [campaign, setCampaign] = useState(null);
             const [loading, setLoading] = useState(true);
             const campaignImageRef = useRef(null); // Ref to the image element
@@ -3445,7 +3522,6 @@
                 fetchCampaignDetails();
             }, [selectedCampaignId, setActiveScreen, showMessage]);
 
-            // THIS IS THE NEW, CORRECTLY PLACED FUNCTION
             const handleSupportCampaign = () => {
                 if (!campaign) return;
 
@@ -3469,7 +3545,6 @@
                 });
                 setActiveScreen('DonationPledge');
             };
-// =========== END FUNCTION REPLACEMENT ===========
 
             if (loading) {
                 return (
@@ -3498,8 +3573,8 @@
                             src={campaign.imageUrl}
                             alt={campaign.title}
                             className="campaignDetailImage"
-                            onError={(e) => { e.target.style.display = 'none'; }} /* Hide image if it fails to load */
-                            style={{ display: campaign.imageUrl ? 'block' : 'none' }} /* Initially hide if no imageUrl */
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                            style={{ display: campaign.imageUrl ? 'block' : 'none' }}
                         />
                         <p className="campaignDetailTitle">
                             {campaign.title}
@@ -3524,11 +3599,11 @@
 
                     <div className="campaignDetailStats">
                         <div className="campaignDetailStatItem">
-                            <p className="campaignDetailStatValue">${campaign.raised}</p>
+                            <p className="campaignDetailStatValue" style={{fontSize: '16px'}}>{formatCurrency(campaign.raised, selectedCurrency, currencyRates)}</p>
                             <p>Raised</p>
                         </div>
                         <div className="campaignDetailStatItem">
-                            <p className="campaignDetailStatValue">${campaign.goal}</p>
+                            <p className="campaignDetailStatValue" style={{fontSize: '16px'}}>{formatCurrency(campaign.goal, selectedCurrency, currencyRates)}</p>
                             <p>Goal</p>
                         </div>
                         <div className="campaignDetailStatItem">
@@ -3550,36 +3625,34 @@
                         </p>
                     )}
 
-                    {/* =========== START BUTTON REPLACEMENT =========== */}
-                    <button
-                        className="button"
-                        onClick={handleSupportCampaign}
-                        disabled={!isCampaignActive} // Only active campaigns can be supported
-                        style={!isCampaignActive ? { backgroundColor: '#555', cursor: 'not-allowed' } : {}}
-                    >
-                        <span className="buttonText">{isCampaignEnded ? 'Campaign Ended' : (campaign.status === 'pending' ? 'Pending Review' : (campaign.status === 'rejected' ? 'Campaign Rejected' : (campaign.status === 'cancelled' ? 'Campaign Cancelled' : 'Support This Campaign')))}</span>
-                    </button>
-{/* =========== END BUTTON REPLACEMENT =========== */}
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '20px' }}>
+                        <button
+                            className="button"
+                            onClick={handleSupportCampaign}
+                            disabled={!isCampaignActive}
+                            style={!isCampaignActive ? { backgroundColor: '#555', cursor: 'not-allowed', margin: 0 } : { margin: 0 }}
+                        >
+                            <span className="buttonText">{isCampaignEnded ? 'Campaign Ended' : (campaign.status === 'pending' ? 'Pending Review' : (campaign.status === 'rejected' ? 'Campaign Rejected' : (campaign.status === 'cancelled' ? 'Campaign Cancelled' : 'Support This Campaign')))}</span>
+                        </button>
 
-                    {/* --- START: ADDED/CORRECTED PROJECT LINK BUTTON --- */}
-                    {campaign.projectLink && (
-                    <button
-                        className="button"
-                        onClick={() => window.open(campaign.projectLink, '_blank')}
-                        style={{ backgroundColor: '#3A3A3A', marginTop: '10px' }}
-                    >
-                        <span className="buttonText light">Visit Project Link</span>
-                    </button>
-                )}
-                    {/* --- END: ADDED/CORRECTED PROJECT LINK BUTTON --- */}
+                        {campaign.projectLink && (
+                        <button
+                            className="button"
+                            onClick={() => window.open(campaign.projectLink, '_blank')}
+                            style={{ backgroundColor: '#3A3A3A', margin: 0 }}
+                        >
+                            <span className="buttonText light">Visit Project Link</span>
+                        </button>
+                        )}
 
-                    <button
-                    className="button"
-                    onClick={() => setActiveScreen('AllCampaigns')}
-                    style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}
-                >
-                    <span className="buttonText light">Back to All Campaigns</span>
-                </button>
+                        <button
+                            className="button"
+                            onClick={() => setActiveScreen('AllCampaigns')}
+                            style={{ backgroundColor: '#3A3A3A', margin: 0 }}
+                        >
+                            <span className="buttonText light">Back to All Campaigns</span>
+                        </button>
+                    </div>
             </div>
             );
         };
@@ -3683,7 +3756,8 @@ const AdminDashboardScreen = ({
     setSelectedUserId,
     setSelectedOpportunity,
     setSelectedStatus, 
-    setSelectedCompAdmin
+    setSelectedCompAdmin,
+    setSelectedReportGroup // This is the new prop
 }) => {
 
     const [isUserManagementExpanded, setIsUserManagementExpanded] = useState(true);
@@ -3836,6 +3910,8 @@ const AdminDashboardScreen = ({
     const [isSubmittingRequest, setIsSubmittingRequest] = useState(null);
     const [isCorrectingCount, setIsCorrectingCount] = useState(null);
     const [isUpdatingVerified, setIsUpdatingVerified] = useState(null);
+    const [pledgeSearchTerm, setPledgeSearchTerm] = useState(''); // This is the new state for the pledge search
+
 
     const changeUserRoleLogic = async (targetUser, newRole) => { setIsUpdatingRole(targetUser.id); showMessage(`Updating role for ${targetUser.creatorName || targetUser.email}...`); try { const userDocRef = doc(db, "creators", targetUser.id); await updateDoc(userDocRef, { role: newRole }); showMessage(`Success! ${targetUser.creatorName || targetUser.email} is now a(n) ${newRole}.`); } catch (error) { console.error("Error changing user role:", error); showMessage(`Error: ${error.message}`); } finally { setIsUpdatingRole(null); } };
     const confirmChangeUserRole = (targetUser, newRole) => { setConfirmationTitle("Change User Role?"); setConfirmationMessage(`Are you sure you want to change ${targetUser.creatorName || targetUser.email}'s role to "${newRole}"?`); setOnConfirmationAction(() => () => changeUserRoleLogic(targetUser, newRole)); setShowConfirmationModal(true); };
@@ -3895,10 +3971,12 @@ const AdminDashboardScreen = ({
             {/* THIS IS THE MOVED NAVIGATION BAR. IT IS NOW ALWAYS VISIBLE. */}
             <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', paddingBottom: '20px', flexWrap: 'wrap', position: 'sticky', top: 0, zIndex: 50, backgroundColor: '#0A0A0A' }}>
                 <button className="button" onClick={() => setSelectedAdminSubScreen('Overview')} style={{ backgroundColor: selectedAdminSubScreen === 'Overview' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Overview' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Overview</span></button>
+                
+                {/* THIS IS THE NEW CONSOLIDATED BUTTON */}
+                <button className="button" onClick={() => setSelectedAdminSubScreen('ModerationCenter')} style={{ backgroundColor: selectedAdminSubScreen === 'ModerationCenter' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ModerationCenter' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Moderation Center</span></button>
+
                 <button className="button" onClick={() => setSelectedAdminSubScreen('ContentManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'ContentManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ContentManagement' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Content</span></button>
-
-            <button className="button" onClick={() => setSelectedAdminSubScreen('Competitions')} style={{ backgroundColor: selectedAdminSubScreen === 'Competitions' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Competitions' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Competitions</span></button>
-
+                <button className="button" onClick={() => setSelectedAdminSubScreen('Competitions')} style={{ backgroundColor: selectedAdminSubScreen === 'Competitions' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'Competitions' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Competitions</span></button>
                 <button className="button" onClick={() => setSelectedAdminSubScreen('ManageCategories')} style={{ backgroundColor: selectedAdminSubScreen === 'ManageCategories' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'ManageCategories' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Categories</span></button>
                 <button className="button" onClick={() => setSelectedAdminSubScreen('SiteManagement')} style={{ backgroundColor: selectedAdminSubScreen === 'SiteManagement' ? '#FFD700' : '#3A3A3A', color: selectedAdminSubScreen === 'SiteManagement' ? '#0A0A0A' : '#FFF' }}><span className="buttonText">Site Management</span></button>
                 <button className="button" onClick={() => setActiveScreen('AnalyticsDashboard')} style={{ backgroundColor: '#3A3A3A', color: '#FFF' }}><span className="buttonText">Analytics</span></button>
@@ -3982,19 +4060,35 @@ const AdminDashboardScreen = ({
                        </div> 
                 </div> </section>
 
-                   <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p> <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> : <div className="dashboardContentList"> {pendingCampaigns.map(campaign => (  
-                    <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }} style={{ cursor: 'pointer', alignItems: 'center' }}>
-                                    <img src={campaign.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Campaign Thumbnail" style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginRight: '15px' }} />
-                                    <div style={{ flexGrow: 1, marginRight: '10px' }}>
-                                        <p className="adminDashboardItemTitle">{campaign.title}</p>
-                                        <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
+                   <section className="dashboardSection">
+                        <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsPendingCampaignsExpanded, isPendingCampaignsExpanded)}>
+                            <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Pending Campaigns ({pendingCampaigns.length})</p>
+                            <button className="admin-toggle-button">{isPendingCampaignsExpanded ? '\u25BC' : '\u25B6'}</button>
+                        </div>
+                        <div id="pending-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}>
+                            <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}>
+                                {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently pending review.</p> : (
+                                    <div className="dashboardContentList">
+                                        {pendingCampaigns.map(campaign => (
+                                            <div 
+                                                key={campaign.id} 
+                                                className="adminDashboardItem" 
+                                                onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }} 
+                                                style={{ cursor: 'pointer', alignItems: 'center' }}
+                                            >
+                                                <img src={campaign.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Campaign Thumbnail" style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginRight: '15px' }} />
+                                                <div style={{ flexGrow: 1, marginRight: '10px' }}>
+                                                    <p className="adminDashboardItemTitle">{campaign.title}</p>
+                                                    <p style={{ fontSize: '12px', color: '#CCC' }}>by {campaign.creatorName}</p>
+                                                </div>
+                                                <button className="adminActionButton approve">Review</button>
+                                            </div>
+                                        ))}
                                     </div>
-                                </div> 
-                                ))} 
-                            </div> } 
-                        </div> 
-                    </div> 
-                </section>
+                                )}
+                            </div>
+                        </div>
+                    </section>
              <section className="dashboardSection"> <div className="flex justify-between items-center cursor-pointer py-2" onClick={() => toggleSection(setIsActiveCampaignsExpanded, isActiveCampaignsExpanded)}> <p className="dashboardSectionTitle" style={{ marginBottom: '0' }}>Active Campaigns ({activeCampaigns.length})</p> <button className="admin-toggle-button">{isActiveCampaignsExpanded ? '\u25BC' : '\u25B6'}</button> </div> <div id="active-campaigns-content" className={`overflow-hidden transition-max-height duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}> <div className="pt-4 border-t border-gray-200 mt-4" style={{ borderColor: '#3A3A3A' }}> {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : <div className="dashboardContentList"> {activeCampaigns.map(campaign => ( 
              <div key={campaign.id} className="adminDashboardItem" onClick={() => { setSelectedAdminCampaignId(campaign.id); setActiveScreen('AdminCampaignDetails'); }} style={{ cursor: 'pointer', alignItems: 'center' }}>
                                     <img src={campaign.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Campaign Thumbnail" style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', marginRight: '15px' }} />
@@ -4018,15 +4112,17 @@ const AdminDashboardScreen = ({
                                     pendingStatuses.map(status => (
                                         <div key={status.id} 
                                             className="adminDashboardItem" 
-                                            style={{cursor: 'pointer'}}
+                                            style={{cursor: 'pointer', flexDirection: 'column', alignItems: 'stretch', gap: '5px'}}
                                             onClick={() => { setSelectedStatus(status); setActiveScreen('AdminStatusReview'); }}
-
                                         >
-                                            <div style={{flexGrow: 1}}>
-                                                <p className="adminDashboardItemTitle">Booking for: {new Date(status.startTime.toDate()).toLocaleDateString()}</p>
-                                                <p style={{fontSize: '12px', color: '#CCC'}}>by {status.content?.title || "Advertiser"}</p>
+                                            <div style={{display: 'flex', justifyContent: 'space-between', width: '100%'}}>
+                                                <p className="adminDashboardItemTitle">{status.content?.title || "Untitled Ad"}</p>
+                                                <button className="adminActionButton approve" style={{flexShrink: 0}}>Review</button>
                                             </div>
-                                            <button className="adminActionButton approve">Review</button>
+                                            <div style={{fontSize: '12px', color: '#CCC'}}>
+                                                <p><strong>Booking for:</strong> {new Date(status.startTime.toDate()).toLocaleDateString()}</p>
+                                                <p><strong>Pledge ID:</strong> <span style={{color: '#FFD700', fontWeight: 'bold'}}>{status.pledgeId || 'N/A'}</span></p>
+                                            </div>
                                         </div>
                                     ))
                                 )}
@@ -4047,31 +4143,55 @@ const AdminDashboardScreen = ({
                                         <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'date' ? '#FFD700' : '#555', color: pledgeSortType === 'date' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('date')}>Sort by Time</button>
                                         <button className="sectionHeaderButton" style={{backgroundColor: pledgeSortType === 'type' ? '#FFD700' : '#555', color: pledgeSortType === 'type' ? '#0A0A0A' : '#FFF'}} onClick={() => setPledgeSortType('type')}>Sort by Type</button>
                                     </div>
-                                    {loadingPledges ? (<p className="dashboardItem">Loading pending payments...</p>) : pendingPledges.length === 0 ? (<p className="dashboardItem">There are no payments pending review.</p>) : (
-                                        <div className="dashboardContentList">
-                                            {sortedPledges.map(pledge => (
-                                        <div key={pledge.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
-                                            <div className="flex justify-between items-center">
-                                                <p className="adminDashboardItemTitle">{pledge.paymentType === 'premium' ? 'Premium Subscription' : (pledge.paymentType === 'eventTicket' ? 'Event Ticket' : (pledge.paymentType === 'promotedStatus' ? 'Promoted Status Booking' : 'Campaign Donation'))}</p>
-                                                <p style={{fontSize: '18px', fontWeight: 'bold', color: '#FFD70D'}}>${pledge.amount.toFixed(2)}</p>
-                                            </div>
-                                            <div style={{fontSize: '12px', color: '#CCC'}}>
-                                                <p>Pledge ID: <span style={{fontWeight: 'bold', color: '#FFF'}}>{pledge.pledgeId}</span></p>
-                                                <p>User: {pledge.userName} ({pledge.userEmail})</p>
+                                    
+                                        <div className="formGroup" style={{ marginBottom: '15px' }}>
+                                        <input
+                                            type="text"
+                                            className="formInput"
+                                            placeholder="Search by Pledge ID or User Name..."
+                                            value={pledgeSearchTerm}
+                                            onChange={(e) => setPledgeSearchTerm(e.target.value)}
+                                        />
+                                    </div>
+                                    
+                                    {loadingPledges ? (<p className="dashboardItem">Loading pending payments...</p>) : pendingPledges.length === 0 ? (<p className="dashboardItem">There are no payments pending review.</p>) : (() => {
+                                        // THIS IS THE NEW FILTERING LOGIC
+                                        const filteredPledges = sortedPledges.filter(pledge => {
+                                            const searchTermLower = pledgeSearchTerm.toLowerCase();
+                                            if (!searchTermLower) return true; // Show all if search is empty
+                                            return (
+                                                pledge.pledgeId?.toLowerCase().includes(searchTermLower) ||
+                                                pledge.userName?.toLowerCase().includes(searchTermLower)
+                                            );
+                                        });
 
-                                                {pledge.paymentType === 'donation' && <p>Campaign: {pledge.targetCampaignTitle}</p>}
-                                                {pledge.paymentType === 'eventTicket' && <p>Event: {pledge.targetEventTitle || 'Live Premiere'}</p>}
-                                                {pledge.paymentType === 'promotedStatus' && <p>Booking: {pledge.targetEventTitle}</p>}
-                                                <p>Date: {new Date(pledge.createdAt).toLocaleString()}</p>
+                                        return filteredPledges.length === 0 ? (
+                                            <p className="dashboardItem">No pledges found matching your search.</p>
+                                        ) : (
+                                            <div className="dashboardContentList">
+                                                {filteredPledges.map(pledge => (
+                                                    <div key={pledge.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
+                                                        <div className="flex justify-between items-center">
+                                                            <p className="adminDashboardItemTitle">{pledge.paymentType === 'premium' ? 'Premium Subscription' : (pledge.paymentType === 'eventTicket' ? 'Event Ticket' : (pledge.paymentType === 'promotedStatus' ? 'Promoted Status Booking' : 'Campaign Donation'))}</p>
+                                                            <p style={{fontSize: '18px', fontWeight: 'bold', color: '#FFD70D'}}>${pledge.amount.toFixed(2)}</p>
+                                                        </div>
+                                                        <div style={{fontSize: '12px', color: '#CCC'}}>
+                                                            <p>Pledge ID: <span style={{fontWeight: 'bold', color: '#FFF'}}>{pledge.pledgeId}</span></p>
+                                                            <p>User: {pledge.userName} ({pledge.userEmail})</p>
+                                                            {pledge.paymentType === 'donation' && <p>Campaign: {pledge.targetCampaignTitle}</p>}
+                                                            {pledge.paymentType === 'eventTicket' && <p>Event: {pledge.targetEventTitle || 'Live Premiere'}</p>}
+                                                            {pledge.paymentType === 'promotedStatus' && <p>Booking: {pledge.targetEventTitle}</p>}
+                                                            <p>Date: {new Date(pledge.createdAt).toLocaleString()}</p>
+                                                        </div>
+                                                        <div className="flex justify-end items-center gap-4 mt-2">
+                                                            <button className="adminActionButton reject" onClick={() => confirmDenyPledge(pledge)}>Deny</button>
+                                                            <button className="adminActionButton approve" onClick={() => handleApprovePledge(pledge.id)}>Approve</button>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
-                                            <div className="flex justify-end items-center gap-4 mt-2">
-                                                <button className="adminActionButton reject" onClick={() => confirmDenyPledge(pledge)}>Deny</button>
-                                                <button className="adminActionButton approve" onClick={() => handleApprovePledge(pledge.id)}>Approve</button>
-                                            </div>
-                                        </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </section>
@@ -4144,6 +4264,18 @@ const AdminDashboardScreen = ({
                 </>
             )}
 
+            {selectedAdminSubScreen === 'ModerationCenter' && (
+                <AdminModerationCenter
+                    showMessage={showMessage}
+                    setActiveScreen={setActiveScreen}
+                    setSelectedReportGroup={setSelectedReportGroup}
+                    setShowConfirmationModal={setShowConfirmationModal}
+                    setConfirmationTitle={setConfirmationTitle}
+                    setConfirmationMessage={setConfirmationMessage}
+                    setOnConfirmationAction={setOnConfirmationAction}
+                />
+            )}
+
             {selectedAdminSubScreen === 'ContentManagement' && (
                 <AdminContentManagerScreen
                     showMessage={showMessage}
@@ -4175,8 +4307,12 @@ const AdminDashboardScreen = ({
                     setActiveScreen={setActiveScreen}
                     currentUser={currentUser}
                     setSelectedCompAdmin={setSelectedCompAdmin}
-                    // Add creatorProfile which is needed for the entry form modal
-                    creatorProfile={creatorProfile} 
+                    creatorProfile={creatorProfile}
+                    // ADD THESE FOUR PROPS TO PASS THEM DOWN
+                    setShowConfirmationModal={setShowConfirmationModal}
+                    setConfirmationTitle={setConfirmationTitle}
+                    setConfirmationMessage={setConfirmationMessage}
+                    setOnConfirmationAction={setOnConfirmationAction}
                 />
             )}
 
@@ -4197,7 +4333,7 @@ const AdminDashboardScreen = ({
 // =================== END REPLACEMENT ===================
 // =========== END REPLACEMENT ==========
        
-        const SubscriptionPledgeScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, pledgeContext, setPledgeIdForConfirmation }) => {
+        const SubscriptionPledgeScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, pledgeContext, setPledgeIdForConfirmation, selectedCurrency, currencyRates }) => {
             const [userName, setUserName] = useState((creatorProfile && creatorProfile.creatorName) ? creatorProfile.creatorName : (currentUser ? currentUser.email.split('@')[0] : ''));
             const [agreedToTerms, setAgreedToTerms] = useState(false);
             const [isSubmitting, setIsSubmitting] = useState(false);
@@ -4218,7 +4354,6 @@ const AdminDashboardScreen = ({
                 const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;
                 try {
                     const pledgeRef = doc(collection(db, "paymentPledges"), pledgeId);
-                    // THE FIX: This object now includes the specific event details
                     await setDoc(pledgeRef, {
                         pledgeId, userId: currentUser.uid, userName, userEmail: currentUser.email,
                         paymentType: pledgeContext.type, amount: pledgeContext.amount, status: 'pending',
@@ -4245,7 +4380,7 @@ const AdminDashboardScreen = ({
                         </div>
                         <div className="premiumFeatureCard">
                             <p className="premiumFeatureTitle" style={{textAlign: 'center'}}>{isTicket ? 'Event Ticket' : 'Premium Subscription'}</p>
-                            <p className="premiumFeatureDescription" style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', color: '#FFF'}}>${parseFloat(pledgeContext.amount).toFixed(2)} USD</p>
+                            <p className="premiumFeatureDescription" style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', color: '#FFF'}}>{formatCurrency(pledgeContext.amount, selectedCurrency, currencyRates)}</p>
                             <p className="premiumFeatureDescription" style={{textAlign: 'center'}}>{isTicket ? 'one-time purchase' : 'per month'}</p>
                         </div>
                         <div className="formGroup"><p className="termsText" style={{textAlign: 'left', color: '#CCC'}}>This is a manual payment process. You will be given instructions to complete your payment via MMG after submitting.</p></div>
@@ -4261,10 +4396,10 @@ const AdminDashboardScreen = ({
 // =========== END REPLACEMENT ===========
 
                 // =========== ADD THE FOLLOWING CODE BLOCK ===========
-        const PendingConfirmationScreen = ({ showMessage, setActiveScreen, pledgeId, currentUser }) => {
+         const PendingConfirmationScreen = ({ showMessage, setActiveScreen, pledgeId, currentUser, selectedCurrency, currencyRates }) => {
             const [pledgeDetails, setPledgeDetails] = useState(null);
             const [isLoading, setIsLoading] = useState(true);
-            const [mmgNumber, setMmgNumber] = useState(''); // State variable is now correctly declared here
+            const [mmgNumber, setMmgNumber] = useState('');
 
             useEffect(() => {
                 if (!pledgeId) {
@@ -4272,7 +4407,6 @@ const AdminDashboardScreen = ({
                     return () => {};
                 }
 
-                // Fetch the site-wide settings first to get the MMG number
                 const settingsRef = doc(db, "settings", "socialLinks");
                 getDoc(settingsRef).then(settingsSnap => {
                     if (settingsSnap.exists()) {
@@ -4280,7 +4414,6 @@ const AdminDashboardScreen = ({
                     }
                 });
 
-                // Set up the listener for the specific pledge
                 const pledgeRef = doc(db, "paymentPledges", pledgeId);
                 const unsubscribe = onSnapshot(pledgeRef, (docSnap) => {
                     if (docSnap.exists()) {
@@ -4306,16 +4439,6 @@ const AdminDashboardScreen = ({
                 return () => unsubscribe();
             }, [pledgeId]);
 
-            const renderPledgeSummary = () => {
-                if (!pledgeDetails) return null;
-                switch (pledgeDetails.paymentType) {
-                    case 'donation': return `Donation for "${pledgeDetails.targetCampaignTitle}"`;
-                    case 'premium': return `NVA Premium Subscription`;
-                    case 'eventTicket': return `Event Ticket for "${pledgeDetails.targetEventTitle}"`;
-                    default: return 'Your Pledge';
-                }
-            };
-
             if (isLoading) {
                 return <div className="screenContainer"><p className="heading">Generating Your Payment Details...</p></div>;
             }
@@ -4335,8 +4458,8 @@ const AdminDashboardScreen = ({
                     <p className="subHeading" style={{color: '#FFD700'}}>Action Required</p>
                     
                     <div className="premiumFeatureCard" style={{textAlign: 'center'}}>
-                        <p className="premiumFeatureDescription" style={{marginBottom: '5px'}}>Please send exactly:</p>
-                        <p className="premiumFeatureTitle" style={{fontSize: '32px', color: '#FFF'}}>${pledgeDetails.amount.toFixed(2)} USD</p>
+                        <p className="premiumFeatureDescription" style={{marginBottom: '5px'}}>Please send the equivalent of:</p>
+                        <p className="premiumFeatureTitle" style={{fontSize: '32px', color: '#FFF'}}>{formatCurrency(pledgeDetails.amount, selectedCurrency, currencyRates)}</p>
                         <p className="premiumFeatureDescription" style={{marginTop: '10px'}}>To our MMG account along with screenshot of your confirmed Payment Receipt:</p>
                         <p className="premiumFeatureTitle" style={{fontSize: '24px'}}>{mmgNumber || 'Contact Admin for Payment Info'}</p>
                     </div>
@@ -5123,6 +5246,7 @@ const AdminContentManagerScreen = ({
     const [isLeaderboardEnabled, setIsLeaderboardEnabled] = useState(false);
     const [premiumPrice, setPremiumPrice] = useState(1.99);
     const [ticketPrice, setTicketPrice] = useState(5.00);
+    const [promotedStatusPrice, setPromotedStatusPrice] = useState(10.00); // NEW STATE
     const [isTicketedEvent, setIsTicketedEvent] = useState(false);
     const [submissions, setSubmissions] = useState([]);
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
@@ -5131,10 +5255,8 @@ const AdminContentManagerScreen = ({
     const [isDiagnosing, setIsDiagnosing] = useState(false);
     const [mmgNumber, setMmgNumber] = useState('');
 
-    // --- START: NEW STATE FOR THE CLEANUP TOOL ---
     const [isCleaning, setIsCleaning] = useState(false);
     const [cleanupResults, setCleanupResults] = useState(null);
-    // --- END: NEW STATE FOR THE CLEANUP TOOL ---
 
         useEffect(() => {
         setIsLoadingSubmissions(true);
@@ -5154,8 +5276,8 @@ const AdminContentManagerScreen = ({
             setIsLoadingSubmissions(false);
         });
 
-        return () => unsubscribe(); // Cleanup the listener when the component unmounts
-    }, []); // The empty dependency array ensures this runs once on mount.
+        return () => unsubscribe();
+    }, []);
 
     const handleRunDiagnostics = async () => {
         setIsDiagnosing(true);
@@ -5186,21 +5308,23 @@ const AdminContentManagerScreen = ({
                 } else {
                     setSocialLinks([]);
                 }
-                if (data && typeof data.isLeaderboardEnabled === 'boolean') {
+                if (typeof data.isLeaderboardEnabled === 'boolean') {
                     setIsLeaderboardEnabled(data.isLeaderboardEnabled);
-                } else {
-                    setIsLeaderboardEnabled(false);
                 }
-                if (data && typeof data.premiumPrice === 'number') {
+                if (typeof data.premiumPrice === 'number') {
                     setPremiumPrice(data.premiumPrice);
                 }
-                if (data && typeof data.ticketPrice === 'number') {
+                if (typeof data.ticketPrice === 'number') {
                     setTicketPrice(data.ticketPrice);
                 }
-                if (data && typeof data.isTicketedEvent === 'boolean') {
+                // NEW LOGIC TO FETCH THE PROMOTED STATUS PRICE
+                if (typeof data.promotedStatusPrice === 'number') {
+                    setPromotedStatusPrice(data.promotedStatusPrice);
+                }
+                if (typeof data.isTicketedEvent === 'boolean') {
                     setIsTicketedEvent(data.isTicketedEvent);
                 }
-                if (data && typeof data.mmgNumber !== 'undefined') {
+                if (typeof data.mmgNumber !== 'undefined') {
                     setMmgNumber(data.mmgNumber);
                 }
             } else {
@@ -5212,7 +5336,6 @@ const AdminContentManagerScreen = ({
         return () => unsubscribe();
     }, []);
     
-    // --- START: NEW HANDLER FOR THE CLEANUP TOOL ---
     const handleCleanup = async () => {
         setIsCleaning(true);
         setCleanupResults("Initiating cleanup... This may take a moment.");
@@ -5239,7 +5362,6 @@ const AdminContentManagerScreen = ({
         setOnConfirmationAction(() => () => handleCleanup());
         setShowConfirmationModal(true);
     };
-    // --- END: NEW HANDLER FOR THE CLEANUP TOOL ---
 
     const handleUpdateField = (fieldName, value) => {
         if (fieldName === 'isLeaderboardEnabled') {
@@ -5264,6 +5386,7 @@ const AdminContentManagerScreen = ({
                 isLeaderboardEnabled: isLeaderboardEnabled, 
                 premiumPrice: parseFloat(premiumPrice),
                 ticketPrice: parseFloat(ticketPrice),
+                promotedStatusPrice: parseFloat(promotedStatusPrice), // NEW: SAVING THE PRICE
                 isTicketedEvent: isTicketedEvent,
                 mmgNumber: mmgNumber
             }, { merge: true }); 
@@ -5344,6 +5467,11 @@ const AdminContentManagerScreen = ({
                     <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p>
                     <input type="number" className="formInput" value={premiumPrice} onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} />
                 </div>
+                {/* NEW INPUT FIELD FOR PROMOTED STATUS PRICE */}
+                <div className="adminDashboardItem">
+                    <p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Promoted Status Price (USD)</p>
+                    <input type="number" className="formInput" value={promotedStatusPrice} onChange={(e) => { setPromotedStatusPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} />
+                </div>
                 {currentUserRole === 'admin' && (
                      <div className="adminDashboardItem">
                         <p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p>
@@ -5385,7 +5513,6 @@ const AdminContentManagerScreen = ({
                 </div>
             )}
             
-            {/* --- START: NEW DATA INTEGRITY SECTION --- */}
             <div className="dashboardSection" style={{ border: '2px solid #FF8C00', marginTop: '20px' }}>
                 <p className="dashboardSectionTitle">Data Integrity Tools</p>
                 <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '15px' }}>
@@ -5394,7 +5521,7 @@ const AdminContentManagerScreen = ({
                 <button
                     className="button"
                     onClick={confirmCleanup}
-                    style={{ backgroundColor: '#DC3545' }} // Red color for danger
+                    style={{ backgroundColor: '#DC3545' }}
                     disabled={isCleaning}
                 >
                     <span className="buttonText">{isCleaning ? 'Cleaning...' : 'Clean Up Ghost Artifacts'}</span>
@@ -5405,7 +5532,6 @@ const AdminContentManagerScreen = ({
                     </p>
                 )}
             </div>
-            {/* --- END: NEW DATA INTEGRITY SECTION --- */}
             
             <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}>
                 <p className="dashboardSectionTitle">System Status</p>
@@ -5450,8 +5576,7 @@ const AdminContentManagerScreen = ({
             // ======================================================================
 // ========= START: ADD THIS ENTIRE NEW COMPONENT =======================
 // ======================================================================
-const AdminCompetitionManager = ({ showMessage, setActiveScreen, currentUser, setSelectedCompAdmin, creatorProfile }) => {
-    const [title, setTitle] = useState('');
+const AdminCompetitionManager = ({ showMessage, setActiveScreen, currentUser, setSelectedCompAdmin, creatorProfile, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {    const [title, setTitle] = useState('');
     const [competitionType, setCompetitionType] = useState('Photo');
     const [description, setDescription] = useState('');
     const [rules, setRules] = useState('');
@@ -5560,7 +5685,7 @@ const AdminCompetitionManager = ({ showMessage, setActiveScreen, currentUser, se
                 <form onSubmit={(e) => e.preventDefault()}>
                     <div className="formGroup">
                         <label className="formLabel">Competition Title</label>
-                        <input type="text" className="formInput" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., NVA Summer Photo Challenge" />
+                        <input type="text" className="formInput" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., NVA Summer Photo Challenge" required />
                     </div>
                     <div className="formGroup">
                         <label className="formLabel">Competition Type</label>
@@ -5594,11 +5719,11 @@ const AdminCompetitionManager = ({ showMessage, setActiveScreen, currentUser, se
                     </div>
                     <div className="formGroup">
                          <label className="formLabel">Entry Deadline</label>
-                        <input type="datetime-local" className="formInput" value={entryDeadline} onChange={(e) => setEntryDeadline(e.target.value)} />
+                        <input type="datetime-local" className="formInput" value={entryDeadline} onChange={(e) => setEntryDeadline(e.target.value)} required />
                     </div>
                     <div className="formGroup">
                         <label className="formLabel">Competition End Date (Voting/Judging Ends)</label>
-                        <input type="datetime-local" className="formInput" value={competitionEnd} onChange={(e) => setCompetitionEnd(e.target.value)} />
+                        <input type="datetime-local" className="formInput" value={competitionEnd} onChange={(e) => setCompetitionEnd(e.target.value)} required />
                     </div>
 
                     <div className="formGroup">
@@ -5619,107 +5744,164 @@ const AdminCompetitionManager = ({ showMessage, setActiveScreen, currentUser, se
         ) : (
             <div className="dashboardContentList">
                 {competitions.length === 0 ? <p className="dashboardItem">No competitions found.</p> :
-                    competitions.map(comp => (
-                            <div key={comp.id} className="adminDashboardItem" style={{cursor: 'pointer'}} onClick={() => setManagingComp({...comp})}>
-                            <div style={{flexGrow: 1}}>
-                                <p className="adminDashboardItemTitle">{comp.title}</p>
-                                <p style={{fontSize: '12px', color: '#CCC'}}>Type: {comp.competitionType}</p>
+                    competitions.map(comp => {
+                        // --- START: NEW DELETE HANDLER LOGIC ---
+                        const handleDelete = async (e) => {
+                            e.stopPropagation(); // Prevent modal actions from bubbling up
+                            try {
+                                const deleteFunction = httpsCallable(functions, 'deleteCompetition');
+                                await deleteFunction({ competitionId: comp.id });
+                                showMessage("Competition deleted successfully. The list will update.");
+                                // No need to close modal, it will be done in the onConfirm handler
+                            } catch (error) {
+                                showMessage(`Error: ${error.message}`);
+                            }
+                        };
+
+                        const confirmDelete = (e) => {
+                            e.stopPropagation(); // The CRITICAL FIX: stops the manage modal from opening
+                            setShowConfirmationModal(true);
+                            setConfirmationTitle("Permanently Delete Competition?");
+                            setConfirmationMessage(`This will delete "${comp.title}", all entries, and all uploaded images. This is irreversible. Are you sure?`);
+                            setOnConfirmationAction(() => () => handleDelete(e));
+                        };
+                        // --- END: NEW DELETE HANDLER LOGIC ---
+
+                        return (
+                            <div key={comp.id} className="adminDashboardItem">
+                                <div style={{flexGrow: 1, cursor: 'pointer', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center'}} onClick={() => setManagingComp({...comp})}>
+                                    <p className="adminDashboardItemTitle">{comp.title}</p>
+                                    <p style={{fontSize: '12px', color: '#CCC'}}>Type: {comp.competitionType}</p>
+                                </div>
+                                <span className="adminDashboardItemStatus" style={{color: '#00FFFF', margin: '0 10px'}}>{comp.status}</span>
+                                <button className="adminActionButton reject" onClick={confirmDelete}>Delete</button>
+                                <button className="adminActionButton approve" style={{marginLeft: '10px'}} onClick={() => setManagingComp({...comp})}>Manage</button>
                             </div>
-                            <span className="adminDashboardItemStatus" style={{color: '#00FFFF'}}>{comp.status}</span>
-                            <button className="adminActionButton approve">Manage</button>
-                        </div>
-                        ))
+                        );
+                    })
                 }
             </div>
         )}
     {/* START of ADDITION */}
-        {managingComp && (
-            <div className="confirmationModalOverlay" style={{zIndex: 4000}}>
-                <div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '500px'}}>
-                    <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                        <p className="confirmationModalTitle">Manage: {managingComp.title}</p>
-                        <button className="closeButton" onClick={() => setManagingComp(null)} style={{position: 'static'}}>×</button>
-                    </div>
-                    
-                    <div className="formGroup">
-                        <label className="formLabel">Update Notice Text</label>
-                        <textarea 
-                            className="formTextarea" 
-                            defaultValue={managingComp.noticeText || ''}
-                            onChange={(e) => setManagingComp({...managingComp, noticeText: e.target.value})}
-                            placeholder="Post an update for all entrants to see..." 
-                        />
-                    </div>
-                     <div className="formGroup">
-                        <label className="formLabel">Change Status</label>
-                        <select 
-                            className="formInput" 
-                            value={managingComp.status}
-                            onChange={(e) => setManagingComp({...managingComp, status: e.target.value})}
-                        >
-                            <option value="Pending">Pending</option>
-                            <option value="Accepting Entries">Accepting Entries (Go Live)</option>
-                            <option value="Live Voting">Live Voting</option>
-                            <option value="Judging">Judging</option>
-                            <option value="Completed">Completed</option>
-                        </select>
-                    </div>
+       {managingComp && (() => {
+            // --- START: NEW VALIDATION LOGIC ---
+            const now = new Date();
+            const entryDeadlineDate = managingComp.entryDeadline ? new Date(managingComp.entryDeadline) : null;
+            const competitionEndDate = managingComp.competitionEnd ? new Date(managingComp.competitionEnd) : null;
 
-                    {/* This toggle switch only appears for Completed competitions */}
-                    {managingComp.status === 'Completed' && (
-                        <div className="formGroup">
-                            <label className="flex items-center cursor-pointer justify-between">
-                                <span className="formLabel" style={{marginBottom: 0}}>Make Results Publicly Visible</span>
-                                <div className="relative">
-                                    <input 
-                                        type="checkbox" 
-                                        className="sr-only" 
-                                        checked={managingComp.isPubliclyVisible || false}
-                                        onChange={(e) => setManagingComp({...managingComp, isPubliclyVisible: e.target.checked})}
-                                    />
-                                    <div className={`block w-14 h-8 rounded-full ${managingComp.isPubliclyVisible ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${managingComp.isPubliclyVisible ? 'transform translate-x-6' : ''}`}></div>
-                                </div>
-                            </label>
+            const entryWarning = managingComp.status === 'Accepting Entries' && (!entryDeadlineDate || entryDeadlineDate < now);
+            const votingWarning = managingComp.status === 'Live Voting' && (!competitionEndDate || competitionEndDate < now);
+            // --- END: NEW VALIDATION LOGIC ---
+
+            return (
+                <div className="confirmationModalOverlay" style={{zIndex: 4000}}>
+                    <div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '500px'}}>
+                        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                            <p className="confirmationModalTitle">Manage: {managingComp.title}</p>
+                            <button className="closeButton" onClick={() => setManagingComp(null)} style={{position: 'static'}}>×</button>
                         </div>
-                    )}
+                        
+                        <div className="formGroup">
+                            <label className="formLabel">Update Notice Text</label>
+                            <textarea className="formTextarea" defaultValue={managingComp.noticeText || ''} onChange={(e) => setManagingComp({...managingComp, noticeText: e.target.value})} placeholder="Post an update for all entrants to see..." />
+                        </div>
 
-                     <div className="confirmationModalButtons" style={{flexDirection: 'column', gap: '10px', alignItems: 'stretch'}}>
-                        <button 
-                            className="confirmationButton confirm" 
-                            onClick={async () => {
-                                // Now we also send the isPubliclyVisible flag in the updates
-                                const updates = { 
-                                    status: managingComp.status, 
-                                    noticeText: managingComp.noticeText,
-                                    isPubliclyVisible: managingComp.isPubliclyVisible || false 
-                                };
-                                const updateFunction = httpsCallable(functions, 'updateCompetition');
-                                try {
-                                    await updateFunction({ competitionId: managingComp.id, updates });
-                                    showMessage("Competition updated successfully!");
-                                    setManagingComp(null);
-                                } catch (error) {
-                                    showMessage(`Error: ${error.message}`);
-                                }
-                            }}
-                        >
-                            Save Changes
-                        </button>
-                        <button 
-                            className="confirmationButton" 
-                            style={{backgroundColor: '#555', margin: 0}}
-                            onClick={() => {
-                                setSelectedCompAdmin(managingComp);
-                                setActiveScreen('AdminCompetitionResults');
-                            }}
-                        >
-                            View Entries / Results
-                        </button>
+                        <div className="formGroup">
+                            <label className="formLabel">Entry Period Ends / Voting Begins</label>
+                            <input type="datetime-local" className="formInput"
+                                defaultValue={(() => {
+                                    const d = managingComp.entryDeadline;
+                                    if (!d) return '';
+                                    const jsDate = d.toDate ? d.toDate() : new Date(d);
+                                    const localDate = new Date(jsDate.getTime() - (new Date().getTimezoneOffset() * 60000));
+                                    return localDate.toISOString().slice(0, 16);
+                                })()}
+                                onChange={(e) => setManagingComp({...managingComp, entryDeadline: e.target.value ? new Date(e.target.value) : null})}
+                            />
+                        </div>
+                        <div className="formGroup">
+                            <label className="formLabel">Voting Period Ends / Judging Begins</label>
+                            <input type="datetime-local" className="formInput"
+                               defaultValue={(() => {
+                                    const d = managingComp.competitionEnd;
+                                    if (!d) return '';
+                                    const jsDate = d.toDate ? d.toDate() : new Date(d);
+                                    const localDate = new Date(jsDate.getTime() - (new Date().getTimezoneOffset() * 60000));
+                                    return localDate.toISOString().slice(0, 16);
+                                })()}
+                                onChange={(e) => setManagingComp({...managingComp, competitionEnd: e.target.value ? new Date(e.target.value) : null})}
+                            />
+                        </div>
+
+                       <div className="formGroup">
+                            <label className="formLabel">Reveal Results At (Optional)</label>
+                            <input type="datetime-local" className="formInput"
+                                defaultValue={(() => {
+                                    const revealTime = managingComp.resultsRevealTime;
+                                    if (!revealTime) return '';
+                                    const jsDate = revealTime.toDate ? revealTime.toDate() : revealTime;
+                                    const localDate = new Date(jsDate.getTime() - (new Date().getTimezoneOffset() * 60000));
+                                    return localDate.toISOString().slice(0, 16);
+                                })()}
+                                onChange={(e) => setManagingComp({...managingComp, resultsRevealTime: e.target.value ? new Date(e.target.value) : null})}
+                            />
+                            <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>If set, results will auto-publish at this time.</p>
+                        </div>
+                         <div className="formGroup">
+                            <label className="formLabel">Change Status</label>
+                            <select className="formInput" value={managingComp.status} onChange={(e) => setManagingComp({...managingComp, status: e.target.value})}>
+                                <option value="Pending">Pending</option>
+                                <option value="Accepting Entries">Accepting Entries (Go Live)</option>
+                                <option value="Live Voting">Live Voting</option>
+                                <option value="Judging">Judging (Results Soon)</option>
+                                <option value="Completed">Completed (Keep Private)</option>
+                                <option value="Results Visible">Results Visible (Make Public)</option>
+                            </select>
+                            {/* --- START: NEW WARNING MESSAGES --- */}
+                            {entryWarning && <p className="smallText" style={{color: '#DC3545', marginTop: '5px'}}><b>Warning:</b> To automate this phase, please set a future "Entry Deadline".</p>}
+                            {votingWarning && <p className="smallText" style={{color: '#DC3545', marginTop: '5px'}}><b>Warning:</b> To automate this phase, please set a future "Competition End Date".</p>}
+                            {/* --- END: NEW WARNING MESSAGES --- */}
+                         </div>
+
+                         <div className="confirmationModalButtons" style={{flexDirection: 'column', gap: '10px', alignItems: 'stretch'}}>
+                            <button 
+                                className="confirmationButton confirm" 
+                                onClick={async () => {
+                                    const updates = { 
+                                        status: managingComp.status, 
+                                        noticeText: managingComp.noticeText || '',
+                                        isPubliclyVisible: managingComp.isPubliclyVisible || false,
+                                        resultsRevealTime: managingComp.resultsRevealTime ? new Date(managingComp.resultsRevealTime) : null,
+                                        entryDeadline: managingComp.entryDeadline ? new Date(managingComp.entryDeadline) : null,
+                                        competitionEnd: managingComp.competitionEnd ? new Date(managingComp.competitionEnd) : null,
+                                    };
+                                    const updateFunction = httpsCallable(functions, 'updateCompetition');
+                                    try {
+                                        await updateFunction({ competitionId: managingComp.id, updates });
+                                        showMessage("Competition updated successfully!");
+                                        setManagingComp(null);
+                                    } catch (error) {
+                                        showMessage(`Error: ${error.message}`);
+                                    }
+                                }}
+                            >
+                                Save Changes
+                            </button>
+                            <button 
+                                className="confirmationButton" 
+                                style={{backgroundColor: '#555', margin: 0}}
+                                onClick={() => {
+                                    setSelectedCompAdmin(managingComp);
+                                    setActiveScreen('AdminCompetitionResults');
+                                }}
+                            >
+                                View Entries / Results
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
-        )}
+            );
+        })()}
             </div>
         </div>
     );
@@ -6253,172 +6435,204 @@ const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
 // ======================================================================
 
         const PromotedStatusScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
-            const [myBookings, setMyBookings] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [selectedBooking, setSelectedBooking] = useState(null);
+    const [myBookings, setMyBookings] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedBooking, setSelectedBooking] = useState(null);
 
-            const [title, setTitle] = useState('');
-            const [destinationUrl, setDestinationUrl] = useState('');
-            const [adVideoUrl, setAdVideoUrl] = useState('');
-            const [flyerFile, setFlyerFile] = useState(null);
-            const [flyerPreview, setFlyerPreview] = useState('');
-            const [autoThumbnail, setAutoThumbnail] = useState('');
-            const [isSubmitting, setIsSubmitting] = useState(false);
-            const flyerInputRef = useRef(null);
+    const [title, setTitle] = useState('');
+    const [mainUrl, setMainUrl] = useState('');
+    const [flyerFile, setFlyerFile] = useState(null);
+    const [flyerPreview, setFlyerPreview] = useState('');
+    const [autoThumbnail, setAutoThumbnail] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const flyerInputRef = useRef(null);
 
-            useEffect(() => {
-                if (!currentUser) { setLoading(false); return; }
-                const statusesRef = collection(db, "promotedStatuses");
-                const q = query(
-                    statusesRef,
-                    where("postedByUid", "==", currentUser.uid),
-                    orderBy("startTime", "asc")
-                );
-                const unsubscribe = onSnapshot(q, (snapshot) => {
-                    setMyBookings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                    setLoading(false);
-                }, (error) => {
-                    showMessage("Failed to load your bookings.");
-                    setLoading(false);
-                });
-                return () => unsubscribe();
-            }, [currentUser]);
-            
-            useEffect(() => {
-                if (!adVideoUrl) { setAutoThumbnail(''); return; }
-                const handler = setTimeout(() => {
-                    const info = extractVideoInfo(adVideoUrl);
-                    if (info && info.thumbnailUrl && info.thumbnailUrl !== GENERIC_THUMBNAIL_PLACEHOLDER) {
-                        setAutoThumbnail(info.thumbnailUrl);
-                    } else { setAutoThumbnail(''); }
-                }, 800);
-                return () => clearTimeout(handler);
-            }, [adVideoUrl]);
-
-            const handleSelectBooking = (booking) => {
-                setSelectedBooking(booking);
-                setTitle(booking.content?.title || '');
-                setDestinationUrl(booking.content?.destinationUrl || '');
-                setAdVideoUrl(booking.content?.adVideoUrl || '');
-                setFlyerPreview(booking.content?.flyerImageUrl || '');
-                setAutoThumbnail('');
-            };
-            
-            const handleSubmitContent = async (e) => {
-                e.preventDefault();
-                if (!selectedBooking) return;
-                setIsSubmitting(true);
-                let flyerImageUrl = selectedBooking.content?.flyerImageUrl || '';
-
-                if (flyerFile) {
-                    showMessage("Uploading flyer...");
-                    try {
-                        const filePath = `promo_flyers/${currentUser.uid}/${Date.now()}_${flyerFile.name}`;
-                        const storageRef = ref(storage, filePath);
-                        const snapshot = await uploadBytes(storageRef, flyerFile);
-                        flyerImageUrl = await getDownloadURL(snapshot.ref);
-                    } catch (error) { showMessage(`Flyer upload failed: ${error.message}`); setIsSubmitting(false); return; }
-                }
-
+    useEffect(() => {
+        if (!currentUser) { setLoading(false); return; }
+        const statusesRef = collection(db, "promotedStatuses");
+        const q = query(statusesRef, where("postedByUid", "==", currentUser.uid), orderBy("startTime", "asc"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            setMyBookings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    }, [currentUser]);
+    
+    useEffect(() => {
+        if (!mainUrl) { setAutoThumbnail(''); return; }
+        const handler = setTimeout(async () => {
+            const info = extractVideoInfo(mainUrl);
+            if (info.platform === 'youtube') {
+                setAutoThumbnail(info.thumbnailUrl);
+            } else if (info.platform === 'tiktok' || info.platform === 'vimeo') {
                 try {
-                    const submitContentFunction = httpsCallable(functions, 'submitStatusContent');
-                    await submitContentFunction({
-                        bookingId: selectedBooking.id,
-                        title, destinationUrl, adVideoUrl,
-                        flyerImageUrl: flyerImageUrl || autoThumbnail || ''
-                    });
-                    showMessage("Content submitted successfully for review!");
-                    setSelectedBooking(null);
-                } catch (error) { showMessage(`Submission failed: ${error.message}`);
-                } finally { setIsSubmitting(false); }
-            };
+                    const oEmbedProxyCallable = httpsCallable(functions, 'oEmbedProxy');
+                    const result = await oEmbedProxyCallable({ url: mainUrl, platform: info.platform });
+                    if (result.data?.thumbnail_url) setAutoThumbnail(result.data.thumbnail_url);
+                } catch (error) { showMessage("Could not auto-fetch thumbnail."); }
+            }
+        }, 800);
+        return () => clearTimeout(handler);
+    }, [mainUrl]);
 
-            const handleDeleteBooking = (booking) => {
-                setConfirmationTitle("Delete Booking?");
-                setConfirmationMessage(`Are you sure you want to permanently delete your booking for ${new Date(booking.startTime.toDate()).toLocaleDateString()}? This action cannot be undone.`);
-                setOnConfirmationAction(() => async () => {
-                    try {
-                        const deleteFunction = httpsCallable(functions, 'deleteBooking');
-                        await deleteFunction({ bookingId: booking.id });
-                        showMessage("Booking deleted successfully.");
-                    } catch (error) {
-                        showMessage(`Error: ${error.message}`);
-                    }
-                });
-                setShowConfirmationModal(true);
-            };
-            
-            const getStatusStyle = (status) => {
-                switch (status) {
-                    case 'approved_and_scheduled': return { color: '#00FF00' };
-                    case 'content_review_pending': return { color: '#FFD700' };
-                    case 'content_pending': return { color: '#FFA500' };
-                    default: return { color: '#AAA' };
-                }
-            };
-            
-            const finalPreview = flyerPreview || autoThumbnail;
+    const handleSelectBooking = (booking) => {
+        setSelectedBooking(booking);
+        setTitle(booking.content?.title || '');
+        setMainUrl(booking.content?.destinationUrl || booking.content?.adVideoUrl || '');
+        setFlyerFile(null);
+        setFlyerPreview(booking.content?.flyerImageUrl || '');
+        setAutoThumbnail('');
+        if(flyerInputRef.current) flyerInputRef.current.value = null;
+    };
+    
+    const handleSubmitContent = async (e) => {
+        e.preventDefault();
+        if (!selectedBooking || !title.trim() || !mainUrl.trim()) { showMessage("Ad Title and a URL are required."); return; }
+        
+        setIsSubmitting(true);
+        let finalFlyerUrl = flyerPreview || autoThumbnail || '';
 
-            return (
-                <div className="screenContainer">
-                    <p className="heading">My Promoted Status Bookings</p>
-                    <p className="subHeading">Manage content for your upcoming "Billboard" slots.</p>
-                    {loading ? <p>Loading your bookings...</p> : 
-                        myBookings.length === 0 ? (
-                            <div className="dashboardSection" style={{textAlign: 'center'}}>
-                                <p className="dashboardItem">You have no upcoming bookings.</p>
-                                <button className="button" style={{ backgroundColor: '#0A0A0A', border: '1px solid #00FFFF', color: '#00FFFF' }} onClick={() => setActiveScreen('Premium')}>Book a New Slot</button>
-                            </div>
-                        ) : (
-                            <div className="dashboardContentList">
-                                {myBookings.map(booking => (
-                                    <div key={booking.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
-                                        <div className="flex justify-between items-center">
-                                            <p className="adminDashboardItemTitle">Booking for: {new Date(booking.startTime.toDate()).toLocaleDateString()}</p>
-                                            <span style={getStatusStyle(booking.status)}>{booking.status.replace(/_/g, ' ').toUpperCase()}</span>
-                                        </div>
-                                        <div style={{display: 'flex', gap: '10px', marginTop: '10px'}}>
-                                            {booking.status === 'content_pending' && (
-                                                <button className="button" style={{flex: 1}} onClick={() => handleSelectBooking(booking)}>
-                                                    <span className="buttonText">Submit Content Now</span>
-                                                </button>
-                                            )}
-                                            {(booking.status !== 'expired' && booking.status !== 'rejected') && (
-                                                 <button className="button" style={{flex: 1, backgroundColor: '#DC3545'}} onClick={() => handleDeleteBooking(booking)}>
-                                                    <span className="buttonText">Delete</span>
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )
-                    }
+        if (flyerFile) {
+            showMessage("Uploading flyer...");
+            try {
+                const filePath = `promo_flyers/${currentUser.uid}/${Date.now()}_${flyerFile.name}`;
+                const storageRef = ref(storage, filePath);
+                const snapshot = await uploadBytes(storageRef, flyerFile);
+                finalFlyerUrl = await getDownloadURL(snapshot.ref);
+            } catch (error) { showMessage(`Flyer upload failed: ${error.message}`); setIsSubmitting(false); return; }
+        }
 
-                    {selectedBooking && (
-                        <div className="confirmationModalOverlay" style={{zIndex: 2500}}>
-                            <div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '500px'}}>
-                                <p className="confirmationModalTitle">Submit Content for {new Date(selectedBooking.startTime.toDate()).toLocaleDateString()}</p>
-                                <form onSubmit={handleSubmitContent}>
-                                    <div className="formGroup"><label className="formLabel">Ad Title</label><input type="text" className="formInput" value={title} onChange={e => setTitle(e.target.value)} required /></div>
-                                    <div className="formGroup"><label className="formLabel">Destination URL (On Click)</label><input type="url" className="formInput" value={destinationUrl} onChange={e => setDestinationUrl(e.target.value)} placeholder="https://yourbrand.com/offer" /></div>
-                                    <div className="formGroup"><label className="formLabel">Ad Video URL (Optional)</label><input type="url" className="formInput" value={adVideoUrl} onChange={e => setAdVideoUrl(e.target.value)} placeholder="e.g., YouTube Ad link" /></div>
-                                    <div className="formGroup"><label className="formLabel">Upload Thumbnail / Flyer</label><input type="file" className="formInput" ref={flyerInputRef} onChange={(e) => {const f=e.target.files[0]; if(f){setFlyerFile(f); setFlyerPreview(URL.createObjectURL(f))}}} accept="image/*" />{finalPreview && <img src={finalPreview} alt="Ad preview" style={{maxWidth: '200px', borderRadius: '8px', marginTop: '10px'}} />}</div>
-                                    <div className="confirmationModalButtons">
-                                        <button type="button" className="confirmationButton cancel" onClick={() => setSelectedBooking(null)}>Cancel</button>
-                                        <button type="submit" className="confirmationButton confirm" disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'Submit for Review'}</button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    )}
+        if (!finalFlyerUrl) {
+            showMessage("A thumbnail is required. Please upload one or use a link that provides a preview.");
+            setIsSubmitting(false);
+            return;
+        }
 
-                    <button className="button" onClick={() => setActiveScreen('CreatorDashboard')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}>
-                        <span className="buttonText light">Back to Dashboard</span>
-                    </button>
-                </div>
-            );
+        const info = extractVideoInfo(mainUrl);
+        const submissionData = {
+            bookingId: selectedBooking.id,
+            title: title.trim(),
+            destinationUrl: info.platform === 'generic' ? mainUrl : '',
+            adVideoUrl: info.platform !== 'generic' ? mainUrl : '',
+            flyerImageUrl: finalFlyerUrl
         };
+
+        try {
+            const submitContentFunction = httpsCallable(functions, 'submitStatusContent');
+            await submitContentFunction(submissionData);
+            showMessage("Content submitted successfully for review!");
+            setSelectedBooking(null);
+        } catch (error) { showMessage(`Submission failed: ${error.message}`);
+        } finally { setIsSubmitting(false); }
+    };
+
+    const handleDeleteBooking = (booking) => {
+        setConfirmationTitle("Delete Booking?");
+        setConfirmationMessage(`Are you sure you want to permanently delete your booking for ${new Date(booking.startTime.toDate()).toLocaleDateString()}? This action cannot be undone.`);
+        setOnConfirmationAction(() => async () => {
+            try {
+                const deleteFunction = httpsCallable(functions, 'deleteBooking');
+                await deleteFunction({ bookingId: booking.id });
+                showMessage("Booking deleted successfully.");
+            } catch (error) {
+                showMessage(`Error: ${error.message}`);
+            }
+        });
+        setShowConfirmationModal(true);
+    };
+    
+    const getStatusStyle = (status) => {
+        switch (status) {
+            case 'approved_and_scheduled': return { color: '#00FF00' };
+            case 'content_review_pending': return { color: '#FFD700' };
+            case 'content_pending': return { color: '#FFA500' };
+            case 'expired': return { color: '#888' };
+            case 'cancelled': return { color: '#AAA' };
+            case 'rejected': return { color: '#DC3545' };
+            default: return { color: '#CCC' };
+        }
+    };
+    
+    const finalPreview = flyerPreview || autoThumbnail;
+
+    return (
+        <div className="screenContainer">
+            <p className="heading">My Promoted Status Bookings</p>
+            <p className="subHeading">Manage content for your upcoming "Billboard" slots.</p>
+
+            {loading ? <p>Loading your bookings...</p> : 
+                myBookings.length === 0 ? (
+                    <div className="dashboardSection" style={{textAlign: 'center'}}>
+                        <p className="dashboardItem">You have no upcoming bookings.</p>
+                        <button className="button" style={{ backgroundColor: '#0A0A0A', border: '1px solid #00FFFF', color: '#00FFFF' }} onClick={() => setActiveScreen('Premium')}>Book a New Slot</button>
+                    </div>
+                ) : (
+                    <div className="dashboardContentList">
+                        {myBookings.map(booking => {
+                            const isOldBooking = booking.status === 'expired' || booking.status === 'cancelled';
+                            let deletionDate = null;
+                            if (isOldBooking) {
+                                deletionDate = new Date(booking.startTime.toDate());
+                                deletionDate.setDate(deletionDate.getDate() + 30);
+                            }
+                            return (
+                                <div key={booking.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
+                                    <div className="flex justify-between items-center">
+                                        <p className="adminDashboardItemTitle">Booking for: {new Date(booking.startTime.toDate()).toLocaleDateString()}</p>
+                                        <span style={getStatusStyle(booking.status)}>{booking.status.replace(/_/g, ' ').toUpperCase()}</span>
+                                    </div>
+                                    <div style={{display: 'flex', gap: '10px', marginTop: '10px'}}>
+                                        {booking.status === 'content_pending' && (
+                                            <button className="button" style={{flex: 1}} onClick={() => handleSelectBooking(booking)}>
+                                                <span className="buttonText">Submit Content Now</span>
+                                            </button>
+                                        )}
+                                        {booking.status !== 'expired' && booking.status !== 'cancelled' && booking.status !== 'rejected' && (
+                                            <button className="button" style={{flex: 1, backgroundColor: '#DC3545'}} onClick={() => handleDeleteBooking(booking)}>
+                                                <span className="buttonText">Delete</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                    {isOldBooking && (
+                                        <p className="smallText" style={{textAlign: 'right', color: '#AAA', marginTop: '8px', marginBottom: 0}}>
+                                            This record will be deleted on {deletionDate.toLocaleDateString()}.
+                                        </p>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )
+            }
+
+            {selectedBooking && (
+                <div className="confirmationModalOverlay" style={{zIndex: 2500}}>
+                    <div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '500px'}}>
+                        <p className="confirmationModalTitle">Submit Content for {new Date(selectedBooking.startTime.toDate()).toLocaleDateString()}</p>
+                        <form onSubmit={handleSubmitContent}>
+                            <div className="formGroup"><label className="formLabel">Ad Title</label><input type="text" className="formInput" value={title} onChange={e => setTitle(e.target.value)} required /></div>
+                            <div className="formGroup"><label className="formLabel">URL (Video or External Link)</label><input type="url" className="formInput" value={mainUrl} onChange={e => setMainUrl(e.target.value)} placeholder="Paste your ad's main link here" required /></div>
+                            <div className="formGroup">
+                                <label className="formLabel">Thumbnail / Flyer</label>
+                                {finalPreview && <img src={finalPreview} alt="Ad preview" style={{maxWidth: '200px', borderRadius: '8px', marginBottom: '10px'}} />}
+                                <input type="file" className="formInput" ref={flyerInputRef} onChange={(e) => {const f=e.target.files[0]; if(f){setFlyerFile(f); setFlyerPreview(URL.createObjectURL(f))}}} accept="image/*" />
+                                <p className="smallText" style={{textAlign: 'left'}}>Upload to override the auto-fetched preview.</p>
+                            </div>
+                            <div className="confirmationModalButtons">
+                                <button type="button" className="confirmationButton cancel" onClick={() => setSelectedBooking(null)}>Cancel</button>
+                                <button type="submit" className="confirmationButton confirm" disabled={isSubmitting}>{isSubmitting ? 'Submitting...' : 'Submit for Review'}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            <button className="button" onClick={() => setActiveScreen('CreatorDashboard')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}>
+                <span className="buttonText light">Back to Dashboard</span>
+            </button>
+        </div>
+    );
+};
 
 // ======================================================================
 // ========== END: ADD THE NEW PromotedStatusScreen COMPONENT =============
@@ -6430,66 +6644,177 @@ const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
 // =========== START: ADD THE NEW BookStatusScreen COMPONENT ==============
 // ======================================================================
 
-        const BookStatusScreen = ({ showMessage, setActiveScreen, setPledgeIdForConfirmation }) => {
-            const [nextSlot, setNextSlot] = useState(null);
-            const [loading, setLoading] = useState(true);
-            const [isBooking, setIsBooking] = useState(false);
-            const bookingPrice = 10.00; // Hardcoded for now, can be moved to settings later
+        const BookStatusScreen = ({ showMessage, setActiveScreen, setPledgeIdForConfirmation, currentUser, creatorProfile, selectedCurrency, currencyRates }) => {
+    // Booking Details State
+    const [nextSlot, setNextSlot] = useState(null);
+    const [bookingPrice, setBookingPrice] = useState(10.00);
+    const [loading, setLoading] = useState(true);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-            useEffect(() => {
-                const getSlot = async () => {
-                    try {
-                        const getSlotFunction = httpsCallable(functions, 'getNextAvailableStatusSlot');
-                        const result = await getSlotFunction();
-                        setNextSlot(new Date(result.data.nextAvailable));
-                    } catch (error) {
-                        showMessage("Could not fetch next available slot.");
-                    } finally {
-                        setLoading(false);
-                    }
-                };
-                getSlot();
-            }, []);
+    // Content Details State
+    const [title, setTitle] = useState('');
+    const [mainUrl, setMainUrl] = useState('');
+    const [flyerFile, setFlyerFile] = useState(null);
+    const [flyerPreview, setFlyerPreview] = useState('');
+    const [autoThumbnail, setAutoThumbnail] = useState('');
+    const flyerInputRef = useRef(null);
 
-            const handleBookSlot = async () => {
-                setIsBooking(true);
-                try {
-                    const scheduledEndTime = new Date(nextSlot.getTime() + 24 * 60 * 60 * 1000);
-                    const createPledgeFunction = httpsCallable(functions, 'createPromotedStatusPledge');
-                    const result = await createPledgeFunction({
-                        scheduledStartTime: nextSlot.toISOString(),
-                        scheduledEndTime: scheduledEndTime.toISOString(),
-                        price: bookingPrice
-                    });
-                    setPledgeIdForConfirmation(result.data.pledgeId);
-                    setActiveScreen('PendingConfirmation'); // Redirect to payment instructions
-                } catch (error) {
-                    showMessage(`Booking failed: ${error.message}`);
-                } finally {
-                    setIsBooking(false);
+    // Authorization Check
+    const isModerator = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';
+    const isVerified = creatorProfile?.isVerifiedAdvertiser;
+    const isAuthorized = isModerator || isVerified; // Simplified check
+
+    useEffect(() => {
+        if (!currentUser || !isAuthorized) {
+            setLoading(false);
+            return;
+        }
+        
+        const getSlotAndPrice = async () => {
+            setLoading(true);
+            try {
+                const getSlotFunction = httpsCallable(functions, 'getNextAvailableStatusSlot');
+                const slotResult = await getSlotFunction();
+                setNextSlot(new Date(slotResult.data.nextAvailable));
+
+                const settingsRef = doc(db, "settings", "socialLinks");
+                const settingsSnap = await getDoc(settingsRef);
+                if (settingsSnap.exists() && typeof settingsSnap.data().promotedStatusPrice === 'number') {
+                    setBookingPrice(settingsSnap.data().promotedStatusPrice);
                 }
+            } catch (error) {
+                showMessage("Could not fetch booking details. Please try again.");
+            } finally {
+                setLoading(false);
+            }
+        };
+        getSlotAndPrice();
+    }, [currentUser, isAuthorized]);
+
+    useEffect(() => {
+        if (!mainUrl) { setAutoThumbnail(''); return; }
+        const handler = setTimeout(() => {
+            const info = extractVideoInfo(mainUrl);
+            if (info && info.thumbnailUrl && info.thumbnailUrl !== GENERIC_THUMBNAIL_PLACEHOLDER) {
+                setAutoThumbnail(info.thumbnailUrl);
+            } else {
+                setAutoThumbnail('');
+            }
+        }, 800);
+        return () => clearTimeout(handler);
+    }, [mainUrl]);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const finalThumbnail = flyerPreview || autoThumbnail;
+        if (!title.trim() || !mainUrl.trim() || !finalThumbnail) {
+            showMessage("Ad Title, a valid URL, and a thumbnail are required to book.");
+            return;
+        }
+        setIsSubmitting(true);
+        showMessage("Uploading and submitting...");
+
+        let uploadedFlyerUrl = finalThumbnail;
+        if (flyerFile) {
+            try {
+                const filePath = `promo_flyers/${currentUser.uid}/${Date.now()}_${flyerFile.name}`;
+                const storageRef = ref(storage, filePath);
+                const snapshot = await uploadBytes(storageRef, flyerFile);
+                uploadedFlyerUrl = await getDownloadURL(snapshot.ref);
+            } catch (error) {
+                showMessage(`Flyer upload failed: ${error.message}`);
+                setIsSubmitting(false);
+                return;
+            }
+        }
+
+        try {
+            const scheduledEndTime = new Date(nextSlot.getTime() + 24 * 60 * 60 * 1000);
+            const bookingDetails = {
+                scheduledStartTime: nextSlot.toISOString(),
+                scheduledEndTime: scheduledEndTime.toISOString(),
+                price: bookingPrice
             };
+            const contentDetails = {
+                title: title.trim(),
+                mainUrl: mainUrl.trim(),
+                flyerImageUrl: uploadedFlyerUrl
+            };
+
+            const unifiedBookingFunction = httpsCallable(functions, 'createBookingAndPledge');
+            const result = await unifiedBookingFunction({ bookingDetails, contentDetails });
+
+            setPledgeIdForConfirmation(result.data.pledgeId);
+            setActiveScreen('PendingConfirmation');
+
+        } catch (error) {
+            showMessage(`Booking failed: ${error.message}`);
+            setIsSubmitting(false);
+        }
+    };
+
+    if (loading) {
+        return <div className="screenContainer"><p className="heading">Loading Booking Information...</p></div>;
+    }
+
+    if (!currentUser) {
+        showMessage("Please log in to book a slot.");
+        setActiveScreen('Login');
+        return null;
+    }
+    
+    // THIS IS THE CORRECTED AUTHORIZATION LOGIC
+    if (!isAuthorized) {
+        // We show the message on the Premium screen itself, not here.
+        // This component should just navigate away if access is denied.
+        setActiveScreen('Premium');
+        return null;
+    }
+
+    const finalPreview = flyerPreview || autoThumbnail;
+
+    return (
+        <div className="screenContainer">
+            <p className="heading">Book Promoted Billboard</p>
+            <p className="subHeading">Complete all details to submit your booking for review.</p>
             
-            return (
-                <div className="screenContainer">
-                    <p className="heading">Book Promoted Status</p>
-                    <p className="subHeading">Reserve the #1 spot on the Home page for 24 hours.</p>
-                    {loading ? <p>Finding next available slot...</p> :
-                        <div className="dashboardSection">
-                            <p className="dashboardSectionTitle">Next Available Slot</p>
-                            <p className="heading" style={{color: '#FFF'}}>{nextSlot ? nextSlot.toLocaleString() : 'N/A'}</p>
-                            <p className="premiumFeatureDescription" style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', color: '#FFF'}}>${bookingPrice.toFixed(2)} USD</p>
-                            <p className="paragraph">This is a manual payment process. You will be given instructions to complete your payment after submitting your booking request.</p>
-                            <p className="termsText" style={{color: '#FFD700'}}>Disclaimer: It is your responsibility to submit content for review at least 24 hours before your slot begins. Refunds are not issued for missed slots.</p>
-                            <button className="button" style={{ backgroundColor: '#0A0A0A', border: '1px solid #333', color: '#00FFFF' }} onClick={handleBookSlot} disabled={isBooking}>{isBooking ? 'Booking...' : 'Book Now & Get Payment Info'}</button>
-                        </div>
-                    }
-                     <button className="button" onClick={() => setActiveScreen('Premium')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}>
-                        <span className="buttonText light">Back</span>
+            <form onSubmit={handleSubmit}>
+                <div className="dashboardSection">
+                    <p className="dashboardSectionTitle">Step 1: Confirm Your Slot</p>
+                    <p className="dashboardItem">Next Available 24-Hour Slot:</p>
+                    <p className="heading" style={{color: '#FFF'}}>{nextSlot ? nextSlot.toLocaleString() : 'N/A'}</p>
+                    <p className="dashboardItem" style={{marginTop: '10px'}}>Price:</p>
+                    <p className="premiumFeatureDescription" style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', color: '#FFF'}}>{formatCurrency(bookingPrice, selectedCurrency, currencyRates)}</p>
+                </div>
+
+                <div className="dashboardSection" style={{marginTop: '20px'}}>
+                    <p className="dashboardSectionTitle">Step 2: Provide Ad Content</p>
+                    <div className="formGroup"><label className="formLabel">Ad Title</label><input type="text" className="formInput" value={title} onChange={e => setTitle(e.target.value)} required /></div>
+                    <div className="formGroup"><label className="formLabel">URL (Video or External Link)</label><input type="url" className="formInput" value={mainUrl} onChange={e => setMainUrl(e.target.value)} placeholder="Paste your ad's main link here" required /></div>
+                    <div className="formGroup">
+                        <label className="formLabel">Thumbnail / Flyer</label>
+                        {finalPreview && <img src={finalPreview} alt="Ad preview" style={{maxWidth: '200px', borderRadius: '8px', marginBottom: '10px'}} />}
+                        <input type="file" className="formInput" ref={flyerInputRef} onChange={(e) => {const f=e.target.files[0]; if(f){setFlyerFile(f); setFlyerPreview(URL.createObjectURL(f))}}} accept="image/*" />
+                        <p className="smallText" style={{textAlign: 'left'}}>Upload to override the auto-fetched preview.</p>
+                    </div>
+                </div>
+
+                <div className="dashboardSection" style={{marginTop: '20px', textAlign: 'center'}}>
+                    <p className="dashboardSectionTitle">Step 3: Submit</p>
+                    <p className="paragraph">This is a manual payment process. You will be given instructions to complete your payment after submitting your booking and content.</p>
+                    {/* THIS IS THE CORRECTED BUTTON */}
+                    <button type="submit" className="button" style={{ backgroundColor: '#0A0A0A', border: '1px solid #333' }} disabled={isSubmitting}>
+                        <span className="buttonText" style={{color: '#00FFFF'}}>{isSubmitting ? 'Submitting...' : 'Submit Booking & Get Payment Info'}</span>
                     </button>
                 </div>
-            );
-        };
+            </form>
+            
+             <button className="button" onClick={() => setActiveScreen('Premium')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}>
+                <span className="buttonText light">Back</span>
+            </button>
+        </div>
+    );
+};
 
 // ======================================================================
 // ============ END: ADD THE NEW BookStatusScreen COMPONENT ===============
@@ -6583,7 +6908,743 @@ const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
 // ======================================================================
 // ========== END: ADD THIS ENTIRE NEW AdminCampaignDetailsScreen COMPONENT ==========
 // ======================================================================
-      
+
+                // ======================================================================
+// ========= START: ADD THIS ENTIRE NEW DonationPledgeScreen COMPONENT =========
+// ======================================================================
+
+const DonationPledgeScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, pledgeContext, setPledgeIdForConfirmation }) => {
+    const [amount, setAmount] = useState('');
+    const [userName, setUserName] = useState(creatorProfile?.creatorName || currentUser?.email.split('@')[0] || '');
+    const [agreedToTerms, setAgreedToTerms] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    if (!pledgeContext || pledgeContext.type !== 'donation') {
+        // Safety check to prevent rendering without proper context
+        setActiveScreen('AllCampaigns');
+        return null;
+    }
+
+    const handleSubmitPledge = async (e) => {
+        e.preventDefault();
+        const parsedAmount = parseFloat(amount);
+        if (isNaN(parsedAmount) || parsedAmount <= 0) {
+            showMessage("Please enter a valid, positive donation amount.");
+            return;
+        }
+        if (!userName.trim()) {
+            showMessage("Please enter your name.");
+            return;
+        }
+        if (!agreedToTerms) {
+            showMessage("You must agree to the payment terms.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;
+
+        try {
+            const pledgeRef = doc(collection(db, "paymentPledges"), pledgeId);
+            await setDoc(pledgeRef, {
+                pledgeId,
+                userId: currentUser.uid,
+                userName: userName.trim(),
+                userEmail: currentUser.email,
+                paymentType: 'donation',
+                amount: parsedAmount,
+                status: 'pending',
+                targetCampaignId: pledgeContext.campaignId,
+                targetCampaignTitle: pledgeContext.campaignTitle,
+                createdAt: new Date().toISOString(),
+            });
+            
+            setPledgeIdForConfirmation(pledgeId);
+            setActiveScreen('PendingConfirmation');
+
+        } catch (error) {
+            showMessage(`An error occurred: ${error.message}`);
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="screenContainer">
+            <p className="heading">Support Campaign</p>
+            <p className="subHeading">You are supporting "{pledgeContext.campaignTitle}" by {pledgeContext.creatorName}.</p>
+            
+            <form onSubmit={handleSubmitPledge}>
+                <div className="formGroup">
+                    <label htmlFor="donationAmount" className="formLabel">Donation Amount (USD):</label>
+                    <input
+                        type="number"
+                        id="donationAmount"
+                        className="formInput"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        min="1"
+                        step="any"
+                        placeholder="e.g., 10.00"
+                        required
+                    />
+                </div>
+                <div className="formGroup">
+                    <label htmlFor="pledgeName" className="formLabel">Your Name:</label>
+                    <input
+                        type="text"
+                        id="pledgeName"
+                        className="formInput"
+                        value={userName}
+                        onChange={(e) => setUserName(e.target.value)}
+                        required
+                    />
+                </div>
+
+                <div className="formGroup">
+                    <p className="termsText" style={{textAlign: 'left', color: '#CCC'}}>
+                        This is a manual payment process. After submitting your pledge, you will be given instructions to complete your payment via MMG.
+                    </p>
+                </div>
+
+                <div className="formGroup">
+                    <div className="checkboxItem">
+                        <input
+                            type="checkbox"
+                            id="agreeToTerms"
+                            checked={agreedToTerms}
+                            onChange={(e) => setAgreedToTerms(e.target.checked)}
+                            required
+                        />
+                        <label htmlFor="agreeToTerms">I understand and agree to the payment terms.</label>
+                    </div>
+                </div>
+
+                <button type="submit" className="button" disabled={isSubmitting}>
+                    <span className="buttonText">{isSubmitting ? "Generating..." : "Submit Pledge & Get Payment Info"}</span>
+                </button>
+            </form>
+
+            <button
+                className="button"
+                onClick={() => setActiveScreen('CampaignDetails')}
+                style={{ backgroundColor: '#3A3A3A', marginTop: '20px' }}
+            >
+                <span className="buttonText">Back to Campaign</span>
+            </button>
+        </div>
+    );
+};
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW DonationPledgeScreen COMPONENT ==========
+// ======================================================================
+
+            // ======================================================================
+// ========= START: ADD THIS ENTIRE NEW ReportContentModal COMPONENT ====
+// ======================================================================
+
+const ReportContentModal = ({ showMessage, onCancel, contentToReport }) => {
+    const [reason, setReason] = useState('');
+    const [note, setNote] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const reportReasons = [
+        "Harassment or Bullying",
+        "Hate Speech",
+        "Nudity or Sexual Content",
+        "Spam or Misleading",
+        "Copyright Infringement",
+        "Violent or Graphic Content",
+        "Other"
+    ];
+    
+    if (!contentToReport) return null;
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!reason) {
+            showMessage("Please select a reason for the report.");
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            const reportFunction = httpsCallable(functions, 'createContentReport');
+            const result = await reportFunction({
+                contentId: contentToReport.id,
+                appId: appId,
+                reason: reason,
+                note: note
+            });
+            showMessage(result.data.message);
+            onCancel(); // Close the modal on success
+        } catch (error) {
+            showMessage(`Error: ${error.message}`);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <div className="confirmationModalOverlay" style={{ zIndex: 3000 }}>
+            <div className="confirmationModalContent" style={{ textAlign: 'left', maxWidth: '500px' }}>
+                <p className="confirmationModalTitle">Report Content</p>
+                <p className="subHeading" style={{textAlign: 'left', fontSize: '14px', margin: '0 0 15px 0'}}>
+                    You are reporting: <strong>{contentToReport.title}</strong>
+                </p>
+                <form onSubmit={handleSubmit}>
+                    <div className="formGroup">
+                        <label className="formLabel">Reason:</label>
+                        {reportReasons.map(r => (
+                            <div key={r} className="checkboxItem">
+                                <input type="radio" id={`reason-${r}`} name="report_reason" value={r} checked={reason === r} onChange={(e) => setReason(e.target.value)} />
+                                <label htmlFor={`reason-${r}`} style={{marginLeft: '8px'}}>{r}</label>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="formGroup">
+                        <label className="formLabel">Additional Notes (Optional):</label>
+                        <textarea 
+                            className="formTextarea" 
+                            value={note}
+                            onChange={(e) => setNote(e.target.value)}
+                            placeholder="Provide any additional context or timestamps." 
+                        />
+                    </div>
+                    <div className="confirmationModalButtons">
+                        <button type="button" className="confirmationButton cancel" onClick={onCancel}>Cancel</button>
+                        <button type="submit" className="confirmationButton confirm" disabled={isSubmitting} style={{backgroundColor: '#DC3545'}}>
+                            {isSubmitting ? 'Submitting...' : 'Submit Report'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW ReportContentModal COMPONENT =====
+// ======================================================================
+
+// ======================================================================
+// ========= START: ADD THIS ENTIRE NEW MODERATION QUEUE COMPONENT ======
+// ======================================================================
+
+const AdminModerationQueue = ({ showMessage, setActiveScreen, setSelectedReportGroup }) => {
+    const [reports, setReports] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const reportsRef = collection(db, "reports");
+        const q = query(reportsRef, where("status", "==", "pending"), orderBy("createdAt", "asc"));
+        
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const fetchedReports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setReports(fetchedReports);
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching reports:", error);
+            showMessage("Failed to load moderation queue.");
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    // This useMemo hook performs the "smart grouping" from our blueprint.
+    // It runs only when the raw reports list changes.
+    const groupedReports = React.useMemo(() => {
+        if (reports.length === 0) return [];
+        
+        const groups = new Map();
+        reports.forEach(report => {
+            const key = report.contentId;
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    contentId: report.contentId,
+                    contentTitle: report.contentTitle,
+                    reportedUserId: report.reportedUserId,
+                    reportedUserName: report.reportedUserName,
+                    reportCount: 0,
+                    reports: []
+                });
+            }
+            const group = groups.get(key);
+            group.reportCount++;
+            group.reports.push(report);
+        });
+        
+        // Convert Map to an array and sort by the number of reports (most reported first)
+        return Array.from(groups.values()).sort((a, b) => b.reportCount - a.reportCount);
+    }, [reports]);
+
+    return (
+        <div className="screenContainer">
+            <p className="heading">Moderation Queue</p>
+            <p className="subHeading">Content reported by the community. Items with the most reports are shown first.</p>
+            
+            <div className="dashboardSection">
+                {loading ? (
+                    <p className="dashboardItem">Loading reports...</p>
+                ) : groupedReports.length === 0 ? (
+                    <p className="dashboardItem" style={{textAlign: 'center'}}>The queue is empty. No pending reports.</p>
+                ) : (
+                    <div className="dashboardContentList">
+                        {groupedReports.map(group => (
+                            <div key={group.contentId} className="adminDashboardItem" style={{ borderLeft: '4px solid #DC3545' }}>
+                                <div style={{flexGrow: 1}}>
+                                    <p className="adminDashboardItemTitle">{group.contentTitle}</p>
+                                    <p style={{fontSize: '12px', color: '#CCC'}}>
+                                        by {group.reportedUserName}
+                                    </p>
+                                </div>
+                                <div style={{textAlign: 'center', margin: '0 15px'}}>
+                                    <p className="adminDashboardItemTitle" style={{fontSize: '20px', color: '#FFD700'}}>{group.reportCount}</p>
+                                    <p style={{fontSize: '12px', color: '#AAA'}}>Report(s)</p>
+                                </div>
+                                <button 
+                                    className="adminActionButton approve"
+                                    onClick={() => {
+                                        setSelectedReportGroup(group);
+                                        setActiveScreen('AdminReportReview');
+                                    }}
+                                >
+                                    Review
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW MODERATION QUEUE COMPONENT =======
+// ======================================================================
+
+               // ======================================================================
+// ========= START: ADD THIS ENTIRE NEW REPORT REVIEW SCREEN COMPONENT ==
+// ======================================================================
+
+const AdminReportReviewScreen = ({ showMessage, setActiveScreen, currentUser, creatorProfile, selectedReportGroup, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
+    const [content, setContent] = useState(null);
+    const [loadingContent, setLoadingContent] = useState(true);
+    const [showSuspensionModal, setShowSuspensionModal] = useState(false);
+
+    useEffect(() => {
+        if (!selectedReportGroup) return;
+
+        setLoadingContent(true);
+        const fetchContent = async () => {
+            try {
+                const contentRef = doc(db, `artifacts/${appId}/public/data/content_items`, selectedReportGroup.contentId);
+                const docSnap = await getDoc(contentRef);
+                if (docSnap.exists()) {
+                    setContent({ id: docSnap.id, ...docSnap.data() });
+                } else {
+                    showMessage("Could not find the reported content. It may have been deleted.");
+                    setContent(null);
+                }
+            } catch (error) {
+                showMessage("Error fetching content details.");
+                console.error("Error fetching content:", error);
+            } finally {
+                setLoadingContent(false);
+            }
+        };
+
+        fetchContent();
+    }, [selectedReportGroup]);
+    
+    if (!selectedReportGroup) {
+        setActiveScreen('AdminDashboard');
+        return null;
+    }
+
+    const { contentId, reportedUserId, reportedUserName, reports } = selectedReportGroup;
+    const reportIds = reports.map(r => r.id);
+
+    const handleAction = async (action, details = {}) => {
+        let functionName, payload, confirmationTitle, confirmationMessage;
+
+        switch(action) {
+            case 'dismiss':
+                functionName = 'dismissContentReports';
+                payload = { reportIds };
+                confirmationTitle = "Dismiss Reports?";
+                confirmationMessage = `Are you sure you want to dismiss all ${reportIds.length} report(s) for this content? This action implies the content is not in violation.`;
+                break;
+            case 'remove_content':
+                functionName = 'removeReportedContent';
+                payload = { contentId, appId, reportIds };
+                confirmationTitle = "Remove Content?";
+                confirmationMessage = `This will make the content unavailable to the public and resolve all reports. Are you sure?`;
+                break;
+            case 'suspend_user':
+                setShowSuspensionModal(true);
+                return;
+            case 'confirm_suspend':
+                functionName = 'suspendReportedUser';
+                payload = { userId: reportedUserId, durationHours: details.duration, reportIds };
+                confirmationTitle = `Suspend ${reportedUserName}?`;
+                confirmationMessage = `This will suspend the user for ${details.duration} hours and resolve all reports. Proceed?`;
+                break;
+            default:
+                return;
+        }
+
+        const actionLogic = async () => {
+            try {
+                const callable = httpsCallable(functions, functionName);
+                const result = await callable(payload);
+                showMessage(result.data.message);
+                setActiveScreen('AdminDashboard');
+            } catch (error) {
+                showMessage(`Error: ${error.message}`);
+            }
+        };
+
+        setConfirmationTitle(confirmationTitle);
+        setConfirmationMessage(confirmationMessage);
+        setOnConfirmationAction(() => actionLogic);
+        setShowConfirmationModal(true);
+    };
+
+    const { embedUrl, isVertical } = content ? extractVideoInfo(content.mainUrl) : {};
+
+    return (
+        <>
+            <div className="screenContainer">
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+                    <button onClick={() => setActiveScreen('AdminDashboard')} style={{ background: 'none', border: '1px solid #FFD700', color: '#FFD700', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginRight: '15px' }}>
+                        &#x2190;
+                    </button>
+                    <p className="heading" style={{ margin: 0, textAlign: 'left', flexGrow: 1 }}>Review Content</p>
+                </div>
+
+                <div className="dashboardSection" style={{marginBottom: '20px'}}>
+                    <p className="dashboardItem"><strong>Content:</strong> {selectedReportGroup.contentTitle}</p>
+                    <p className="dashboardItem"><strong>Creator:</strong> {reportedUserName}</p>
+                    
+                    {loadingContent ? (
+                        <p className="dashboardItem">Loading content for review...</p>
+                    ) : content ? (
+                        <div className={`videoModalContent ${isVertical ? 'vertical' : ''}`} style={{position: 'relative', width: '100%', height: 'auto', minHeight: '300px', boxShadow: 'none', background: '#0A0A0A', marginTop: '15px', marginLeft: 'auto', marginRight: 'auto'}}>
+                            <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
+                                <iframe src={embedUrl || content.mainUrl} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen title="Reported Content"></iframe>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="dashboardItem" style={{color: '#DC3545', fontWeight: 'bold'}}>Could not load video player for this content.</p>
+                    )}
+                </div>
+
+                <div className="dashboardSection" style={{border: '2px solid #DC3545'}}>
+                    <p className="dashboardSectionTitle">Moderator Actions</p>
+                    <div style={{ display: 'flex', justifyContent: 'space-around', gap: '10px', flexWrap: 'wrap', marginTop: '15px' }}>
+                        <button className="button" style={{backgroundColor: '#008000'}} onClick={() => handleAction('dismiss')}>
+                            <span className="buttonText">Dismiss All Reports</span>
+                        </button>
+                        <button className="button" style={{backgroundColor: '#FF8C00'}} onClick={() => handleAction('remove_content')}>
+                            <span className="buttonText">Remove Content</span>
+                        </button>
+                        <button className="button" style={{backgroundColor: '#DC3545'}} onClick={() => handleAction('suspend_user')}>
+                            <span className="buttonText">Suspend User</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div className="dashboardSection" style={{marginTop: '20px'}}>
+                    <p className="dashboardSectionTitle">Reports ({reports.length})</p>
+                    <div className="dashboardContentList" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                        {reports.map(report => (
+                            <div key={report.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'flex-start'}}>
+                                <div style={{display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center'}}>
+                                    <p className="adminDashboardItemTitle">{report.reason}</p>
+                                    <p style={{fontSize: '12px', color: '#AAA'}}>{report.createdAt ? new Date(report.createdAt.toDate()).toLocaleString() : 'N/A'}</p>
+                                </div>
+                                <p style={{fontSize: '12px', color: '#CCC', margin: '5px 0'}}>by {report.reporterEmail}</p>
+                                {report.note && <p className="paragraph" style={{fontSize: '13px', backgroundColor: '#1A1A1A', padding: '8px', borderRadius: '5px', width: '100%', margin: '5px 0 0 0'}}>{report.note}</p>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {showSuspensionModal && (
+                <SuspensionModal 
+                    userName={reportedUserName}
+                    onCancel={() => setShowSuspensionModal(false)}
+                    onConfirm={(duration) => {
+                        setShowSuspensionModal(false);
+                        handleAction('confirm_suspend', { duration });
+                    }}
+                />
+            )}
+        </>
+    );
+};
+
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW REPORT REVIEW SCREEN COMPONENT ===
+// ====================================================================== 
+
+
+// ======================================================================
+// ========= START: ADD THIS ENTIRE NEW SUSPENSION MODAL COMPONENT ======
+// ======================================================================
+
+const SuspensionModal = ({ onConfirm, onCancel, userName }) => {
+    const [duration, setDuration] = useState(24); // Default to 24 hours
+
+    return (
+        <div className="confirmationModalOverlay">
+            <div className="confirmationModalContent">
+                <p className="confirmationModalTitle">Suspend User</p>
+                <p className="confirmationModalMessage">
+                    Select a suspension duration for <strong>{userName}</strong>. They will be logged out and unable to log back in until the duration expires.
+                </p>
+                <div className="formGroup" style={{marginTop: '15px'}}>
+                    <label className="formLabel">Suspension Duration:</label>
+                    <select className="formInput" value={duration} onChange={(e) => setDuration(e.target.value)}>
+                        <option value="24">24 Hours</option>
+                        <option value="72">3 Days</option>
+                        <option value="168">1 Week</option>
+                        <option value="720">30 Days</option>
+                    </select>
+                </div>
+                <div className="confirmationModalButtons">
+                    <button className="confirmationButton cancel" onClick={onCancel}>
+                        Cancel
+                    </button>
+                    <button className="confirmationButton confirm" onClick={() => onConfirm(duration)} style={{backgroundColor: '#DC3545'}}>
+                        Confirm Suspension
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW SUSPENSION MODAL COMPONENT =======
+// ======================================================================
+
+        // ======================================================================
+// ========= START: ADD THIS ENTIRE NEW APPEALS QUEUE COMPONENT =========
+// ======================================================================
+
+const AdminAppealsQueue = ({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
+    const [appeals, setAppeals] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const appealsRef = collection(db, "appeals");
+        const q = query(appealsRef, where("status", "==", "pending"), orderBy("createdAt", "asc"));
+        
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            setAppeals(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    const handleAction = (action, appeal) => {
+        let functionName, confirmationTitle, confirmationMessage;
+        const payload = { userId: appeal.userId, appealId: appeal.id };
+
+        if (action === 'reinstate') {
+            functionName = 'reinstateUser';
+            confirmationTitle = "Reinstate User?";
+            confirmationMessage = `This will immediately lift the suspension for ${appeal.userName} and resolve this appeal. Are you sure?`;
+        } else {
+            functionName = 'dismissAppeal';
+            confirmationTitle = "Dismiss Appeal?";
+            confirmationMessage = `This will dismiss the appeal from ${appeal.userName}, and their suspension will continue. Are you sure?`;
+        }
+
+        const actionLogic = async () => {
+            try {
+                const callable = httpsCallable(functions, functionName);
+                const result = await callable(payload);
+                showMessage(result.data.message);
+            } catch (error) {
+                showMessage(`Error: ${error.message}`);
+            }
+        };
+
+        setConfirmationTitle(confirmationTitle);
+        setConfirmationMessage(confirmationMessage);
+        setOnConfirmationAction(() => actionLogic);
+        setShowConfirmationModal(true);
+    };
+
+    return (
+        <div className="screenContainer">
+            <p className="heading">Appeals Queue</p>
+            <p className="subHeading">Review appeals from users who have been temporarily suspended.</p>
+            
+            <div className="dashboardSection">
+                {loading ? (
+                    <p className="dashboardItem">Loading appeals...</p>
+                ) : appeals.length === 0 ? (
+                    <p className="dashboardItem" style={{textAlign: 'center'}}>The appeals queue is empty.</p>
+                ) : (
+                    <div className="dashboardContentList">
+                        {appeals.map(appeal => (
+                            <div key={appeal.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
+                                <div style={{display: 'flex', justifyContent: 'space-between', width: '100%'}}>
+                                    <p className="adminDashboardItemTitle">{appeal.userName} ({appeal.userEmail})</p>
+                                    <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(appeal.createdAt.toDate()).toLocaleString()}</p>
+                                </div>
+                                <p className="paragraph" style={{fontSize: '14px', backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', width: '100%', margin: '5px 0 0 0', whiteSpace: 'pre-wrap'}}>{appeal.message}</p>
+                                <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px'}}>
+                                    <button className="adminActionButton reject" onClick={() => handleAction('dismiss', appeal)}>Dismiss Appeal</button>
+                                    <button className="adminActionButton approve" onClick={() => handleAction('reinstate', appeal)}>Reinstate User</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW APPEALS QUEUE COMPONENT ==========
+// ======================================================================
+
+        // ======================================================================
+// ========= START: ADD THIS ENTIRE NEW MODERATION CENTER COMPONENT =====
+// ======================================================================
+
+const AdminModerationCenter = ({ showMessage, setActiveScreen, setSelectedReportGroup, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
+    const [activeTab, setActiveTab] = useState('reports'); // 'reports' or 'appeals'
+
+    return (
+        <div className="screenContainer">
+            <p className="heading">Moderation Center</p>
+            <p className="subHeading">Manage community reports and user appeals.</p>
+
+            {/* Sub-navigation for the moderation center */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '15px' }}>
+                <button className="button" onClick={() => setActiveTab('reports')} style={{ backgroundColor: activeTab === 'reports' ? '#FFD700' : '#3A3A3A', color: activeTab === 'reports' ? '#0A0A0A' : '#FFF' }}>
+                    <span className="buttonText">Reports Queue</span>
+                </button>
+                <button className="button" onClick={() => setActiveTab('appeals')} style={{ backgroundColor: activeTab === 'appeals' ? '#FFD700' : '#3A3A3A', color: activeTab === 'appeals' ? '#0A0A0A' : '#FFF' }}>
+                    <span className="buttonText">Appeals Queue</span>
+                </button>
+            </div>
+
+            {/* Conditionally render the correct queue based on the active tab */}
+            {activeTab === 'reports' && (
+                <AdminModerationQueue
+                    showMessage={showMessage}
+                    setActiveScreen={setActiveScreen}
+                    setSelectedReportGroup={setSelectedReportGroup}
+                />
+            )}
+            {activeTab === 'appeals' && (
+                <AdminAppealsQueue
+                    showMessage={showMessage}
+                    setActiveScreen={setActiveScreen}
+                    setShowConfirmationModal={setShowConfirmationModal}
+                    setConfirmationTitle={setConfirmationTitle}
+                    setConfirmationMessage={setConfirmationMessage}
+                    setOnConfirmationAction={setOnConfirmationAction}
+                />
+            )}
+        </div>
+    );
+};
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW MODERATION CENTER COMPONENT ======
+// ======================================================================
+
+// ======================================================================
+// ========= START: ADD THIS ENTIRE NEW SUSPENDED SCREEN COMPONENT ======
+// ======================================================================
+
+const SuspendedScreen = ({ showMessage, setActiveScreen, suspensionDetails }) => {
+    const [message, setMessage] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const handleSubmitAppeal = async (e) => {
+        e.preventDefault();
+        if (!message.trim()) {
+            showMessage("Please provide a reason for your appeal.");
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            const appealFunction = httpsCallable(functions, 'submitSuspensionAppeal');
+            const result = await appealFunction({
+                userEmail: suspensionDetails.email,
+                message: message
+            });
+            showMessage(result.data.message);
+        } catch (error) {
+            showMessage(`Error: ${error.message}`);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    if (!suspensionDetails) {
+        setActiveScreen('Home');
+        return null;
+    }
+
+    return (
+        <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
+            <p className="heading" style={{color: '#DC3545'}}>Account Suspended</p>
+            <p className="subHeading">
+                Your account has been temporarily suspended.
+            </p>
+            <p className="paragraph">
+                Reason: Violation of community guidelines. <br/>
+                Your access will be restored on: <br/>
+                <strong style={{color: '#FFD700', fontSize: '16px'}}>{suspensionDetails.expiryDate}</strong>
+            </p>
+
+            <div className="dashboardSection" style={{marginTop: '20px', textAlign: 'left'}}>
+                <p className="dashboardSectionTitle">Submit an Appeal</p>
+                <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>
+                    If you believe this suspension was made in error, you may submit one appeal for review.
+                </p>
+                <form onSubmit={handleSubmitAppeal}>
+                    <div className="formGroup">
+                        <label className="formLabel">Your Email:</label>
+                        <input type="email" className="formInput" value={suspensionDetails.email} disabled />
+                    </div>
+                    <div className="formGroup">
+                        <label className="formLabel">Reason for Appeal:</label>
+                        <textarea 
+                            className="formTextarea" 
+                            value={message}
+                            onChange={(e) => setMessage(e.target.value)}
+                            placeholder="Please explain why you believe your suspension should be reviewed." 
+                            required
+                        ></textarea>
+                    </div>
+                    <button type="submit" className="button" disabled={isSubmitting}>
+                        <span className="buttonText">{isSubmitting ? 'Submitting...' : 'Submit Appeal'}</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// ======================================================================
+// ========== END: ADD THIS ENTIRE NEW SUSPENDED SCREEN COMPONENT =======
+// ======================================================================```
 
 // ======================================================================
 // ========= START: ADD THE NEW MyListingsScreen COMPONENT ==============
@@ -6659,7 +7720,7 @@ const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
 // ======================================================================
 
 
-                    const PromotedSlot = ({ showMessage, handleVideoPress, currentUser }) => {
+    const PromotedSlot = ({ showMessage, handleVideoPress, currentUser }) => {
     const [livePromo, setLivePromo] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -6691,7 +7752,6 @@ const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
         const { content } = livePromo;
 
         if (content.adVideoUrl) {
-            // Re-use the existing video modal logic
             const { embedUrl } = extractVideoInfo(content.adVideoUrl);
             handleVideoPress(embedUrl || content.adVideoUrl, { id: livePromo.id, title: content.title });
         } else if (content.destinationUrl) {
@@ -6702,33 +7762,48 @@ const ConfirmationModal = ({ title, message, onConfirm, onCancel }) => {
     };
 
     if (loading || !livePromo) {
-        return null; // This is key: Render nothing if there's no live ad.
+        return null; 
     }
 
     return (
         <div 
             className="allCampaignsListItem" 
-            style={{border: '2px solid #00FFFF', background: 'rgba(0, 255, 255, 0.05)', cursor: 'pointer', marginBottom: '20px'}}
+            style={{border: '2px solid #00FFFF', background: 'rgba(0, 255, 255, 0.05)', cursor: 'pointer', marginBottom: '20px', alignItems: 'center'}}
             onClick={handlePromoClick}
         >
-            <div 
-                className="campaignListImagePlaceholder"
-                style={{ backgroundImage: `url(${livePromo.content.flyerImageUrl})`, width: '120px', height: 'auto', backgroundSize: 'contain', backgroundRepeat: 'no-repeat' }}
-            >
+            <div style={{
+                width: '80px',
+                height: '80px',
+                flexShrink: 0, 
+                marginRight: '15px',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                backgroundColor: '#1A1A1A'
+            }}>
+                <img
+                    src={livePromo.content.flyerImageUrl}
+                    alt={livePromo.content.title}
+                    style={{
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain' // THIS IS THE FIX
+                    }}
+                    onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/100x100/1A1A1A/00FFFF?text=Ad'; }}
+                />
             </div>
-            <div className="campaignListContent">
+
+            <div className="campaignListContent" style={{ minWidth: 0 }}>
                 <div className="campaignListTitle" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                     <span style={{color: '#00FFFF'}}>{livePromo.content.title}</span> 
                     <span style={{fontSize: '12px', color: '#0A0A0A', backgroundColor: '#00FFFF', padding: '3px 8px', borderRadius: '10px', fontWeight: 'bold'}}>★ Promoted</span>
                 </div>
-                <p className="campaignListDescription" style={{ WebkitLineClamp: 3 }}>
-                    Click to learn more. This is the premier advertising slot on NVA Network.
+                <p className="campaignListDescription" style={{ WebkitLineClamp: 2 }}>
+                    Click to learn more.
                 </p>
             </div>
         </div>
     );
 };
-
 
                 // ======================================================================
 // ========= START: ADD THE NEW AdminOpportunityDetailsScreen COMPONENT =========
@@ -6812,14 +7887,12 @@ const CompetitionHomeScreenBanner = ({ setActiveScreen }) => {
 
     useEffect(() => {
         const compRef = collection(db, "competitions");
-        // Now fetches competitions in either public-facing state
         const q = query(
             compRef,
-            where("status", "in", ["Accepting Entries", "Live Voting"]),
+            where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]),
             orderBy("createdAt", "desc"),
             limit(1)
         );
-
         const unsubscribe = onSnapshot(q, (snapshot) => {
             if (!snapshot.empty) {
                 setLiveCompetition({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
@@ -6828,34 +7901,68 @@ const CompetitionHomeScreenBanner = ({ setActiveScreen }) => {
             }
             setLoading(false);
         });
-
         return () => unsubscribe();
     }, []);
 
     useEffect(() => {
         if (!liveCompetition) {
             setCountdown('');
-            return;
-        }
-        
-        // Determine which deadline and text to use based on the status
-        const isVotingPhase = liveCompetition.status === 'Live Voting';
-        const deadline = isVotingPhase ? liveCompetition.competitionEnd : liveCompetition.entryDeadline;
-        setBannerText(isVotingPhase ? "Voting ends in" : "Entries close in");
-
-        if (!deadline) {
-            setCountdown('');
+            setBannerText('');
             return;
         }
 
         const interval = setInterval(() => {
             const now = new Date();
-            const targetDate = deadline.toDate ? deadline.toDate() : new Date(deadline);
-            const distance = targetDate - now;
+            const entryDeadline = liveCompetition.entryDeadline?.toDate();
+            const competitionEnd = liveCompetition.competitionEnd?.toDate();
+            const resultsRevealTime = liveCompetition.resultsRevealTime?.toDate();
 
+            // THIS IS THE FIX: We now derive the current state based on the current time,
+            // making the banner text and countdown react instantly to deadlines.
+            let currentStatus = liveCompetition.status;
+            if (currentStatus === 'Accepting Entries' && entryDeadline && now > entryDeadline) currentStatus = 'Live Voting';
+            if (currentStatus === 'Live Voting' && competitionEnd && now > competitionEnd) currentStatus = 'Judging';
+            if (currentStatus === 'Judging' && resultsRevealTime && now > resultsRevealTime) currentStatus = 'Results Visible';
+
+            let deadline = null;
+
+            switch (currentStatus) {
+                case 'Accepting Entries':
+                    setBannerText("Entries close in");
+                    deadline = entryDeadline;
+                    break;
+                case 'Live Voting':
+                    setBannerText("Voting ends in");
+                    deadline = competitionEnd;
+                    break;
+                case 'Judging':
+                    if (resultsRevealTime) {
+                        setBannerText("Results revealed in");
+                        deadline = resultsRevealTime;
+                    } else {
+                        setBannerText("Judging in Progress");
+                        setCountdown("Results Soon!");
+                        return;
+                    }
+                    break;
+                case 'Results Visible':
+                    setBannerText("Results Are In!");
+                    setCountdown("View Now!");
+                    return;
+                default:
+                    setBannerText('');
+                    setCountdown('');
+                    return;
+            }
+
+            if (!deadline) {
+                setCountdown('N/A');
+                return;
+            }
+
+            const distance = deadline - now;
             if (distance < 0) {
-                setCountdown(isVotingPhase ? "Voting Closed" : "Entry Closed");
-                clearInterval(interval);
+                setCountdown("Time's Up!");
             } else {
                 const days = Math.floor(distance / (1000 * 60 * 60 * 24));
                 const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -6868,20 +7975,19 @@ const CompetitionHomeScreenBanner = ({ setActiveScreen }) => {
         return () => clearInterval(interval);
     }, [liveCompetition]);
 
-
     if (loading || !liveCompetition) {
         return null;
     }
 
     return (
-        <div 
+        <div
             onClick={() => setActiveScreen('CompetitionScreen')}
-            className="header-live-button" 
-            style={{ 
-                width: 'auto', 
-                maxWidth: '400px', 
-                backgroundColor: 'rgba(0, 255, 255, 0.8)', 
-                color: '#0A0A0A', 
+            className="header-live-button"
+            style={{
+                width: 'auto',
+                maxWidth: '400px',
+                backgroundColor: 'rgba(0, 255, 255, 0.8)',
+                color: '#0A0A0A',
                 cursor: 'pointer',
                 justifyContent: 'center',
                 margin: '0 auto 15px auto'
@@ -7076,50 +8182,26 @@ const CompetitionScreen = ({ showMessage, setActiveScreen, currentUser, creatorP
     const [entries, setEntries] = useState([]);
     const [loadingEntries, setLoadingEntries] = useState(true);
     const [selectedEntry, setSelectedEntry] = useState(null);
+    const [resultsCountdown, setResultsCountdown] = useState('');
 
     useEffect(() => {
-         setLoading(true);
+        setLoading(true);
         const compRef = collection(db, "competitions");
-
-        // Query 1: Look for an active ("Live") competition first.
-        const liveQuery = query(
+        const q = query(
             compRef,
-            where("status", "in", ["Accepting Entries", "Live Voting"]),
+            where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]),
+            orderBy("createdAt", "desc"),
             limit(1)
         );
-
-        const unsubscribeLive = onSnapshot(liveQuery, (liveSnapshot) => {
-            if (!liveSnapshot.empty) {
-                // If we find a live one, display it and we are done.
-                setCompetition({ id: liveSnapshot.docs[0].id, ...liveSnapshot.docs[0].data() });
-                setLoading(false);
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            if (!snapshot.empty) {
+                setCompetition({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
             } else {
-                // If no live competition is found, query for ALL completed ones.
-                const completedQuery = query(
-                    compRef,
-                    where("status", "==", "Completed")
-                );
-                
-                const unsubscribeCompleted = onSnapshot(completedQuery, (completedSnapshot) => {
-                    // Now, filter and sort them in the app to find the correct one.
-                    const publiclyVisibleComps = completedSnapshot.docs
-                        .map(doc => ({ id: doc.id, ...doc.data() }))
-                        .filter(comp => comp.isPubliclyVisible === true && comp.publiclyVisibleAt);
-
-                    if (publiclyVisibleComps.length > 0) {
-                        // Sort to find the most recent one
-                        publiclyVisibleComps.sort((a, b) => b.publiclyVisibleAt.toDate() - a.publiclyVisibleAt.toDate());
-                        setCompetition(publiclyVisibleComps[0]);
-                    } else {
-                        setCompetition(null); // No live or public completed competitions found.
-                    }
-                    setLoading(false);
-                });
-                return () => unsubscribeCompleted();
+                setCompetition(null);
             }
+            setLoading(false);
         });
-        
-        return () => unsubscribeLive();
+        return () => unsubscribe();
     }, []);
 
     useEffect(() => {
@@ -7131,15 +8213,36 @@ const CompetitionScreen = ({ showMessage, setActiveScreen, currentUser, creatorP
         setLoadingEntries(true);
         const entriesRef = collection(db, "competitions", competition.id, "entries");
         const q = query(entriesRef, orderBy("createdAt", "desc"));
-
         const unsubscribe = onSnapshot(q, (snapshot) => {
             setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             setLoadingEntries(false);
         });
-
         return () => unsubscribe();
     }, [competition]);
     
+    useEffect(() => {
+        if (competition?.status !== 'Judging' || !competition.resultsRevealTime) {
+            setResultsCountdown('');
+            return;
+        }
+        const interval = setInterval(() => {
+            const now = new Date();
+            const targetDate = competition.resultsRevealTime.toDate();
+            const distance = targetDate - now;
+            if (distance < 0) {
+                setResultsCountdown("Revealing results now...");
+                clearInterval(interval);
+            } else {
+                const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                setResultsCountdown(`${days}d ${hours}h ${minutes}m ${seconds}s`);
+            }
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [competition]);
+
     const rankedEntries = useMemo(() => {
         return entries
             .filter(entry => entry.title.toLowerCase().includes(searchTerm.toLowerCase()) || entry.userName.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -7150,6 +8253,18 @@ const CompetitionScreen = ({ showMessage, setActiveScreen, currentUser, creatorP
             });
     }, [entries, searchTerm]);
 
+    // --- ENHANCED STATUS FLAGS WITH REAL-TIME DERIVATION ---
+    const now = new Date();
+    let derivedStatus = competition?.status;
+    if (derivedStatus === 'Accepting Entries' && competition?.entryDeadline?.toDate() < now) derivedStatus = 'Live Voting';
+    if (derivedStatus === 'Live Voting' && competition?.competitionEnd?.toDate() < now) derivedStatus = 'Judging';
+    if (derivedStatus === 'Judging' && competition?.resultsRevealTime?.toDate() < now) derivedStatus = 'Results Visible';
+    
+    const isAcceptingEntries = derivedStatus === 'Accepting Entries';
+    const isLiveVoting = derivedStatus === 'Live Voting';
+    const isJudging = derivedStatus === 'Judging';
+    const isResultsView = derivedStatus === 'Results Visible';
+    const isEntryDisabled = !isAcceptingEntries;
 
     if (loading) {
         return <div className="screenContainer" style={{textAlign: 'center'}}><p className="heading">Loading Competition...</p></div>;
@@ -7159,7 +8274,7 @@ const CompetitionScreen = ({ showMessage, setActiveScreen, currentUser, creatorP
         return (
             <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
                 <p className="heading">No Active Competition</p>
-                <p className="subHeading">There is no competition running at the moment, or the current one is being judged. Please check back later!</p>
+                <p className="subHeading">There is no competition running at the moment. Please check back later!</p>
                  <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A' }}>
                     <span className="buttonText light">Back to Home</span>
                 </button>
@@ -7169,7 +8284,6 @@ const CompetitionScreen = ({ showMessage, setActiveScreen, currentUser, creatorP
 
     return (
         <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {/* Non-Scrollable Header */}
             <div style={{ flexShrink: 0, paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
                     <button 
@@ -7179,7 +8293,7 @@ const CompetitionScreen = ({ showMessage, setActiveScreen, currentUser, creatorP
                         &#x2190;
                     </button>
                     <p className="heading" style={{ margin: 0, textAlign: 'center', flexGrow: 1, color: '#00FFFF' }}>{competition.title}</p>
-                    <div style={{ width: '40px' }}></div> {/* Spacer */}
+                    <div style={{ width: '40px' }}></div>
                 </div>
 
                 {competition.noticeText && (
@@ -7189,33 +8303,20 @@ const CompetitionScreen = ({ showMessage, setActiveScreen, currentUser, creatorP
                     </div>
                 )}
                 <div className="formGroup" style={{marginBottom: '10px'}}>
-                    <input
-                        type="text"
-                        className="formInput"
-                        placeholder="Search entries by name or title..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
+                    <input type="text" className="formInput" placeholder="Search entries by name or title..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                 </div>
                 <div style={{display: 'flex', gap: '10px'}}>
                     <button 
                         className="button" 
                         onClick={() => {
-                            if (!currentUser) {
-                                showMessage("Please log in to enter the competition.");
-                                setActiveScreen('Login');
-                                return;
-                            }
-                            if (competition.status !== 'Accepting Entries') {
-                                showMessage("This competition is no longer accepting new entries.");
-                                return;
-                            }
+                            if (!currentUser) { showMessage("Please log in to enter the competition."); setActiveScreen('Login'); return; }
+                            if (!isAcceptingEntries) { showMessage("This competition is no longer accepting new entries."); return; }
                             setShowEntryForm(true);
                         }} 
-                        style={{flex: 1, margin: 0}}
-                        disabled={competition.status !== 'Accepting Entries'}
+                        style={{flex: 1, margin: 0, ...(isEntryDisabled && { backgroundColor: '#555', color: '#AAA', cursor: 'default' })}}
+                        disabled={isEntryDisabled}
                     >
-                        <span className="buttonText">Enter Competition</span>
+                        <span className="buttonText">{isResultsView ? 'Results Are Final' : (isAcceptingEntries ? 'Enter Competition' : 'Entries Closed')}</span>
                     </button>
                     <button className="button" onClick={() => setShowPrizesModal(true)} style={{flex: 1, margin: 0, backgroundColor: '#3A3A3A'}}>
                         <span className="buttonText light">View Prizes & Rules</span>
@@ -7223,54 +8324,68 @@ const CompetitionScreen = ({ showMessage, setActiveScreen, currentUser, creatorP
                 </div>
             </div>
 
-            {/* Scrollable Content Area */}
             <div style={{ flex: '1 1 auto', overflowY: 'auto', paddingTop: '15px' }}>
-                 {loadingEntries ? (
+                {isJudging ? (
+                    <div style={{textAlign: 'center', paddingTop: '50px'}}>
+                        <p className="heading">Judging In Progress</p>
+                        {resultsCountdown ? (
+                            <><p className="subHeading">Results will be revealed in:</p><p className="heading" style={{color: '#FFD700', fontSize: '28px'}}>{resultsCountdown}</p></>
+                        ) : (
+                            <p className="subHeading">The competition has ended. Results will be out soon!</p>
+                        )}
+                    </div>
+                ) : loadingEntries ? (
                     <p className="dashboardItem" style={{textAlign: 'center'}}>Loading entries...</p>
                 ) : rankedEntries.length === 0 ? (
                     <p className="dashboardItem" style={{textAlign: 'center'}}>
                         {searchTerm ? `No entries match "${searchTerm}".` : "No entries have been submitted yet. Be the first!"}
                     </p>
                 ) : (
-                     <div className="allCampaignsList">
-                        {rankedEntries.map((entry, index) => (
-                            <div 
-                                key={entry.id} 
-                                className="allCampaignsListItem" 
-                                style={{borderLeft: '5px solid #00FFFF', position: 'relative', cursor: 'pointer'}}
-                                onClick={() => {
-                                    if (!currentUser) {
-                                        showMessage("Please log in or sign up to view entries.");
-                                        setActiveScreen('Login');
-                                        return;
-                                    }
-                                    setSelectedEntry(entry);
-                                }}
-                            >
-                                <div style={{position: 'absolute', top: '-1px', left: '-1px', backgroundColor: '#00FFFF', color: '#0A0A0A', padding: '5px 10px', borderTopLeftRadius: '8px', borderBottomRightRadius: '8px', fontWeight: 'bold'}}>
-                                    #{index + 1}
-                                </div>
-                                <img src={entry.photoUrl || entry.userProfilePicture} alt={entry.title} className="creator-campaign-thumbnail" style={{width: '120px', height: '70px', objectFit: 'cover'}}/>
-                                <div className="campaignListContent">
-                                    <p className="campaignListTitle" style={{color: '#FFF'}}>{entry.title}</p>
-                                    <div className="campaignListCreator">
-                                        <img src={entry.userProfilePicture || 'https://placehold.co/24x24/555/FFF?text=P'} alt={entry.userName} className="campaignListCreatorProfilePic"/>
-                                        <span>by {entry.userName}</span>
+                    <div className="allCampaignsList">
+                        {rankedEntries.map((entry, index) => {
+                            // THIS IS THE FIX #3: An entry is now ONLY clickable during Live Voting.
+                            const isClickable = isLiveVoting;
+                            return (
+                                <div 
+                                    key={entry.id} 
+                                    className="allCampaignsListItem" 
+                                    style={{
+                                        borderLeft: '5px solid #00FFFF', 
+                                        position: 'relative', 
+                                        cursor: isClickable ? 'pointer' : 'default',
+                                        // THIS IS THE FIX #2: The opacity style has been removed.
+                                    }}
+                                    onClick={() => {
+                                        if (!isClickable) return;
+                                        if (!currentUser) { showMessage("Please log in or sign up to view entries."); setActiveScreen('Login'); return; }
+                                        setSelectedEntry(entry);
+                                    }}
+                                >
+                                    <div style={{position: 'absolute', top: '-1px', left: '-1px', backgroundColor: '#00FFFF', color: '#0A0A0A', padding: '5px 10px', borderTopLeftRadius: '8px', borderBottomRightRadius: '8px', fontWeight: 'bold'}}>
+                                        #{index + 1}
                                     </div>
-                                    <div className="campaignListStats" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                                        <div>
-                                            <span>Likes: <span className="campaignListGoal">{entry.likeCount || 0}</span></span>
-                                            {competition.competitionType === 'Video' && (
-                                                 <span style={{marginLeft: '10px'}}>Views: <span className="campaignListRaised">{entry.viewCount || 0}</span></span>
+                                    <img src={entry.photoUrl || entry.userProfilePicture} alt={entry.title} className="creator-campaign-thumbnail" style={{width: '120px', height: '70px', objectFit: 'cover'}}/>
+                                    <div className="campaignListContent">
+                                        <p className="campaignListTitle" style={{color: '#FFF'}}>{entry.title}</p>
+                                        <div className="campaignListCreator">
+                                            <img src={entry.userProfilePicture || 'https://placehold.co/24x24/555/FFF?text=P'} alt={entry.userName} className="campaignListCreatorProfilePic"/>
+                                            <span>by {entry.userName}</span>
+                                        </div>
+                                        <div className="campaignListStats" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                                            <div>
+                                                <span>Likes: <span className="campaignListGoal">{entry.likeCount || 0}</span></span>
+                                                {competition.competitionType === 'Video' && (
+                                                    <span style={{marginLeft: '10px'}}>Views: <span className="campaignListRaised">{entry.viewCount || 0}</span></span>
+                                                )}
+                                            </div>
+                                            {isLiveVoting && (
+                                                <CompetitionLikeButton competition={competition} entry={entry} currentUser={currentUser} showMessage={showMessage} />
                                             )}
                                         </div>
-                                        {competition.competitionType === 'External' && (
-                                            <CompetitionLikeButton competition={competition} entry={entry} currentUser={currentUser} showMessage={showMessage} />
-                                        )}
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </div>
@@ -8780,6 +9895,8 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
 
 // =========== START REPLACEMENT ===========
             const [currentUser, setCurrentUser] = useState(null);
+            const [currencyRates, setCurrencyRates] = useState(null);
+            const [selectedCurrency, setSelectedCurrency] = useState('USD');
             // NOTE: Replace this placeholder URL with the actual URL of your hosted notification sound file.
             const notificationSoundRef = useRef(new Audio('https://firebasestorage.googleapis.com/v0/b/nvanetworkapp.firebasestorage.app/o/Notification%202.mp3?alt=media&token=0befabd3-3c9d-4aa4-a990-5681591d201a'));
             const [activeScreen, setActiveScreen] = useState('Home');
@@ -8808,6 +9925,17 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
                     newNotifications.forEach(n => processedToastIds.current.add(n.id));
                 }
             }, [unreadNotifications]);
+
+                    useEffect(() => {
+                const openModalHandler = (event) => {
+                    setContentToReport(event.detail);
+                    setShowReportModal(true);
+                };
+                window.addEventListener('openReportModal', openModalHandler);
+                return () => {
+                    window.removeEventListener('openReportModal', openModalHandler);
+                };
+            }, []);
 
             useEffect(() => {
                 // Process the toast queue
@@ -8939,6 +10067,12 @@ const VerificationScreen = ({ currentUser, showMessage, handleLogout, setActiveS
             const [confirmationMessage, setConfirmationMessage] = useState('');
             const [onConfirmationAction, setOnConfirmationAction] = useState(null);
             const [featuredContentSlots, setFeaturedContentSlots] = useState(null);
+            
+            const [showReportModal, setShowReportModal] = useState(false);
+            const [contentToReport, setContentToReport] = useState(null);
+            const [selectedReportGroup, setSelectedReportGroup] = useState(null);
+            const [suspensionDetails, setSuspensionDetails] = useState(null);
+
             // --- MOVED FROM CategoriesScreen to App (GLOBAL STATE) ---
             const [isLive, setIsLive] = useState(false);
             const [countdownText, setCountdownText] = useState('');
@@ -9070,6 +10204,24 @@ useEffect(() => {
                 }
                 return () => unsubscribe();
             }, [currentUser]);
+
+            // This new useEffect hook fetches the currency rates when the app loads.
+            useEffect(() => {
+                const fetchRates = async () => {
+                    try {
+                        const getRatesFunction = httpsCallable(functions, 'getExchangeRates');
+                        const result = await getRatesFunction();
+                        if (result.data && result.data.rates) {
+                            setCurrencyRates(result.data.rates);
+                            console.log("Successfully fetched currency exchange rates.");
+                        }
+                    } catch (error) {
+                        console.error("Could not fetch currency rates:", error);
+                        showMessage("Currency conversion is currently unavailable.");
+                    }
+                };
+                fetchRates();
+            }, []); // The empty dependency array ensures this runs only once on app load.
 
             const showMessage = (msg) => {
                 setMessage(msg);
@@ -9454,13 +10606,12 @@ useEffect(() => {
 
             const AboutContactScreen = () => (
                 <div className="screenContainer">
-                    <p className="heading">About NVA Network</p>
+                    <p className="heading">A<p className="subHeading">The Caribbean’s first mobile-first entertainment network, dedicated to bringing the best of Caribbean content to a global stage.</p>bout NVA Network</p>
                     <p className="subHeading">The Caribbean’s first mobile-first entertainment network, dedicated to bringing the best of Guyanese content to a global stage.</p>
 
                     <p className="paragraph">
                         NVA Network is committed to empowering local creators and connecting audiences worldwide
-                        with unique and vibrant stories from Guyana. Our mission is to provide a platform for Guyanese
-                        comedians, filmmakers, interviewers, and live event organizers to showcase their talent,
+                        with unique and vibrant stories from the Caribbean. Our mission is to provide a platform for Caribbean                        comedians, filmmakers, interviewers, and live event organizers to showcase their talent,
                         reach new audiences, and build sustainable careers.
                     </p>
 
@@ -9478,10 +10629,10 @@ useEffect(() => {
                 const PLATFORM_FEE_PERCENTAGE = 0.07;
                 return (
                     <div className="screenContainer">
-                        <p className="heading">Support Guyanese Creators!</p>
-                        <p className="subHeading">Help bring more authentic Guyanese content to life.</p>
+                        <p className="heading">Support Caribbean Creators!</p>
+                        <p className="subHeading">Help bring more authentic Caribbean content to life.</p>
                         <p className="paragraph">
-                            International crowdfunding platforms often don't support direct bank accounts in Guyana,
+                            International crowdfunding platforms often don't support direct bank accounts in the Caribbean,
                             making it difficult for our talented creators to receive global support.
                             At NVA Network, we're committed to finding direct ways for you to contribute!
                         </p>
@@ -9494,7 +10645,7 @@ useEffect(() => {
                         </div>
                         <p className="sectionTitle">How You Can Contribute Directly:</p>
                         <p className="paragraph">
-                            We are setting up direct support channels that are accessible within Guyana and for our diaspora.
+                            We are setting up direct support channels that are accessible within the Caribbean and for our diaspora.
                             Please contact us for details on how to send your support via:
                         </p>
                         <p className="listItem">• Direct Bank Transfer (Local & International options)</p>
@@ -9508,7 +10659,7 @@ useEffect(() => {
                         </button>
                         <p className="smallText">(Discover campaigns and support your favorite creators!)</p>
                         <p className="paragraph" style={{ marginTop: '20px' }}>
-                            Your generosity empowers Guyanese voices and helps us build a stronger, more vibrant content ecosystem.
+                            Your generosity empowers Caribbean voices and helps us build a stronger, more vibrant content ecosystem.
                             Thank you for being a part of the NVA Network family!
                         </p>
                         <p className="smallText" style={{ marginTop: '20px', color: '#888' }}>
@@ -9578,24 +10729,36 @@ useEffect(() => {
         };
         // --- END: NEW ForgotPasswordScreen Component ---
 
-const LoginScreen = ({ showMessage, setActiveScreen }) => {
+const LoginScreen = ({ showMessage, setActiveScreen, setSuspensionDetails }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            
-            // ================== START: ADD THIS BLOCK ==================
-            // This is the crucial step to enable "Active User" tracking
-            if (userCredential.user) {
-                const userDocRef = doc(db, "creators", userCredential.user.uid);
-                await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
-            }
-            // =================== END: ADD THIS BLOCK ===================
+            const user = userCredential.user;
 
+            const userDocRef = doc(db, "creators", user.uid);
+            const userDocSnap = await getDoc(userDocRef);
+
+            if (userDocSnap.exists()) {
+                const userProfile = userDocSnap.data();
+                if (userProfile.suspendedUntil && userProfile.suspendedUntil.toDate() > new Date()) {
+                    const expiryDate = userProfile.suspendedUntil.toDate().toLocaleString();
+                    await signOut(auth); 
+                    
+                    // THIS IS THE FIX: Instead of a simple message, we set state and change screen.
+                    setSuspensionDetails({ email: userProfile.email, expiryDate: expiryDate });
+                    setActiveScreen('Suspended');
+                    return;
+                }
+            }
+            
+            await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
             showMessage(`Logged in as ${email}!`);
-            setActiveScreen('CreatorDashboard'); 
+            setActiveScreen('CreatorDashboard');
+
         } catch (error) {
             console.error("Error logging in:", error);
             let errorMessage = "Login failed. Please check your credentials.";
@@ -9605,18 +10768,17 @@ const LoginScreen = ({ showMessage, setActiveScreen }) => {
             showMessage(errorMessage);
         }
     };
+
     return (
         <div className="screenContainer">
             <p className="heading">Creator Login</p>
             <p className="subHeading">Access your dashboard to manage your content and campaigns.</p>
             <form onSubmit={handleSubmit} className="loginForm"><div className="formGroup"><label htmlFor="loginEmail" className="formLabel">Email:</label><input type="email" id="loginEmail" className="formInput" value={email} onChange={(e) => setEmail(e.target.value)} required /></div><div className="formGroup"><label htmlFor="loginPassword" className="formLabel">Password:</label><input type="password" id="loginPassword" className="formInput" value={password} onChange={(e) => setPassword(e.target.value)} required /></div><button type="submit" className="button"><span className="buttonText">Login</span></button></form>
             <p className="smallText" style={{ marginTop: '20px' }}>Don't have an account?{' '}<a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('CreatorSignUp'); }}>Sign Up Here</a></p>
-        
             <p className="smallText" style={{ marginTop: '10px' }}>
                 <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('ForgotPassword'); }}>Forgot Password?</a>
             </p>
-        
-        <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}><span className="buttonText light">Back to Home</span></button>
+            <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}><span className="buttonText light">Back to Home</span></button>
         </div>
     );
 };
@@ -10325,26 +11487,26 @@ const MyContentLibraryScreen = ({
                     case 'Followers':
                         return <FollowersScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId}/>;
                     case 'Login':
-                        return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
+                        return <LoginScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSuspensionDetails={setSuspensionDetails} />;
                     case 'UserSignUp':
                         return <UserSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                     case 'CreatorSignUp':
                         return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                     case 'ForgotPassword': // <-- THE ONLY ADDITION IS THIS CASE
                         return <ForgotPasswordScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
-                    case 'Premium':
-                        return <PremiumScreen showMessage={showMessage} currentUser={currentUser} setActiveScreen={setActiveScreen} setPledgeContext={setPledgeContext} />;
+                   case 'Premium':
+                        return <PremiumScreen showMessage={showMessage} currentUser={currentUser} setActiveScreen={setActiveScreen} setPledgeContext={setPledgeContext} selectedCurrency={selectedCurrency} currencyRates={currencyRates} />;
                     case 'Support':
                         return <CrowdfundingScreen showMessage={showMessage} setActiveScreen={setActiveScreen}/>;
                     case 'AllCampaigns':
-                        return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId}/>;
+                        return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedCampaignId={setSelectedCampaignId} selectedCurrency={selectedCurrency} currencyRates={currencyRates}/>;
                     case 'CampaignDetails':
-                        return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} setPledgeContext={setPledgeContext} />;
+                        return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedCampaignId={selectedCampaignId} currentUser={currentUser} setPledgeContext={setPledgeContext} selectedCurrency={selectedCurrency} currencyRates={currencyRates} />;
                     case 'DonationPledge':
                         return <DonationPledgeScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} />;
-                    case 'SubscriptionPledge':
-                        return <SubscriptionPledgeScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} />;
-                    case 'PendingConfirmation':
+                   case 'SubscriptionPledge':
+                        return <SubscriptionPledgeScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} selectedCurrency={selectedCurrency} currencyRates={currencyRates} />;
+                     case 'PendingConfirmation':
                         if (!pledgeIdForConfirmation) {
                             return (
                                 <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
@@ -10352,7 +11514,7 @@ const MyContentLibraryScreen = ({
                                 </div>
                             );
                         }
-                        return <PendingConfirmationScreen showMessage={showMessage} setActiveScreen={setActiveScreen} pledgeId={pledgeIdForConfirmation} currentUser={currentUser} />;
+                        return <PendingConfirmationScreen showMessage={showMessage} setActiveScreen={setActiveScreen} pledgeId={pledgeIdForConfirmation} currentUser={currentUser} selectedCurrency={selectedCurrency} currencyRates={currencyRates} />;
                     case 'CreatorDashboard':
                           return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setSelectedCampaignId={setSelectedCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction}/>;
                     case 'CreateCampaign':
@@ -10374,10 +11536,25 @@ const MyContentLibraryScreen = ({
                             setSelectedUserId={setSelectedUserId}
                             setSelectedOpportunity={setSelectedOpportunity}
                             setSelectedStatus={setSelectedStatus} 
-                            setSelectedCompAdmin={setSelectedCompAdmin} // This is the fix
+                            setSelectedCompAdmin={setSelectedCompAdmin}
+                            setSelectedReportGroup={setSelectedReportGroup} // This is the new line
                         />;
                     case 'AdminCampaignDetails':
-                        return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} creatorProfile={creatorProfile}/>;
+                        return <AdminCampaignDetailsScreen
+                            showMessage={showMessage}
+                            setActiveScreen={setActiveScreen}
+                            currentUser={currentUser}
+                            selectedAdminCampaignId={selectedAdminCampaignId}
+                            setShowConfirmationModal={setShowConfirmationModal}
+                            setConfirmationTitle={setConfirmationTitle}
+                            setConfirmationMessage={setConfirmationMessage}
+                            setOnConfirmationAction={setOnConfirmationAction}
+                            creatorProfile={creatorProfile}
+                        />;
+                    case 'AdminReportReview':
+                        return <AdminReportReviewScreen showMessage={showMessage} setActiveScreen={setActiveScreen} currentUser={currentUser} creatorProfile={creatorProfile} selectedReportGroup={selectedReportGroup} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
+                    case 'Suspended':
+                        return <SuspendedScreen showMessage={showMessage} setActiveScreen={setActiveScreen} suspensionDetails={suspensionDetails} />;
                     case 'AdminStatusReview':
                         return <AdminStatusReviewScreen showMessage={showMessage} setActiveScreen={setActiveScreen} selectedStatus={selectedStatus} setSelectedStatus={setSelectedStatus} />;
                     
@@ -10448,11 +11625,8 @@ const MyContentLibraryScreen = ({
                             setOnConfirmationAction={setOnConfirmationAction}
                         />;
 
-                    case 'BookStatus':
-                        return <BookStatusScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setPledgeIdForConfirmation={setPledgeIdForConfirmation} />;
-
                      case 'BookStatus':
-                        return <BookStatusScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setPledgeIdForConfirmation={setPledgeIdForConfirmation} />;
+                        return <BookStatusScreen showMessage={showMessage} setActiveScreen={setActiveScreen} setPledgeIdForConfirmation={setPledgeIdForConfirmation} currentUser={currentUser} creatorProfile={creatorProfile} selectedCurrency={selectedCurrency} currencyRates={currencyRates} />;
 
                     case 'PremiumMembersScreen':
                         return <PremiumMembersScreen setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId} showMessage={showMessage} />;
@@ -10466,7 +11640,7 @@ const MyContentLibraryScreen = ({
                     default:
                         return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} creatorProfile={creatorProfile} featuredContentSlots={featuredContentSlots}/>;
                 }
-            }, [activeScreen, currentUser, creatorProfile, featuredContentSlots, selectedAdminSubScreen, pledgeIdForConfirmation]);
+           }, [activeScreen, currentUser, creatorProfile, featuredContentSlots, selectedAdminSubScreen, pledgeIdForConfirmation, selectedCurrency, currencyRates]);
 // =========== END REPLACEMENT ===========
 
 
@@ -10487,7 +11661,7 @@ const MyContentLibraryScreen = ({
                 <>
                     <div className="header">
                         <div className="header-content-left">
-                            <p className="tagline">Guyanese Content to a Global Stage.</p>
+                            <p className="tagline">Caribbean Content to a Global Stage.</p>
                             <p className="headerTitle">NVA Network</p>
                             <HeaderLiveButton 
                                 isLive={isLive} 
@@ -10495,8 +11669,15 @@ const MyContentLibraryScreen = ({
                                 onClick={() => setActiveScreen('Discover')}
                             />
                         </div>
+                        <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: '5' }}>
+                            <CurrencySelector
+                                currencyRates={currencyRates}
+                                selectedCurrency={selectedCurrency}
+                                onCurrencyChange={setSelectedCurrency}
+                            />
+                        </div>
                         <img
-                            src="https://nva-network-app.netlify.app/NVA%20Network%20LOGO%20FX.png"
+                            src="https://firebasestorage.googleapis.com/v0/b/nvanetworkapp.firebasestorage.app/o/NVA%20Network%20LOGO%20BG%20.png?alt=media&token=b03c5772-91c3-48fe-ba3a-08580a3fd833"
                             alt="NVA Network Logo"
                             className="headerLogo"
                             onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }}
@@ -10507,7 +11688,7 @@ const MyContentLibraryScreen = ({
                         {memoizedScreen}
                     </div>
 
-                    <div className="navigationBar" style={{ position: 'relative' }}>
+                       <div className="navigationBar" style={{ position: 'relative' }}>
                         <button className="navButton" onClick={() => setActiveScreen('Home')}>
                             <span className={`navButtonText ${activeScreen === 'Home' ? 'activeNavButtonText' : ''}`}>Home</span>
                         </button>
@@ -10616,10 +11797,19 @@ const MyContentLibraryScreen = ({
                                 onCancel={() => setShowConfirmationModal(false)}
                             />
                         )}
+                        
+                        {/* THIS IS THE NEW MODAL RENDER, NOW CORRECTLY PLACED */}
+                        {showReportModal && (
+                            <ReportContentModal
+                                showMessage={showMessage}
+                                onCancel={() => setShowReportModal(false)}
+                                contentToReport={contentToReport}
+                            />
+                        )}
                     </>
                 </>
             );
-            } // <--- PASTE THE MISSING CLOSING BRACE HERE
+        }
             
                 // --- END OF CORRECTED BLOCK ---
 
