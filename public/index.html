@@ -56,7 +56,7 @@
             position: relative; /* Keep for absolute positioning of logo */
             height: 150px;
             padding: 0 15px; /* Add padding for spacing */
-            background-color: #1A1A1A;
+            background-color: #0A0A0A;
             border-bottom: 1px solid #333;
             border-radius: 15px 15px 0 0;
             display: flex; /* Use flexbox to align items */
@@ -73,7 +73,7 @@
             padding: 10px 0; /* Add some vertical padding */
             z-index: 3;
         }
-
+        
         .headerTitle {
             /* Remove absolute positioning */
             font-size: 38px;
@@ -93,15 +93,17 @@
             text-align: left;
             margin: 0; /* Remove default margins */
         }
-
-        /* NEW Style for the Logo */
+    
+        /* NEW CONTAINER for the right side of the header */
+         .header-right-group {
+            display: flex;
+            align-items: center; /* Vertically aligns the logo and button */
+            gap: 15px; /* Creates space between the logo and the button */
+        }
         .headerLogo {
-            /* We removed absolute positioning to make it a flex item */
-            max-height: 95%; /* Allow it to use slightly more header height */
-            width: auto;     /* Maintain aspect ratio */
-            max-width: 45%;  /* Allow it to be a bit wider on small screens */
-            object-fit: contain; /* Ensure the image is not distorted */
-            /* The parent .header's flex properties will handle the alignment */
+            height: 120px; /* Makes the logo substantially larger within the 150px header */
+            width: auto;   /* Maintains the correct aspect ratio */
+            object-fit: contain;
         }
         .navigationBar {
             display: flex;
@@ -11669,19 +11671,19 @@ const MyContentLibraryScreen = ({
                                 onClick={() => setActiveScreen('Discover')}
                             />
                         </div>
-                        <div style={{ position: 'absolute', top: '15px', right: '15px', zIndex: '5' }}>
+                      <div className="header-right-group">
+                            <img
+                                src="https://firebasestorage.googleapis.com/v0/b/nvanetworkapp.firebasestorage.app/o/NVA%20Network%20LOGO%20BG%20.png?alt=media&token=b03c5772-91c3-48fe-ba3a-08580a3fd833"
+                                alt="NVA Network Logo"
+                                className="headerLogo"
+                                onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }}
+                            />
                             <CurrencySelector
                                 currencyRates={currencyRates}
                                 selectedCurrency={selectedCurrency}
                                 onCurrencyChange={setSelectedCurrency}
                             />
                         </div>
-                        <img
-                            src="https://firebasestorage.googleapis.com/v0/b/nvanetworkapp.firebasestorage.app/o/NVA%20Network%20LOGO%20BG%20.png?alt=media&token=b03c5772-91c3-48fe-ba3a-08580a3fd833"
-                            alt="NVA Network Logo"
-                            className="headerLogo"
-                            onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/450x150/1A1A1A/FFD700?text=Logo+Error'; }}
-                        />
                     </div>
 
                     <div className="container">
