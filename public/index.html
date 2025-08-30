@@ -1881,7 +1881,7 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // Your web app's Firebase configuration
-        const firebaseConfig = {
+      const firebaseConfig = {
             apiKey: "AIzaSyBo3DM-4ZwrZdzcYQAMWAVHu70vWUdB7J4",
             authDomain: "nvanetworkapp.firebaseapp.com",
             projectId: "nvanetworkapp",
@@ -2383,7 +2383,6 @@
             return (
                  <div className="thumbnailPlaceholder" style={{backgroundImage: `url(${thumbnailSrc})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', position: 'relative'}} onClick={onClick}>
                     <svg className="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
-                    {window.firebaseAuth.currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={window.firebaseAuth.currentUser} showMessage={window.showMessage} />}
                 </div>
             );
         };
@@ -3180,20 +3179,20 @@
                     return;
                 }
 
-                const { platform } = extractVideoInfo(projectLink);
-                let finalImageUrl = autoThumbnailPreview || '';
+                                const { platform, thumbnailUrl: autoThumbnailUrl } = extractVideoInfo(projectLink);
 
                 if ((platform === 'tiktok' || platform === 'facebook') && !customThumbnailFile) {
                     showMessage('A custom thumbnail is required for TikTok/Facebook project links.');
                     setIsUploading(false);
                     return;
                 }
-                
-                if (projectLink && !finalImageUrl && !customThumbnailFile) {
-                     showMessage('Could not generate a thumbnail for the project link. Please upload one manually.');
+                if (projectLink && autoThumbnailUrl === GENERIC_THUMBNAIL_PLACEHOLDER && !customThumbnailFile) {
+                    showMessage('Could not automatically find a thumbnail for this project link. Please upload one manually.');
                     setIsUploading(false);
                     return;
                 }
+
+                let finalImageUrl = autoThumbnailPreview || '';
 
                 const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
                 const q = query(campaignsCollectionRef, where('creatorId', '==', currentUser.uid), where('status', '==', 'active'));
@@ -4491,41 +4490,44 @@ const AdminDashboardScreen = ({
                     return;
                 }
 
-                if (imageFile) {
-                    setIsUploading(true);
-                    showMessage("Uploading custom image...");
-                    try {
-                        const filePath = `curated_thumbnails/${Date.now()}_${imageFile.name}`;
-                        const storageRef = ref(storage, filePath);
-                        const snapshot = await uploadBytes(storageRef, imageFile);
-                        const finalImageUrl = await getDownloadURL(snapshot.ref);
-                        showMessage("Image uploaded successfully!");
-                        
-                        onSave({
-                            type: 'external',
-                            title,
-                            externalLink: destinationUrl,
-                            imageUrl: finalImageUrl,
-                            orderIndex: Date.now()
-                        });
-                        setIsUploading(false);
-                        onCancel();
+                 if (!imageFile && !imagePreview) {
+                showMessage("Could not fetch a preview for this URL. Please upload a custom image.");
+                return;
+            }
 
-                    } catch (error) {
-                        showMessage(`Image upload failed: ${error.message}`);
-                        setIsUploading(false);
-                    }
-                } else {
-                    onSave({
-                        type: 'external',
-                        title,
-                        externalLink: destinationUrl,
-                        imageUrl: imagePreview || GENERIC_THUMBNAIL_PLACEHOLDER,
-                        orderIndex: Date.now()
-                    });
-                    onCancel();
+            setIsUploading(true);
+            let finalImageUrl = imagePreview; // Default to the auto-fetched URL.
+
+            try {
+                // Step 1: If a manual file was uploaded, prioritize it by uploading and getting its URL.
+                if (imageFile) {
+                    showMessage("Uploading custom image...");
+                    const filePath = `curated_thumbnails/${Date.now()}_${imageFile.name}`;
+                    const storageRef = ref(storage, filePath);
+                    const snapshot = await uploadBytes(storageRef, imageFile);
+                    finalImageUrl = await getDownloadURL(snapshot.ref);
                 }
-            };
+
+                // Step 2: Call the Cloud Function with the definitive thumbnail URL.
+                showMessage("Promoting link to content item...");
+                const promoteFunction = httpsCallable(functions, 'promoteExternalLink');
+                const result = await promoteFunction({
+                    title: title,
+                    externalLink: destinationUrl,
+                    imageUrl: finalImageUrl,
+                    appId: appId
+                });
+
+                // Step 3: Pass the newly created item back to the parent modal.
+                onSave(result.data.newItem);
+                onCancel();
+
+            } catch (error) {
+                showMessage(`An error occurred: ${error.message}`);
+            } finally {
+                setIsUploading(false);
+            }
+        };
 
             return (
                 <div className="confirmationModalOverlay" style={{ zIndex: 3000 }}>
@@ -4686,9 +4688,17 @@ const AdminDashboardScreen = ({
                 setShowContentSelector(false);
             };
             
-            const handleSaveExternalLink = (newLink) => {
-                 setCuratedItems(prev => [...prev, newLink]);
-                 setShowExternalLinkModal(false);
+            const handleSaveExternalLink = (newItem) => {
+                // The newItem is now a full content object, just like one from the library.
+                // We treat it as an 'internal' type because it now has a document ID.
+                const itemForCuration = {
+                    type: 'internal',
+                    contentId: newItem.id,
+                    orderIndex: curatedItems.length,
+                    ...newItem // Spread the rest of the data for immediate UI display
+                };
+                setCuratedItems(prev => [...prev, itemForCuration]);
+                setShowExternalLinkModal(false);
             };
 
             const handleSaveChanges = async () => {
@@ -4994,13 +5004,18 @@ const AdminContentManagerScreen = ({
             return;
         }
 
-        const { thumbnailUrl, embedUrl, platform } = extractVideoInfo(mainUrl);
-        let finalThumbnailUrl = thumbnailUrl;
+        const { thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(mainUrl);
 
         if ((platform === 'tiktok' || platform === 'facebook') && !customThumbnailFile) {
             showMessage('A custom thumbnail is required for TikTok/Facebook links.');
             return;
         }
+        if (autoThumbnailUrl === GENERIC_THUMBNAIL_PLACEHOLDER && !customThumbnailFile) {
+            showMessage('Could not automatically find a thumbnail for this URL. Please upload one manually.');
+            return;
+        }
+        
+        let finalThumbnailUrl = autoThumbnailUrl;
 
         if (customThumbnailFile) {
             showMessage('Uploading custom thumbnail...');
@@ -5015,11 +5030,6 @@ const AdminContentManagerScreen = ({
             }
         }
         
-        if (!finalThumbnailUrl) {
-            showMessage('Could not determine a thumbnail. Please upload one manually.');
-            return;
-        }
-
         try {
             await addDoc(collection(db, `artifacts/${appId}/public/data/content_items`), {
                 title, description, mainUrl, customThumbnailUrl: finalThumbnailUrl, embedUrl,
@@ -10332,14 +10342,62 @@ useEffect(() => {
     useEffect(() => {
         const horizontalCarousel = horizontalCarouselRef.current;
         const verticalCarousel = verticalCarouselRef.current;
-        let horizontalInterval;
-        let verticalInterval;
-        const startHorizontalAutoscroll = () => { if (!horizontalCarousel || !horizontalCarousel.children[0] || displayFeatured.length <= 3) { clearInterval(horizontalInterval); return; } const itemWidth = horizontalCarousel.children[0].offsetWidth + 15; if (itemWidth <= 15) return; const originalItemCount = displayFeatured.length - 3; const originalContentWidth = originalItemCount * itemWidth; horizontalInterval = setInterval(() => { if (horizontalCarousel.scrollLeft >= originalContentWidth - 1) { horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' }); } else { horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' }); } }, 3000); };
-        const startVerticalAutoscroll = () => { if (!verticalCarousel || !verticalCarousel.children[0] || displayLiveFeed.length <= 4) { clearInterval(verticalInterval); return; } const itemHeight = verticalCarousel.children[0].offsetHeight + 15; if (itemHeight <= 15) return; const originalItemCount = displayLiveFeed.length - 4; const originalContentHeight = originalItemCount * itemHeight; verticalInterval = setInterval(() => { if (verticalCarousel.scrollTop >= originalContentHeight - 1) { verticalCarousel.scrollTo({ top: 0, behavior: 'instant' }); } else { verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' }); } }, 3000); };
-        clearInterval(horizontalInterval);
-        clearInterval(verticalInterval);
-        if (!loading) { setTimeout(() => { startHorizontalAutoscroll(); startVerticalAutoscroll(); }, 100); }
-        return () => { clearInterval(horizontalInterval); clearInterval(verticalInterval); };
+        let horizontalTimeout;
+        let verticalTimeout;
+
+        const scrollHorizontal = () => {
+            if (!horizontalCarousel || !horizontalCarousel.children[0] || displayFeatured.length <= 3) return;
+            const itemWidth = horizontalCarousel.children[0].offsetWidth + 15;
+            if (itemWidth <= 15) {
+                horizontalTimeout = setTimeout(scrollHorizontal, 100);
+                return;
+            }
+            const originalItemCount = displayFeatured.length - 3;
+            const originalContentWidth = originalItemCount * itemWidth;
+
+            if (horizontalCarousel.scrollLeft >= originalContentWidth - 1) {
+                horizontalCarousel.scrollTo({ left: 0, behavior: 'instant' });
+                // THIS IS THE FIX: After snapping back, schedule the next scroll almost immediately to make the loop seamless.
+                horizontalTimeout = setTimeout(scrollHorizontal, 50); // 50ms delay
+            } else {
+                horizontalCarousel.scrollBy({ left: itemWidth, behavior: 'smooth' });
+                // The standard delay between normal scrolls remains the same.
+                horizontalTimeout = setTimeout(scrollHorizontal, 3000);
+            }
+        };
+        
+        const scrollVertical = () => {
+            if (!verticalCarousel || !verticalCarousel.children[0] || displayLiveFeed.length <= 4) return;
+            const itemHeight = verticalCarousel.children[0].offsetHeight + 15;
+            if (itemHeight <= 15) {
+                verticalTimeout = setTimeout(scrollVertical, 100);
+                return;
+            }
+            const originalItemCount = displayLiveFeed.length - 4;
+            const originalContentHeight = originalItemCount * itemHeight;
+
+            if (verticalCarousel.scrollTop >= originalContentHeight - 1) {
+                verticalCarousel.scrollTo({ top: 0, behavior: 'instant' });
+                // Apply the same seamless loop fix to the vertical carousel.
+                verticalTimeout = setTimeout(scrollVertical, 50); // 50ms delay
+            } else {
+                verticalCarousel.scrollBy({ top: itemHeight, behavior: 'smooth' });
+                verticalTimeout = setTimeout(scrollVertical, 3000);
+            }
+        };
+
+        clearTimeout(horizontalTimeout);
+        clearTimeout(verticalTimeout);
+        
+        if (!loading) {
+            horizontalTimeout = setTimeout(scrollHorizontal, 3000);
+            verticalTimeout = setTimeout(scrollVertical, 3000);
+        }
+
+        return () => {
+            clearTimeout(horizontalTimeout);
+            clearTimeout(verticalTimeout);
+        };
     }, [loading, displayFeatured, displayLiveFeed]);
     
     const handleHorizontalScroll = (direction) => { const carousel = horizontalCarouselRef.current; if (carousel) { const itemWidth = carousel.children[0]?.offsetWidth + 15; carousel.scrollBy({ left: direction === 'prev' ? -itemWidth : itemWidth, behavior: 'smooth' }); } };
@@ -10389,7 +10447,6 @@ useEffect(() => {
                     : displayFeatured.map((item, index) => (
                         <div key={`${item.id || item.title}-${index}`} className="horizontal-carousel-item" onClick={() => handleItemClick(item)} style={{cursor: 'pointer'}}>
                             <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="carousel-image" />
-                            {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
                         </div>
                     ))}
                 </div>
@@ -10430,7 +10487,7 @@ useEffect(() => {
                             <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="liveFeedThumbnail" />
                             <div className="liveFeedContent">
                                 <p className="liveFeedTitle">{item.title}</p>
-                                <p className="liveFeedCreator">{item.type === 'internal' ? `by ${item.creatorName}` : 'Promotion'}</p>
+                                <p className="liveFeedCreator">{item.creatorName ? `by ${item.creatorName}` : 'Promotion'}</p>
                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px', marginTop: '4px' }}>
                             <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
                             <span>{item.viewCount || 0} views</span>
@@ -11023,14 +11080,20 @@ const CreatorDashboardScreen = ({
         setIsPublishing(true);
 
         const { thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput);
-        let finalThumbnailUrl = autoThumbnailUrl;
 
-        // THIS IS THE FIX: Enforce manual upload for specific platforms
+        // THIS IS THE FIX: Corrected validation logic.
         if ((platform === 'tiktok' || platform === 'facebook') && !customThumbnailFile) {
             showMessage('A custom thumbnail is required for TikTok/Facebook links.');
             setIsPublishing(false);
             return;
         }
+        if (autoThumbnailUrl === GENERIC_THUMBNAIL_PLACEHOLDER && !customThumbnailFile) {
+            showMessage('Could not automatically find a thumbnail for this URL. Please upload one manually.');
+            setIsPublishing(false);
+            return;
+        }
+        
+        let finalThumbnailUrl = autoThumbnailUrl;
 
         if (customThumbnailFile) {
             showMessage('Uploading thumbnail...');
@@ -11046,14 +11109,7 @@ const CreatorDashboardScreen = ({
             }
         }
         
-        // Ensure we have a thumbnail before proceeding
-        if (!finalThumbnailUrl) {
-            showMessage('Could not determine a thumbnail. Please upload one manually.');
-            setIsPublishing(false);
-            return;
-        }
-
-        // The rest of the logic remains the same
+        // ... (rest of the function is unchanged)
         let newContentRef;
         try {
             const contentCollectionRef = collection(db, `artifacts/${appId}/public/data/content_items`);
@@ -11320,13 +11376,19 @@ const MyContentLibraryScreen = ({
         setIsPublishing(true);
 
         const { thumbnailUrl: autoThumbnailUrl, embedUrl, platform } = extractVideoInfo(videoLinkInput);
-        let finalThumbnailUrl = autoThumbnailUrl;
 
         if ((platform === 'tiktok' || platform === 'facebook') && !customThumbnailFile) {
             showMessage('A custom thumbnail is required for TikTok/Facebook links.');
             setIsPublishing(false);
             return;
         }
+        if (autoThumbnailUrl === GENERIC_THUMBNAIL_PLACEHOLDER && !customThumbnailFile) {
+            showMessage('Could not automatically find a thumbnail for this URL. Please upload one manually.');
+            setIsPublishing(false);
+            return;
+        }
+
+        let finalThumbnailUrl = autoThumbnailUrl;
 
         if (customThumbnailFile) {
             showMessage('Uploading custom thumbnail...');
@@ -11340,12 +11402,6 @@ const MyContentLibraryScreen = ({
                 setIsPublishing(false);
                 return;
             }
-        }
-
-        if (!finalThumbnailUrl) {
-            showMessage('Could not determine a thumbnail. Please upload one manually.');
-            setIsPublishing(false);
-            return;
         }
 
         try {
