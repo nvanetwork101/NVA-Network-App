@@ -13047,11 +13047,12 @@ const MyContentLibraryScreen = ({
                         )}
 
                         {/* ADD this JSX block */}
-                        {showCommentsModal && itemForComments && (
+                       {showCommentsModal && itemForComments && (
                             <CommentsModal
                                 item={itemForComments}
                                 itemType={itemTypeForComments}
                                 currentUser={currentUser}
+                                creatorProfile={creatorProfile}
                                 showMessage={showMessage}
                                 onClose={() => setShowCommentsModal(false)}
                                 setActiveScreen={setActiveScreen}
