@@ -276,3 +276,50 @@
   margin-right: auto; /* Automatically calculate the right margin */
   padding: 0 20px; /* Add some comfortable padding on the sides */
 }
+
+/* --- PWA Install Banner Styles --- */
+.pwa-install-banner {
+  position: fixed;
+  bottom: 80px; /* Position it just above the navigation bar */
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 40px);
+  max-width: 600px;
+  background-color: #1A1A1A;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 15px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  z-index: 1050;
+  animation: slideUp 0.5s ease-out;
+}
+
+.pwa-install-text {
+  color: #FFFFFF;
+}
+
+.pwa-install-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+/* Re-using your navButton styles, but we need an active state */
+.navButton.active {
+  background-color: #FFD700;
+  box-shadow: 0 0 10px #FFD700, 0 0 5px #FFD700;
+}
+
+/* Animation for the banner appearing */
+@keyframes slideUp {
+  from {
+    transform: translate(-50%, 100px);
+    opacity: 0;
+  }
+  to {
+    transform: translate(-50%, 0);
+    opacity: 1;
+  }
+}

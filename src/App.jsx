@@ -775,32 +775,28 @@ return (
           />
       )}
 
-      {/* --- PWA FIX: The new, custom install modal --- */}
+      {/* --- PWA FIX: The new, styled install banner --- */}
       {showInstallModal && installPromptEvent && !isStandalone && (
-          <div className="modal-backdrop" style={{zIndex: 1001}}>
-              <div className="modal-content" style={{maxWidth: '400px'}}>
-                  <div className="modal-header">
-                      <p className="modal-title">Install NVA Network</p>
-                  </div>
-                  <div className="modal-body" style={{textAlign: 'center'}}>
-                      <p>For the best experience, add NVA Network to your home screen!</p>
-                  </div>
-                  <div className="modal-footer">
-                      <button className="button" style={{backgroundColor: '#555'}} onClick={() => {
-                          setShowInstallModal(false);
-                          sessionStorage.setItem('installDismissed', 'true'); // Remember dismissal for this session
-                      }}>
-                          <span className="buttonText light">Later</span>
-                      </button>
-                      <button className="button" onClick={() => {
-                          setShowInstallModal(false);
-                          installPromptEvent.prompt();
-                      }}>
-                          <span className="buttonText">Install App</span>
-                      </button>
-                  </div>
-              </div>
+        <div className="pwa-install-banner">
+          <div className="pwa-install-text">
+            <p style={{margin: 0, fontWeight: 'bold'}}>Install NVA Network</p>
+            <p style={{margin: 0, fontSize: '14px', color: '#AAA'}}>For the best experience, add NVA Network to your home screen!</p>
           </div>
+          <div className="pwa-install-buttons">
+            <button className="navButton" onClick={() => {
+              setShowInstallModal(false);
+              sessionStorage.setItem('installDismissed', 'true');
+            }}>
+              <span className="navButtonText">Later</span>
+            </button>
+            <button className="navButton active" onClick={() => {
+              setShowInstallModal(false);
+              installPromptEvent.prompt();
+            }}>
+              <span className="activeNavButtonText navButtonText">Install App</span>
+            </button>
+          </div>
+        </div>
       )}
       {/* --- END OF FIX --- */}
       </>
