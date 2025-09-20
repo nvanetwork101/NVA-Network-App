@@ -1,13 +1,1 @@
-# Dependencies
-node_modules/
-
-# Build artifacts
-build/
-
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Environment variables
-.env
+functions/service-account-key.json

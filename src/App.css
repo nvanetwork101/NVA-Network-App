@@ -1,0 +1,269 @@
+/* --- CSS for Admin Appeals Queue --- */
+
+.appealsList {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.appealItem {
+    background-color: #333;
+    border-radius: 8px;
+    padding: 15px;
+    border-left: 5px solid #555; /* Default border for content appeals */
+    transition: all 0.3s ease;
+}
+
+/* URGENT: Style for suspension appeals */
+.appealItem--suspension {
+    border-left-color: #DC3545; /* Red border for high urgency */
+    background-color: #403032;
+}
+
+.appealHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    color: #FFF;
+}
+
+.appealTimestamp {
+    font-size: 12px;
+    color: #AAA;
+}
+
+.appealType {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: #DDD;
+}
+
+.appealMessage {
+    margin: 0 0 15px 0;
+    color: #CCC;
+    line-height: 1.5;
+    white-space: pre-wrap; /* Preserves line breaks in the message */
+}
+
+.appealActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.adminActionButton:disabled {
+    background-color: #555;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.adminActionButton:disabled {
+    background-color: #555;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* --- CSS for Top Creators Screen --- */
+
+.leaderboard-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+}
+.leaderboard-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 12px 15px;
+    background: linear-gradient(145deg, #333333, #222222); /* Dark gradient for depth */
+    border-radius: 10px;
+    border: 1px solid #444;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+}
+.leaderboard-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.7);
+    border-color: #FFD700;
+}
+/* Special gradient backgrounds for Top 3 */
+.leaderboard-item.rank-1 {
+    background: linear-gradient(145deg, #4d3c00, #332800);
+    border-color: #FFD700;
+}
+.leaderboard-item.rank-2 {
+    background: linear-gradient(145deg, #4d4d4d, #333333);
+    border-color: #C0C0C0;
+}
+.leaderboard-item.rank-3 {
+    background: linear-gradient(145deg, #5c3c1a, #4d3116);
+    border-color: #CD7F32;
+}
+/* Yellow border highlight for ranks 4-6 */
+.leaderboard-item.rank-4,
+.leaderboard-item.rank-5,
+.leaderboard-item.rank-6 {
+    border-left: 5px solid #FFD700;
+}
+.leaderboard-rank {
+    font-size: 22px;
+    font-weight: bold;
+    color: #FFF;
+    width: 40px;
+    text-align: center;
+    flex-shrink: 0;
+}
+/* Special rank number colors for Top 3 */
+.rank-1 .leaderboard-rank { color: #FFD700; }
+.rank-2 .leaderboard-rank { color: #C0C0C0; }
+.rank-3 .leaderboard-rank { color: #CD7F32; }
+
+.leaderboard-pfp {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #555;
+}
+.leaderboard-info {
+    flex-grow: 1;
+}
+.leaderboard-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #FFF;
+}
+.leaderboard-stats {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+.leaderboard-stat-value {
+    font-size: 18px;
+    font-weight: bold;
+    color: #FFD700; /* Gold color for the stat value */
+}
+.leaderboard-stat-label {
+    font-size: 12px;
+    color: #AAA;
+}
+
+/* --- CSS for Contextual Buttons --- */
+.button-contextual {
+    background-color: #007BFF; /* A distinct but fitting color */
+    border: 1px solid #0056b3;
+}
+
+/* --- LIVE CHAT CONTAINER STYLES --- */
+
+/* This creates the scrollable window for the messages */
+.liveChatMessagesArea {
+  max-height: 500px; /* Adjust this value as needed */
+  overflow-y: auto; /* Adds a scrollbar only when content overflows */
+  padding: 10px;
+  background-color: #1A1A1A; /* Dark background for the area */
+  border-radius: 8px;
+  border: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 10px; /* Adds space between messages */
+}
+
+/* Base style for all chat message bubbles */
+.chatMessageItem {
+  background-color: #2D3748; /* Dark Blue-Gray (Default) */
+  padding: 10px 15px;
+  border-radius: 12px;
+  border-left: 5px solid #4A5568; /* Default border color */
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+/* Special style for moderators, using an indigo theme */
+.chatMessageItem.moderator {
+  background-color: #2c2541; /* Dark Indigo */
+  border-left-color: #4f46e5; /* Bright Indigo */
+}
+
+.commentAuthor {
+  font-weight: bold;
+  color: #E2E8F0;
+}
+
+/*
+ *  CORRECTED Modern Category Button Styling
+ *  This block fixes the text overflow issue.
+ */
+
+/* Base style for all category tabs */
+.categoryTab {
+    background-color: #333;
+    color: #FFF;
+    border: 1px solid #555;
+    border-radius: 20px;
+    padding: 0;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+/* Style for the text span INSIDE the button */
+.categoryTabText {
+    display: inline-block;
+    padding: 8px 16px;
+    line-height: 1;
+    white-space: nowrap; /* THIS IS THE FIX: Prevents text from wrapping */
+}
+
+/* Hover effect for all tabs */
+.categoryTab:hover {
+    background-color: #444;
+    border-color: #777;
+}
+
+/* Style for the currently active tab */
+.activeCategoryTab {
+    background-color: #FFD700;
+    color: #1A1A1A;
+    border-color: #FFD700;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+/* Container for the "More..." button and its dropdown */
+.more-content-button {
+    position: relative;
+    display: inline-block;
+}
+
+/* The dropdown menu */
+.more-content-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 8px;
+    background-color: #2A2A2A;
+    border: 1px solid #555;
+    border-radius: 8px;
+    padding: 8px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Ensure buttons inside the dropdown take up the full width */
+.more-content-dropdown .categoryTab {
+    width: 100%;
+    justify-content: flex-start; /* Aligns text to the left */
+}

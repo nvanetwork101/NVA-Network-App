@@ -1,0 +1,235 @@
+rules_version = '2';
+
+// =====================================================================
+// === YOUR EXISTING FIRESTORE RULES (UNCHANGED AND FULLY PRESERVED) ===
+// =====================================================================
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- HELPER FUNCTIONS ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function getMyData() {
+      return get(/databases/$(database)/documents/creators/$(request.auth.uid)).data;
+    }
+    function getUserData(userId) {
+      return get(/databases/$(database)/documents/creators/$(userId)).data;
+    }
+    function isAdmin() {
+      return isAuthenticated() && getMyData().role == 'admin';
+    }
+    function isAuthority() {
+      return isAuthenticated() && getMyData().role == 'authority';
+    }
+    function isModerator() {
+      return isAuthenticated() && (getMyData().role == 'admin' || getMyData().role == 'authority');
+    }
+
+    // --- COLLECTION RULES ---
+
+    match /creators/{userId} {
+      function areSensitiveCreatorFieldsUnchanged() {
+        return request.resource.data.role == resource.data.role &&
+               request.resource.data.banned == resource.data.banned &&
+               request.resource.data.email == resource.data.email &&
+               request.resource.data.creatorName == resource.data.creatorName &&
+               request.resource.data.bio == resource.data.bio &&
+               request.resource.data.profilePictureUrl == resource.data.profilePictureUrl;
+      }
+      allow read: if request.auth.uid != null;
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      
+      allow update: if 
+        (isAuthenticated() && request.auth.uid == userId) || 
+        isModerator() ||
+        (isAuthenticated() && 
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followerCount']) &&
+          (request.resource.data.followerCount == resource.data.followerCount + 1 ||
+           request.resource.data.followerCount == resource.data.followerCount - 1)
+        );
+
+      allow delete: if false;
+
+      match /followers/{followerId} {
+        allow read: if true;
+        allow write: if isAuthenticated() && request.auth.uid == followerId;
+      }
+      match /following/{followedUserId} {
+        allow read: if true;
+        allow write: if isAuthenticated() && request.auth.uid == userId;
+      }
+      match /feed/{feedItemId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow delete: if isAuthenticated() && request.auth.uid == userId;
+        allow create, update: if false;
+      }
+      match /seenNotifications/{notificationId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow read, update: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create, delete: if false;
+    }
+
+    match /broadcast_notifications/{notificationId} {
+      allow read;
+      allow write: if false;
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isModerator();
+    }
+    match /settings/featuredContentSlots {
+      allow read: if true;
+      allow write: if isModerator();
+    }
+    match /settings/homeScreenLayout {
+      allow read: if true;
+      allow write: if isModerator();
+    }
+    match /contactSubmissions/{submissionId} {
+      allow create: if isAuthenticated();
+      allow read, update, delete: if isModerator();
+    }
+    
+    match /statistics/events/data/{eventId} {
+      allow read: if isModerator();
+      allow write: if false;
+
+      match /recentPurchases/{purchaseId} {
+        allow read: if isModerator();
+        allow write: if false;
+      }
+    }
+
+    match /statistics/platform_overview {
+      allow read: if isModerator();
+      allow write: if false; // Only backend functions can write
+    }
+
+    match /public_donations/{donationId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /leaderboard/topPerformers {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /content_categories/{categoryId} {
+      allow read;
+      allow create, update, delete: if isModerator();
+    }
+    match /banRequests/{requestId} {
+      allow create: if getMyData().role == 'authority' && request.resource.data.requesterId == request.auth.uid;
+      allow read: if isAdmin();
+      allow delete: if isAdmin();
+      allow update: if false;
+    }
+    match /paymentPledges/{pledgeId} {
+      allow create: if isAuthenticated()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status == 'pending';
+      allow read: if (isAuthenticated() && resource.data.userId == request.auth.uid)
+                  || isModerator();
+      allow update: if isModerator();
+      allow delete: if isModerator();
+    }
+
+    match /artifacts/{appId}/public/data/content_items/{contentId} {
+      allow read: if resource.data.isActive == true || isModerator() || request.auth.uid == resource.data.creatorId;
+      allow create: if isModerator() || (isAuthenticated() && request.auth.uid == request.resource.data.creatorId);
+      allow update: if isModerator() || 
+                     (isAuthenticated() && request.auth.uid == resource.data.creatorId && 
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isFeatured', 'viewCount', 'likeCount']));
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.creatorId || isAdmin() || (isAuthority() && getUserData(resource.data.creatorId).role != 'admin'));
+
+      match /likes/{userId} {
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        allow create, delete: if isAuthenticated() && request.auth.uid == userId;
+        allow update: if false;
+      }
+      match /daily_clicks/{date} {
+        allow write: if isAuthenticated() && request.auth.uid != request.resource.data.creatorId;
+      }
+    }
+
+    match /artifacts/{appId}/public/data/campaigns/{campaignId} {
+      allow read: if (resource.data.status == 'active') || (isAuthenticated() && resource.data.creatorId == request.auth.uid) || (isModerator());
+      allow create: if (isAuthenticated() && request.resource.data.creatorId == request.auth.uid && request.resource.data.status == 'pending' && request.resource.data.raised == 0);
+      allow update: if isAuthenticated() && (
+        (request.resource.data.raised > resource.data.raised && request.resource.data.keys().hasOnly(['raised', 'updatedAt'])) ||
+        (resource.data.creatorId == request.auth.uid && request.resource.data.status == 'cancelled' && request.resource.data.keys().hasAll(['status', 'updatedAt', 'statusChangedAt'])) ||
+        (isAdmin()) ||
+        (isAuthority() && getUserData(resource.data.creatorId).role != 'admin')
+      );
+      allow delete: if false;
+
+      match /donations/{donationId} {
+        allow read: if isModerator() || (isAuthenticated() && get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(campaignId)).data.creatorId == request.auth.uid);
+        allow create: if isAuthenticated();
+      }
+    }
+  }
+}
+
+// =====================================================================
+// === YOUR FIREBASE STORAGE RULES (EXACTLY AS YOU PROVIDED) ===
+// =====================================================================
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // --- HELPER FUNCTION ---
+    // Checks Firestore to see if the requesting user is an admin or authority.
+    function isModerator() {
+      return request.auth != null && get(/databases/$(database)/documents/creators/$(request.auth.uid)).data.role in ['admin', 'authority'];
+    }
+
+    // Allows moderators to upload custom thumbnails for curation.
+    match /curated_thumbnails/{allPaths=**} {
+      allow write: if isModerator();
+      allow read;
+    }
+
+    // Allows moderators to upload images for external ads.
+    match /external_ads/{allPaths=**} {
+      allow write: if isModerator();
+      allow read;
+    }
+    
+    // Allows moderators to upload thumbnails for live premieres.
+    match /premiere_thumbnails/{fileName} {
+      allow write: if isModerator();
+      allow read;
+    }
+
+    // Allows a user to upload thumbnails for their own campaigns.
+    match /campaign_thumbnails/{userId}/{fileName} {
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read;
+    }
+
+    // Allows a user to upload their own profile picture.
+    match /profile_pictures/{userId}/{fileName} {
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read;
+    }
+    
+    // Generic upload folder for creators.
+    match /creator_uploads/{userId}/{fileName} {
+       allow write: if request.auth != null && request.auth.uid == userId;
+       allow read;
+    }
+
+    // This corrected rule targets the correct path and ensures that
+    // an authenticated user can write to their OWN folder OR
+    // that a moderator can write to ANY user's folder.
+    match /content_thumbnails/{userId}/{fileName} {
+      allow write: if request.auth != null && (request.auth.uid == userId || isModerator());
+      allow read;
+    }
+  }
+}

@@ -1,0 +1,67 @@
+.headerTitle {
+    font-family: 'Cinzel', serif;
+    font-size: 32px;
+    font-weight: 700;
+    color: #FFD700; /* Gold color */
+    margin: 0;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* ===================================================================== */
+/* ============= STYLES FOR ADMIN EVENT MANAGER SCREEN ================= */
+/* ===================================================================== */
+
+/* Main container for the list */
+.event-list-container {
+    background-color: #1A1A1A; /* Dark background */
+    border: 1px solid #3A3A3A; /* Subtle border */
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+/* Header row for titles */
+.event-list-header {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    font-weight: bold;
+    color: #AAA; /* Grey color for header text */
+    border-bottom: 2px solid #FFD700; /* Gold accent border */
+    font-size: 14px;
+}
+
+/* Container for the scrollable event items */
+.event-list-body {
+    max-height: 60vh; /* Set a maximum height */
+    overflow-y: auto; /* This guarantees the vertical scrollbar appears when needed */
+}
+
+/* Individual row for each event */
+.event-list-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #3A3A3A; /* Separator line for rows */
+    gap: 1rem; /* Space between columns */
+}
+
+/* Styling for the status badge */
+.status-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 12px;
+    color: #FFFFFF;
+    text-align: center;
+}
+
+/* Color coding for each status */
+.status-upcoming {
+    background-color: #007BFF; /* Blue */
+}
+.status-live {
+    background-color: #DC3545; /* Red */
+}
+.status-completed {
+    background-color: #6c757d; /* Grey */
+}

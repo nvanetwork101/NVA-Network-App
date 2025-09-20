@@ -1,0 +1,2737 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --- Your Original CSS Code Starts Here --- */
+
+/* --- NEW STYLES for User Search Screen --- */
+.user-search-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+}
+.user-search-item {
+    background-color: #2A2A2A;
+    border-radius: 10px;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    transition: background-color 0.2s ease;
+}
+.user-search-item:hover {
+    background-color: #3A3A3A;
+}
+.user-search-pfp {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #FFD700;
+}
+.user-search-info {
+    flex-grow: 1;
+}
+.user-search-name {
+    font-size: 16px;
+    font-weight: bold;
+    color: #FFF;
+}
+.user-search-role {
+    font-size: 12px;
+    color: #AAA;
+}
+.user-search-campaign-badge {
+    background-color: #00FF00;
+    color: #0A0A0A;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: bold;
+    margin-left: 10px;
+    vertical-align: middle; /* Helps align it nicely with the name */
+}
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+html {
+    overflow-y: scroll; /* This is the definitive fix. It prevents layout shift. */
+}
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #0A0A0A; /* Set the body background to match the app */
+}
+body {
+    font-family: 'Inter', sans-serif;
+    color: #FFF;
+    display: flex;
+    justify-content: center; /* This centers the app on larger screens */
+    -webkit-overflow-scrolling: touch;
+}
+
+.loading-video-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #0A0A0A;
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.loading-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* This makes the video cover the screen without stretching */
+}
+
+#root {
+    width: 100%; /* Ensure root takes full width of the centered body */
+    min-height: 100vh;
+    background-color: #0A0A0A;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    max-width: 1200px; /* This now becomes the effective width on large screens */
+}
+.container {
+    flex: 1; /* This makes the container grow to fill available space */
+    background-color: #0A0A0A; /* Dark background */
+    overflow-y: auto; /* The content inside this container will scroll */
+    display: flex;
+    flex-direction: column;
+}
+.header {
+    position: relative; /* Keep for absolute positioning of logo */
+    height: 150px;
+    padding: 0 15px; /* Add padding for spacing */
+    background-color: #0A0A0A;
+    border-bottom: 1px solid #333;
+    border-radius: 15px 15px 0 0;
+    display: flex; /* Use flexbox to align items */
+    justify-content: space-between; /* Space between left content and logo */
+    align-items: center; /* Vertically center items */
+}
+
+/* New container for the text and button on the left */
+.header-content-left {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around; /* This will space out the three items */
+    height: 100%; /* Take full height of the header */
+    padding: 10px 0; /* Add some vertical padding */
+    z-index: 3;
+}
+
+.headerTitle {
+    font-family: 'Alfa Slab One', serif;
+    font-size: 32px;
+    font-weight: 400; /* This font's regular weight is already very bold */
+    color: #FFD700;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    margin: 0;
+    line-height: 1.1;
+    text-align: left;
+}
+.tagline {
+    /* Remove absolute positioning */
+    font-size: 14px;
+    color: #AAA;
+    font-weight: normal;
+    text-align: left;
+    margin: 0; /* Remove default margins */
+}
+
+/* NEW CONTAINER for the right side of the header */
+ .header-right-group {
+    display: flex;
+    align-items: center; /* Vertically aligns the logo and button */
+    gap: 15px; /* Creates space between the logo and the button */
+}
+.headerLogo {
+    height: 135px; /* Makes the logo larger to fill more of the header space */
+    width: auto;   /* Maintains the correct aspect ratio */
+    object-fit: contain;
+}
+.navigationBar {
+    display: flex;
+    flex-wrap: wrap; /* The key property to allow wrapping */
+    justify-content: center; /* Centers the buttons as a group */
+    gap: 15px; /* Creates perfect 15px spacing between all items */
+    padding: 15px; /* Provides breathing room around the buttons */
+    background-color: #1A1A1A;
+    border-top: 1px solid #333;
+    border-radius: 0 0 15px 15px;
+}
+.navButton {
+    padding: 8px 15px;
+    border-radius: 25px; /* Adjusted for consistency with other buttons */
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    background-color: #FFD700; /* Changed to gold for visibility */
+    box-shadow: 0 4px 5px rgba(0, 0, 0, 0.3);
+    border: none; /* Removed border */
+}
+.navButton:hover {
+    background-color: #FFC400;
+}
+.navButtonText {
+    color: #0A0A0A; /* Changed to black for visibility */
+    font-size: 14px;
+    font-weight: 600;
+}
+.activeNavButtonText {
+    color: #0A0A0A; /* Changed to black for visibility on gold background */
+}
+.screenContainer {
+    flex: 1;
+    padding: 15px;
+    /* Removed overflow-y: auto; here as body will handle overall scrolling */
+    position: relative; /* Added for positioning the new support button */
+}
+.sectionTitle {
+    font-size: 20px;
+    font-weight: bold;
+    color: #FFF;
+    margin-bottom: 15px;
+    margin-top: 20px;
+}
+
+.contentGrid {
+    display: grid;
+    gap: 15px;
+    /* Mobile First: Default to 2 columns */
+    grid-template-columns: repeat(2, 1fr);
+}
+
+/* Tablet & Desktop: Switch to 3 columns on larger screens */
+@media (min-width: 768px) {
+    .contentGrid {
+        grid-template-columns: repeat(3, 1fr); /* THE FIX: Force 3 columns on desktop */
+    }
+}
+
+/* --- NEW UTILITY CLASS FOR ADMIN LAYOUTS --- */
+.grid-2-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+}
+
+.contentCard {
+    /* The width is now controlled by the parent grid. */
+    /* We remove margin-bottom because the parent's 'gap' property handles all spacing. */
+    background-color: #2A2A2A;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+.contentCard:hover {
+    transform: translateY(-3px);
+}
+.thumbnailPlaceholder {
+    width: 100%;
+    height: 100px;
+    background-color: #444;
+    display: flex;
+    flex-direction: column; /* To stack text and icon */
+    justify-content: center;
+    align-items: center;
+    position: relative; /* For play icon positioning */
+}
+.thumbnailText {
+    color: #FFF;
+    font-size: 12px;
+    margin-bottom: 5px; /* Space between text and icon */
+}
+.playIcon {
+    width: 30px;
+    height: 30px;
+    fill: #FFD700; /* Gold color for play icon */
+    opacity: 0.8;
+}
+/* --- START: New Follow System Styles --- */
+.follow-button {
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    border: 2px solid #FFD700;
+    transition: background-color 0.2s, color 0.2s;
+}
+.follow-button.following {
+    background-color: transparent;
+    color: #FFD700;
+}
+.follow-button.not-following {
+    background-color: #FFD700;
+    color: #0A0A0A;
+}
+.follow-stats {
+    display: flex;
+    gap: 20px;
+    justify-content: flex-start; /* Aligned to left now */
+    margin-top: 10px;
+}
+.follow-stat-item {
+    text-align: center;
+}
+.follow-stat-value {
+    font-size: 16px;
+    font-weight: bold;
+    color: #FFF;
+    margin-right: 5px; /* Space between number and label */
+}
+.follow-stat-label {
+    font-size: 12px;
+    color: #AAA;
+}
+/* --- END: New Follow System Styles --- */
+
+/* --- START: New Public Profile Library Styles --- */
+.profile-content-section {
+    margin-top: 25px;
+}
+
+.pinned-item-card {
+    background-color: #3A3A3A; /* Slightly lighter to stand out */
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.7);
+    border: 1px solid #FFD700; /* Gold border for pinned items */
+    position: relative; /* For the pin icon */
+    grid-column: span 2; /* Pinned items take full width on mobile */
+}
+
+/* On larger screens, allow 2 or 3 pinned items per row */
+@media (min-width: 768px) {
+     .pinned-item-card {
+        grid-column: span 1;
+    }
+}
+
+.pinned-item-thumbnail {
+    width: 100%;
+    height: 150px; /* Taller thumbnail for featured items */
+    object-fit: cover;
+    display: block;
+}
+
+.pinned-indicator-icon {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background-color: rgba(255, 215, 0, 0.8);
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(2px);
+}
+
+.pinned-indicator-icon svg {
+    width: 16px;
+    height: 16px;
+    fill: #0A0A0A;
+}
+/* --- END: New Public Profile Library Styles --- */
+
+/* --- START: New Enlarged Profile Picture Modal Styles --- */
+.pfpModalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85); /* Dark, focused background */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2500;
+}
+
+.pfpModalContent {
+    position: relative;
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.pfpModalImage {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+    border-radius: 10px;
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.5);
+}
+/* --- END: New Enlarged Profile Picture Modal Styles --- */
+.contentTitle {
+    font-size: 14px;
+    font-weight: bold;
+    color: #FFF;
+    padding: 10px;
+}
+.more-content-button {
+    position: relative;
+}
+.more-content-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0; /* This is the key change for alignment */
+    width: 100%; /* Make the dropdown match the button's width */
+    margin-top: 5px;
+    background-color: #2A2A2A;
+    border: 1px solid #444;
+    border-radius: 8px;
+    z-index: 100;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+}
+.more-content-dropdown .categoryTab {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 5px;
+    justify-content: center; /* This is the fix */
+}
+.more-content-dropdown .categoryTab:last-child {
+    margin-bottom: 0;
+}
+.categoryTabs {
+    margin-bottom: 15px;
+    height: 40px;
+    display: flex;
+    /* This property is key for equal spacing of the visible buttons */
+    justify-content: space-around;
+    align-items: center;
+    position: relative; /* Crucial for positioning the dropdown */
+}
+.moreCategoriesMenu {
+    position: absolute;
+    top: 100%; /* Position it right below the tabs bar */
+    right: 0; /* Align to the right side */
+    background-color: #1A1A1A;
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.7);
+    border: 1px solid #333;
+    z-index: 100; /* Ensure it appears above other content */
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 200px; /* Give the menu a fixed width */
+}
+.moreMenuItem {
+    width: 100%; /* Make each button take the full width of the menu */
+    margin-right: 0; /* Override the default margin */
+}
+
+.categoryTab {
+    padding: 8px 15px;
+    border-radius: 20px;
+    background-color: #3A3A3A;
+    margin-right: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 0; /* Prevent tabs from shrinking */
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.categoryTab:hover {
+    background-color: #4A4A4A;
+}
+
+.activeCategoryTab {
+    background-color: #FFD700; /* Gold highlight for active category */
+}
+
+.categoryTabText {
+    color: #FFF;
+    font-weight: 600;
+    white-space: nowrap; /* Prevent text from wrapping inside the button */
+}
+.activeCategoryTabText {
+    color: #0A0A0A; /* Dark text on gold background */
+}
+.categoryContent {
+    flex: 1;
+    /* Removed overflow-y: auto; here as body will handle overall scrolling */
+}
+/* 1. CORRECTED: Horizontal Carousel Container */
+.horizontal-carousel-container {
+    width: 100%;
+    overflow-x: auto; /* Use auto to allow scrolling */
+    scroll-behavior: smooth;
+    display: flex;
+    gap: 15px; /* MODERN WAY: Use gap for spacing */
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+    /* Hide the scrollbar visually */
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+.horizontal-carousel-container::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, and Opera */
+}
+
+/* 2. CORRECTED: Horizontal Carousel Item */
+.horizontal-carousel-item {
+    flex: 0 0 calc((100% / 3) - 10px); /* ROBUST WAY: Calculate width based on 3 items */
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+    background-color: #2A2A2A;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #FFF;
+    font-size: 12px;
+    height: 100px;
+    /* REMOVED: margin-right, as gap now handles it */
+}
+.horizontal-carousel-item:last-child {
+    margin-right: 0; /* No margin on the last item */
+}
+.carousel-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Cover the item area */
+    border-radius: 10px; /* Inherit border-radius */
+}
+
+/* Vertical Carousel Styles (Live Feed) */
+.vertical-carousel-container {
+    width: 100%;
+    height: 250px; /* Fixed height for vertical carousel to show ~2 items */
+    overflow-y: hidden; /* Hide scrollbar, manage scrolling with JS */
+    -webkit-overflow-scrolling: touch; /* Enable touch scrolling */
+    scroll-snap-type: y mandatory; /* Snap to items */
+    scroll-behavior: smooth; /* Smooth scrolling animation */
+    display: flex;
+    flex-direction: column; /* Arrange items in a column */
+    margin-bottom: 20px;
+    background-color: #1A1A1A;
+    border-radius: 10px;
+    padding: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
+.vertical-carousel-item {
+    flex: 0 0 calc(50% - 10px); /* Show 2 items per view, with a gap */
+    margin-bottom: 15px; /* Space between items */
+    background-color: #2A2A2A;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+    scroll-snap-align: start; /* Snap to the start of each item */
+    display: flex;
+    align-items: center;
+    padding: 10px;
+}
+
+.vertical-carousel-item:last-child {
+    margin-bottom: 0;
+}
+
+.liveFeedThumbnail {
+    width: 80px; /* Fixed width for live feed thumbnails */
+    height: 60px; /* Fixed height for live feed thumbnails (16:9 aspect ratio) */
+    object-fit: cover;
+    border-radius: 8px;
+    margin-right: 10px;
+}
+
+.liveFeedContent {
+    flex-grow: 1;
+}
+
+.liveFeedTitle {
+    font-size: 14px;
+    font-weight: bold;
+    color: #FFF;
+    margin-bottom: 5px;
+}
+
+.liveFeedCreator {
+    font-size: 12px;
+    color: #AAA;
+}
+
+.heading {
+    font-size: 24px;
+    font-weight: bold;
+    color: #FFD700;
+    margin-bottom: 10px;
+    text-align: center;
+}
+.subHeading {
+    font-size: 16px;
+    color: #FFF;
+    margin-bottom: 20px;
+    text-align: center;
+}
+.paragraph {
+    font-size: 14px;
+    color: #CCC;
+    margin-bottom: 10px;
+    line-height: 20px;
+}
+.button {
+    background-color: #FFD700;
+    padding: 12px 25px;
+    border-radius: 25px;
+    align-self: center;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    box-shadow: 0 4px 5px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.3s ease;
+}
+.button:hover {
+    background-color: #FFC400;
+}
+.button .buttonText {
+    color: #0A0A0A;
+    font-size: 16px;
+    font-weight: bold;
+    text-align: center;
+}
+.buttonText.light {
+    color: #E0E0E0; /* Light grey, near-white text */
+}
+.smallText {
+    font-size: 12px;
+    color: #888;
+    text-align: center;
+    margin-bottom: 10px;
+}
+.listItem {
+    font-size: 14px;
+    color: #CCC;
+    margin-left: 15px;
+    margin-bottom: 5px;
+}
+.premiumFeatureCard {
+    background-color: #2A2A2A;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.premiumFeatureTitle {
+    font-size: 18px;
+    font-weight: bold;
+    color: #FFD700;
+    margin-bottom: 5px;
+}
+.premiumFeatureDescription {
+    font-size: 14px;
+    color: #CCC;
+    line-height: 20px;
+}
+.pricingTable {
+    background-color: #2A2A2A;
+    border-radius: 10px;
+    padding: 15px;
+    margin-top: 15px;
+}
+.pricingRow {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #333;
+}
+.pricingRow:last-child {
+    border-bottom: none; /* No border for the last row */
+}
+.pricingTier {
+    font-size: 16px;
+    font-weight: bold;
+    color: #FFD700;
+    flex: 1;
+}
+.pricingFeatures {
+    font-size: 14px;
+    color: #CCC;
+    flex: 2;
+    text-align: left;
+    margin-left: 10px;
+}
+.pricingPrice {
+    font-size: 16px;
+    font-weight: bold;
+    color: #FFF;
+    flex: 1;
+    text-align: right;
+}
+.contactInfo {
+    font-size: 14px;
+    color: #CCC;
+    margin-bottom: 5px;
+}
+.messageBox {
+    position: fixed; /* Use fixed for overlay */
+    bottom: 100px; /* Above navigation bar */
+    left: 50%;
+    transform: translateX(-50%); /* Center horizontally */
+    background-color: rgba(0, 0, 0, 0.8);
+    padding: 12px 20px;
+    border-radius: 8px;
+    z-index: 4000; /* THIS IS THE FIX: Ensures it appears above all modals */
+    opacity: 1;
+    transition: opacity 0.3s ease-in-out;
+    pointer-events: none; /* Allow clicks to pass through */
+    max-width: 90%;
+}
+.messageBox.hidden {
+    opacity: 0;
+}
+.messageText {
+    color: #FFF;
+    text-align: center;
+    font-size: 14px;
+}
+/* Video Modal Styles */
+.videoModalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.9);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+.videoModalContent {
+    background-color: #1A1A1A;
+    border-radius: 0; /* Removed for full screen effect */
+    width: 100vw; /* Make it take 100% of viewport width */
+    height: 100vh; /* Make it take 100% of viewport height */
+    max-width: 1200px; /* Cap maximum width for very large screens */
+    max-height: 800px; /* Cap maximum height for very large screens to maintain aspect ratio */
+    overflow: hidden;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
+    position: relative;
+    display: flex; /* Enable flex for vertical centering of iframe */
+    flex-direction: column;
+    justify-content: center; /* Center content vertically */
+    align-items: center; /* Center content horizontally */
+}
+.videoIframeContainer {
+    position: relative;
+    width: 100%;
+    padding-bottom: 56.25%; /* 16:9 Aspect Ratio (height relative to width) */
+    height: 0; /* Important for padding-bottom trick */
+    overflow: hidden;
+}
+.videoIframeContainer iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+.videoModalContent.vertical {
+    max-width: 450px; /* Optimal width for phone-like vertical view */
+    height: 100vh;
+    max-height: 100vh; /* Ensure it takes full viewport height */
+    justify-content: center; /* Center the iframe vertically */
+}
+
+.videoIframeContainer.vertical {
+    padding-bottom: 177.77%; /* 9:16 aspect ratio (16 / 9 * 100) */
+}
+.closeButton {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(255, 255, 255, 0.2);
+    color: #FFF;
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    font-size: 18px;
+    font-weight: bold;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    z-index: 10; /* Ensure it's above the iframe */
+}
+
+/* Styles for buttons at the top of the Home screen */
+.topRightButtonContainer {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    display: flex;
+    gap: 10px; /* Space between buttons */
+    z-index: 10;
+}
+
+.topButton {
+    background-color: #FFD700; /* Gold color */
+    color: #0A0A0A; /* Dark text */
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 12px; /* Smaller font for a compact button */
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    border: none;
+    transition: background-color 0.3s ease;
+}
+.topButton:hover {
+    background-color: #FFC400;
+}
+
+
+/* Styles for Creator Campaign Cards */
+.campaignCard {
+    background-color: #2A2A2A;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+}
+.campaignTitle {
+    font-size: 18px;
+    font-weight: bold;
+    color: #FFD700;
+    margin-bottom: 5px;
+}
+.campaignCreator {
+    font-size: 14px;
+    color: #CCC;
+    margin-bottom: 10px;
+}
+.campaignDescription {
+    font-size: 14px;
+    color: #AAA;
+    line-height: 1.5;
+    margin-bottom: 10px;
+}
+.campaignProgressContainer {
+    width: 100%;
+    background-color: #444;
+    border-radius: 5px;
+    height: 10px;
+    margin-bottom: 5px;
+    overflow: hidden; /* Ensure progress bar stays within bounds */
+}
+.campaignProgressBar {
+    height: 100%;
+    background-color: #FFD700;
+    border-radius: 5px;
+    transition: width 0.5s ease-in-out;
+}
+.campaignStats {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #CCC;
+    width: 100%;
+}
+.campaignGoal, .campaignRaised {
+    font-weight: bold;
+    color: #FFF;
+}
+.campaignButton {
+    background-color: #FFD700;
+    padding: 10px 15px;
+    border-radius: 20px;
+    color: #0A0A0A;
+    font-weight: bold;
+    text-align: center;
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.3s ease;
+}
+.campaignButton:hover {
+    background-color: #FFC400;
+}
+
+/* Styles for Creator Sign Up Form */
+.formGroup {
+    margin-bottom: 15px;
+}
+.formLabel {
+    display: block;
+    font-size: 14px;
+    color: #FFF;
+    margin-bottom: 5px;
+    font-weight: bold;
+}
+.formInput, .formTextarea {
+    width: calc(100% - 20px); /* Account for padding */
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #555;
+    background-color: #333;
+    color: #FFF;
+    font-size: 14px;
+}
+.formTextarea {
+    resize: vertical; /* Allow vertical resizing */
+    min-height: 80px;
+}
+.checkboxGroup {
+    margin-bottom: 15px;
+}
+.checkboxLabel {
+    display: block;
+    font-size: 14px;
+    color: #FFF;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+.checkboxItem {
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+}
+.checkboxItem input[type="checkbox"] {
+    margin-right: 8px;
+    width: 18px; /* Larger checkbox for touch */
+    height: 18px;
+    accent-color: #FFD700; /* Highlight checkbox */
+}
+.termsText {
+    font-size: 12px;
+    color: #AAA;
+    margin-top: 10px;
+    line-height: 1.4;
+}
+.termsLink {
+    color: #FFD700;
+    text-decoration: none;
+    font-weight: bold;
+}
+.termsLink:hover {
+    text-decoration: underline;
+}
+
+/* Styles for Creator Dashboard */
+.dashboardSection {
+    background-color: #2A2A2A;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.dashboardSectionTitle {
+    font-size: 18px;
+    font-weight: bold;
+    color: #FFD700;
+    margin-bottom: 10px;
+}
+.dashboardItem {
+    font-size: 14px;
+    color: #CCC;
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+.dashboardButton {
+    background-color: #0A0A0A; /* Changed to black */
+    padding: 8px 15px;
+    border-radius: 20px;
+    color: #FFD700; /* Changed to gold */
+    font-weight: bold;
+    cursor: pointer;
+    border: 1px solid #FFD700; /* Added a gold border for definition */
+    transition: background-color 0.3s ease, color 0.3s ease;
+    margin-top: 10px;
+    margin-right: 10px;
+}
+.dashboardButton:hover {
+    background-color: #FFD700; /* Gold background on hover */
+    color: #0A0A0A; /* Black text on hover */
+}
+.dashboardContentList {
+    margin-top: 10px;
+    padding-left: 0; /* Remove default ul padding */
+    list-style: none; /* Remove bullet points */
+}
+.dashboardContentListItem {
+    background-color: #3A3A3A;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    color: #FFF;
+}
+.dashboardContentListItem span {
+    flex-grow: 1;
+}
+.dashboardContentListItem .actionButton {
+    background-color: #555;
+    color: #FFF;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 15px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-left: 10px;
+    transition: background-color 0.2s ease;
+}
+.dashboardContentListItem .actionButton:hover {
+    background-color: #777;
+}
+
+/* New styles for video link sections in dashboard */
+.videoLinkSection {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #333;
+}
+.videoLinkSection:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+.videoLinkSection .formLabel {
+    margin-bottom: 10px;
+    font-size: 16px;
+    color: #FFD700;
+}
+.videoInputContainer {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.videoInputContainer .formInput {
+    flex-grow: 1;
+}
+.videoThumbnailContainer {
+    position: relative;
+    width: 100%;
+    height: 150px; /* Fixed height for thumbnails */
+    background-color: #444;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 10px;
+    cursor: pointer; /* Indicate clickable */
+}
+.videoThumbnail {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.videoThumbnailOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.thumbnailPlayIcon {
+    width: 40px;
+    height: 40px;
+    fill: #FFF;
+    opacity: 0.9;
+}
+.videoActions {
+    display: flex;
+    justify-content: flex-end; /* Align buttons to the right */
+    gap: 10px;
+}
+.videoActions .actionButton {
+    background-color: #FFD700;
+    color: #0A0A0A;
+    padding: 8px 15px;
+    border-radius: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.3s ease;
+}
+.videoActions .actionButton.remove {
+    background-color: #DC3545; /* Red for remove */
+    color: #FFF;
+}
+.videoActions .actionButton:hover {
+    background-color: #FFC400;
+}
+.videoActions .actionButton.remove:hover {
+    background-color: #C82333;
+}
+/* New styles for login form */
+.loginForm {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+.loginForm .button {
+    width: 100%;
+}
+/* New styling for section title with aligned button */
+.sectionHeaderWithButton {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px; /* Space below the header container */
+    margin-top: 20px;
+}
+.sectionHeaderWithButton .sectionTitle {
+    margin: 0; /* Remove default margins from p tag when in flex container */
+}
+/* Adjust .topButton styles for this context if needed, or create a new class */
+.sectionHeaderButton {
+    background-color: #FFD700; /* Gold color */
+    color: #0A0A0A; /* Dark text */
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 12px; /* Smaller font for a compact button */
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+    border: none;
+    transition: background-color 0.3s ease;
+}
+.sectionHeaderButton:hover {
+    background-color: #FFC400;
+}
+
+.imageAdjustModalContent {
+    background-color: #1A1A1A;
+    border-radius: 15px;
+    padding: 20px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.canvasContainer {
+    position: relative;
+    width: 200px; /* Fixed size for the canvas view */
+    height: 200px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid #FFD700;
+    background-color: #333;
+    margin-bottom: 20px;
+    cursor: grab;
+}
+
+.canvasContainer.dragging {
+    cursor: grabbing;
+}
+
+canvas {
+    display: block;
+    touch-action: none;
+}
+
+.modalButtons {
+    display: flex;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.modalButton {
+    background-color: #FFD700;
+    color: #0A0A0A;
+    padding: 10px 20px;
+    border-radius: 25px;
+    font-weight: bold;
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.3s ease;
+}
+
+.modalButton:hover {
+    background-color: #FFC400;
+}
+
+.modalButton.cancel {
+    background-color: #555;
+    color: #FFF;
+}
+
+.modalButton.cancel:hover {
+    background-color: #777;
+}
+
+/* Styles for Zoom Controls (We will add these later if needed) */
+.zoomControls {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+    align-items: center;
+}
+.zoomButton {
+    background-color: #3A3A3A;
+    color: #FFD700;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid #FFD700;
+    font-size: 24px;
+    font-weight: bold;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+/* Profile Picture Adjustment Modal Styles */
+.imageAdjustModalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.95); /* More opaque */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000; /* Higher z-index than video modal */
+    flex-direction: column;
+    gap: 20px;
+}
+
+.zoomButton:hover {
+    background-color: #4A4A4A;
+}
+
+/* New styles for all campaigns list */
+.allCampaignsList {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-top: 20px;
+}
+.allCampaignsListItem {
+    background-color: #2A2A2A;
+    border-radius: 10px;
+    padding: 15px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: flex-start; /* Align items to the top */
+    cursor: pointer; /* Pointer to indicate clickable for the whole card */
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.allCampaignsListItem:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7);
+}
+.campaignListImagePlaceholder { /* New class for the image/button container */
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-right: 15px;
+    flex-shrink: 0;
+    background-color: #3A3A3A; /* Background for the placeholder/button */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative; /* For the button text */
+    overflow: hidden; /* To handle background image overflow if it's large */
+    background-size: cover; /* Make background image cover the area */
+    background-position: center; /* Center the background image */
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.5); /* Subtle inner shadow */
+}
+.campaignListProjectButton { /* New class for the actual clickable button inside */
+    background-color: rgba(255, 215, 0, 0.8); /* Semi-transparent gold */
+    color: #0A0A0A;
+    padding: 5px 8px;
+    border-radius: 5px;
+    font-size: 10px;
+    font-weight: bold;
+    text-align: center;
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.2s ease;
+    position: absolute; /* Position over the background image */
+    bottom: 5px; /* Place it at the bottom */
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap; /* Prevent text wrapping */
+    text-shadow: 0 0 3px rgba(0,0,0,0.5);
+    line-height: 1; /* Adjust line height for smaller button */
+}
+.campaignListProjectButton:hover {
+    background-color: #FFC400; /* Solid gold on hover */
+}
+
+.campaignListContent {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+.campaignListTitle {
+    font-size: 16px;
+    font-weight: bold;
+    color: #FFD700;
+    margin-bottom: 5px;
+}
+.campaignListCreator {
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    color: #CCC;
+    margin-bottom: 8px;
+}
+.campaignListCreatorProfilePic {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: 8px;
+    border: 1px solid #FFD700; /* Small border for visibility */
+}
+.campaignListDescription {
+    font-size: 13px;
+    color: #AAA;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2; /* Show only 2 lines */
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 10px;
+}
+.campaignListStats {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #CCC;
+    width: 100%;
+}
+.campaignListGoal, .campaignListRaised {
+    font-weight: bold;
+    color: #FFF;
+}
+.fee-info-container {
+    position: relative;
+    display: inline-flex; /* To keep icon next to text */
+    align-items: center;
+    margin-left: 5px; /* Space from the "Raised" text */
+}
+.fee-info-icon {
+    font-size: 10px; /* Smaller icon */
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background-color: #FFD700;
+    color: #0A0A0A;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    cursor: pointer;
+}
+.fee-info-tooltip {
+    position: absolute;
+    bottom: 100%; /* Position above the icon */
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.9);
+    color: #FFF;
+    padding: 8px;
+    border-radius: 5px;
+    font-size: 10px;
+    white-space: normal; /* Allow text to wrap */
+    width: 180px; /* Fixed width for tooltip */
+    text-align: left;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    pointer-events: none; /* Allow clicks to pass through */
+    z-index: 10; /* Ensure it's above other elements */
+    margin-bottom: 5px; /* Space between icon and tooltip */
+}
+.fee-info-container:hover .fee-info-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+
+
+/* Campaign Details Screen Specific Styles */
+ .campaignDetailHeader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.campaignDetailImage {
+    width: 100%;
+    max-width: 350px; /* Max width for images */
+    height: 200px;
+    /* --- START: CORRECTED IMAGE FIT --- */
+    object-fit: contain;
+    background-color: #1A1A1A; /* Fills letterbox space with a dark color */
+    /* --- END: CORRECTED IMAGE FIT --- */
+    border-radius: 10px;
+    margin-bottom: 15px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+}
+/* Style to hide image if it fails to load */
+.campaignDetailImage.hidden {
+    display: none;
+}
+
+.campaignDetailTitle {
+    font-size: 22px;
+    font-weight: bold;
+    color: #FFD700;
+    text-align: center;
+    margin-bottom: 10px;
+}
+.campaignDetailCreator {
+    display: flex;
+    align-items: center;
+    font-size: 15px;
+    color: #CCC;
+    margin-bottom: 15px;
+}
+.campaignDetailCreatorProfilePic {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-right: 10px;
+    border: 2px solid #FFD700;
+}
+.campaignDetailDescription {
+    font-size: 14px;
+    color: #AAA;
+    line-height: 1.6;
+    margin-bottom: 20px;
+    background-color: #1A1A1A;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.3);
+}
+.campaignDetailStats {
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    margin-bottom: 20px;
+    padding: 10px 0;
+    border-top: 1px solid #333;
+    border-bottom: 1px solid #333;
+}
+.campaignDetailStatItem {
+    text-align: center;
+    font-size: 14px;
+    color: #CCC;
+}
+.campaignDetailStatValue {
+    font-size: 18px;
+    font-weight: bold;
+    color: #FFF;
+}
+.campaignDetailProgressBarContainer {
+    width: 80%;
+    background-color: #444;
+    border-radius: 5px;
+    height: 12px;
+    margin-bottom: 10px;
+    overflow: hidden;
+    align-self: center; /* Center the progress bar */
+}
+.campaignDetailProgressBar {
+    height: 100%;
+    background-color: #FFD700;
+    border-radius: 5px;
+}
+
+/* Admin Dashboard Specific Styles */
+.adminActionButton {
+    background-color: #FFD700;
+    color: #0A0A0A;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    border: none;
+    margin-left: 10px;
+    transition: background-color 0.2s ease;
+}
+.adminActionButton.approve {
+    background-color: #008000; /* Green for approve */
+    color: #FFF;
+}
+.adminActionButton.reject {
+    background-color: #DC3545; /* Red for reject */
+    color: #FFF;
+}
+.adminActionButton:hover {
+    filter: brightness(1.1);
+}
+.adminActionButton.approve:hover {
+    background-color: #006400;
+}
+.adminActionButton.reject:hover {
+    background-color: #C82333;
+}
+.adminDashboardItem {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #3A3A3A;
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    color: #FFF;
+    font-size: 14px;
+}
+.adminDashboardItemTitle {
+    flex-grow: 1;
+    font-weight: bold;
+}
+.adminDashboardItemStatus {
+    font-size: 12px;
+    margin-left: 10px;
+    color: #FFD700; /* Default for pending */
+}
+.adminDashboardItemStatus.active {
+    color: #00FF00;
+}
+.adminDashboardItemStatus.rejected {
+    color: #DC3545;
+}
+.admin-nav-button {
+    background-color: #1F1F1F; /* A deeper, richer dark color */
+    color: #C0C0C0; /* A softer, silver-like text color */
+    padding: 6px 14px; /* More compact padding */
+    border-radius: 20px; /* Keep the nice pill shape */
+    font-weight: 600; /* Slightly less bold for a cleaner look */
+    font-size: 13px; /* A more modern, slightly smaller font size */
+    cursor: pointer;
+    border: 1px solid #444; /* A subtle border for definition */
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    transition: all 0.2s ease-in-out;
+    margin: 2px !important;
+}
+
+
+.admin-nav-button:hover {
+    background-color: #333; /* Light up the background on hover */
+    border-color: #FFD700; /* Use the main gold color for the border highlight */
+    color: #FFF; /* Make text pure white on hover for a crisp look */
+    transform: translateY(-2px); /* Give it a satisfying "lift" effect */
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.admin-nav-button.active {
+    background-color: #FFD700; /* Vibrant gold for the active state */
+    color: #0A0A0A; /* High contrast dark text */
+    border-color: #FFD700;
+    transform: translateY(-2px);
+    /* A subtle glow effect using the gold color */
+    box-shadow: 0 4px 15px rgba(255, 215, 0, 0.25);
+    }
+
+    /* THE FIX: Hide the labels completely to save space */
+    .admin-nav-label {
+    display: none;
+    }
+
+        /* --- START: New Donation Ticker Styles --- */
+        .donationTickerContainer {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 1500; /* Above most content, below modals */
+            background-color: rgba(10, 10, 10, 0.85);
+            border: 1px solid #FFD700;
+            border-radius: 10px;
+            padding: 12px 18px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            max-width: 300px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+            pointer-events: none; /* Make it non-interactive */
+        }
+
+        .donationTickerContainer.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .tickerIcon {
+            width: 20px;
+            height: 20px;
+            fill: #FFD700;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        .tickerText {
+            color: #FFF;
+            font-size: 14px;
+            line-height: 1.4;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
+        .tickerText strong {
+            color: #FFD700;
+            font-weight: bold;
+        }
+        /* --- END: New Donation Ticker Styles --- */
+        /* Confirmation Modal Styles */
+        .confirmationModalOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000; /* Higher than any other modal */
+        }
+
+        .confirmationModalContent {
+            background-color: #1A1A1A;
+            border-radius: 15px;
+            padding: 25px;
+            width: 90%;
+            max-width: 350px;
+            box-shadow: 0 0 25px rgba(0, 0, 0, 0.7);
+            text-align: center;
+            color: #FFF;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .confirmationModalTitle {
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFD700;
+            margin-bottom: 10px;
+        }
+
+        .confirmationModalMessage {
+            font-size: 15px;
+            color: #CCC;
+            line-height: 1.5;
+        }
+
+        .confirmationModalButtons {
+            display: flex;
+            justify-content: space-around;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .confirmationButton {
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            transition: background-color 0.3s ease;
+            flex-grow: 1;
+        }
+
+        .confirmationButton.confirm {
+            background-color: #008000; /* Green for confirm */
+            color: #FFF;
+        }
+
+        .confirmationButton.confirm:hover {
+            background-color: #006400;
+        }
+
+        .confirmationButton.cancel {
+            background-color: #DC3545; /* Red for cancel */
+            color: #FFF;
+        }
+
+        .confirmationButton.cancel:hover {
+            background-color: #C82333;
+        }
+
+        .admin-toggle-button:hover {
+            background-color: #FFC400; /* Slightly darker gold on hover */
+            transform: scale(1.05); /* Slight scale effect on hover */
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5); /* Enhanced shadow on hover */
+        }
+
+        /* --- START: Definitive Button Text Color Fix --- */
+        .buttonText.light {
+            color: #E0E0E0; /* Light grey, near-white text */
+        }
+        /* --- END: Definitive Button Text Color Fix --- */
+        .button[style*="#3A3A3A"], /* Targets inline style for #3A3A3A */
+        .button[style*="#555"],    /* Targets inline style for #555 */
+        .modalButton.cancel {
+            color: #E0E0E0 !important; /* !important ensures this overrides other color rules */
+        }
+
+        .dashboardContentListItem .actionButton {
+             background-color: #555;
+             color: #E0E0E0; /* Set default text color */
+        }
+
+        .dashboardContentListItem .actionButton:hover {
+            background-color: #777;
+            color: #FFF !important; /* Ensure hover text is bright white */
+        }
+        /* --- END: Consolidated Grey Button Text Color Fix --- */
+        /* New styles for Upload Progress Bar */
+        .uploadProgressContainer {
+            width: 100%;
+            background-color: #444;
+            border-radius: 5px;
+            height: 12px;
+            margin-top: 15px;
+            overflow: hidden;
+        }
+        .uploadProgressBar {
+            height: 100%;
+            background-color: #008000; /* Green for progress */
+            border-radius: 5px;
+            transition: width 0.2s ease-in-out;
+            text-align: center;
+            line-height: 12px;
+            font-size: 10px;
+            color: #FFF;
+            font-weight: bold;
+        }
+
+
+                /* NEW STYLES for User Search Screen */
+        .user-search-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .user-search-item {
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        }
+        .user-search-pfp {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #FFD700;
+        }
+        .user-search-info {
+            flex-grow: 1;
+        }
+        .user-search-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #FFF;
+        }
+        .user-search-role {
+            font-size: 12px;
+            color: #AAA;
+        }
+        .user-search-campaign-badge {
+            background-color: #00FF00;
+            color: #0A0A0A;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+            /* ====================================================================== */
+        /* ============ START: ADD THIS NEW CSS FOR LIBRARY CONTROLS ============ */
+        /* ====================================================================== */
+
+        .library-item-card {
+            display: flex;
+            flex-direction: column; /* Stacks content and actions */
+            align-items: stretch;
+            background-color: #3A3A3A;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            position: relative; /* Crucial for positioning the pin icon */
+        }
+
+        .library-item-content {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .library-item-thumbnail {
+            width: 120px;
+            height: 68px;
+            object-fit: cover;
+            border-radius: 5px;
+            cursor: pointer;
+            flex-shrink: 0; /* Prevents image from shrinking */
+        }
+
+        .library-item-info {
+            flex-grow: 1;
+            min-width: 0; /* Prevents text overflow issues in flexbox */
+        }
+
+        .library-item-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #FFF;
+            /* Truncate long titles */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .library-item-status {
+            font-size: 12px;
+            color: #CCC;
+        }
+
+        .pin-icon-button {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background-color: rgba(10, 10, 10, 0.6);
+            border: 1px solid #888;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+            z-index: 5; /* Ensures it's above the image */
+        }
+
+        .pin-icon-button:hover {
+            transform: scale(1.1);
+            background-color: rgba(10, 10, 10, 0.8);
+        }
+
+        .pin-icon-button svg {
+            width: 20px;
+            height: 20px;
+            transition: fill 0.2s;
+        }
+
+        .pin-icon-button .pin-svg {
+            fill: #AAA;
+        }
+
+        .pin-icon-button.pinned .pin-svg {
+            fill: #FFD700; /* Gold when pinned */
+        }
+
+        .pin-icon-button.pinned {
+             border-color: #FFD700;
+        }
+
+        /* ====================================================================== */
+        /* ============= END: ADD THIS NEW CSS FOR LIBRARY CONTROLS ============= */
+        /* ====================================================================== */
+
+        /* NEW STYLES for Creator Dashboard Campaign List */
+        .creator-campaign-list-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 10px;
+            background-color: #3A3A3A;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .creator-campaign-thumbnail {
+            width: 80px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+        .creator-campaign-info {
+            flex-grow: 1;
+        }
+        .creator-campaign-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #FFF;
+        }
+        .creator-campaign-status {
+            font-size: 12px;
+        }
+        .status-pending { color: #FFD700; }
+        .status-active { color: #00FF00; }
+        .status-rejected { color: #DC3545; }
+        .status-ended { color: #888; }
+        .status-cancelled { color: #AAA; }
+
+         /* START: New Carousel Navigation Button Styles */
+            .carousel-wrapper {
+            position: relative; /* Establishes a positioning context for the buttons */
+            width: 100%;
+        }
+
+            /* ====================================================================== */
+        /* ======== START: ADD THIS NEW CSS FOR PUBLIC PROFILE LIBRARY ======== */
+        /* ====================================================================== */
+
+        .profile-content-section {
+            margin-top: 25px;
+        }
+
+        .pinned-item-card {
+            background-color: #3A3A3A; /* Slightly lighter to stand out */
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.7);
+            border: 1px solid #FFD700; /* Gold border for pinned items */
+            position: relative; /* For the pin icon */
+            grid-column: span 2; /* Pinned items take full width on mobile */
+        }
+
+        /* On larger screens, allow 2 or 3 pinned items per row */
+        @media (min-width: 768px) {
+             .pinned-item-card {
+                grid-column: span 1;
+            }
+        }
+
+
+        .pinned-item-thumbnail {
+            width: 100%;
+            height: 150px; /* Taller thumbnail for featured items */
+            object-fit: cover;
+            display: block;
+        }
+
+        .pinned-indicator-icon {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background-color: rgba(255, 215, 0, 0.8);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(2px);
+        }
+
+        .pinned-indicator-icon svg {
+            width: 16px;
+            height: 16px;
+            fill: #0A0A0A;
+        }
+
+        /* Re-using .contentGrid for the "All Content" section */
+        /* Re-using .contentCard for the items within it */
+
+        .load-more-container {
+            display: flex;
+            justify-content: center;
+            padding: 20px 0;
+        }
+
+        /* ====================================================================== */
+        /* ========= END: ADD THIS NEW CSS FOR PUBLIC PROFILE LIBRARY ========= */
+        /* ====================================================================== */
+
+        .carousel-nav-btn {
+            position: absolute;
+            z-index: 10;
+            background-color: rgba(10, 10, 10, 0.6); /* Semi-transparent dark background */
+            color: #FFD700; /* Gold icon color */
+            border: 1px solid #FFD700;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            font-size: 20px; /* Adjust size of arrow characters */
+            line-height: 1; /* Ensure vertical centering of arrows */
+        }
+
+        .carousel-nav-btn:hover {
+            background-color: rgba(255, 215, 0, 0.8); /* Semi-transparent gold on hover */
+            color: #0A0A0A; /* Dark icon color on hover */
+            transform: scale(1.1);
+        }
+
+        /* Positioning for Horizontal Carousel Buttons */
+        .carousel-nav-btn.prev-horizontal {
+            top: 50%;
+            left: 5px;
+            transform: translateY(-50%);
+        }
+
+        .carousel-nav-btn.next-horizontal {
+            top: 50%;
+            right: 5px;
+            transform: translateY(-50%);
+        }
+
+        /* Positioning for Vertical Carousel Buttons */
+        .carousel-nav-btn.prev-vertical {
+            left: 50%;
+            top: 5px;
+            transform: translateX(-50%);
+        }
+
+        .carousel-nav-btn.next-vertical {
+            left: 50%;
+            bottom: 5px;
+            transform: translateX(-50%);
+        }
+
+        .header-live-button {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-weight: bold;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    display: inline-flex; /* Allows it to sit nicely with text */
+    align-items: center;
+    gap: 8px;
+    transition: background-color 0.3s, transform 0.2s;
+    margin-top: 10px; /* Gives space below the tagline */
+}
+.header-live-button:hover {
+    transform: scale(1.05); /* Simpler hover effect */
+}
+.header-live-button.countdown {
+    background-color: #008000; /* Green */
+    color: #FFF;
+}
+.header-live-button.live {
+    background-color: #DC3545; /* Red */
+    color: #FFF;
+    animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+    70% { box-shadow: 0 0 10px 10px rgba(220, 53, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
+       /* START: New Leaderboard Styles */
+        .leaderboard-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 10px;
+            background-color: #2A2A2A;
+            border-radius: 10px;
+            border-left: 5px solid transparent;
+            transition: background-color 0.3s;
+        }
+        .leaderboard-item.rank-1 {
+            background-color: rgba(255, 215, 0, 0.15);
+            border-left-color: #FFD700;
+        }
+        .leaderboard-item.rank-2 {
+            background-color: rgba(192, 192, 192, 0.15);
+            border-left-color: #C0C0C0;
+        }
+        .leaderboard-item.rank-3 {
+            background-color: rgba(205, 127, 50, 0.15);
+            border-left-color: #CD7F32;
+        }
+        .leaderboard-rank {
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFF;
+            width: 40px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .leaderboard-pfp {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #555;
+        }
+        .leaderboard-info {
+            flex-grow: 1;
+        }
+        .leaderboard-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #FFF;
+        }
+        .leaderboard-clicks-container {
+            text-align: right;
+        }
+        .leaderboard-clicks {
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFD700;
+        }
+        .leaderboard-clicks-label {
+            font-size: 12px;
+            color: #AAA;
+        }
+        .leaderboard-tabs {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        /* END: New Leaderboard Styles */
+
+        /* START: New Follow System Styles */
+        .follow-button {
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            border: 2px solid #FFD700;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .follow-button.following {
+            background-color: transparent;
+            color: #FFD700;
+        }
+        .follow-button.not-following {
+            background-color: #FFD700;
+            color: #0A0A0A;
+        }
+        .follow-stats {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .follow-stat-item {
+            text-align: center;
+        }
+        .follow-stat-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #FFF;
+        }
+        .follow-stat-label {
+            font-size: 12px;
+            color: #AAA;
+        }
+        /* END: New Follow System Styles */
+
+            /* ====================================================================== */
+        /* ============ START: ADD THIS ENTIRE NEW CSS BLOCK ==================== */
+        /* ====================================================================== */
+
+        /* Custom Scrollbar Styles for a more integrated look */
+        ::-webkit-scrollbar {
+            width: 8px; /* Makes the scrollbar slimmer */
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1A1A1A; /* Sets the track color to match our theme */
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background-color: #4A4A4A; /* A subtle, darker grey for the scrollbar itself */
+            border-radius: 4px;      /* Rounded corners for the scrollbar */
+            border: 2px solid #1A1A1A; /* Creates a padding effect around the thumb */
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: #FFD700; /* On hover, the scrollbar turns gold */
+        }
+
+        /* ====================================================================== */
+        /* =========== START: ADD THIS ENTIRE NEW CSS BLOCK FOR PFP MODAL ========= */
+        /* ====================================================================== */
+
+        .pfpModalOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85); /* Dark, focused background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2500; /* Above other content, below confirmation modals */
+        }
+
+        .pfpModalContent {
+            position: relative;
+            max-width: 90vw;   /* Ensures image is not too wide on desktop */
+            max-height: 80vh;  /* Ensures image is not too tall on any screen */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .pfpModalImage {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+            border-radius: 10px; /* Soft rounded corners for the image */
+            box-shadow: 0 5px 25px rgba(0, 0, 0, 0.5); /* A nice shadow for depth */
+        }
+            .likesModalOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2600; /* Above PFP modal */
+}
+
+.likesModalContent {
+    background-color: #1A1A1A;
+    border-radius: 15px;
+    padding: 20px;
+    width: 90%;
+    max-width: 400px;
+    max-height: 70vh;
+    box-shadow: 0 0 25px rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+}
+
+.likesModalHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #333;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+.likesModalTitle {
+    font-size: 18px;
+    font-weight: bold;
+    color: #FFF;
+}
+
+.likesList {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding-right: 10px; /* Space for scrollbar */
+}
+
+.likeItem {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 10px 5px;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background-color 0.2s ease;
+}
+
+.likeItem:hover {
+    background-color: #2A2A2A;
+}
+
+.likeItemPfp {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid #FFD700;
+}
+
+.likeItemName {
+    font-size: 15px;
+    font-weight: 600;
+    color: #E0E0E0;
+}
+    .commentsModalContent {
+    background-color: #1A1A1A;
+    border-radius: 15px;
+    padding: 20px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 85vh; /* Taller than likes modal */
+    box-shadow: 0 0 25px rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+}
+
+.commentsList {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+.commentItem {
+    display: flex;
+    align-items: flex-start; /* Aligns pfp to the top of the comment bubble */
+    gap: 15px; /* Increased gap for more breathing room */
+    margin-bottom: 18px; /* Slightly more space between comments */
+}
+
+.commentPfp {
+    width: 40px; /* Increased size */
+    height: 40px; /* Increased size */
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    cursor: pointer;
+    border: 1px solid #444; /* Added subtle border */
+}
+
+.commentContent {
+    flex-grow: 1;
+    background-color: #2A2A2A;
+    border-radius: 12px; /* Slightly more rounded */
+    padding: 10px 14px; /* Adjusted padding for a sleeker feel */
+    position: relative;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3); /* Added subtle shadow for depth */
+}
+
+.commentHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline; /* Aligns text better */
+    margin-bottom: 5px;
+}
+
+.commentAuthor {
+    font-size: 14px; /* Slightly larger name */
+    font-weight: bold;
+    color: #FFD700;
+    cursor: pointer;
+}
+
+.commentText {
+    font-size: 14px;
+    color: #E0E0E0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.5; /* Improved readability */
+}
+
+.commentActions {
+    margin-top: 5px;
+    text-align: right;
+}
+
+.replyButton {
+    background: none;
+    border: none;
+    color: #AAA;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+}
+.replyButton:hover {
+    color: #FFF;
+}
+
+.commentInputContainer {
+    flex-shrink: 0;
+    padding-top: 15px;
+    border-top: 1px solid #333;
+    margin-top: 10px;
+}
+
+.commentTextarea {
+    width: 100%;
+    min-height: 60px;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #555;
+    background-color: #333;
+    color: #FFF;
+    font-size: 14px;
+    resize: vertical;
+}
+
+.commentSubmitBar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.emojiPicker {
+    display: flex;
+    gap: 8px;
+}
+
+.emojiButton {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+.emojiButton:hover {
+    transform: scale(1.2);
+}
+
+.replyingToBanner {
+    background-color: rgba(255, 215, 0, 0.1);
+    border-left: 3px solid #FFD700;
+    padding: 5px 10px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.opportunity-flyer-image {
+    display: block;
+    width: 100%;
+    max-width: 250px; /* Reduced from 400px for a smaller view */
+    height: auto;
+    border-radius: 10px;
+    margin: 0 auto 20px auto;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+.opportunity-flyer-image:hover {
+    transform: scale(1.03);
+}
+    
+/* Definitive styles for the rectangular flyer modal */
+.flyer-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2500; 
+}
+
+.flyer-modal-content {
+    position: relative;
+    max-width: 80vw;      /* Use 80% of the viewport width */
+    max-height: 85vh;     /* Use 85% of the viewport height */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.flyer-modal-image {
+    max-width: 100%;
+    max-height: 100%;
+    display: block;
+    border-radius: 10px; /* Soft rectangle corners, NOT a circle */
+    box-shadow: 0 5px 25px rgba(0, 0, 0, 0.5);
+}
+
+/* ===================================================================== */
+/* ============= STYLES FOR ADMIN EVENT MANAGER SCREEN ================= */
+/* ===================================================================== */
+
+/* Main container for the list */
+.event-list-container {
+    background-color: #1A1A1A; /* Dark background */
+    border: 1px solid #3A3A3A; /* Subtle border */
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+/* Header row for titles */
+.event-list-header {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    font-weight: bold;
+    color: #AAA; /* Grey color for header text */
+    border-bottom: 2px solid #FFD700; /* Gold accent border */
+    font-size: 14px;
+    gap: 1rem; /* Space between columns */
+}
+
+/* Container for the scrollable event items */
+.event-list-body {
+    max-height: 60vh; /* Set a maximum height */
+    overflow-y: auto; /* This guarantees the vertical scrollbar appears when needed */
+}
+
+/* Individual row for each event */
+.event-list-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #3A3A3A; /* Separator line for rows */
+    gap: 1rem; /* Space between columns */
+}
+
+/* Remove bottom border from the very last item in the list for a cleaner look */
+.event-list-item:last-child {
+    border-bottom: none;
+}
+
+/* Styling for the status badge */
+.status-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 12px;
+    color: #FFFFFF;
+    text-align: center;
+    min-width: 80px; /* Give badges a consistent width */
+}
+
+/* Color coding for each status */
+.status-upcoming {
+    background-color: #007BFF; /* Blue */
+}
+.status-live {
+    background-color: #DC3545; /* Red */
+}
+.status-completed {
+    background-color: #6c757d; /* Grey */
+}
+
+
+/* The main card for a replay event */
+.replay-card {
+    display: flex;
+    align-items: center;
+    background-color: #2a2a2a;
+    border-radius: 8px;
+    border: 1px solid #3a3a3a;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    
+    /* This is the key: it prevents cards from shrinking and sets a fixed width */
+    flex: 0 0 350px; /* Do not grow, do not shrink, base width of 350px */
+}
+
+.replay-card:hover {
+    background-color: #3a3a3a;
+}
+
+/* The thumbnail image on the left */
+.replay-card-image {
+    width: 100px;
+    height: 56px;
+    border-radius: 4px;
+    object-fit: cover;
+    margin-right: 1rem;
+}
+
+/* The container for the text in the middle */
+.replay-card-info {
+    flex-grow: 1; /* This makes the text area take up the available space */
+}
+
+/* The main title text */
+.replay-card-title {
+    font-weight: bold;
+    font-size: 16px; /* Larger title as requested */
+    color: #FFFFFF;
+    margin: 0 0 4px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The smaller details text */
+.replay-card-details {
+    font-size: 12px;
+    color: #AAA;
+    margin: 0;
+}
+
+/* The container for the play button on the right */
+.replay-card-play-button {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: rgba(255, 215, 0, 0.2); /* Transparent gold */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 1rem;
+    transition: background-color 0.2s ease;
+}
+
+.replay-card:hover .replay-card-play-button {
+    background-color: #FFD700; /* Solid gold on hover */
+}
+
+.replay-card-play-button svg {
+    width: 20px;
+    height: 20px;
+    fill: #FFFFFF;
+}
+
+/* ===================================================================== */
+/* ============ STYLES FOR VERTICALLY SCROLLING REPLAYS ================ */
+/* ===================================================================== */
+
+/* This is the new container that will scroll vertically */
+.replay-grid-container {
+    /* 
+       This is the core of the fix. It calculates the approximate height of 5 cards.
+       Assuming each card is about 90px tall (72px image + padding), 
+       5 rows is roughly 450px. We add a little extra for the gaps.
+    */
+    max-height: 480px; 
+    overflow-y: auto;  /* This enables the vertical scrollbar ONLY when needed */
+    padding-right: 10px; /* Add some space so the scrollbar doesn't overlap the content */
+}
+
+/* The main card for a replay event */
+.replay-card {
+    display: flex;
+    align-items: center;
+    background-color: #2a2a2a;
+    border-radius: 8px;
+    border: 1px solid #3a3a3a;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    margin-bottom: 1rem; /* Add space between each card in the list */
+}
+
+.replay-card:last-child {
+    margin-bottom: 0; /* Remove margin from the last card */
+}
+
+.replay-card:hover {
+    background-color: #3a3a3a;
+}
+
+/* The thumbnail image on the left */
+.replay-card-image {
+    width: 128px; /* Slightly larger image as in your example */
+    height: 72px;
+    border-radius: 4px;
+    object-fit: cover;
+    margin-right: 1rem;
+    flex-shrink: 0; /* Prevent the image from shrinking */
+}
+
+/* The container for the text in the middle */
+.replay-card-info {
+    flex-grow: 1;
+    overflow: hidden; /* Prevent long text from breaking the layout */
+}
+
+/* The main title text */
+.replay-card-title {
+    font-weight: bold;
+    font-size: 18px; /* Larger title */
+    color: #FFFFFF;
+    margin: 0 0 4px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The smaller details text */
+.replay-card-details {
+    font-size: 14px;
+    color: #AAA;
+    margin: 0;
+}
+
+/* The container for the play button on the right */
+.replay-card-play-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background-color: rgba(255, 215, 0, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 1rem;
+    transition: background-color 0.2s ease;
+    flex-shrink: 0; /* Prevent the button from shrinking */
+}
+
+.replay-card:hover .replay-card-play-button {
+    background-color: #FFD700;
+}
+
+.replay-card-play-button svg {
+    width: 22px;
+    height: 22px;
+    fill: #FFFFFF;
+}
+ 
+.send-chat-button {
+  background-color: #00FFFF; /* Light Cyan */
+  color: #1A1A1A; /* Dark text for contrast */
+  font-weight: bold;
+  border: none;
+  padding: 8px 20px;
+  margin: 0;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.send-chat-button:hover,
+.send-chat-button:focus {
+  background-color: #20FFFF; /* Slightly brighter cyan on hover */
+  box-shadow: 0 0 10px #00FFFF;
+}
+   /* We can reuse the existing .closeButton style for consistency! */
+
+        /* ====================================================================== */
+        /* ============ END: ADD THIS ENTIRE NEW CSS BLOCK FOR PFP MODAL ========== */
+        /* ====================================================================== */
