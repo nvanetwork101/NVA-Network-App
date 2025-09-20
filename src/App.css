@@ -267,3 +267,12 @@
     width: 100%;
     justify-content: flex-start; /* Aligns text to the left */
 }
+
+/* --- GLOBAL LAYOUT FIX for WIDE SCREENS --- */
+.container {
+  width: 100%; /* Ensure it still takes up the full width on smaller screens */
+  max-width: 1280px; /* The maximum width the container can ever be */
+  margin-left: auto; /* Automatically calculate the left margin */
+  margin-right: auto; /* Automatically calculate the right margin */
+  padding: 0 20px; /* Add some comfortable padding on the sides */
+}
