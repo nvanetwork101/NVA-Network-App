@@ -28,6 +28,7 @@ import NavigationBar from './components/NavigationBar';
 
 // Core Screens
 import HomeScreen from './components/HomeScreen';
+import AboutScreen from './components/AboutScreen';
 import NvaNetworkChartsScreen from './components/NvaNetworkChartsScreen';
 import ContactScreen from './components/ContactScreen';
 import CompetitionScreen from './components/CompetitionScreen';
@@ -601,6 +602,7 @@ function App() {
     if (activeScreen === 'Suspended') return <SuspendedScreen showMessage={showMessage} setActiveScreen={handleNavigate} suspensionDetails={suspensionDetails} />;
     
      switch (activeScreen) {
+      case 'About': return <AboutScreen setActiveScreen={handleNavigate} />;
       case 'BlockedList': return <BlockedListScreen currentUser={currentUser} setActiveScreen={handleNavigate} showMessage={showMessage} />;
       case 'Login': return <LoginScreen setActiveScreen={handleNavigate} showMessage={showMessage} />;
       case 'CreatorSignUp': return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
