@@ -196,14 +196,6 @@ function App() {
 
   // The new navigation handler that tracks screen history
   const handleNavigate = (newScreen) => {
-    // --- PWA FIX: Aggressive re-prompt on every navigation ---
-    // If the install event is ready and the app isn't installed, show the prompt.
-    if (installPromptEvent && !isStandalone) {
-        setShowInstallModal(true);
-    }
-    // --------------------------------------------------------
-
-    // Only update history if navigating to a genuinely new screen
     if (newScreen !== activeScreen) {
       setPreviousScreen(activeScreen);
     }
@@ -536,12 +528,9 @@ function App() {
         }
 
         const handleBeforeInstallPrompt = (event) => {
-            event.preventDefault(); // Prevent the default browser prompt
-            setInstallPromptEvent(event); // Save the event
-            // Show our custom modal immediately if the app isn't installed
-            if (!sessionStorage.getItem('installDismissed')) {
-                 setShowInstallModal(true);
-            }
+            event.preventDefault();
+            setInstallPromptEvent(event);
+            setShowInstallModal(true); // <<< CHANGED: Now it always shows
         };
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -784,9 +773,8 @@ return (
           </div>
           <div className="pwa-install-buttons">
             <button className="navButton" onClick={() => {
-              setShowInstallModal(false);
-              sessionStorage.setItem('installDismissed', 'true');
-            }}>
+             setShowInstallModal(false); // <<< CHANGED: Only this line remains
+             }}>
               <span className="navButtonText">Later</span>
             </button>
             <button className="navButton active" onClick={() => {
