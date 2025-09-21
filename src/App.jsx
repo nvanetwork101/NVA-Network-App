@@ -199,14 +199,16 @@ function App() {
         fetchRates();
     }, []);
 
-  // The new navigation handler that tracks screen history
+  // The new navigation handler that tracks screen history AND syncs with browser history
   const handleNavigate = useCallback((newScreen) => {
-    // Only update history if navigating to a genuinely new screen
     if (newScreen !== activeScreen) {
       setPreviousScreen(activeScreen);
+      // This is the fix: Push a new state to the browser's history stack
+      // This makes the browser's back button aware of in-app navigation
+      window.history.pushState({ screen: newScreen }, '');
     }
     setActiveScreen(newScreen);
-  }, [activeScreen]); // Dependency array ensures the function updates only when needed
+  }, [activeScreen]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -512,40 +514,35 @@ function App() {
 
         // --- NATIVE BACK BUTTON LOGIC ---
   useEffect(() => {
-    const handleBackButton = () => {
-      // If we are currently on the Home screen
-      if (activeScreen === 'Home') {
-        // If the "exit" message is not already showing, show it for 2 seconds
+    const handleBackButton = (event) => {
+      // If we have a screen history, navigate back within the app
+      if (previousScreen) {
+        setActiveScreen(previousScreen);
+        // This is a crucial step: we are now managing history ourselves,
+        // so we must also manage what the "previous" screen is after going back.
+        // For simplicity in this architecture, we can set it to a sensible default like 'Home'.
+        // A more advanced implementation might use a history stack array.
+        setPreviousScreen('Home'); 
+      } else {
+        // If there's no previous screen, we are likely at the initial Home screen
         if (!message) {
           showMessage('Press back again to exit');
-          // This is a trick: we push a new state to the history,
-          // so the user has to press back a second time to actually leave.
-          window.history.pushState(null, '', window.location.href);
+          // Prevent the app from closing by pushing the current state back into history
+          window.history.pushState({ screen: 'Home' }, '');
         } else {
-          // If the message is already showing, let the app close by going back.
+          // If the message is showing, allow the default back action to exit the app
           window.history.back();
         }
-        return;
-      }
-
-      // If we are on any other screen and there's a history, navigate back
-      if (previousScreen) {
-        handleNavigate(previousScreen);
-      } else {
-        // As a fallback, if there's no previous screen, just go to Home
-        handleNavigate('Home');
       }
     };
-
+    
     // Listen for the popstate event, which fires on browser back button clicks
     window.addEventListener('popstate', handleBackButton);
 
-    // Cleanup function to remove the listener when the component is no longer on screen
     return () => {
       window.removeEventListener('popstate', handleBackButton);
     };
-    // This hook needs to re-run whenever these values change to have the latest state
-  }, [activeScreen, previousScreen, message, showMessage, handleNavigate]);
+  }, [activeScreen, previousScreen, message, showMessage]);
 
         useEffect(() => {
                 let unsubscribe = () => {};
