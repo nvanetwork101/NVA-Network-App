@@ -268,13 +268,19 @@
     justify-content: flex-start; /* Aligns text to the left */
 }
 
-/* --- GLOBAL LAYOUT FIX for WIDE SCREENS --- */
+/* --- GLOBAL LAYOUT STYLES --- */
 .container {
-  width: 100%; /* Ensure it still takes up the full width on smaller screens */
-  max-width: 1280px; /* The maximum width the container can ever be */
-  margin-left: auto; /* Automatically calculate the left margin */
-  margin-right: auto; /* Automatically calculate the right margin */
-  padding: 0 20px; /* Add some comfortable padding on the sides */
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Apply desktop-specific constraints ONLY on screens 768px or wider */
+@media (min-width: 768px) {
+  .container {
+    max-width: 1280px;
+    padding: 0 20px; /* The side padding is only for wide screens */
+  }
 }
 
 /* --- PWA Install Banner Styles --- */

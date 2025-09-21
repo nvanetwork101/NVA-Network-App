@@ -482,6 +482,43 @@ function App() {
 }, [liveEvent]); // This entire effect is driven by the liveEvent object.
 // ================== END: THE DEFINITIVE LIVE EVENT SYNC FIX ==================
 
+        // --- NATIVE BACK BUTTON LOGIC ---
+  useEffect(() => {
+    const handleBackButton = () => {
+      // If we are currently on the Home screen
+      if (activeScreen === 'Home') {
+        // If the "exit" message is not already showing, show it for 2 seconds
+        if (!message) {
+          showMessage('Press back again to exit');
+          // This is a trick: we push a new state to the history,
+          // so the user has to press back a second time to actually leave.
+          window.history.pushState(null, '', window.location.href);
+        } else {
+          // If the message is already showing, let the app close by going back.
+          window.history.back();
+        }
+        return;
+      }
+
+      // If we are on any other screen and there's a history, navigate back
+      if (previousScreen) {
+        handleNavigate(previousScreen);
+      } else {
+        // As a fallback, if there's no previous screen, just go to Home
+        handleNavigate('Home');
+      }
+    };
+
+    // Listen for the popstate event, which fires on browser back button clicks
+    window.addEventListener('popstate', handleBackButton);
+
+    // Cleanup function to remove the listener when the component is no longer on screen
+    return () => {
+      window.removeEventListener('popstate', handleBackButton);
+    };
+    // This hook needs to re-run whenever these values change to have the latest state
+  }, [activeScreen, previousScreen, message, showMessage, handleNavigate]);
+
         useEffect(() => {
                 let unsubscribe = () => {};
                 if (currentUser) {
