@@ -184,19 +184,17 @@ function App() {
   };
 
     useEffect(() => {
-        const fetchRates = async () => {
-            try {
-                const getRatesFunction = httpsCallable(functions, 'getExchangeRates');
-                const result = await getRatesFunction();
-                if (result.data && result.data.rates) {
-                    setCurrencyRates(result.data.rates);
-                }
-            } catch (error) {
-                console.error("Could not fetch currency rates:", error);
-                showMessage("Currency conversion is currently unavailable.");
+        // This now efficiently listens for the server-updated currency rates from Firestore.
+        // This makes zero calls to the external currency API.
+        const ratesDocRef = doc(db, "settings", "currencyRates");
+        const unsubscribe = onSnapshot(ratesDocRef, (docSnap) => {
+            if (docSnap.exists() && docSnap.data().rates) {
+                setCurrencyRates(docSnap.data().rates);
+            } else {
+                console.warn("Currency rates document not found in Firestore!");
             }
-        };
-        fetchRates();
+        });
+        return () => unsubscribe(); // Cleanup listener on unmount
     }, []);
 
   // The new navigation handler that tracks screen history AND syncs with browser history
@@ -391,19 +389,17 @@ function App() {
   }, []);
 
     useEffect(() => {
-        const fetchRates = async () => {
-            try {
-                const getRatesFunction = httpsCallable(functions, 'getExchangeRates');
-                const result = await getRatesFunction();
-                if (result.data && result.data.rates) {
-                    setCurrencyRates(result.data.rates);
-                }
-            } catch (error) {
-                console.error("Could not fetch currency rates:", error);
-                showMessage("Currency conversion is currently unavailable.");
+        // This now efficiently listens for the server-updated currency rates from Firestore.
+        // This makes zero calls to the external currency API.
+        const ratesDocRef = doc(db, "settings", "currencyRates");
+        const unsubscribe = onSnapshot(ratesDocRef, (docSnap) => {
+            if (docSnap.exists() && docSnap.data().rates) {
+                setCurrencyRates(docSnap.data().rates);
+            } else {
+                console.warn("Currency rates document not found in Firestore!");
             }
-        };
-        fetchRates();
+        });
+        return () => unsubscribe(); // Cleanup listener on unmount
     }, []);
         
         useEffect(() => {

@@ -1497,43 +1497,38 @@ exports.onNewContentPublished = onDocumentCreated("artifacts/{appId}/public/data
         return null;
     }
 });
-        exports.getExchangeRates = onCall({ cors: true }, async (request) => {
+        
+        exports.updateExchangeRates = onSchedule("every 24 hours", async (event) => {
     const fetch = require("node-fetch");
-    const apiKey = "7200b18f4f790c1bc0042116"; 
-    
+    const apiKey = "7200b18f4f790c1bc0042116"; // Your actual API key
     const apiUrl = `https://v6.exchangerate-api.com/v6/${apiKey}/latest/USD`;
 
-    logger.info("Fetching latest currency exchange rates.");
+    logger.info("Running scheduled job: Fetching daily currency exchange rates.");
 
     try {
-        if (apiKey === "YOUR_API_KEY_HERE" || apiKey === "") {
-            logger.error("API key is still a placeholder. Cannot fetch rates.");
-            throw new HttpsError("failed-precondition", "The server is not configured with a currency API key.");
-        }
-        
         const response = await fetch(apiUrl);
         if (!response.ok) {
-            logger.error("Exchange Rate API responded with an error.", { status: response.status });
-            throw new HttpsError("unavailable", "The currency conversion service is temporarily unavailable.");
+            throw new Error(`API responded with status: ${response.status}`);
         }
         const data = await response.json();
         if (data.result === 'error') {
-            logger.error("Exchange Rate API returned an error in its response body.", { errorType: data['error-type'] });
-            if (data['error-type'] === 'invalid-key') {
-                 throw new HttpsError("unauthenticated", "The currency API key is invalid.");
-            }
-            throw new HttpsError("internal", "The currency API returned an error.");
+            throw new Error(`API returned an error: ${data['error-type']}`);
         }
+
+        const ratesRef = admin.firestore().collection("settings").doc("currencyRates");
+        await ratesRef.set({
+            rates: data.conversion_rates,
+            lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+        });
         
-        return { rates: data.conversion_rates };
+        logger.info("Successfully updated currency exchange rates in Firestore.");
 
     } catch (error) {
-        logger.error("Error fetching or processing exchange rates.", { error });
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError("unknown", "An unexpected error occurred while fetching exchange rates.");
+        logger.error("FATAL: Failed to update currency exchange rates.", { error: error.message });
     }
+    return null; // Required for scheduled functions
 });
-
+              
 exports.removeFeaturedContent = onCall(async (request) => {
     const uid = request.auth.uid;
     if (!uid) {

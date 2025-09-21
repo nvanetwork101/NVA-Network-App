@@ -65,9 +65,15 @@ export const useNotifications = (currentUser) => {
             const seenSnapshot = await getDocs(seenRef);
             const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
             
+            // Filter out broadcasts that have already been marked as seen by the user.
             const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
+
+            // --- THIS IS THE DEFINITIVE FIX ---
+            // Filter out private notifications that are already marked as read in the database.
+            const unreadPrivateNotifications = privateNotifications.filter(p => !p.isRead);
             
-            const combined = [...privateNotifications, ...unseenBroadcasts];
+            // Now, combine only the unread private notifications with the unseen broadcasts.
+            const combined = [...unreadPrivateNotifications, ...unseenBroadcasts];
             const filtered = combined.filter(n => !pendingDeletes.has(n.id));
             const unique = Array.from(new Map(filtered.map(item => [item.id, item])).values());
             
