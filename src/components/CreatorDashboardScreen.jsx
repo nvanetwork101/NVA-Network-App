@@ -450,93 +450,94 @@ const CreatorDashboardScreen = ({
                 </div>
 
 
-                {/* === CROWDFUNDING SECTION === */}
-                <div className="dashboardSection">
-                    <div className="flex justify-between items-center">
-                        <p className="dashboardSectionTitle" style={{marginBottom: 0}}>My Crowdfunding Campaigns</p>
-                        <button className="dashboardButton" onClick={() => setActiveScreen('CreateCampaign')} disabled={!canCreateCampaign} style={!canCreateCampaign ? {cursor: 'not-allowed', backgroundColor: '#555', color: '#999'} : {}}>Create New</button>
-                    </div>
-                    <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
-                        {!canCreateCampaign && <p className="smallText" style={{textAlign: 'center', color: '#FFD700', marginBottom: '15px'}}>{hasActiveOrPendingCampaign ? "You can only have one active/pending campaign at a time." : "Your 30-day campaign cooldown is active."}</p>}
-                        {creatorCampaigns.length === 0 ? (<p className="dashboardItem">You have not created any campaigns yet.</p>) : (
-                            creatorCampaigns.map(campaign => (
-                                <div key={campaign.id} className="creator-campaign-list-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                                    <div onClick={() => { setSelectedCampaignId(campaign.id); setActiveScreen('CampaignDetails'); }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', width: '100%' }}>
-                                        <img src={campaign.imageUrl || 'https://placehold.co/80x50/3A3A3A/FFF?text=NVA'} alt={campaign.title} className="creator-campaign-thumbnail" />
-                                        <div className="creator-campaign-info">
-                                            <p className="creator-campaign-title">{campaign.title}</p>
-                                            <p className={`creator-campaign-status status-${campaign.status}`}>Status: {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}</p>
-                                            <p className="smallText" style={{color: '#999'}}>
-                                                {formatDate(campaign.startDate)} - {formatDate(campaign.endDate)}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div style={{width: '100%', marginTop: '10px'}}>
-                                        <div className="campaignProgressContainer" style={{ height: '8px' }}>
-                                            <div className="campaignProgressBar" style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}></div>
-                                        </div>
-                                        <div className="campaignListStats" style={{marginTop: '4px'}}>
-                                            <span>Raised: <span className="campaignListRaised">{formatCurrency(campaign.raised, selectedCurrency, currencyRates)}</span></span>
-                                            <span>Goal: <span className="campaignListGoal">{formatCurrency(campaign.goal, selectedCurrency, currencyRates)}</span></span>
-                                        </div>
-                                        
-                                        {/* --- THIS IS THE FIX: START OF CREATOR TRANSPARENCY BLOCK --- */}
-                                        {campaign.status === 'ended' && campaign.raised > 0 && (
-                                            <div className="campaignListStats" style={{marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #2A2A2A'}}>
-                                                <span style={{color: '#DC3545'}}>Fee (7%): -{formatCurrency(campaign.raised * 0.07, selectedCurrency, currencyRates)}</span>
-                                                <span style={{color: '#00FF00', fontWeight: 'bold'}}>Net Payout: {formatCurrency(campaign.raised * 0.93, selectedCurrency, currencyRates)}</span>
-                                            </div>
-                                        )}
-                                        {/* --- END OF CREATOR TRANSPARENCY BLOCK --- */}
-                                    </div>
-                                    <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', width: '100%', marginTop: '15px', borderTop: '1px solid #2A2A2A', paddingTop: '10px'}}>
-                                        {/* --- Conditional Button Logic --- */}
-                                        {campaign.status === 'active' && campaign.raised >= campaign.goal && (
-                                            <button className="modern-button end-early" onClick={(e) => { e.stopPropagation(); confirmEndCampaignEarly(campaign); }}>End Campaign Early</button>
-                                        )}
-                                        {campaign.status === 'ended' && !payoutStatuses[campaign.id] && (
-    <button className="modern-button payout" onClick={(e) => { e.stopPropagation(); handleOpenPayoutModal(campaign); }}>Collect Funds</button>
-)}
-{campaign.status === 'ended' && payoutStatuses[campaign.id] === 'pending' && (
-    <p className="smallText" style={{color: '#00FFFF'}}>Payout Requested</p>
-)}
-{campaign.status === 'ended' && payoutStatuses[campaign.id] === 'paid' && (
-    <p className="smallText" style={{color: '#00FF00'}}>Paid</p>
-)}
-{campaign.status === 'ended' && payoutStatuses[campaign.id] === 'dismissed' && (
-    <p className="smallText" style={{color: '#DC3545'}}>Dismissed</p>
-)}
-                                        {campaign.status !== 'active' && (
-                                            <button className="modern-button delete" onClick={(e) => { e.stopPropagation(); confirmDeleteCampaign(campaign); }}>Delete</button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-
-                {/* ... Rest of dashboard sections remain unchanged ... */}
-                <div className="dashboardSection">
-                    <p className="dashboardSectionTitle">My Featured Link</p>
-                    <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}> This is the content currently featured on your profile and in the Live Feed. Use the manager to change it.</p>
-                    {creatorProfile.featuredVideoLink ? (
-                        <div className="vertical-carousel-item" style={{backgroundColor: '#1A1A1A'}}>
-                            <div style={{width: '80px', height: '60px', flexShrink: 0, marginRight: '10px'}}>
-                                {/* THE FIX: Use the correct 'customThumbnailUrl' property from the featuredVideoLink object */}
-                                <DynamicThumbnail item={{ imageUrl: creatorProfile.featuredVideoLink.customThumbnailUrl }} onClick={() => showMessage("This would open the video player.")} />
+                {/* === START: ROLE-BASED CONTENT SECTIONS === */}
+                {creatorProfile && (creatorProfile.role === 'creator' || creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && (
+                    <>
+                        {/* === CROWDFUNDING SECTION === */}
+                        <div className="dashboardSection">
+                            <div className="flex justify-between items-center">
+                                <p className="dashboardSectionTitle" style={{marginBottom: 0}}>My Crowdfunding Campaigns</p>
+                                <button className="dashboardButton" onClick={() => setActiveScreen('CreateCampaign')} disabled={!canCreateCampaign} style={!canCreateCampaign ? {cursor: 'not-allowed', backgroundColor: '#555', color: '#999'} : {}}>Create New</button>
                             </div>
-                            <div className="liveFeedContent">
-                                {/* THE FIX: Use the dynamic 'title' from the featuredVideoLink object */}
-                                <p className="liveFeedTitle">{`Currently Featuring: ${creatorProfile.featuredVideoLink.title}`}</p>
-                                <p className="liveFeedCreator" style={{color: '#FFD700'}}>Visible on your profile</p>
+                            <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
+                                {!canCreateCampaign && <p className="smallText" style={{textAlign: 'center', color: '#FFD700', marginBottom: '15px'}}>{hasActiveOrPendingCampaign ? "You can only have one active/pending campaign at a time." : "Your 30-day campaign cooldown is active."}</p>}
+                                {creatorCampaigns.length === 0 ? (<p className="dashboardItem">You have not created any campaigns yet.</p>) : (
+                                    creatorCampaigns.map(campaign => (
+                                        <div key={campaign.id} className="creator-campaign-list-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+                                            <div onClick={() => { setSelectedCampaignId(campaign.id); setActiveScreen('CampaignDetails'); }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', width: '100%' }}>
+                                                <img src={campaign.imageUrl || 'https://placehold.co/80x50/3A3A3A/FFF?text=NVA'} alt={campaign.title} className="creator-campaign-thumbnail" />
+                                                <div className="creator-campaign-info">
+                                                    <p className="creator-campaign-title">{campaign.title}</p>
+                                                    <p className={`creator-campaign-status status-${campaign.status}`}>Status: {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}</p>
+                                                    <p className="smallText" style={{color: '#999'}}>
+                                                        {formatDate(campaign.startDate)} - {formatDate(campaign.endDate)}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div style={{width: '100%', marginTop: '10px'}}>
+                                                <div className="campaignProgressContainer" style={{ height: '8px' }}>
+                                                    <div className="campaignProgressBar" style={{ width: `${(campaign.raised / campaign.goal) * 100}%` }}></div>
+                                                </div>
+                                                <div className="campaignListStats" style={{marginTop: '4px'}}>
+                                                    <span>Raised: <span className="campaignListRaised">{formatCurrency(campaign.raised, selectedCurrency, currencyRates)}</span></span>
+                                                    <span>Goal: <span className="campaignListGoal">{formatCurrency(campaign.goal, selectedCurrency, currencyRates)}</span></span>
+                                                </div>
+                                                
+                                                {campaign.status === 'ended' && campaign.raised > 0 && (
+                                                    <div className="campaignListStats" style={{marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #2A2A2A'}}>
+                                                        <span style={{color: '#DC3545'}}>Fee (7%): -{formatCurrency(campaign.raised * 0.07, selectedCurrency, currencyRates)}</span>
+                                                        <span style={{color: '#00FF00', fontWeight: 'bold'}}>Net Payout: {formatCurrency(campaign.raised * 0.93, selectedCurrency, currencyRates)}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', width: '100%', marginTop: '15px', borderTop: '1px solid #2A2A2A', paddingTop: '10px'}}>
+                                                {campaign.status === 'active' && campaign.raised >= campaign.goal && (
+                                                    <button className="modern-button end-early" onClick={(e) => { e.stopPropagation(); confirmEndCampaignEarly(campaign); }}>End Campaign Early</button>
+                                                )}
+                                                {campaign.status === 'ended' && !payoutStatuses[campaign.id] && (
+                                                    <button className="modern-button payout" onClick={(e) => { e.stopPropagation(); handleOpenPayoutModal(campaign); }}>Collect Funds</button>
+                                                )}
+                                                {campaign.status === 'ended' && payoutStatuses[campaign.id] === 'pending' && (
+                                                    <p className="smallText" style={{color: '#00FFFF'}}>Payout Requested</p>
+                                                )}
+                                                {campaign.status === 'ended' && payoutStatuses[campaign.id] === 'paid' && (
+                                                    <p className="smallText" style={{color: '#00FF00'}}>Paid</p>
+                                                )}
+                                                {campaign.status === 'ended' && payoutStatuses[campaign.id] === 'dismissed' && (
+                                                    <p className="smallText" style={{color: '#DC3545'}}>Dismissed</p>
+                                                )}
+                                                {campaign.status !== 'active' && (
+                                                    <button className="modern-button delete" onClick={(e) => { e.stopPropagation(); confirmDeleteCampaign(campaign); }}>Delete</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
-                    ) : (
-                        <p className="dashboardItem">You do not have a featured link set. Go to your library to set one.</p>
-                    )}
-                    <button className="button" onClick={() => setActiveScreen('MyContentLibrary')} style={{marginTop: '15px'}}><span className="buttonText">Manage My Content Library</span></button>
-                </div>
+
+                        {/* === CONTENT LIBRARY & FEATURED LINK SECTION === */}
+                        <div className="dashboardSection">
+                            <p className="dashboardSectionTitle">My Featured Link</p>
+                            <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}> This is the content currently featured on your profile and in the Live Feed. Use the manager to change it.</p>
+                            {creatorProfile.featuredVideoLink ? (
+                                <div className="vertical-carousel-item" style={{backgroundColor: '#1A1A1A'}}>
+                                    <div style={{width: '80px', height: '60px', flexShrink: 0, marginRight: '10px'}}>
+                                        <DynamicThumbnail item={{ imageUrl: creatorProfile.featuredVideoLink.customThumbnailUrl }} onClick={() => showMessage("This would open the video player.")} />
+                                    </div>
+                                    <div className="liveFeedContent">
+                                        <p className="liveFeedTitle">{`Currently Featuring: ${creatorProfile.featuredVideoLink.title}`}</p>
+                                        <p className="liveFeedCreator" style={{color: '#FFD700'}}>Visible on your profile</p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="dashboardItem">You do not have a featured link set. Go to your library to set one.</p>
+                            )}
+                            <button className="button" onClick={() => setActiveScreen('MyContentLibrary')} style={{marginTop: '15px'}}><span className="buttonText">Manage My Content Library</span></button>
+                        </div>
+                    </>
+                )}
+                {/* === END: ROLE-BASED CONTENT SECTIONS === */}
                  {isVerified && (
                     <div className="dashboardSection" style={{border: '1px solid #00FFFF'}}>
                         <p className="dashboardSectionTitle" style={{color: '#00FFFF'}}>Promoted Status Billboard</p>

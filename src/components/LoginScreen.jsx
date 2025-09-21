@@ -62,9 +62,13 @@ const LoginScreen = ({ showMessage, setActiveScreen, setSuspensionDetails }) => 
             </form>
 
             <p className="smallText" style={{ marginTop: '20px' }}>
-                Don't have an account?{' '}
+                Don't have an account? Sign up as:{' '}
+                <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('UserSignUp'); }}>
+                    User
+                </a>
+                {' | '}
                 <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('CreatorSignUp'); }}>
-                    Sign Up Here
+                    Creator
                 </a>
             </p>
             

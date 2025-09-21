@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { auth } from '../firebase'; // Import the auth instance
-import { sendEmailVerification, signOut } from 'firebase/auth';
+import { sendEmailVerification } from 'firebase/auth';
 
-const VerifyEmailScreen = ({ currentUser, showMessage, setActiveScreen }) => {
+// --- THIS IS THE FIX: The component now receives 'unverifiedUser' and 'handleLogout' from App.jsx ---
+const VerifyEmailScreen = ({ unverifiedUser, showMessage, setActiveScreen, handleLogout }) => {
     const [isSending, setIsSending] = useState(false);
     const [isChecking, setIsChecking] = useState(false);
 
     const handleResend = async () => {
-        if (!currentUser) return;
+        // It now uses the specific 'unverifiedUser' prop
+        if (!unverifiedUser) return;
         setIsSending(true);
         showMessage("Resending verification email...");
         try {
-            await sendEmailVerification(currentUser);
+            await sendEmailVerification(unverifiedUser);
             showMessage("A new verification email has been sent.");
         } catch (error) {
             console.error("Error resending verification email:", error);
@@ -22,32 +24,39 @@ const VerifyEmailScreen = ({ currentUser, showMessage, setActiveScreen }) => {
     };
 
     const handleCheckVerification = async () => {
-        if (!currentUser) return;
+        if (!auth.currentUser) return;
         setIsChecking(true);
-        // The reload method is on the user object from auth, not the state variable
-        await auth.currentUser.reload(); 
+        await auth.currentUser.reload();
+
+        // --- THIS IS THE CRITICAL FIX TO RESTORE FUNCTIONALITY ---
+        // After reloading, we check the status directly.
         if (auth.currentUser.emailVerified) {
-            showMessage("Thank you for verifying! Redirecting...");
-            // After verification, the main onAuthStateChanged in App.jsx will handle the redirect.
-            // We just need to trigger a state change to make it re-check.
-            // A simple navigation to Home is a good way to do this.
+            // If verified, we navigate to a neutral screen like 'Home'.
+            // This navigation is ESSENTIAL to trigger the main onAuthStateChanged listener in App.jsx,
+            // which will then see the newly verified user and redirect them to their correct dashboard.
             setActiveScreen('Home');
         } else {
+            // If they are still not verified, we provide clear feedback.
             showMessage("Email has not been verified yet. Please click the link in your email.");
         }
+        // --- END OF FIX ---
+        
         setIsChecking(false);
     };
 
-    const handleLogout = () => {
-        signOut(auth);
-        showMessage("You have been logged out.");
-    };
+    // The component no longer has its own logout logic. It uses the main one from App.jsx.
 
     return (
         <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
             <p className="heading">Please Verify Your Email</p>
-            <p className="subHeading">A verification link has been sent to: <br/><strong style={{color: '#FFD700'}}>{currentUser?.email}</strong></p>
-            <p className="paragraph" style={{color: '#AAA', maxWidth: '400px', margin: '20px auto'}}>Please check your inbox (and spam folder) and click the link to activate your account.</p>
+            <p className="subHeading">
+                You have successfully signed in, but your account is not active yet.
+                <br/>A verification link was sent to: <br/><strong style={{color: '#FFD700'}}>{unverifiedUser?.email}</strong>
+            </p>
+            <p className="paragraph" style={{color: '#AAA', maxWidth: '400px', margin: '20px auto'}}>
+                To complete your sign-up, please click the link in the email.
+                <br/><strong style={{color: '#FFD700'}}>If you don't see it, please check your spam or junk folder.</strong>
+            </p>
             
             <button className="button" onClick={handleCheckVerification} disabled={isChecking}>
                 <span className="buttonText">{isChecking ? 'Checking...' : 'I Have Verified My Email'}</span>

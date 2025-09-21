@@ -10,7 +10,7 @@ import PostSubmissionUpsellScreen from './components/PostSubmissionUpsellScreen'
 import MyFollowsScreen from './components/MyFollowsScreen';
 import FollowersScreen from './components/FollowersScreen';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import PremiumPerksScreen from './components/PremiumPerksScreen';
 import FollowingFeedScreen from './components/FollowingFeedScreen';
 
@@ -92,6 +92,7 @@ import ReportContentModal from './components/ReportContentModal';
 import CommentsModal from './components/CommentsModal';
 import ContentAppealModal from './components/ContentAppealModal';
 import LikesModal from './components/LikesModal';
+import IosInstallPrompt from './components/IosInstallPrompt'; // <-- ADD THIS LINE
 
 import { useNotifications } from './hooks/useNotifications';
 import NotificationToast from './components/NotificationToast';
@@ -102,6 +103,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [creatorProfile, setCreatorProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [unverifiedUser, setUnverifiedUser] = useState(null); // <-- NEW STATE for the "limbo" user
   const [isInitialLoad, setIsInitialLoad] = useState(true); // <-- FIX: New state for one-time video
   const [installPromptEvent, setInstallPromptEvent] = useState(null); // <-- PWA FIX: Stores the install event
   const [showInstallModal, setShowInstallModal] = useState(false); // <-- PWA FIX: Controls our custom modal
@@ -110,7 +112,7 @@ function App() {
   const [activeCompetition, setActiveCompetition] = useState(null);
   const [previousScreen, setPreviousScreen] = useState(null);
   const [message, setMessage] = useState('');
-  
+  const [showIosInstallPrompt, setShowIosInstallPrompt] = useState(false); // <-- iOS PWA FIX
   const [liveEvent, setLiveEvent] = useState(null);
   const [isLive, setIsLive] = useState(false);
   
@@ -166,8 +168,11 @@ function App() {
   const { notifications, markBroadcastAsSeen, markNotificationAsRead } = useNotifications(currentUser);
   const [toastQueue, setToastQueue] = useState([]);
   const [currentToast, setCurrentToast] = useState(null);
-  const [processedToastIds, setProcessedToastIds] = useState(new Set());
-  const notificationSoundRef = useRef(null);
+  // Load processed IDs from sessionStorage on initial load to survive reloads.
+  const [processedToastIds, setProcessedToastIds] = useState(() => {
+    const saved = sessionStorage.getItem('processedToastIds');
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });  const notificationSoundRef = useRef(null);
   const unreadCount = notifications.filter(n => !n.isBroadcast && !n.isRead).length;
 
   const [isAudioPrimed, setIsAudioPrimed] = useState(false);
@@ -195,12 +200,13 @@ function App() {
     }, []);
 
   // The new navigation handler that tracks screen history
-  const handleNavigate = (newScreen) => {
+  const handleNavigate = useCallback((newScreen) => {
+    // Only update history if navigating to a genuinely new screen
     if (newScreen !== activeScreen) {
       setPreviousScreen(activeScreen);
     }
     setActiveScreen(newScreen);
-  };
+  }, [activeScreen]); // Dependency array ensures the function updates only when needed
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -219,6 +225,7 @@ function App() {
   };
 
   // ========================== START: DEFINITIVE AUTH FLOW FIX ==========================
+    // ========================== START: FINAL ROBUST AUTH FLOW ==========================
     useEffect(() => {
     let unsubProfile = () => {};
 
@@ -226,7 +233,26 @@ function App() {
       unsubProfile();
       setAuthLoading(true);
 
-      if (user) {
+      // --- THIS IS THE CORE FIX ---
+      // If a user exists but their email is NOT verified...
+      if (user && !user.emailVerified) {
+        setCurrentUser(null);          // 1. Keep the main user state null (guest state)
+        setCreatorProfile(null);
+        setUnverifiedUser(user);       // 2. Store the user in the temporary "limbo" state
+        
+                // 3. CORE FIX: If a user has logged in but is not verified,
+        //    ALWAYS send them to the verification screen, regardless of where they are.
+        //    This provides clear feedback after a login attempt.
+        setActiveScreen('VerifyEmail');
+        setAuthLoading(false);
+        setIsInitialLoad(false);
+        return; // End execution here for the unverified user.
+      }
+      
+      // If we reach this point, the user is either fully verified or is null (logged out).
+      setUnverifiedUser(null); // Clear the limbo state.
+
+      if (user) { // This is now a fully verified user
         const userDocRef = doc(db, "creators", user.uid);
         try {
           const docSnap = await getDoc(userDocRef);
@@ -238,7 +264,7 @@ function App() {
                 showMessage("This account is permanently banned.");
                 setActiveScreen('Banned');
                 signOut(auth);
-                return; // Stop further execution
+                return;
             }
 
             if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
@@ -246,10 +272,8 @@ function App() {
                 setCurrentUser(user);
                 setCreatorProfile(profileData);
                 setSuspensionDetails({ email: profileData.email, expiryDate });
-                if (activeScreen !== 'Suspended') {
-                    setActiveScreen('Suspended');
-                }
-                return; // Stop further execution
+                setActiveScreen('Suspended');
+                return;
             }
             
             await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
@@ -263,10 +287,13 @@ function App() {
                 }
             });
 
-            if (!user.emailVerified) {
-              setActiveScreen('VerifyEmail');
-            } else if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
-              setActiveScreen('CreatorDashboard');
+            // Redirect user if they are on a page they shouldn't be on after logging in
+            if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
+              if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                setActiveScreen('CreatorDashboard');
+              } else {
+                setActiveScreen('Home');
+              }
             }
             
           } else {
@@ -279,17 +306,18 @@ function App() {
           signOut(auth);
         } finally {
           setAuthLoading(false);
-          setIsInitialLoad(false); // <-- FIX: Turn off initial load video
+          setIsInitialLoad(false);
         }
-      } else {
+      } else { // This user is fully logged out.
         setCurrentUser(null);
         setCreatorProfile(null);
+        // If a logged-out user is somehow on a protected screen, send them home.
         const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
         if (protectedScreens.includes(activeScreen)) {
             setActiveScreen('Home');
         }
         setAuthLoading(false);
-        setIsInitialLoad(false); // <-- FIX: Turn off initial load video
+        setIsInitialLoad(false);
       }
     });
 
@@ -297,9 +325,9 @@ function App() {
       unsubscribeAuth();
       unsubProfile();
     };
-   }, [activeScreen]);
-  // =========================== END: DEFINITIVE AUTH FLOW FIX ===========================
-
+   }, [activeScreen]); // Dependency remains the same
+  // =========================== END: FINAL ROBUST AUTH FLOW ===========================
+ 
 	useEffect(() => {
         const requestHandler = () => {
             // When a component requests the state, re-dispatch the last known state.
@@ -560,19 +588,37 @@ function App() {
         // --- PWA FIX: Listen for browser's install prompt event ---
     useEffect(() => {
         // Check if the app is already running in standalone (installed) mode
-        if (window.matchMedia('(display-mode: standalone)').matches) {
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
             setIsStandalone(true);
+            return; // Don't show any prompts if already installed.
         }
+
+        // --- iOS PWA FIX: Detection logic ---
+        const isIos = () => {
+            const userAgent = window.navigator.userAgent.toLowerCase();
+            return /iphone|ipad|ipod/.test(userAgent);
+        };
+        const isInStandaloneMode = () => ('standalone' in window.navigator) && (window.navigator.standalone);
+
+        if (isIos() && !isInStandaloneMode()) {
+            // Check if we've shown the prompt before in this session
+            if (!sessionStorage.getItem('iosInstallPromptShown')) {
+                setShowIosInstallPrompt(true);
+                sessionStorage.setItem('iosInstallPromptShown', 'true');
+            }
+        }
+        // --- END iOS PWA FIX ---
 
         const handleBeforeInstallPrompt = (event) => {
             event.preventDefault();
             setInstallPromptEvent(event);
-            setShowInstallModal(true); // <<< CHANGED: Now it always shows
+            if (!isStandalone) { // Only show for Android/Desktop if not installed
+                setShowInstallModal(true);
+            }
         };
 
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
-        // This event fires after the user has successfully installed the app
         const handleAppInstalled = () => {
             setIsStandalone(true);
             setInstallPromptEvent(null);
@@ -584,23 +630,36 @@ function App() {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
             window.removeEventListener('appinstalled', handleAppInstalled);
         };
-    }, []);
+    }, [isStandalone]); // Added isStandalone dependency
 
         // New Code to Add
   // --- Notification Toast System Logic ---
   useEffect(() => {
-      // 1. Identify new, unread notifications that haven't been processed yet.
+      // 1. DEFINITIVE FIX: Filter notifications to solve race conditions on reload.
+      const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+      
       const newNotifications = notifications.filter(n => {
-          const isUnread = n.isBroadcast ? true : !n.isRead; // Broadcasts are always "new" until seen
-          return isUnread && !processedToastIds.has(n.id);
+          // Rule 1: It must not have been processed in this session.
+          const notProcessedThisSession = !processedToastIds.has(n.id);
+          // Rule 2: Its timestamp must be within the last 5 days.
+          const isRecent = n.timestamp.toDate() > fiveDaysAgo;
+
+          return notProcessedThisSession && isRecent;
       });
 
       if (newNotifications.length > 0) {
           // 2. Add them to the queue and mark them as processed to prevent re-adding.
           setToastQueue(prev => [...prev, ...newNotifications]);
-          setProcessedToastIds(prev => new Set([...prev, ...newNotifications.map(n => n.id)]));
+          
+          // Update both React state and sessionStorage for persistence.
+          const newIds = newNotifications.map(n => n.id);
+          setProcessedToastIds(prev => {
+              const newSet = new Set([...prev, ...newIds]);
+              sessionStorage.setItem('processedToastIds', JSON.stringify(Array.from(newSet)));
+              return newSet;
+          });
       }
-  }, [notifications]); // This effect runs whenever the main notification list changes.
+  }, [notifications, processedToastIds]); // CORRECTED DEPENDENCY ARRAY
 
   useEffect(() => {
       // If there is no active toast but there are items in the queue, show the next one.
@@ -608,20 +667,41 @@ function App() {
           const nextToast = toastQueue[0];
           setCurrentToast(nextToast);
           
-          // Play sound for the new notification.
-          notificationSoundRef.current?.play().catch(e => console.error("Audio play failed:", e));
+          // --- THIS IS THE FINAL, ISOLATED FIX ---
+          // Define the list of notification types that should NOT play a sound.
+          const soundMutedTypes = ['newComment', 'newPledge', 'livePremiere'];
+          
+          // Play sound only for allowed notification types, respecting broadcast vs. private.
+          const mutedPrivateTypes = ['NEW_COMMENT']; // Mute private "new comment" notifications.
+          const mutedBroadcastTypes = ['DONATION', 'EVENT_LIVE']; // Mute public donation and live event tickers.
 
-          // --- THIS IS THE FIX ---
+          let shouldPlaySound = true;
+          if (nextToast.isBroadcast) {
+              // For public broadcasts, check against the broadcast type list.
+              if (mutedBroadcastTypes.includes(nextToast.broadcastType)) {
+                  shouldPlaySound = false;
+              }
+          } else {
+              // For private notifications, check against the private type list.
+              if (mutedPrivateTypes.includes(nextToast.type)) {
+                  shouldPlaySound = false;
+              }
+          }
+
+          // Play the sound only if it has not been muted.
+          if (shouldPlaySound) {
+              notificationSoundRef.current?.play().catch(e => console.error("Audio play failed:", e));
+          }
+          // --- END OF FIX ---
+
           // Immediately mark the notification as processed in the database.
-          // This prevents it from being shown again on the next login.
           if (nextToast.isBroadcast) {
               markBroadcastAsSeen(nextToast.id);
           } else {
               markNotificationAsRead(nextToast.id);
           }
-          // --- END OF FIX ---
       }
-  }, [toastQueue, currentToast, markBroadcastAsSeen, markNotificationAsRead]); // <-- Dependencies added
+  }, [toastQueue, currentToast, markBroadcastAsSeen, markNotificationAsRead]);
 
    const renderScreen = () => {
     if (activeScreen === 'Banned') return <BannedScreen setActiveScreen={handleNavigate} />;
@@ -632,7 +712,7 @@ function App() {
       case 'BlockedList': return <BlockedListScreen currentUser={currentUser} setActiveScreen={handleNavigate} showMessage={showMessage} />;
       case 'Login': return <LoginScreen setActiveScreen={handleNavigate} showMessage={showMessage} />;
       case 'CreatorSignUp': return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
-      case 'VerifyEmail': return <VerifyEmailScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={handleNavigate} handleLogout={handleLogout} />;
+      case 'VerifyEmail': return <VerifyEmailScreen unverifiedUser={unverifiedUser} showMessage={showMessage} setActiveScreen={handleNavigate} handleLogout={handleLogout} />;
       case 'UserSignUp': return <UserSignUpScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'ForgotPassword': return <ForgotPasswordScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'CreateCampaign': return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} />;
@@ -822,6 +902,10 @@ return (
             </button>
           </div>
         </div>
+      )}
+      {/* --- iOS PWA FIX: The new, styled install prompt for iPhones/iPads --- */}
+      {showIosInstallPrompt && (
+        <IosInstallPrompt onClose={() => setShowIosInstallPrompt(false)} />
       )}
       {/* --- END OF FIX --- */}
       </>

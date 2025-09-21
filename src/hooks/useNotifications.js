@@ -39,10 +39,13 @@ export const useNotifications = (currentUser) => {
     const markNotificationAsRead = useCallback(async (notificationId) => {
         if (!currentUser) return;
         try {
-            const notifRef = doc(db, "notifications", notificationId);
-            await updateDoc(notifRef, { isRead: true });
+            // This now calls the secure Cloud Function instead of writing directly.
+            const functions = getFunctions(app);
+            const markAsReadFunction = httpsCallable(functions, 'markNotificationAsRead');
+            await markAsReadFunction({ notificationId: notificationId });
         } catch (error) {
-            console.error("Failed to mark notification as read:", error);
+            // The Cloud Function will throw its own detailed, secure error.
+            console.error("Failed to mark notification as read via Cloud Function:", error);
         }
     }, [currentUser]);
     
@@ -82,8 +85,15 @@ export const useNotifications = (currentUser) => {
         });
 
         const broadcastNotifRef = collection(db, "broadcast_notifications");
-        const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
-        const broadcastQuery = query(broadcastNotifRef, where("timestamp", ">", fiveDaysAgo), orderBy("timestamp", "desc"));
+        
+        // --- THIS IS THE FIX ---
+        // Get the user's account creation date.
+        const userCreationDate = new Date(currentUser.metadata.creationTime);
+
+        // Query for broadcasts created AFTER the user signed up.
+        const broadcastQuery = query(broadcastNotifRef, where("timestamp", ">", userCreationDate), orderBy("timestamp", "desc"));
+        // --- END OF FIX ---
+
         const unsubscribeBroadcast = onSnapshot(broadcastQuery, (snapshot) => {
             broadcastNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: true }));
             mergeAndSetNotifications();

@@ -1076,6 +1076,49 @@ exports.deleteNotification = onCall(async (request) => {
     }
 });
 
+        exports.markNotificationAsRead = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to mark notifications as read.");
+    }
+
+    const { notificationId } = request.data;
+    if (!notificationId) {
+        throw new HttpsError("invalid-argument", "The function must be called with a 'notificationId'.");
+    }
+
+    const db = admin.firestore();
+    const notificationRef = db.collection("notifications").doc(notificationId);
+
+    try {
+        const notificationDoc = await notificationRef.get();
+        if (!notificationDoc.exists) {
+            // If the notification doesn't exist, it's not an error. It might have been deleted.
+            logger.warn(`User '${uid}' tried to mark non-existent notification '${notificationId}' as read.`);
+            return { success: true, message: "Notification not found." };
+        }
+
+        const notificationData = notificationDoc.data();
+        
+        // --- CRITICAL SECURITY CHECK ---
+        // This ensures a user can only mark THEIR OWN notifications as read.
+        if (notificationData.userId !== uid) {
+            throw new HttpsError("permission-denied", "You do not have permission to modify this notification.");
+        }
+
+        await notificationRef.update({ isRead: true });
+
+        return { success: true, message: "Notification marked as read." };
+
+    } catch (error) {
+        logger.error(`Error marking notification '${notificationId}' as read for user '${uid}'`, { error });
+        if (error instanceof HttpsError) {
+            throw error;
+        }
+        throw new HttpsError("internal", "An unexpected error occurred while updating the notification.");
+    }
+});
+
 exports.onPledgeDelete = onDocumentDeleted("paymentPledges/{pledgeId}", (event) => {
     const deletedPledge = event.data.data();
     if (deletedPledge.status === 'pending') {
@@ -4471,84 +4514,4 @@ exports.setAdminClaim = onCall(async (request) => {
     exports.getServerTime = onCall({ cors: true }, (request) => {
     // This function simply returns the current server timestamp.
     return { serverTime: new Date().toISOString() };
-});
-
-// =====================================================================
-// ============ GHOST ACCOUNT CLEANUP (AUTOMATED & MANUAL) =============
-// =====================================================================
-
-// This is the reusable core logic for the cleanup process.
-async function runGhostAccountCleanup() {
-    logger.info("Executing ghost account cleanup logic...");
-    const db = admin.firestore();
-    const auth = admin.auth();
-    let ghostsDeleted = 0;
-    
-    // This helper function fetches all users from Firebase Auth, handling pagination.
-    const listAllAuthUsers = async (nextPageToken) => {
-        let allUsers = [];
-        const listUsersResult = await auth.listUsers(1000, nextPageToken);
-        allUsers = allUsers.concat(listUsersResult.users);
-        if (listUsersResult.pageToken) {
-            allUsers = allUsers.concat(await listAllAuthUsers(listUsersResult.pageToken));
-        }
-        return allUsers;
-    };
-
-    const allAuthUsers = await listAllAuthUsers();
-    const allAuthUserIds = new Set(allAuthUsers.map(u => u.uid));
-    logger.info(`Found ${allAuthUserIds.size} total users in Firebase Authentication.`);
-
-    const firestoreUsersSnapshot = await db.collection('creators').get();
-    const batch = db.batch();
-
-    firestoreUsersSnapshot.forEach(doc => {
-        // If a Firestore document ID does NOT exist in the set of real Auth UIDs, it's a ghost.
-        if (!allAuthUserIds.has(doc.id)) {
-            logger.warn(`Found ghost Firestore document for deleted auth user: '${doc.id}'. Scheduling for deletion.`);
-            batch.delete(doc.ref);
-            ghostsDeleted++;
-        }
-    });
-
-    if (ghostsDeleted > 0) {
-        await batch.commit();
-        const message = `Cleanup complete. Found and deleted ${ghostsDeleted} ghost user document(s).`;
-        logger.info(message);
-        return { message };
-    } else {
-        const message = "Cleanup complete. No ghost user documents were found.";
-        logger.info(message);
-        return { message };
-    }
-}
-
-// 1. THE AUTOMATED, SCHEDULED FUNCTION
-// This will run at 03:00 on the 1st day of every month.
-exports.scheduledGhostCleanup = onSchedule("0 3 1 * *", async (event) => {
-    logger.info("Running scheduled job: Ghost Account Cleanup.");
-    try {
-        await runGhostAccountCleanup();
-    } catch (error) {
-        logger.error("Error during scheduled ghost account cleanup:", { error });
-    }
-    return null;
-});
-
-// 2. THE MANUAL TRIGGER FUNCTION FOR THE ADMIN PANEL
-exports.manualGhostCleanup = onCall(async (request) => {
-    // Security Check: Only an admin can run this action.
-    if (!request.auth || request.auth.token.admin !== true) {
-        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
-    }
-    
-    logger.info(`Admin '${request.auth.uid}' manually triggered Ghost Account Cleanup.`);
-
-    try {
-        const result = await runGhostAccountCleanup();
-        return { success: true, message: result.message };
-    } catch (error) {
-        logger.error("Error in manually triggered ghost account cleanup", { error });
-        throw new HttpsError("internal", "An error occurred during the cleanup process.", error.message);
-    }
 });

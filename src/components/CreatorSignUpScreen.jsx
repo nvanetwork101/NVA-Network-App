@@ -73,6 +73,11 @@ const CreatorSignUpScreen = ({ showMessage, setActiveScreen }) => {
                 <div className="formGroup">
                     <label htmlFor="password" className="formLabel">Password:</label>
                     <input type="password" id="password" className="formInput" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="new-password" />
+                
+                <p className="smallText" style={{ textAlign: 'left', color: '#FFD700', marginTop: '5px' }}>
+                        Password must be at least 8 characters long, include at least one number and one capital letter.
+                    </p>
+                
                 </div>
                 <div className="formGroup">
                     <label htmlFor="creatorName" className="formLabel">Creator Name (Public):</label>
