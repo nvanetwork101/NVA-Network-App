@@ -116,7 +116,18 @@ function App() {
   const [liveEvent, setLiveEvent] = useState(null);
   const [isLive, setIsLive] = useState(false);
   
-  const [currencyRates, setCurrencyRates] = useState(null);
+  const [currencyRates, setCurrencyRates] = useState(() => {
+    // This function runs only on the initial component load.
+    try {
+      const savedRates = localStorage.getItem('currencyRates');
+      // If we found saved rates in storage, parse and use them.
+      return savedRates ? JSON.parse(savedRates) : null;
+    } catch (error) {
+      console.error("Failed to parse currency rates from localStorage", error);
+      // If parsing fails, start with null.
+      return null;
+    }
+  });
   const [selectedCurrency, setSelectedCurrency] = useState('USD');
 
   const [showVideoModal, setShowVideoModal] = useState(false);
@@ -184,17 +195,25 @@ function App() {
   };
 
     useEffect(() => {
-        // This now efficiently listens for the server-updated currency rates from Firestore.
-        // This makes zero calls to the external currency API.
         const ratesDocRef = doc(db, "settings", "currencyRates");
         const unsubscribe = onSnapshot(ratesDocRef, (docSnap) => {
             if (docSnap.exists() && docSnap.data().rates) {
-                setCurrencyRates(docSnap.data().rates);
+                const newRates = docSnap.data().rates;
+                // Update the component's state for immediate use.
+                setCurrencyRates(newRates);
+                // FIX: Save the new rates to localStorage for the next session.
+                try {
+                    localStorage.setItem('currencyRates', JSON.stringify(newRates));
+                } catch (error) {
+                    console.error("Failed to save currency rates to localStorage", error);
+                }
             } else {
-                console.warn("Currency rates document not found in Firestore!");
+                // If the document is not found, we no longer set the state to null.
+                // This allows the app to continue using the old rates from localStorage.
+                console.warn("Currency rates document not found in Firestore! Using last known rates if available.");
             }
         });
-        return () => unsubscribe(); // Cleanup listener on unmount
+        return () => unsubscribe();
     }, []);
 
   // The new navigation handler that tracks screen history AND syncs with browser history
@@ -227,105 +246,96 @@ function App() {
   // ========================== START: DEFINITIVE AUTH FLOW FIX ==========================
     // ========================== START: FINAL ROBUST AUTH FLOW ==========================
     useEffect(() => {
-    let unsubProfile = () => {};
+        let unsubProfile = () => {};
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      unsubProfile();
-      setAuthLoading(true);
-
-      // --- THIS IS THE CORE FIX ---
-      // If a user exists but their email is NOT verified...
-      if (user && !user.emailVerified) {
-        setCurrentUser(null);          // 1. Keep the main user state null (guest state)
-        setCreatorProfile(null);
-        setUnverifiedUser(user);       // 2. Store the user in the temporary "limbo" state
-        
-                // 3. CORE FIX: If a user has logged in but is not verified,
-        //    ALWAYS send them to the verification screen, regardless of where they are.
-        //    This provides clear feedback after a login attempt.
-        setActiveScreen('VerifyEmail');
-        setAuthLoading(false);
-        setIsInitialLoad(false);
-        return; // End execution here for the unverified user.
-      }
-      
-      // If we reach this point, the user is either fully verified or is null (logged out).
-      setUnverifiedUser(null); // Clear the limbo state.
-
-      if (user) { // This is now a fully verified user
-        const userDocRef = doc(db, "creators", user.uid);
-        try {
-          const docSnap = await getDoc(userDocRef);
-
-          if (docSnap.exists()) {
-            const profileData = docSnap.data();
-
-            if (profileData.banned) {
-                showMessage("This account is permanently banned.");
-                setActiveScreen('Banned');
-                signOut(auth);
-                return;
+        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => { // <--- FIX: 'async' keyword added
+            // Immediately stop any existing profile listeners the moment auth state changes.
+            if (unsubProfile) {
+                unsubProfile();
             }
+            
+            setAuthLoading(true);
 
-            if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
-                const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
-                setCurrentUser(user);
-                setCreatorProfile(profileData);
-                setSuspensionDetails({ email: profileData.email, expiryDate });
-                setActiveScreen('Suspended');
+            if (user && !user.emailVerified) {
+                setCurrentUser(null);
+                setCreatorProfile(null);
+                setUnverifiedUser(user);
+                setActiveScreen('VerifyEmail');
+                setAuthLoading(false);
+                setIsInitialLoad(false);
                 return;
             }
             
-            await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
+            setUnverifiedUser(null);
 
-            unsubProfile = onSnapshot(userDocRef, (snap) => {
-                if (snap.exists()) {
-                    setCurrentUser(user);
-                    setCreatorProfile(snap.data());
-                } else {
+            if (user) {
+                const userDocRef = doc(db, "creators", user.uid);
+                
+                // Set up the new listener for the logged-in user.
+                unsubProfile = onSnapshot(userDocRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const profileData = docSnap.data();
+
+                        if (profileData.banned) {
+                            showMessage("This account is permanently banned.");
+                            setActiveScreen('Banned');
+                            signOut(auth);
+                            return;
+                        }
+
+                        if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
+                            const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
+                            setSuspensionDetails({ email: profileData.email, expiryDate });
+                            setActiveScreen('Suspended');
+                            setCurrentUser(user); 
+                            setCreatorProfile(profileData);
+                            return;
+                        }
+                        
+                        setCurrentUser(user);
+                        setCreatorProfile(profileData);
+
+                        if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
+                            if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                                setActiveScreen('CreatorDashboard');
+                            } else {
+                                setActiveScreen('Home');
+                            }
+                        }
+                    } else {
+                        showMessage("User profile not found. Logging out.");
+                        signOut(auth);
+                    }
+                    setAuthLoading(false);
+                    setIsInitialLoad(false);
+                }, (error) => {
+                    console.error("Error with profile listener:", error);
+                    showMessage("Session error. Please log in again.");
                     signOut(auth);
+                });
+
+                // This await is now valid because the parent function is async.
+                await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
+
+            } else {
+                setCurrentUser(null);
+                setCreatorProfile(null);
+                const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
+                if (protectedScreens.includes(activeScreen)) {
+                    setActiveScreen('Home');
                 }
-            });
-
-            // Redirect user if they are on a page they shouldn't be on after logging in
-            if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
-              if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
-                setActiveScreen('CreatorDashboard');
-              } else {
-                setActiveScreen('Home');
-              }
+                setAuthLoading(false);
+                setIsInitialLoad(false);
             }
-            
-          } else {
-            showMessage("User profile not found. Logging out.");
-            signOut(auth);
-          }
-        } catch (error) {
-          console.error("Auth check failed:", error);
-          showMessage("Could not verify account status.");
-          signOut(auth);
-        } finally {
-          setAuthLoading(false);
-          setIsInitialLoad(false);
-        }
-      } else { // This user is fully logged out.
-        setCurrentUser(null);
-        setCreatorProfile(null);
-        // If a logged-out user is somehow on a protected screen, send them home.
-        const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
-        if (protectedScreens.includes(activeScreen)) {
-            setActiveScreen('Home');
-        }
-        setAuthLoading(false);
-        setIsInitialLoad(false);
-      }
-    });
+        });
 
-    return () => {
-      unsubscribeAuth();
-      unsubProfile();
-    };
-   }, [activeScreen]); // Dependency remains the same
+        return () => {
+            unsubscribeAuth();
+            if (unsubProfile) {
+                unsubProfile();
+            }
+        };
+    }, [activeScreen]);
   // =========================== END: FINAL ROBUST AUTH FLOW ===========================
  
 	useEffect(() => {
@@ -388,18 +398,44 @@ function App() {
     };
   }, []);
 
+      // --- VIDEO MODAL BACK BUTTON HANDLING ---
     useEffect(() => {
-        // This now efficiently listens for the server-updated currency rates from Firestore.
-        // This makes zero calls to the external currency API.
+        const handleModalCloseOnBack = () => {
+            setShowVideoModal(false);
+        };
+
+        if (showVideoModal) {
+            // Push a "modal" state into the history when the modal opens
+            window.history.pushState({ modal: 'video' }, '');
+            // Listen for the popstate event (back button press)
+            window.addEventListener('popstate', handleModalCloseOnBack);
+        }
+
+        // Cleanup function
+        return () => {
+            window.removeEventListener('popstate', handleModalCloseOnBack);
+        };
+    }, [showVideoModal]);  
+
+    useEffect(() => {
         const ratesDocRef = doc(db, "settings", "currencyRates");
         const unsubscribe = onSnapshot(ratesDocRef, (docSnap) => {
             if (docSnap.exists() && docSnap.data().rates) {
-                setCurrencyRates(docSnap.data().rates);
+                const newRates = docSnap.data().rates;
+                // Update the component's state for immediate use.
+                setCurrencyRates(newRates);
+                // Save the new rates to localStorage for the next session.
+                try {
+                    localStorage.setItem('currencyRates', JSON.stringify(newRates));
+                } catch (error) {
+                    console.error("Failed to save currency rates to localStorage", error);
+                }
             } else {
-                console.warn("Currency rates document not found in Firestore!");
+                // This warning will now appear only once.
+                console.warn("Currency rates document not found in Firestore! Using last known rates if available.");
             }
         });
-        return () => unsubscribe(); // Cleanup listener on unmount
+        return () => unsubscribe();
     }, []);
         
         useEffect(() => {

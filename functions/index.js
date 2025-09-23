@@ -4391,15 +4391,27 @@ exports.deleteUserAccount = onCall(async (request) => {
             throw new HttpsError("not-found", "The target user does not exist.");
         }
         
-        // Security: Authority cannot create or modify Admins.
         if (request.auth.token.authority && (targetUserDoc.data().role === 'admin' || newRole === 'admin')) {
              throw new HttpsError("permission-denied", "Authority members cannot manage Admin roles.");
         }
 
+        // --- THIS IS THE CRITICAL FIX ---
+        // 1. Prepare the custom claims object based on the new role.
+        const claims = {
+            admin: newRole === 'admin',
+            authority: newRole === 'authority'
+        };
+
+        // 2. Set the custom claims on the user's authentication token.
+        await admin.auth().setCustomUserClaims(targetUserId, claims);
+
+        // 3. Update the role in the Firestore document for display purposes.
         await targetUserRef.update({ role: newRole });
-        logger.info(`Moderator '${uid}' changed role for user '${targetUserId}' to '${newRole}'.`);
+        // --- END OF FIX ---
+
+        logger.info(`Moderator '${uid}' changed role for user '${targetUserId}' to '${newRole}' and updated auth claims.`);
         
-        return { success: true, message: `User role successfully updated to ${newRole}.` };
+        return { success: true, message: `User role and permissions successfully updated to ${newRole}. The user must log out and back in for the change to take full effect.` };
 
     } catch (error) {
         logger.error("Error in changeUserRole function:", error);
@@ -4502,6 +4514,25 @@ exports.setAdminClaim = onCall(async (request) => {
       return { success: true, message: `Admin claim set for user ${targetUid}.` };
     } catch (error) {
       logger.error(`Error setting admin claim for ${targetUid}:`, error);
+      throw new HttpsError("internal", "An error occurred while setting the custom claim.");
+    }
+});
+
+    exports.setAuthorityClaim = onCall(async (request) => {
+    // Security Check: Only an admin can grant authority status.
+    if (request.auth.token.admin !== true) {
+      throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+    const { targetUid } = request.data;
+    if (!targetUid) {
+      throw new HttpsError("invalid-argument", "Missing targetUid.");
+    }
+    try {
+      await admin.auth().setCustomUserClaims(targetUid, { authority: true });
+      logger.info(`Admin '${request.auth.uid}' successfully set authority claim for user '${targetUid}'.`);
+      return { success: true, message: `Authority claim set for user ${targetUid}.` };
+    } catch (error) {
+      logger.error(`Error setting authority claim for ${targetUid}:`, error);
       throw new HttpsError("internal", "An error occurred while setting the custom claim.");
     }
 });

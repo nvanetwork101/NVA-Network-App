@@ -14,6 +14,7 @@ import AdminSiteManagerScreen from './AdminSiteManagerScreen';
 import SetVerificationExpiryModal from './SetVerificationExpiryModal';
 import SuspensionModal from './SuspensionModal';
 import formatCurrency from '../utils/formatCurrency';
+import RoleBadge from './RoleBadge'; // <-- ADD THIS IMPORT
 
 const AdminDashboardScreen = ({
     showMessage,
@@ -112,9 +113,13 @@ const AdminDashboardScreen = ({
         unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'pending')), (s) => setPendingCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
         unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'active')), (s) => setActiveCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
         
+        // --- THIS IS THE FIX ---
+        // Both admin-only queries are now inside this conditional block.
         if (creatorProfile.role === 'admin') {
             unsubscribers.push(onSnapshot(query(collection(db, "paymentPledges"), where('status', '==', 'pending')), (s) => setPendingPledges(s.docs.map(d=>({id:d.id,...d.data()})))));
+            unsubscribers.push(onSnapshot(query(collection(db, "payoutRequests"), where("status", "==", "pending"), orderBy("requestedAt", "desc")), (s) => setPayoutRequests(s.docs.map(d=>({id:d.id,...d.data()})))));
         }
+        // --- END OF FIX ---
 
         unsubscribers.push(onSnapshot(query(collection(db, "opportunities"), where('status', '==', 'pending')), (s) => setPendingOpportunities(s.docs.map(d=>({id:d.id,...d.data()})))));
         unsubscribers.push(onSnapshot(query(collection(db, "opportunities"), where('status', '==', 'active')), (s) => setActiveOpportunities(s.docs.map(d=>({id:d.id,...d.data()})))));
@@ -122,11 +127,9 @@ const AdminDashboardScreen = ({
         unsubscribers.push(onSnapshot(query(collection(db, "reports"), where("status", "==", "pending")), (s) => setPendingReportsCount(s.size)));
         unsubscribers.push(onSnapshot(query(collection(db, "appeals"), where("status", "==", "pending")), (s) => setPendingAppealsCount(s.size)));
 
-        unsubscribers.push(onSnapshot(query(collection(db, "payoutRequests"), where("status", "==", "pending"), orderBy("requestedAt", "desc")), (s) => setPayoutRequests(s.docs.map(d=>({id:d.id,...d.data()})))));
-
         return () => unsubscribers.forEach(unsub => unsub());
     }, [creatorProfile.role]);
-
+           
     const filteredUsers = allUsers.filter(user => {
         // First, check if the user matches the search term. If not, exclude them immediately.
         const matchesSearch = searchTerm === '' || user.creatorName?.toLowerCase().includes(searchTerm.toLowerCase()) || user.email?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -378,17 +381,20 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                     </button>
                     <button className={`admin-nav-button ${selectedAdminSubScreen === 'Competitions' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('Competitions')}>Competitions</button>
                     <button className={`admin-nav-button ${selectedAdminSubScreen === 'EventManager' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('EventManager')}>Event Manager</button>
-                    <button className={`admin-nav-button ${selectedAdminSubScreen === 'CategoryManager' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('CategoryManager')}>Category Manager</button>
-                    
+                    {/* An Authority cannot manage categories */}
+                    {creatorProfile.role === 'admin' && (
+                        <button className={`admin-nav-button ${selectedAdminSubScreen === 'CategoryManager' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('CategoryManager')}>Category Manager</button>
+                    )}
                     <button className={`admin-nav-button ${selectedAdminSubScreen === 'SiteManagement' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('SiteManagement')}>Settings</button>
                     <button className="admin-nav-button" onClick={() => setActiveScreen('AnalyticsDashboard')}>Analytics</button>
                 </div>
 
                 {selectedAdminSubScreen === 'Overview' && (
                     <>
-                        {/* --- START: NEW PAYOUT REQUESTS SECTION --- */}
-                        <section className="dashboardSection" style={{border: '2px solid #00FF00'}}>
-                            <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsPayoutRequestsExpanded(!isPayoutRequestsExpanded)}>
+                        {/* --- START: NEW PAYOUT REQUESTS SECTION (ADMIN ONLY) --- */}
+                        {creatorProfile.role === 'admin' && (
+                            <section className="dashboardSection" style={{border: '2px solid #00FF00'}}>
+                                <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsPayoutRequestsExpanded(!isPayoutRequestsExpanded)}>
                                 <p className="dashboardSectionTitle" style={{marginBottom: 0, color: '#00FF00'}}>Payout Requests ({payoutRequests.length})</p>
                                 <span className="text-xl font-bold text-white">{isPayoutRequestsExpanded ? '▼' : '▶'}</span>
                             </div>
@@ -413,7 +419,8 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                      ))}
                                 </div>
                             </div>
-                        </section>
+                            </section>
+                        )}
                         {/* --- END: NEW PAYOUT REQUESTS SECTION --- */}
 
                         {liveStatus && (
@@ -480,34 +487,43 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                                     <div style={{display: 'flex', alignItems: 'center', flexGrow: 1, marginRight: '10px', cursor: 'pointer'}} onClick={() => {setSelectedUserId(user.id); setActiveScreen('UserProfile');}}>
                                                         <img src={user.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} alt={user.creatorName} style={{width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px'}} />
                                                         <div>
-                                                            <p className="adminDashboardItemTitle">{user.creatorName}</p>
-                                                            <p style={{ fontSize: '12px', color: '#AAA' }}>{user.email}</p>
-                                                            <p style={{ fontSize: '12px', color: '#CCC' }}>Role: {user.role}</p>
-                                                            <p style={{ fontSize: '12px', color: primaryStatus.color, fontWeight: 'bold' }}>Status: {primaryStatus.text}</p>
-                                                            <div style={{display: 'flex', gap: '5px', marginTop: '4px', flexWrap: 'wrap'}}>
-                                                                {secondaryBadges.map(badge => (
-                                                                    <span key={badge.text} style={{fontSize: '10px', fontWeight: 'bold', color: '#0A0A0A', backgroundColor: badge.color, padding: '2px 6px', borderRadius: '10px'}}>{badge.text}</span>
-                                                                ))}
+                                                            <div className="adminDashboardItemTitle" style={{ display: 'flex', alignItems: 'center' }}>
+                                                                {user.creatorName}
+                                                                <RoleBadge profile={user} />
                                                             </div>
+                                                            <p style={{ fontSize: '12px', color: '#AAA' }}>{user.email} • Role: {user.role}</p>
+                                                            <p style={{ fontSize: '12px', color: primaryStatus.color, fontWeight: 'bold' }}>Status: {primaryStatus.text}</p>
                                                         </div>
                                                     </div>
                                                     <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end', flexShrink: 0}}>
-                                                        <select className="formInput" defaultValue={user.role} onChange={(e) => handleRoleChange(user, e.target.value)} style={{padding: '5px', fontSize: '12px', width: '120px'}} disabled={creatorProfile.role !== 'admin' && user.role === 'admin'}><option value="user">User</option><option value="creator">Creator</option><option value="authority">Authority</option>{creatorProfile.role === 'admin' && <option value="admin">Admin</option>}</select>
-                                                        <div style={{display: 'flex', gap: '5px', justifyContent: 'flex-end', width: '120px'}}>
-                                                            {isSuspended ? (
-                                                                <button className="adminActionButton approve" style={{flex: 1}} onClick={() => handleLiftSuspension(user)}>Reactivate</button>
-                                                            ) : (
-                                                                !user.banned && <button className="adminActionButton" style={{backgroundColor: '#FF8C00', flex: 1}} onClick={() => handleOpenSuspendModal(user)}>Suspend</button>
-                                                            )}
-                                                                                                                       
-                                                            <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} style={{flex: 1}} onClick={() => handleToggleBan(user)}>{user.banned ? 'Unban' : 'Ban'}</button>
-                                                        
-                                                                {user.canCreateCampaignAfter && user.canCreateCampaignAfter.toDate() > new Date() && (
-                                                                <button className="adminActionButton" style={{backgroundColor: '#6f42c1', width: '120px'}} onClick={() => handleLiftCooldown(user)} disabled={creatorProfile.role === 'authority' && user.id === currentUser.uid}>Lift Cooldown</button>
-                                                                    )}
+                                                        {(() => {
+                                                            const isTargetAdmin = user.role === 'admin';
+                                                            const isTargetAuthority = user.role === 'authority';
+                                                            const viewerIsAuthority = creatorProfile.role === 'authority';
+                                                            
+                                                            // An authority cannot take action on another authority or an admin.
+                                                            const isDisabled = viewerIsAuthority && (isTargetAdmin || isTargetAuthority);
 
-                                                        </div>
-                                                        <button className="adminActionButton" onClick={() => handleToggleVerified(user)} style={{backgroundColor: '#00FFFF', color: '#0A0A0A', width: '120px'}}>{getUserStatusBadges(user).some(b => b.text === 'Verified') ? 'Revoke Verified' : 'Make Verified'}</button>
+                                                            return <>
+                                                                <select className="formInput" defaultValue={user.role} onChange={(e) => handleRoleChange(user, e.target.value)} style={{padding: '5px', fontSize: '12px', width: '120px'}} disabled={isDisabled || viewerIsAuthority}>
+                                                                    <option value="user">User</option>
+                                                                    <option value="creator">Creator</option>
+                                                                    <option value="authority">Authority</option>
+                                                                    {creatorProfile.role === 'admin' && <option value="admin">Admin</option>}
+                                                                </select>
+                                                                <div style={{display: 'flex', gap: '5px', justifyContent: 'flex-end', width: '120px'}}>
+                                                                    {isSuspended ? (
+                                                                        <button className="adminActionButton approve" style={{flex: 1}} onClick={() => handleLiftSuspension(user)} disabled={isDisabled}>Reactivate</button>
+                                                                    ) : (
+                                                                        !user.banned && <button className="adminActionButton" style={{backgroundColor: '#FF8C00', flex: 1}} onClick={() => handleOpenSuspendModal(user)} disabled={isDisabled}>Suspend</button>
+                                                                    )}
+                                                                    <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} style={{flex: 1}} onClick={() => handleToggleBan(user)} disabled={isDisabled}>{user.banned ? 'Unban' : 'Ban'}</button>
+                                                                </div>
+                                                                <button className="adminActionButton" onClick={() => handleToggleVerified(user)} style={{backgroundColor: '#00FFFF', color: '#0A0A0A', width: '120px'}}>
+                                                                    {getUserStatusBadges(user).some(b => b.text === 'Verified') ? 'Revoke' : 'Verify'}
+                                                                </button>
+                                                            </>;
+                                                        })()}
                                                     </div>
                                                 </div>
                                             );

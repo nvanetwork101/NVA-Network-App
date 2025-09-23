@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db, functions, httpsCallable, collection, query, orderBy, onSnapshot } from '../firebase';
 import ConfirmationModal from './ConfirmationModal';
+import RoleBadge from './RoleBadge'; // <-- ADD THIS IMPORT
 
 const timeAgo = (date) => {
     if (!date) return '';
@@ -44,7 +45,12 @@ const ChatMessage = ({ message, currentUser, creatorProfile, onReply, onDelete, 
             <img src={message.userProfilePicture || 'https://placehold.co/80x80/555/FFF?text=P'} alt={message.userName} className="commentPfp" />
             <div className="commentContent">
                 <div className="commentHeader">
-                    <span className="commentAuthor" style={{ color: getUserColor(message.userId) }}>{message.userName}</span>                    <span className="commentTimestamp">{message.createdAt ? timeAgo(message.createdAt) : '...'}</span>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <span className="commentAuthor" style={{ color: getUserColor(message.userId) }}>{message.userName}</span>
+                        {/* For live chat, we only have the role, so we pass a partial profile */}
+                        <RoleBadge profile={{ role: message.authorRole }} />
+                    </div>
+                    <span className="commentTimestamp">{message.createdAt ? timeAgo(message.createdAt) : '...'}</span>
                 </div>
                 {message.replyTo && <p style={{fontSize: '12px', color: '#AAA', fontStyle: 'italic', marginBottom: '5px'}}>Replying to {message.replyTo.userName}</p>}
                 <p className="commentText">{message.text}</p>

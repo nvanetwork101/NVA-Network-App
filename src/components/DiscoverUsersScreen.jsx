@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { db, collection, query, where, getDocs, limit } from '../firebase';
+import RoleBadge from './RoleBadge'; // <-- ADD THIS IMPORT
 
 const DiscoverUsersScreen = ({ showMessage, setActiveScreen, setSelectedUserId, currentUser, creatorProfile }) => {
     const [searchTerm, setSearchTerm] = useState('');
@@ -96,13 +97,16 @@ const DiscoverUsersScreen = ({ showMessage, setActiveScreen, setSelectedUserId, 
                 )}
                 {!isLoading && searchResults.map(user => (
                     <div key={user.id} className="user-search-item" style={{cursor: 'pointer'}} onClick={() => viewProfile(user.id)}>
-                        <img src={user.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt={user.creatorName} className="user-search-pfp"/>
+                        <img src={user.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt={user.creatorName} 			className="user-search-pfp"/>
                         <div className="user-search-info">
-                            <p className="user-search-name">
+                            <div className="user-search-name" style={{ display: 'flex', alignItems: 'center' }}>
                                 {user.creatorName}
-                                {user.hasActiveCampaign && <span className="user-search-campaign-badge">Active Campaign</span>}
-                            </p>
-                            <p className="user-search-role">Role: {user.role}</p>
+                                <RoleBadge profile={user} />
+                            </div>
+                            <p className="user-search-role">
+			Role: {user.role}
+			{user.hasActiveCampaign && <span className="user-search-campaign-badge" style={{ marginLeft: '10px' }}>Active 			Campaign</span>}
+			 </p>
                         </div>
                     </div>
                 ))}

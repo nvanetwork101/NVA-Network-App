@@ -289,8 +289,8 @@ import PromotedSlot from './PromotedSlot';
             {/* CORRECTED: The JSX for the trending grid is now fixed, removing the stray bracket */}
             {isLayoutLoading ? <p style={{color: 'white'}}>Loading trending...</p> : (
                 <div className="contentGrid">
-                    {enrichedLayout.trending.map((item) => (
-                        <div key={item.id || item.title} className="contentCard">
+                    {enrichedLayout.trending.map((item, index) => (
+                        <div key={`${item.id || item.title}-${index}`} className="contentCard">
                             <DynamicThumbnail item={item} onClick={() => handleItemClick(item)} />
                             <p className="contentTitle">{item.title}</p>
                             {item.type === 'internal' && (

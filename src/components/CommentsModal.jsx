@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, functions, httpsCallable, collection, query, orderBy, onSnapshot } from '../firebase';
+import RoleBadge from './RoleBadge'; // <-- ADD THIS IMPORT
 
 const appId = 'production-app-id';
 
@@ -152,18 +153,18 @@ const CommentsModal = ({ item, itemType, currentUser, creatorProfile, showMessag
         const isCommentAuthor = currentUser?.uid === comment.userId;
         const isContentOwner = currentUser?.uid === item.creatorId || currentUser?.uid === item.postedByUid;
         const canDelete = isModerator || isCommentAuthor || isContentOwner;
-
-        // Determine CSS class based on authorRole
-        const authorClass = `commentAuthor commentAuthor--${comment.authorRole || 'user'}`;
-        // Determine unique color style for the user's name
-        const authorStyle = { color: generateColorFromId(comment.userId) };
-
+        
+        // Create a profile object for the badge
         return (
             <div className="commentItem" style={{ marginLeft: isReply ? '40px' : '0' }}>
                 <img src={comment.userProfilePicture || 'https://placehold.co/80x80/555/FFF?text=P'} alt={comment.userName} className="commentPfp" onClick={() => handleViewProfile(comment.userId)} />
                 <div className="commentContent">
                     <div className="commentHeader">
-                        <span className={authorClass} style={authorStyle} onClick={() => handleViewProfile(comment.userId)}>{comment.userName}</span>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                           <span className="commentAuthor" style={{ color: generateColorFromId(comment.userId) }} onClick={() => handleViewProfile(comment.userId)}>{comment.userName}</span>
+                           {/* For comments, we can only show the role badge as we don't have the full profile */}
+                           <RoleBadge profile={{ role: comment.authorRole }} />
+                        </div>
                         <span className="commentTimestamp">{comment.createdAt ? timeAgo(comment.createdAt) : '...'}</span>
                     </div>
                     {comment.replyTo && <p style={{fontSize: '12px', color: '#AAA', fontStyle: 'italic', marginBottom: '5px'}}>Replying to {comment.replyTo.name}</p>}

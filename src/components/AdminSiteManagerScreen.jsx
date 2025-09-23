@@ -91,21 +91,26 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
 
         // --- NEW EFFECT FOR PAYOUT HISTORY ---
     useEffect(() => {
-    const historyQuery = query(
-        collection(db, "payoutRequests"),
-        where("status", "in", ["paid", "dismissed"]),
-        orderBy("requestedAt", "desc")
-    );
-    const unsubscribe = onSnapshot(historyQuery, (snapshot) => {
-        setPayoutHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        setIsLoadingHistory(false);
-    }, (error) => {
-        showMessage("Failed to load payout history: " + error.message);
-        setIsLoadingHistory(false);
-    });
-
-    return () => unsubscribe();
-}, []);
+        // FIX: Only attempt to fetch payout history if the user is an admin.
+        if (creatorProfile.role === 'admin') {
+            const historyQuery = query(
+                collection(db, "payoutRequests"),
+                where("status", "in", ["paid", "dismissed"]),
+                orderBy("requestedAt", "desc")
+            );
+            const unsubscribe = onSnapshot(historyQuery, (snapshot) => {
+                setPayoutHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                setIsLoadingHistory(false);
+            }, (error) => {
+                showMessage("Failed to load payout history: " + error.message);
+                setIsLoadingHistory(false);
+            });
+            return () => unsubscribe();
+        } else {
+            // For non-admins, simply set loading to false to prevent errors.
+            setIsLoadingHistory(false);
+        }
+    }, [creatorProfile.role]); // Add dependency to re-run if profile changes.
 
     const handleSupportContentChange = (field, value) => {
         setSupportHubContent(prev => ({ ...prev, [field]: value }));
@@ -267,59 +272,62 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
 
             <div className="dashboardSection"><div className="flex justify-between items-center mb-4"><p className="dashboardSectionTitle" style={{marginBottom: 0}}>Social Links Manager</p><button className="button" onClick={() => handleSaveChanges('siteSettings')} disabled={!hasChanges || isSaving}><span className="buttonText">{isSaving ? 'Saving...' : 'Save Changes'}</span></button></div><div className="dashboardContentList">{socialLinks.map((link, index) => (<div key={link.name || index} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}><div className="flex justify-between items-center"><p className="adminDashboardItemTitle">{link.name}</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{link.isEnabled ? 'Visible' : 'Hidden'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={link.isEnabled} onChange={(e) => handleUpdateField(`${index}-isEnabled`, e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${link.isEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${link.isEnabled ? 'transform translate-x-6' : ''}`}></div></div></label></div><div className="formGroup" style={{marginBottom: 0}}><label className="formLabel" style={{fontSize: '12px', color: '#AAA'}}>URL:</label><input type="url" className="formInput" value={link.url} onChange={(e) => handleUpdateField(`${index}-url`, e.target.value)} placeholder={`Enter full URL for ${link.name}`} /></div></div>))}</div></div>
             <div className="dashboardSection"><p className="dashboardSectionTitle">Feature Toggles</p><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Show NVA Network Charts on Home Screen</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{showNvaCharts ? 'Enabled' : 'Disabled'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={showNvaCharts} onChange={(e) => handleUpdateField('showNvaCharts', e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${showNvaCharts ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${showNvaCharts ? 'transform translate-x-6' : ''}`}></div></div></label></div></div>
-            <div className="dashboardSection"><p className="dashboardSectionTitle">Monetization Settings</p><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p><input type="number" className="formInput" value={premiumPrice} onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Promoted Status Price (USD)</p><input type="number" className="formInput" value={promotedStatusPrice} onChange={(e) => { setPromotedStatusPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div>{currentUserRole === 'admin' && (<div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p><input type="text" className="formInput" value={mmgNumber} onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }} placeholder="Enter MMG number..." style={{width: '200px', textAlign: 'right'}} /></div>)}</div>
-
-                {/* --- START: PAYOUT HISTORY SECTION --- */}
-            <div className="dashboardSection" style={{marginTop: '20px'}}>
-                <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}>
-                    <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Payout History ({payoutHistory.length})</p>
-                    <span className="text-xl font-bold text-white">{isHistoryExpanded ? '▼' : '▶'}</span>
-                </div>
-                <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isHistoryExpanded ? 'max-h-[5000px]' : 'max-h-0'}`}>
-                    <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
-                        {isLoadingHistory ? <p>Loading history...</p> : payoutHistory.length === 0 ? <p className="dashboardItem">No processed payouts found.</p> : (
-                            <div className="dashboardContentList" style={{maxHeight: '400px', overflowY: 'auto', paddingRight: '10px'}}>
-                                {payoutHistory.map((req, index) => (
-    <div key={req.id} style={{
-        padding: '15px 0',
-        borderBottom: index === payoutHistory.length - 1 ? 'none' : '1px solid #444' // Add separator to all but the last item
-    }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: '10px' }}>
-            <div>
-                <p className="adminDashboardItemTitle" style={{ margin: 0 }}>{req.campaignTitle}</p>
-                <p className="text-sm" style={{ color: '#CCC', margin: 0 }}>by {req.creatorName} on {req.requestedAt?.toDate().toLocaleDateString()}</p>
-            </div>
-            <span style={{
-                fontSize: '12px',
-                fontWeight: 'bold',
-                color: '#FFFFFF',
-                backgroundColor: req.status === 'paid' ? '#28a745' : '#6c757d',
-                padding: '5px 12px',
-                borderRadius: '20px',
-                textTransform: 'uppercase'
-            }}>
-                {req.status}
-            </span>
-        </div>
-
-        <div style={{ fontSize: '14px', color: '#DDD', padding: '10px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span><strong>Legal Name:</strong> {req.legalName || 'N/A'}</span>
-                <span><strong>MMG Phone:</strong> {req.mmgPhoneNumber || 'N/A'}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #555', paddingTop: '8px' }}>
-                <span>Total Raised: {formatCurrency(req.amountRaised, 'USD', { USD: 1 })}</span>
-                <span style={{ color: '#DC3545' }}>Fee: -{formatCurrency(req.amountRaised * 0.07, 'USD', { USD: 1 })}</span>
-                <strong style={{ color: '#00FF00' }}>Net Payout: {formatCurrency(req.netAmount, 'USD', { USD: 1 })}</strong>
-            </div>
-        </div>
-    </div>
-))}
+           {/* --- ADMIN ONLY SECTIONS --- */}
+            {creatorProfile.role === 'admin' && (
+                <>
+                    <div className="dashboardSection"><p className="dashboardSectionTitle">Monetization Settings</p><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p><input type="number" className="formInput" value={premiumPrice} onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Promoted Status Price (USD)</p><input type="number" className="formInput" value={promotedStatusPrice} onChange={(e) => { setPromotedStatusPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div>{currentUserRole === 'admin' && (<div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p><input type="text" className="formInput" value={mmgNumber} onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }} placeholder="Enter MMG number..." style={{width: '200px', textAlign: 'right'}} /></div>)}</div>
+                    
+                    <div className="dashboardSection" style={{marginTop: '20px'}}>
+                        <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}>
+                            <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Payout History ({payoutHistory.length})</p>
+                            <span className="text-xl font-bold text-white">{isHistoryExpanded ? '▼' : '▶'}</span>
+                        </div>
+                        <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isHistoryExpanded ? 'max-h-[5000px]' : 'max-h-0'}`}>
+                            <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
+                                {isLoadingHistory ? <p>Loading history...</p> : payoutHistory.length === 0 ? <p className="dashboardItem">No processed payouts found.</p> : (
+                                    <div className="dashboardContentList" style={{maxHeight: '400px', overflowY: 'auto', paddingRight: '10px'}}>
+                                        {payoutHistory.map((req, index) => (
+                                            <div key={req.id} style={{
+                                                padding: '15px 0',
+                                                borderBottom: index === payoutHistory.length - 1 ? 'none' : '1px solid #444'
+                                            }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: '10px' }}>
+                                                    <div>
+                                                        <p className="adminDashboardItemTitle" style={{ margin: 0 }}>{req.campaignTitle}</p>
+                                                        <p className="text-sm" style={{ color: '#CCC', margin: 0 }}>by {req.creatorName} on {req.requestedAt?.toDate().toLocaleDateString()}</p>
+                                                    </div>
+                                                    <span style={{
+                                                        fontSize: '12px',
+                                                        fontWeight: 'bold',
+                                                        color: '#FFFFFF',
+                                                        backgroundColor: req.status === 'paid' ? '#28a745' : '#6c757d',
+                                                        padding: '5px 12px',
+                                                        borderRadius: '20px',
+                                                        textTransform: 'uppercase'
+                                                    }}>
+                                                        {req.status}
+                                                    </span>
+                                                </div>
+                                                <div style={{ fontSize: '14px', color: '#DDD', padding: '10px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                                                        <span><strong>Legal Name:</strong> {req.legalName || 'N/A'}</span>
+                                                        <span><strong>MMG Phone:</strong> {req.mmgPhoneNumber || 'N/A'}</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #555', paddingTop: '8px' }}>
+                                                        <span>Total Raised: {formatCurrency(req.amountRaised, 'USD', { USD: 1 })}</span>
+                                                        <span style={{ color: '#DC3545' }}>Fee: -{formatCurrency(req.amountRaised * 0.07, 'USD', { USD: 1 })}</span>
+                                                        <strong style={{ color: '#00FF00' }}>Net Payout: {formatCurrency(req.netAmount, 'USD', { USD: 1 })}</strong>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                        )}
+                        </div>
                     </div>
-                </div>
-            </div>
+                </>
+            )}
             {/* --- END: PAYOUT HISTORY SECTION --- */}
 
             <div className="dashboardSection" style={{marginTop: '20px'}}><p className="dashboardSectionTitle">Contact Form Submissions</p>{isLoadingSubmissions ? <p>Loading submissions...</p> : (<div className="dashboardContentList">{submissions.length === 0 ? <p className="dashboardItem">No submissions yet.</p> : (submissions.map(sub => (<div key={sub.id} className="adminDashboardItem" onClick={() => handleViewSubmission(sub)} style={{cursor: 'pointer', borderLeft: sub.status === 'New' ? '4px solid #FFD700' : '4px solid transparent'}}><div style={{flexGrow: 1}}><p className="adminDashboardItemTitle">{sub.queryType} - <span style={{fontWeight: 'normal'}}>{sub.userName}</span></p><p style={{fontSize: '12px', color: '#AAA'}}>{new Date(sub.submittedAt).toLocaleString()}</p></div><span className="adminDashboardItemStatus">{sub.status}</span></div>)))}</div>)}{selectedSubmission && (<div className="confirmationModalOverlay" style={{zIndex: 2500}}><div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '500px'}}><p className="confirmationModalTitle">{selectedSubmission.queryType}</p><div className="dashboardItem"><strong>From:</strong> {selectedSubmission.userName}</div><div className="dashboardItem"><strong>Email:</strong> <a href={`mailto:${selectedSubmission.userEmail}`} className="termsLink">{selectedSubmission.userEmail}</a></div><div className="dashboardItem"><strong>Date:</strong> {new Date(selectedSubmission.submittedAt).toLocaleString()}</div><hr style={{borderColor: '#333', margin: '15px 0'}}/><p className="paragraph" style={{backgroundColor: '#0A0A0A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap'}}>{selectedSubmission.message}</p><div className="confirmationModalButtons"><button className="confirmationButton cancel" onClick={() => confirmDeleteSubmission(selectedSubmission)}>Delete</button><button className="confirmationButton confirm" onClick={() => setSelectedSubmission(null)}>Close</button></div></div></div>)}</div>

@@ -1,104 +1,65 @@
 // src/components/VideoPlayerModal.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { db, functions, httpsCallable, doc, onSnapshot } from '../firebase';
+import { db, functions, httpsCallable, doc, onSnapshot, getDoc } from '../firebase';
 import LikeButton from './LikeButton.jsx';
+import RoleBadge from './RoleBadge.jsx'; // We will use the badge component here
 
 const appId = 'production-app-id';
 
-const GENERIC_THUMBNAIL_PLACEHOLDER = 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA';
 const extractVideoInfo = (url) => {
-    if (!url || typeof url !== 'string') {
-        return { videoId: null, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl: null, platform: 'unknown', isVertical: false };
+    if (!url || typeof url !== 'string') return { isVertical: false, embedUrl: null };
+    if (/(youtube\.com\/shorts|tiktok\.com)/.test(url)) {
+        const youtubeMatch = url.match(/(?:youtube\.com\/shorts\/)([^"&?\/ ]{11})/);
+        if (youtubeMatch) return { embedUrl: `https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0`, isVertical: true };
+        const tiktokMatch = url.match(/tiktok\.com\/.*\/video\/(\d+)/);
+        if (tiktokMatch) return { embedUrl: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}`, isVertical: true };
     }
-    const youtubeRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/ ]{11})/;
-    const youtubeMatch = url.match(youtubeRegex);
-    if (youtubeMatch && youtubeMatch[1]) {
-        const videoId = youtubeMatch[1];
-        const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-        const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
-        const isVertical = url.includes('/shorts/');
-        return { videoId, thumbnailUrl, embedUrl, platform: 'youtube', isVertical };
-    }
-    const vimeoRegex = /vimeo\.com\/(?:video\/)?(\d+)/;
-    const vimeoMatch = url.match(vimeoRegex);
-    if (vimeoMatch && vimeoMatch[1]) {
-        const videoId = vimeoMatch[1];
-        const embedUrl = `https://player.vimeo.com/video/${videoId}?autoplay=1`;
-        return { videoId, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl, platform: 'vimeo', isVertical: false };
-    }
-    const tiktokRegex = /tiktok\.com\/.*\/video\/(\d+)/;
-    const tiktokMatch = url.match(tiktokRegex);
-    if (tiktokMatch && tiktokMatch[1]) {
-        const videoId = tiktokMatch[1];
-        const embedUrl = `https://www.tiktok.com/embed/v2/${videoId}`;
-        return { videoId, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl, platform: 'tiktok', isVertical: true };
-    }
-    const facebookRegex = /facebook\.com\/(?:watch\/?\?v=|.*\/videos\/|.*\/reel\/)(\d+)/;
-    const facebookMatch = url.match(facebookRegex);
-    if(facebookMatch && facebookMatch[1]) {
-        const videoId = facebookMatch[1];
-        const embedUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url)}&show_text=false&autoplay=true`;
-        return { videoId, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl, platform: 'facebook', isVertical: url.includes('/reel/') };
-    }
-    return { videoId: null, thumbnailUrl: GENERIC_THUMBNAIL_PLACEHOLDER, embedUrl: url, platform: 'generic', isVertical: false };
+    const youtubeMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/);
+    if (youtubeMatch) return { embedUrl: `https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0`, isVertical: false };
+    return { embedUrl: url, isVertical: false };
 };
 
 const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMessage }) => {
     const [liveContentItem, setLiveContentItem] = useState(contentItem);
+    const [creatorProfile, setCreatorProfile] = useState(null);
+    const [descriptionExpanded, setDescriptionExpanded] = useState(false);
     const viewCountedRef = useRef(false);
-
     const itemType = liveContentItem?.itemType || (contentItem?.eventTitle ? 'event' : 'content');
 
     useEffect(() => {
         if (!contentItem?.id) return;
-
-        const initialItemType = contentItem?.eventTitle ? 'event' : 'content';
         const itemId = contentItem.originalContentId || contentItem.id;
-
-        let docPath;
-        if (initialItemType === 'event') {
-            docPath = `events/${itemId}`;
-        } else {
-            docPath = `artifacts/${appId}/public/data/content_items/${itemId}`;
-        }
-
-        const unsub = onSnapshot(doc(db, docPath), (doc) => {
-            if (doc.exists()) {
-                setLiveContentItem({ id: doc.id, ...doc.data(), itemType: initialItemType });
-            } else {
-                console.warn(`Real-time listener could not find document at path: ${docPath}`);
+        const docPath = contentItem?.eventTitle ? `events/${itemId}` : `artifacts/${appId}/public/data/content_items/${itemId}`;
+        const unsubContent = onSnapshot(doc(db, docPath), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setLiveContentItem({ id: docSnap.id, ...data });
+                if (data.creatorId && data.creatorId !== creatorProfile?.id) {
+                    const creatorRef = doc(db, "creators", data.creatorId);
+                    getDoc(creatorRef).then(creatorSnap => {
+                        if (creatorSnap.exists()) {
+                            setCreatorProfile({ id: creatorSnap.id, ...creatorSnap.data() });
+                        }
+                    });
+                }
             }
-        }, (error) => {
-            console.error(`Error listening to document at ${docPath}:`, error);
         });
-
-        return () => unsub();
+        return () => unsubContent();
     }, [contentItem]);
 
     useEffect(() => {
-        if (!liveContentItem || !currentUser || viewCountedRef.current) { return; }
-
-        const authorId = liveContentItem.hostId || liveContentItem.creatorId || liveContentItem.createdBy;
-        const itemId = liveContentItem.originalContentId || liveContentItem.id;
-
-        if (currentUser.uid === authorId) { return; }
-
+        if (!liveContentItem || !currentUser || viewCountedRef.current || currentUser.uid === liveContentItem.creatorId) return;
         const timer = setTimeout(async () => {
-            if (viewCountedRef.current) return;
             viewCountedRef.current = true;
-            try {
-                const incrementViewFunction = httpsCallable(functions, 'incrementViewCount');
-                await incrementViewFunction({ itemId: itemId, itemType: itemType });
-            } catch (error) { console.error("Error calling incrementViewCount function:", error); }
+            const incrementViewFunction = httpsCallable(functions, 'incrementViewCount');
+            await incrementViewFunction({ itemId: liveContentItem.id, itemType });
         }, 10000);
-
-        return () => { clearTimeout(timer); };
+        return () => clearTimeout(timer);
     }, [liveContentItem, currentUser, itemType]);
 
     if (!videoUrl) return null;
 
     const { embedUrl, isVertical } = extractVideoInfo(videoUrl);
-
     const displayViewCount = itemType === 'event' ? liveContentItem?.totalViewCount : liveContentItem?.viewCount;
 
     return (
@@ -106,88 +67,78 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
             <div className={`videoModalContent ${isVertical ? 'vertical' : ''}`}>
                 <button className="closeButton" onClick={onClose}>×</button>
                 <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
-                    <iframe src={embedUrl} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen title="Embedded Video Content"></iframe>
+                    <iframe src={embedUrl} allow="autoplay; encrypted-media;" allowFullScreen title="Embedded Video Content"></iframe>
                 </div>
                 
-                {/* --- THIS IS THE FIX: START OF NEW CREATOR INFO BLOCK --- */}
-                {liveContentItem && liveContentItem.creatorId !== 'nva-system' && !liveContentItem.isCurated && (
-                    <div className="video-details-container" style={{ padding: '15px', color: '#FFF' }}>
-                        <h2 className="video-title" style={{ margin: '0 0 8px 0', fontSize: '1.4rem' }}>{liveContentItem.title}</h2>
-                        <p 
-                            className="video-creator-name" 
-                            style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#FFD700', cursor: 'pointer' }}
+                {/* --- DEFINITIVE YOUTUBE-STYLE LAYOUT --- */}
+                <div style={{ padding: '12px 15px', backgroundColor: '#1A1A1A' }}>
+                    <h2 style={{ margin: '0 0 12px 0', fontSize: '1.2rem', color: '#FFFFFF', fontWeight: '600', lineHeight: '1.4' }}>
+                        {liveContentItem?.title}
+                    </h2>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '15px' }}>
+                        <div 
+                            style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', minWidth: 0 }}
                             onClick={() => {
                                 const event = new CustomEvent('navigateToUserProfile', { detail: { userId: liveContentItem.creatorId } });
                                 window.dispatchEvent(event);
-                                onClose(); // Close the modal after clicking the profile name
+                                onClose();
                             }}
                         >
-                            by {liveContentItem.creatorName}
-                        </p>
-                        <p className="video-description" style={{ margin: 0, fontSize: '0.9rem', color: '#DDD', maxHeight: '60px', overflowY: 'auto' }}>
-                            {liveContentItem.description}
-                        </p>
+                            <img 
+                                src={creatorProfile?.profilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} 
+                                alt={creatorProfile?.creatorName} 
+                                style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }}
+                            />
+                            <div style={{ minWidth: 0 }}>
+                                <p style={{ margin: 0, fontSize: '0.9rem', color: '#FFFFFF', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {creatorProfile?.creatorName}
+                                    </span>
+                                    <RoleBadge profile={creatorProfile} />
+                                </p>
+                            </div>
+                        </div>
+
+                        {currentUser && liveContentItem?.id && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                                <LikeButton contentItem={liveContentItem} currentUser={currentUser} showMessage={showMessage} itemType={itemType} />
+                                <button
+                                    onClick={() => window.dispatchEvent(new CustomEvent('openCommentsModal', { detail: { item: liveContentItem, itemType: itemType } }))}
+                                    style={{ background: '#3A3A3A', border: 'none', borderRadius: '50px', display: 'flex', alignItems: 'center', cursor: 'pointer', color: '#FFF', gap: '6px', padding: '0 12px', height: '36px' }}
+                                >
+                                    <svg viewBox="0 0 24 24" style={{ width: '20px', height: '20px', fill: 'currentColor' }}><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"></path></svg>
+                                    <span>{(liveContentItem?.commentCount || 0).toLocaleString()}</span>
+                                </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('openReportModal', { detail: liveContentItem })); }}
+                                    style={{ background: '#3A3A3A', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#FFF' }}
+                                >
+                                    <svg viewBox="0 0 24 24" style={{ width: '20px', height: '20px', fill: 'currentColor' }}><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+                                </button>
+                            </div>
+                        )}
                     </div>
-                )}
-                {/* --- END OF NEW CREATOR INFO BLOCK --- */}
-                
-                <div 
-                    onClick={() => {
-                        if (liveContentItem?.likeCount > 0) {
-                            const event = new CustomEvent('openLikesModal', { detail: { contentItem: liveContentItem } });
-                            window.dispatchEvent(event);
-                        } else {
-                            showMessage("No likes to display yet.");
-                        }
-                    }}
-                    style={{
-                        position: 'absolute', bottom: '20px', left: '15px', backgroundColor: 'rgba(10, 10, 10, 0.7)',
-                        border: '1px solid #FFD700', borderRadius: '50px', padding: '0 10px', height: '32px',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                        cursor: liveContentItem?.likeCount > 0 ? 'pointer' : 'default'
-                    }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} title="Views">
-                        <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: '#FFF' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                        <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>{(displayViewCount || 0).toLocaleString()}</span>
-                    </div>
-                    <div style={{width: '1px', height: '16px', backgroundColor: '#555'}}></div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} title="View who liked this">
-                        <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: '#FFD700' }}><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg>
-                        <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>{(liveContentItem?.likeCount || 0).toLocaleString()}</span>
-                    </div>
+
+                    {liveContentItem?.description && (
+                        <div 
+                            style={{ backgroundColor: '#2A2A2A', padding: '12px', borderRadius: '12px', cursor: 'pointer' }}
+                            onClick={() => setDescriptionExpanded(!descriptionExpanded)}
+                        >
+                            <p style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: '#FFFFFF', fontWeight: 'bold' }}>
+                                {(displayViewCount || 0).toLocaleString()} Views
+                            </p>
+                            <p style={{ margin: 0, fontSize: '0.85rem', color: '#DDDDDD', lineHeight: 1.5, whiteSpace: 'pre-wrap',
+                                ...(descriptionExpanded ? {} : { overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' })
+                            }}>
+                                {liveContentItem.description}
+                            </p>
+                            <span style={{ color: '#AAAAAA', fontSize: '0.8rem', fontWeight: 'bold', marginTop: '4px', display: 'inline-block' }}>
+                                {descriptionExpanded ? 'Show less' : '...more'}
+                            </span>
+                        </div>
+                    )}
                 </div>
-
-                {currentUser && liveContentItem && liveContentItem.id && (
-                    <div style={{ position: 'absolute', bottom: '20px', right: '15px', display: 'flex', gap: '10px' }}>
-                        <LikeButton contentItem={liveContentItem} currentUser={currentUser} showMessage={showMessage} itemType={itemType} />
-                        
-                        <button
-                            onClick={() => window.dispatchEvent(new CustomEvent('openCommentsModal', { detail: { item: liveContentItem, itemType: itemType } }))}
-                            title="View comments"
-                            style={{
-                                backgroundColor: 'rgba(10, 10, 10, 0.7)', border: '1px solid #FFD700', borderRadius: '50px',
-                                width: 'auto', minWidth: '32px', height: '32px', padding: '0 10px',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                cursor: 'pointer', color: '#FFF', gap: '6px'
-                            }}
-                        >
-                            <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: 'currentColor' }}><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18zM18 14H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"></path></svg>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold' }}>{(liveContentItem?.commentCount || 0).toLocaleString()}</span>
-                        </button>
-
-                        <button
-                            onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('openReportModal', { detail: liveContentItem })); }}
-                            title="More options"
-                            style={{
-                                backgroundColor: 'rgba(10, 10, 10, 0.7)', border: '1px solid #FFD700', borderRadius: '50%',
-                                width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                cursor: 'pointer', color: '#FFF'
-                            }}
-                        >
-                            <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: 'currentColor' }}><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                        </button>
-                    </div>
-                )}
             </div>
         </div>
     );

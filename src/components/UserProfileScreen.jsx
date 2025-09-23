@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, functions, doc, onSnapshot, collection, query, where, getDocs, orderBy, limit, httpsCallable, updateDoc } from '../firebase';
 import ProfilePictureModal from './ProfilePictureModal'; 
+import RoleBadge from './RoleBadge'; // <-- ADD THIS IMPORT
 
 // --- Reusable Child Component for Stats ---
 const ContentStats = ({ item, currentUser, showMessage }) => {
@@ -248,8 +249,11 @@ const UserProfileScreen = ({
                     <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
                         <img src={profile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt="Profile" style={{width: '80px', height: '80px', borderRadius: '50%', border: '2px solid #FFD700', objectFit: 'cover', cursor: 'pointer'}} onClick={() => setShowPfpModal(true)} />
                         <div style={{flexGrow: 1}}>
-                            <p className="dashboardItem" style={{fontSize: '20px', fontWeight: 'bold', color: '#FFF', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '10px'}}>
-                                {profile.creatorName}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
+                                <p className="dashboardItem" style={{fontSize: '20px', fontWeight: 'bold', color: '#FFF', margin: 0}}>
+                                    {profile.creatorName}
+                                </p>
+                                <RoleBadge profile={profile} />
                                 {activeCampaign && (
                                     <span className="user-search-campaign-badge" style={{cursor: 'pointer'}} onClick={() => {
                                         setSelectedCampaignId(activeCampaign.id);
@@ -258,6 +262,9 @@ const UserProfileScreen = ({
                                         Active Campaign
                                     </span>
                                 )}
+                            </div>
+                            <p className="dashboardItem" style={{ color: '#AAA', margin: '0 0 10px 0' }}>
+                                Role: {profile.role}
                             </p>
                             <div className="follow-stats">
                                 <div className="follow-stat-item"><span className="follow-stat-value">{profile.followerCount || 0}</span><span className="follow-stat-label">Followers</span></div>
@@ -286,30 +293,41 @@ const UserProfileScreen = ({
                 {canManageUser && (
                     <div className="dashboardSection" style={{border: '2px solid #DC3545'}}>
                         <p className="dashboardSectionTitle">Admin Controls</p>
-                        <div className="formGroup"><label className="formLabel">Change Role:</label>
-                            <select className="formInput" value={profile.role} onChange={(e) => handleRoleChange(e.target.value)} disabled={isUpdatingRole}>
-                                <option value="user">User</option>
-                                <option value="creator">Creator</option>
-                                <option value="authority">Authority</option>
-                                {creatorProfile.role === 'admin' && <option value="admin">Admin</option>}
-                            </select>
-                        </div>
-                        {/* ====================== START: FINAL BUTTON LOGIC ====================== */}
-                        <div style={{display: 'flex', gap: '10px', marginTop: '15px'}}>
-                            {isSuspended ? (
-                                <button className="button" onClick={handleLiftSuspension} style={{flex: 1, margin: 0, backgroundColor: '#008000'}}>
-                                    <span className="buttonText">Lift Suspension</span>
-                                </button>
-                            ) : (
-                                <button className="button" onClick={handleToggleBan} style={{flex: 1, margin: 0, backgroundColor: profile.banned ? '#008000' : '#DC3545'}}>
-                                    <span className="buttonText">{profile.banned ? 'Unban User' : 'Ban User'}</span>
-                                </button>
-                            )}
-                            <button className="button" onClick={handleDeleteUser} style={{flex: 1, margin: 0, backgroundColor: '#a00000'}}>
-                                <span className="buttonText">Permanently Delete User</span>
-                            </button>
-                        </div>
-                        {/* ======================= END: FINAL BUTTON LOGIC ======================= */}
+                        {(() => {
+                            const isTargetAdminOrAuthority = profile.role === 'admin' || profile.role === 'authority';
+                            const viewerIsAuthority = creatorProfile.role === 'authority';
+                            const isDisabled = viewerIsAuthority && isTargetAdminOrAuthority;
+
+                            return <>
+                                <div className="formGroup">
+                                    <label className="formLabel">Change Role:</label>
+                                    <select className="formInput" value={profile.role} onChange={(e) => handleRoleChange(e.target.value)} disabled={isDisabled || viewerIsAuthority}>
+                                        <option value="user">User</option>
+                                        <option value="creator">Creator</option>
+                                        <option value="authority">Authority</option>
+                                        {creatorProfile.role === 'admin' && <option value="admin">Admin</option>}
+                                    </select>
+                                </div>
+                                <div style={{display: 'flex', gap: '10px', marginTop: '15px'}}>
+                                    {isSuspended ? (
+                                        <button className="button" onClick={handleLiftSuspension} style={{flex: 1, margin: 0, backgroundColor: '#008000'}} disabled={isDisabled}>
+                                            <span className="buttonText">Lift Suspension</span>
+                                        </button>
+                                    ) : (
+                                        <button className="button" onClick={handleToggleBan} style={{flex: 1, margin: 0, backgroundColor: profile.banned ? '#008000' : '#DC3545'}} disabled={isDisabled}>
+                                            <span className="buttonText">{profile.banned ? 'Unban User' : 'Ban User'}</span>
+                                        </button>
+                                    )}
+                                    {/* Delete is an admin-only action */}
+                                    {creatorProfile.role === 'admin' && (
+                                        <button className="button" onClick={handleDeleteUser} style={{flex: 1, margin: 0, backgroundColor: '#a00000'}}>
+                                            <span className="buttonText">Permanently Delete User</span>
+                                        </button>
+                                    )}
+                                </div>
+                                {isDisabled && <p className="smallText" style={{textAlign: 'center', color: '#FFD700', marginTop: '10px'}}>Authorities cannot take administrative action against other Authorities or Admins.</p>}
+                            </>;
+                        })()}
                     </div>
                 )}
                 
