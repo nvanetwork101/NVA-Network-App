@@ -116,18 +116,7 @@ function App() {
   const [liveEvent, setLiveEvent] = useState(null);
   const [isLive, setIsLive] = useState(false);
   
-  const [currencyRates, setCurrencyRates] = useState(() => {
-    // This function runs only on the initial component load.
-    try {
-      const savedRates = localStorage.getItem('currencyRates');
-      // If we found saved rates in storage, parse and use them.
-      return savedRates ? JSON.parse(savedRates) : null;
-    } catch (error) {
-      console.error("Failed to parse currency rates from localStorage", error);
-      // If parsing fails, start with null.
-      return null;
-    }
-  });
+  const [currencyRates, setCurrencyRates] = useState(null);
   const [selectedCurrency, setSelectedCurrency] = useState('USD');
 
   const [showVideoModal, setShowVideoModal] = useState(false);
@@ -186,6 +175,15 @@ function App() {
   });  const notificationSoundRef = useRef(null);
   const unreadCount = notifications.filter(n => !n.isBroadcast && !n.isRead).length;
 
+    const markAllAsRead = () => {
+    notifications.forEach(notification => {
+      if (!notification.isBroadcast && !notification.isRead) {
+        // We use the existing function from our hook to ensure consistency.
+        markNotificationAsRead(notification.id);
+      }
+    });
+  };
+
   const [isAudioPrimed, setIsAudioPrimed] = useState(false);
 
   const showMessage = (msg) => {
@@ -195,25 +193,17 @@ function App() {
   };
 
     useEffect(() => {
+        // This now efficiently listens for the server-updated currency rates from Firestore.
+        // This makes zero calls to the external currency API.
         const ratesDocRef = doc(db, "settings", "currencyRates");
         const unsubscribe = onSnapshot(ratesDocRef, (docSnap) => {
             if (docSnap.exists() && docSnap.data().rates) {
-                const newRates = docSnap.data().rates;
-                // Update the component's state for immediate use.
-                setCurrencyRates(newRates);
-                // FIX: Save the new rates to localStorage for the next session.
-                try {
-                    localStorage.setItem('currencyRates', JSON.stringify(newRates));
-                } catch (error) {
-                    console.error("Failed to save currency rates to localStorage", error);
-                }
+                setCurrencyRates(docSnap.data().rates);
             } else {
-                // If the document is not found, we no longer set the state to null.
-                // This allows the app to continue using the old rates from localStorage.
-                console.warn("Currency rates document not found in Firestore! Using last known rates if available.");
+                console.warn("Currency rates document not found in Firestore!");
             }
         });
-        return () => unsubscribe();
+        return () => unsubscribe(); // Cleanup listener on unmount
     }, []);
 
   // The new navigation handler that tracks screen history AND syncs with browser history
@@ -228,9 +218,17 @@ function App() {
   }, [activeScreen]);
 
   const handleLogout = async () => {
-    await signOut(auth);
-    setActiveScreen('Home');
-    showMessage('You have been logged out.');
+    try {
+      await signOut(auth);
+      // --- THE DEFINITIVE FIX ---
+      // Force a full page reload. This action by the browser guarantees that all component
+      // states, active listeners, and in-memory data are completely wiped out,
+      // preventing any possibility of a race condition.
+      window.location.href = '/';
+    } catch (error) {
+      console.error("Logout failed:", error);
+      showMessage("An error occurred during logout.");
+    }
   };
 
   const handleVideoPress = (url, item) => {
@@ -244,99 +242,118 @@ function App() {
   };
 
   // ========================== START: DEFINITIVE AUTH FLOW FIX ==========================
-    // ========================== START: FINAL ROBUST AUTH FLOW ==========================
-    useEffect(() => {
-        let unsubProfile = () => {};
+    // ========================== START: LOGOUT RACE CONDITION FIX ==========================
+  useEffect(() => {
+    // These 'unsubscribe' variables live in the useEffect's scope.
+    // They will be assigned when a user logs in and called when that user logs out.
+    let unsubProfile = () => {};
+    let unsubFollowing = () => {};
 
-        const unsubscribeAuth = onAuthStateChanged(auth, async (user) => { // <--- FIX: 'async' keyword added
-            // Immediately stop any existing profile listeners the moment auth state changes.
-            if (unsubProfile) {
-                unsubProfile();
-            }
-            
-            setAuthLoading(true);
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      // --- THIS IS THE CORE FIX ---
+      // The very first step on ANY auth change is to tear down all existing user-specific listeners.
+      // This prevents race conditions on logout.
+      unsubProfile();
+      unsubFollowing();
 
-            if (user && !user.emailVerified) {
-                setCurrentUser(null);
-                setCreatorProfile(null);
-                setUnverifiedUser(user);
-                setActiveScreen('VerifyEmail');
-                setAuthLoading(false);
-                setIsInitialLoad(false);
+      setAuthLoading(true);
+
+      if (user && !user.emailVerified) {
+        setCurrentUser(null);
+        setCreatorProfile(null);
+        setUnverifiedUser(user);
+        setActiveScreen('VerifyEmail');
+        setAuthLoading(false);
+        setIsInitialLoad(false);
+        return;
+      }
+
+      setUnverifiedUser(null);
+
+      if (user) { // This is now a fully verified and logged-in user
+        const userDocRef = doc(db, "creators", user.uid);
+        try {
+          const docSnap = await getDoc(userDocRef);
+
+          if (docSnap.exists()) {
+            const profileData = docSnap.data();
+
+            if (profileData.banned) {
+                showMessage("This account is permanently banned.");
+                setActiveScreen('Banned');
+                signOut(auth); // Use internal signOut, no need for handleLogout
                 return;
             }
-            
-            setUnverifiedUser(null);
 
-            if (user) {
-                const userDocRef = doc(db, "creators", user.uid);
-                
-                // Set up the new listener for the logged-in user.
-                unsubProfile = onSnapshot(userDocRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const profileData = docSnap.data();
+            if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
+                const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
+                setCurrentUser(user);
+                setCreatorProfile(profileData);
+                setSuspensionDetails({ email: profileData.email, expiryDate });
+                setActiveScreen('Suspended');
+                return;
+            }
 
-                        if (profileData.banned) {
-                            showMessage("This account is permanently banned.");
-                            setActiveScreen('Banned');
-                            signOut(auth);
-                            return;
-                        }
+            await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
 
-                        if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
-                            const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
-                            setSuspensionDetails({ email: profileData.email, expiryDate });
-                            setActiveScreen('Suspended');
-                            setCurrentUser(user); 
-                            setCreatorProfile(profileData);
-                            return;
-                        }
-                        
-                        setCurrentUser(user);
-                        setCreatorProfile(profileData);
-
-                        if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
-                            if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
-                                setActiveScreen('CreatorDashboard');
-                            } else {
-                                setActiveScreen('Home');
-                            }
-                        }
-                    } else {
-                        showMessage("User profile not found. Logging out.");
-                        signOut(auth);
-                    }
-                    setAuthLoading(false);
-                    setIsInitialLoad(false);
-                }, (error) => {
-                    console.error("Error with profile listener:", error);
-                    showMessage("Session error. Please log in again.");
+            // --- Re-initialize all user-specific listeners here ---
+            unsubProfile = onSnapshot(userDocRef, (snap) => {
+                if (snap.exists()) {
+                    setCurrentUser(user); // Keep currentUser in sync
+                    setCreatorProfile(snap.data());
+                } else {
                     signOut(auth);
-                });
-
-                // This await is now valid because the parent function is async.
-                await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
-
-            } else {
-                setCurrentUser(null);
-                setCreatorProfile(null);
-                const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
-                if (protectedScreens.includes(activeScreen)) {
-                    setActiveScreen('Home');
                 }
-                setAuthLoading(false);
-                setIsInitialLoad(false);
-            }
-        });
+            });
 
-        return () => {
-            unsubscribeAuth();
-            if (unsubProfile) {
-                unsubProfile();
+            const followingRef = collection(db, "creators", user.uid, "following");
+            const q = query(followingRef, where("hasNewContent", "==", true));
+            unsubFollowing = onSnapshot(q, (snapshot) => {
+                setHasNewFollowerContent(!snapshot.empty);
+            });
+            // --- End of listener initialization ---
+
+            if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
+              if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                setActiveScreen('CreatorDashboard');
+              } else {
+                setActiveScreen('Home');
+              }
             }
-        };
-    }, [activeScreen]);
-  // =========================== END: FINAL ROBUST AUTH FLOW ===========================
+
+          } else {
+            showMessage("User profile not found. Logging out.");
+            signOut(auth);
+          }
+        } catch (error) {
+          console.error("Auth check failed:", error);
+          showMessage("Could not verify account status.");
+          signOut(auth);
+        } finally {
+          setAuthLoading(false);
+          setIsInitialLoad(false);
+        }
+      } else { // This user is fully logged out.
+        setCurrentUser(null);
+        setCreatorProfile(null);
+        setHasNewFollowerContent(false); // Explicitly reset state related to listeners
+        const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
+        if (protectedScreens.includes(activeScreen)) {
+            setActiveScreen('Home');
+        }
+        setAuthLoading(false);
+        setIsInitialLoad(false);
+      }
+    });
+
+    return () => {
+      // This cleanup runs when the App component unmounts entirely.
+      unsubscribeAuth();
+      unsubProfile();
+      unsubFollowing();
+    };
+   }, [activeScreen]); // Dependency remains the same
+  // =========================== END: LOGOUT RACE CONDITION FIX ===========================
  
 	useEffect(() => {
         const requestHandler = () => {
@@ -416,28 +433,7 @@ function App() {
             window.removeEventListener('popstate', handleModalCloseOnBack);
         };
     }, [showVideoModal]);  
-
-    useEffect(() => {
-        const ratesDocRef = doc(db, "settings", "currencyRates");
-        const unsubscribe = onSnapshot(ratesDocRef, (docSnap) => {
-            if (docSnap.exists() && docSnap.data().rates) {
-                const newRates = docSnap.data().rates;
-                // Update the component's state for immediate use.
-                setCurrencyRates(newRates);
-                // Save the new rates to localStorage for the next session.
-                try {
-                    localStorage.setItem('currencyRates', JSON.stringify(newRates));
-                } catch (error) {
-                    console.error("Failed to save currency rates to localStorage", error);
-                }
-            } else {
-                // This warning will now appear only once.
-                console.warn("Currency rates document not found in Firestore! Using last known rates if available.");
-            }
-        });
-        return () => unsubscribe();
-    }, []);
-        
+       
         useEffect(() => {
         const docRef = doc(db, "settings", "featuredContentSlots");
         const unsubscribe = onSnapshot(docRef, (docSnap) => {
@@ -723,11 +719,11 @@ function App() {
           }
           // --- END OF FIX ---
 
-          // Immediately mark the notification as processed in the database.
+          // A toast appearing should not mark the item as read.
+          // This will now be handled inside the NotificationInboxScreen.
+          // The markBroadcastAsSeen is still used for transient broadcast tickers.
           if (nextToast.isBroadcast) {
               markBroadcastAsSeen(nextToast.id);
-          } else {
-              markNotificationAsRead(nextToast.id);
           }
       }
   }, [toastQueue, currentToast, markBroadcastAsSeen, markNotificationAsRead]);
@@ -761,7 +757,7 @@ function App() {
       case 'UserProfile': return <UserProfileScreen selectedUserId={selectedUserId} setActiveScreen={handleNavigate} setSelectedCampaignId={setSelectedCampaignId} showMessage={showMessage} currentUser={currentUser} creatorProfile={creatorProfile} setOnConfirmationAction={setOnConfirmationAction} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} handleVideoPress={handleVideoPress} previousScreen={previousScreen} />;
       case 'MyFollows': return <MyFollowsScreen currentUser={currentUser} setActiveScreen={handleNavigate} setSelectedUserId={setSelectedUserId} showMessage={showMessage} />;
       case 'Followers': return <FollowersScreen currentUser={currentUser} setActiveScreen={handleNavigate} setSelectedUserId={setSelectedUserId} showMessage={showMessage} />;
-      case 'MyContentLibrary': return <MyContentLibraryScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} handleVideoPress={handleVideoPress} />;
+      case 'MyContentLibrary': return <MyContentLibraryScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} handleVideoPress={handleVideoPress} />;
       case 'CreatorDashboard': return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setSelectedCampaignId={setSelectedCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} liveEvent={liveEvent} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
       case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} selectedAdminSubScreen={selectedAdminSubScreen} setSelectedAdminSubScreen={setSelectedAdminSubScreen} setSelectedAdminCampaignId={setSelectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} setSelectedUserId={setSelectedUserId} setSelectedOpportunity={setSelectedOpportunity} setSelectedStatus={setSelectedStatus} setSelectedCompAdmin={setSelectedCompAdmin} setSelectedReportGroup={setSelectedReportGroup} featuredContentSlots={featuredContentSlots} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
       case 'MyFeed': return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={handleNavigate} handleVideoPress={handleVideoPress} showMessage={showMessage} />;
@@ -779,7 +775,7 @@ function App() {
       case 'AnalyticsDashboard': return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'Contact': return <ContactScreen setActiveScreen={handleNavigate} showMessage={showMessage} currentUser={currentUser} />;
       case 'NvaNetworkCharts': return <NvaNetworkChartsScreen setActiveScreen={handleNavigate} />;
-      case 'NotificationInbox': return <NotificationInboxScreen notifications={notifications} setActiveScreen={handleNavigate} dismissNotification={() => {}} />;
+      case 'NotificationInbox': return <NotificationInboxScreen notifications={notifications} setActiveScreen={handleNavigate} dismissNotification={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
       case 'Home': default: return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
     }
   };

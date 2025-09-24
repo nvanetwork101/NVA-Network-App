@@ -185,20 +185,29 @@ const CreatorDashboardScreen = ({
     // --- DATA FETCHING ---
     
     useEffect(() => {
-    if (!currentUser) return;
-    const payoutQuery = query(collection(db, 'payoutRequests'), where('creatorId', '==', currentUser.uid));
-    const unsubPayouts = onSnapshot(payoutQuery, (snapshot) => {
-        const statuses = {};
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            if (data.campaignId) {
-                statuses[data.campaignId] = data.status;
-            }
+    if (!currentUser || !creatorProfile) return;
+
+    // --- THIS IS THE FIX ---
+    // The query on 'payoutRequests' is a 'list' operation, which is restricted to admins only.
+    // We must check the user's role before attempting to run it to prevent permission errors.
+    if (creatorProfile.role === 'admin') {
+        const payoutQuery = query(collection(db, 'payoutRequests'), where('creatorId', '==', currentUser.uid));
+        const unsubPayouts = onSnapshot(payoutQuery, (snapshot) => {
+            const statuses = {};
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (data.campaignId) {
+                    statuses[data.campaignId] = data.status;
+                }
+            });
+            setPayoutStatuses(statuses);
         });
-        setPayoutStatuses(statuses);
-    });
-    return () => unsubPayouts();
-}, [currentUser]);
+        return () => unsubPayouts();
+    }
+    // For non-admins, this hook does nothing, and payoutStatuses remains empty.
+    // --- END OF FIX ---
+    
+}, [currentUser, creatorProfile]); // Add creatorProfile to dependency array
     
     useEffect(() => {
         if (!currentUser) return;

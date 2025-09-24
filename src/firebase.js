@@ -40,8 +40,8 @@ const firebaseConfig = {
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: "G-6RNS6DH3G0" // THE FIX: Hardcode the measurementId to ensure Analytics initializes correctly.
+  appId: "1:122220543439:web:e36ccce435463b7939a6ba", // DEFINITIVE FIX: Hardcode the correct appId.
+  measurementId: "G-6RNS6DH3G0"
 };
 
 // --- INITIALIZE FIREBASE ---

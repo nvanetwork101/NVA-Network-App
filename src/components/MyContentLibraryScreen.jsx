@@ -6,6 +6,7 @@ import { db, storage, functions, collection, query, where, orderBy, onSnapshot, 
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 import ThumbnailAdjustModal from './ThumbnailAdjustModal';
+import ManageContentModal from './ManageContentModal';
 import { extractVideoInfo } from '../firebase';
 
 // --- Main Component ---
@@ -40,6 +41,8 @@ function MyContentLibraryScreen({
     const [isUpdatingFeature, setIsUpdatingFeature] = useState(null); // New state for feature button
     const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
     const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
+    const [showManageModal, setShowManageModal] = useState(false);
+    const [itemToManage, setItemToManage] = useState(null);
     const appId = "production-app-id"; // Corrected appId
 
     // --- DATA FETCHING EFFECTS ---
@@ -155,6 +158,34 @@ function MyContentLibraryScreen({
         setShowImageAdjustModal(false);
         if (thumbnailFileInputRef.current) thumbnailFileInputRef.current.value = null;
     };
+
+       const handleOpenManageModal = (item) => {
+        setItemToManage(item);
+        setShowManageModal(true);
+    };
+
+    const handleCloseManageModal = () => {
+        setItemToManage(null);
+        setShowManageModal(false);
+    };
+
+    const handleSaveChanges = async (contentId, updates) => {
+        try {
+            const updateFunction = httpsCallable(functions, 'updateContentDetails');
+            await updateFunction({
+                appId: appId,
+                contentId: contentId,
+                updates: updates
+            });
+            // The backend now handles all data synchronization.
+            // The onSnapshot listener in App.jsx will automatically update the UI.
+            showMessage("Content updated successfully!");
+        } catch (error) {
+            showMessage(`Update failed: ${error.message}`);
+            // Re-throw the error so the modal knows the save failed.
+            throw error;
+        }
+    }; 
 
     // --- CORRECTED ACTION HANDLERS ---
     const handleAddToLibrary = async () => {
@@ -331,6 +362,7 @@ function MyContentLibraryScreen({
                                                         Set as Featured
                                                     </button>
                                                 )}
+                                                <button className="actionButton" onClick={() => handleOpenManageModal(item)}>Manage</button>
                                                 <button className="actionButton remove" onClick={() => handleDelete(item)}>Delete</button>
                                             </div>
                                         </div>
@@ -350,6 +382,14 @@ function MyContentLibraryScreen({
                     onCancel={handleThumbnailCancel}
                     showMessage={showMessage}
                     isUploading={isPublishing}
+                />
+            )}
+            {showManageModal && (
+                <ManageContentModal
+                    item={itemToManage}
+                    onSave={handleSaveChanges}
+                    onClose={handleCloseManageModal}
+                    showMessage={showMessage}
                 />
             )}
         </>

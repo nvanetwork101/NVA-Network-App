@@ -6,6 +6,7 @@ import { collection, onSnapshot, query, orderBy, doc, updateDoc } from 'firebase
 import AdminCurationModal from './AdminCurationModal';
 import AdminFeaturedContentManager from './AdminFeaturedContentManager';
 import ThumbnailAdjustModal from './ThumbnailAdjustModal';
+import ManageContentModal from './ManageContentModal';
 
 function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredContentSlots, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) {
     // --- STATE MANAGEMENT ---
@@ -30,6 +31,8 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
 
     const [showCurationModal, setShowCurationModal] = useState(false);
     const [curationTarget, setCurationTarget] = useState('');
+    const [showManageModal, setShowManageModal] = useState(false);
+    const [itemToManage, setItemToManage] = useState(null);
 
     // --- THIS IS THE NEW DYNAMIC CATEGORY LOGIC ---
     const [dynamicCategories, setDynamicCategories] = useState([]);
@@ -207,10 +210,46 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
     };
     const openCurationModal = (target) => { setCurationTarget(target); setShowCurationModal(true); };
 
+    const handleOpenManageModal = (item) => {
+        setItemToManage(item);
+        setShowManageModal(true);
+    };
+
+    const handleCloseManageModal = () => {
+        setItemToManage(null);
+        setShowManageModal(false);
+    };
+
+    const handleSaveChanges = async (contentId, updates) => {
+        try {
+            // We use the existing 'updateContentDetails' function.
+            // This is secure because the admin is the 'owner' of curated content.
+            const updateFunction = httpsCallable(functions, 'updateContentDetails');
+            await updateFunction({
+                appId: "production-app-id",
+                contentId: contentId,
+                updates: updates
+            });
+            showMessage("Content updated successfully!");
+        } catch (error) {
+            showMessage(`Update failed: ${error.message}`);
+            throw error; // Re-throw to keep the modal open on failure
+        }
+    };
+
     return (
         <>
             {showCropModal && <ThumbnailAdjustModal imageUrl={imageToCrop} onSave={handleSaveCroppedImage} onCancel={() => { setShowCropModal(false); setImageToCrop(null); }} showMessage={showMessage} isUploading={isUploading} />}
             {showCurationModal && <AdminCurationModal curationTarget={curationTarget} showMessage={showMessage} onCancel={() => setShowCurationModal(false)} contentItems={contentItems} />}
+            
+                {showManageModal && (
+                <ManageContentModal
+                    item={itemToManage}
+                    onSave={handleSaveChanges}
+                    onClose={handleCloseManageModal}
+                    showMessage={showMessage}
+                />
+            )}
 
             <p className="heading">Manage Content</p>
             <p className="subHeading">Curate the home screen and add new videos to the content library.</p>
@@ -281,6 +320,11 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
                                         <button className="adminActionButton" onClick={() => handleToggleActive(item)} style={{ backgroundColor: item.isActive ? '#DC3545' : '#008000', color: '#FFF' }}>
                                             {item.isActive ? 'Deactivate' : 'Activate'}
                                         </button>
+                                       
+                                            {item.isCurated && (
+                                            <button className="adminActionButton" onClick={() => handleOpenManageModal(item)}>Manage</button>
+                                        )}
+
                                         <button className="adminActionButton reject" onClick={() => handleDelete(item)}>Delete</button>
                                     </div>
                                 ))}

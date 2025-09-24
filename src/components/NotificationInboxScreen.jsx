@@ -3,34 +3,21 @@ import React, { useState, useEffect } from 'react';
 import { doc, updateDoc, setDoc } from "firebase/firestore";
 import { db, auth } from '../firebase.js'; // Correctly import from firebase.js
 
-const NotificationInboxScreen = ({ notifications, setActiveScreen, dismissNotification }) => {
+const NotificationInboxScreen = ({ notifications, setActiveScreen, dismissNotification, markAllAsRead }) => {
     const [localNotifications, setLocalNotifications] = useState(notifications);
+
+    useEffect(() => {
+        // On component mount, call the function passed from App.jsx to clear the unread count.
+        markAllAsRead();
+    }, []); // The empty dependency array ensures this runs only once when the screen opens.
 
     useEffect(() => {
         setLocalNotifications(notifications);
     }, [notifications]);
 
-    const markAsRead = async (notification) => {
-        if (!notification.isBroadcast && !notification.isRead) {
-            const notifRef = doc(db, "notifications", notification.id);
-            try {
-                await updateDoc(notifRef, { isRead: true });
-            } catch (error) {
-                console.error("Failed to mark notification as read:", error);
-            }
-        }
-        if (notification.isBroadcast) {
-            const seenRef = doc(db, "creators", auth.currentUser.uid, "seenNotifications", notification.id);
-            try {
-                 await setDoc(seenRef, { seenAt: new Date() });
-            } catch (error) {
-                 console.error("Failed to mark broadcast as seen:", error);
-            }
-        }
-    };
-
     const handleNotificationClick = (notification) => {
-        markAsRead(notification);
+        // This function should now ONLY handle navigation.
+        // Marking as read is the explicit job of the "Dismiss" button.
         if (notification.link) {
             const screen = notification.link.replace('/', '');
             setActiveScreen(screen);

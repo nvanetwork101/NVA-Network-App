@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { db, functions } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import ManageOpportunityModal from './ManageOpportunityModal';
 
 const MyListingsScreen = ({ showMessage, setActiveScreen, currentUser }) => {
     const [myListings, setMyListings] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [showManageModal, setShowManageModal] = useState(false);
+    const [opportunityToManage, setOpportunityToManage] = useState(null);
 
     useEffect(() => {
         if (!currentUser) {
@@ -37,6 +40,22 @@ const MyListingsScreen = ({ showMessage, setActiveScreen, currentUser }) => {
             await closeFunction({ opportunityId });
             showMessage("Listing closed successfully.");
         } catch (error) { showMessage(`Error: ${error.message}`); }
+    };
+
+        const handleOpenManageModal = (opportunity) => {
+        setOpportunityToManage(opportunity);
+        setShowManageModal(true);
+    };
+
+    const handleSaveChanges = async (opportunityId, updates) => {
+        try {
+            const updateFunction = httpsCallable(functions, 'updateOpportunityDetails');
+            await updateFunction({ opportunityId, updates });
+            showMessage("Listing updated successfully!");
+        } catch (error) {
+            showMessage(`Update failed: ${error.message}`);
+            throw error;
+        }
     };
 
     const getStatusStyle = (status) => {
@@ -87,6 +106,7 @@ const MyListingsScreen = ({ showMessage, setActiveScreen, currentUser }) => {
                                         {opp.status === 'active' && (
                                             <button className="actionButton" style={{backgroundColor: '#FF8C00'}} onClick={() => handleClose(opp.id)}>Close Listing</button>
                                         )}
+                                        <button className="actionButton" onClick={() => handleOpenManageModal(opp)}>Manage</button>
                                         <button className="actionButton remove" onClick={() => handleDelete(opp.id)}>Delete</button>
                                     </div>
                                 </div>
@@ -98,6 +118,16 @@ const MyListingsScreen = ({ showMessage, setActiveScreen, currentUser }) => {
              <button className="button" onClick={() => setActiveScreen('CreatorDashboard')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}>
                 <span className="buttonText light">Back to Dashboard</span>
             </button>
+        
+            {showManageModal && (
+                <ManageOpportunityModal
+                    opportunity={opportunityToManage}
+                    onSave={handleSaveChanges}
+                    onClose={() => setShowManageModal(false)}
+                    showMessage={showMessage}
+                />
+            )}
+        
         </div>
     );
 };

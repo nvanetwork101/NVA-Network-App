@@ -556,6 +556,70 @@ exports.deleteContentItem = onCall(async (request) => {
     }
 });
 
+        exports.updateContentDetails = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to update content.");
+    }
+
+    const { contentId, appId, updates } = request.data;
+    if (!contentId || !appId || !updates) {
+        throw new HttpsError("invalid-argument", "Missing contentId, appId, or update data.");
+    }
+
+    const db = admin.firestore();
+    const contentRef = db.collection(`artifacts/${appId}/public/data/content_items`).doc(contentId);
+    const creatorRef = db.collection("creators").doc(uid); // Reference to the user's own profile
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const [contentDoc, creatorDoc] = await Promise.all([
+                transaction.get(contentRef),
+                transaction.get(creatorRef)
+            ]);
+
+            if (!contentDoc.exists) {
+                throw new HttpsError("not-found", "The content you are trying to edit does not exist.");
+            }
+            if (!creatorDoc.exists) {
+                throw new HttpsError("not-found", "Your creator profile could not be found.");
+            }
+
+            const contentData = contentDoc.data();
+            if (contentData.creatorId !== uid) {
+                throw new HttpsError("permission-denied", "You do not have permission to edit this content.");
+            }
+
+            const allowedUpdates = {};
+            if (updates.title !== undefined) allowedUpdates.title = updates.title;
+            if (updates.description !== undefined) allowedUpdates.description = updates.description;
+            if (updates.customThumbnailUrl !== undefined) allowedUpdates.customThumbnailUrl = updates.customThumbnailUrl;
+
+            if (Object.keys(allowedUpdates).length === 0) {
+                return; // End transaction if no valid updates
+            }
+
+            // 1. Update the source of truth (the content item)
+            transaction.update(contentRef, allowedUpdates);
+
+            // 2. Check if this content is the featured item and synchronize the data
+            const creatorData = creatorDoc.data();
+            if (creatorData.featuredVideoLink?.liveFeedContentId === contentId) {
+                const newFeaturedLink = { ...creatorData.featuredVideoLink, ...allowedUpdates };
+                transaction.update(creatorRef, { featuredVideoLink: newFeaturedLink });
+            }
+        });
+
+        logger.info(`User '${uid}' successfully updated details for content '${contentId}'.`);
+        return { success: true, message: "Content details updated successfully." };
+
+    } catch (error) {
+        logger.error(`Error updating content '${contentId}' for user '${uid}'`, { error });
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred while updating the content.");
+    }
+});
+
         exports.setFeaturedContent = onCall(async (request) => {
     const uid = request.auth.uid;
     if (!uid) {
@@ -628,7 +692,7 @@ exports.promoteExternalLink = onCall(async (request) => {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
 
-    const { title, externalLink, imageUrl, appId } = request.data;
+    const { title, description, externalLink, imageUrl, appId } = request.data; // Added 'description'
     if (!title || !externalLink || !imageUrl || !appId) {
         throw new HttpsError("invalid-argument", "Missing required data.");
     }
@@ -655,6 +719,7 @@ exports.promoteExternalLink = onCall(async (request) => {
 
     const newData = {
         title: title,
+        description: description || '', // <-- THE FIX: Save the new description field
         mainUrl: externalLink,
         customThumbnailUrl: imageUrl,
         embedUrl: embedUrl,
@@ -1946,7 +2011,7 @@ exports.setVerifiedAdvertiserStatus = onCall(async (request) => {
 });
 
 exports.revokeVerifiedAdvertiserStatus = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (!request.auth.token.admin && !request.auth.token.authority) {
       throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
 
@@ -2331,12 +2396,29 @@ exports.suspendUserDirectly = onCall(async (request) => {
     const db = admin.firestore();
     const userRef = db.collection("creators").doc(userId);
     
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+        throw new HttpsError("not-found", "The target user does not exist.");
+    }
+
+    const targetUserRole = userDoc.data().role;
+    const isCallerAdmin = request.auth.token.admin === true;
+    const isCallerAuthority = request.auth.token.authority === true;
+
+    // --- PERMISSION CHECKS ---
+    if (isCallerAdmin && targetUserRole === 'admin') {
+        throw new HttpsError('permission-denied', 'Admins cannot suspend other admins.');
+    }
+    if (isCallerAuthority && (targetUserRole === 'admin' || targetUserRole === 'authority')) {
+        throw new HttpsError('permission-denied', 'Authorities cannot suspend other moderators or admins.');
+    }
+
     const suspensionEndDate = new Date();
     suspensionEndDate.setHours(suspensionEndDate.getHours() + parseInt(durationHours, 10));
 
     await userRef.update({
         suspendedUntil: admin.firestore.Timestamp.fromDate(suspensionEndDate),
-        hasPendingAppeal: false // Ensure any old appeal flags are cleared
+        hasPendingAppeal: false
     });
 
     logger.info(`Moderator '${request.auth.uid}' directly suspended user '${userId}' for ${durationHours} hours.`);
@@ -2411,6 +2493,18 @@ exports.toggleUserBanStatus = onCall(async (request) => {
       if (!targetUserDoc.exists) {
         throw new HttpsError('not-found', 'The target user does not exist.');
       }
+
+      const targetUserRole = targetUserDoc.data().role;
+      const isCallerAdmin = request.auth.token.admin === true;
+      const isCallerAuthority = request.auth.token.authority === true;
+
+      // --- PERMISSION CHECKS ---
+      if (isCallerAdmin && targetUserRole === 'admin') {
+          throw new HttpsError('permission-denied', 'Admins cannot ban other admins.');
+      }
+      if (isCallerAuthority && (targetUserRole === 'admin' || targetUserRole === 'authority')) {
+          throw new HttpsError('permission-denied', 'Authorities cannot ban other moderators or admins.');
+      }
   
       const currentBanStatus = targetUserDoc.data().banned || false;
       const newBanStatus = !currentBanStatus;
@@ -2452,6 +2546,18 @@ exports.liftUserSuspension = onCall(async (request) => {
       const targetUserDoc = await targetUserDocRef.get();
       if (!targetUserDoc.exists) {
         throw new HttpsError('not-found', 'The target user does not exist.');
+      }
+
+      const targetUserRole = targetUserDoc.data().role;
+      const isCallerAdmin = request.auth.token.admin === true;
+      const isCallerAuthority = request.auth.token.authority === true;
+
+      // --- PERMISSION CHECKS ---
+      if (isCallerAdmin && targetUserRole === 'admin') {
+          throw new HttpsError('permission-denied', 'Admins cannot lift suspensions for other admins.');
+      }
+      if (isCallerAuthority && (targetUserRole === 'admin' || targetUserRole === 'authority')) {
+          throw new HttpsError('permission-denied', 'Authorities cannot lift suspensions for other moderators or admins.');
       }
   
       await targetUserDocRef.update({
@@ -2702,6 +2808,60 @@ exports.closeOpportunityListing = onCall(async (request) => {
     return { success: true, message: "Your listing has been closed." };
 });
 
+    exports.updateOpportunityDetails = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to update a listing.");
+    }
+
+    const { opportunityId, updates } = request.data;
+    if (!opportunityId || !updates) {
+        throw new HttpsError("invalid-argument", "Missing opportunityId or update data.");
+    }
+
+    const db = admin.firestore();
+    const opportunityRef = db.collection("opportunities").doc(opportunityId);
+
+    try {
+        const opportunityDoc = await opportunityRef.get();
+        if (!opportunityDoc.exists) {
+            throw new HttpsError("not-found", "The opportunity you are trying to edit does not exist.");
+        }
+
+        const opportunityData = opportunityDoc.data();
+        if (opportunityData.postedByUid !== uid) {
+            throw new HttpsError("permission-denied", "You do not have permission to edit this listing.");
+        }
+
+        // Sanitize updates to only allow specific, non-destructive fields.
+        const allowedUpdates = {};
+        if (updates.title !== undefined) allowedUpdates.title = updates.title;
+        if (updates.providerName !== undefined) allowedUpdates.providerName = updates.providerName;
+        if (updates.opportunityType !== undefined) allowedUpdates.opportunityType = updates.opportunityType;
+        if (updates.compensationType !== undefined) allowedUpdates.compensationType = updates.compensationType;
+        if (updates.equipmentProvided !== undefined) allowedUpdates.equipmentProvided = updates.equipmentProvided;
+        if (updates.location !== undefined) allowedUpdates.location = updates.location;
+        if (updates.description !== undefined) allowedUpdates.description = updates.description;
+        if (updates.howToApply !== undefined) allowedUpdates.howToApply = updates.howToApply;
+        if (updates.flyerImageUrl !== undefined) allowedUpdates.flyerImageUrl = updates.flyerImageUrl;
+        // Fields like status, postedByUid, createdAt, etc., are intentionally ignored.
+
+        if (Object.keys(allowedUpdates).length === 0) {
+            return { success: true, message: "No valid fields were provided to update." };
+        }
+
+        await opportunityRef.update(allowedUpdates);
+
+        logger.info(`User '${uid}' successfully updated details for opportunity '${opportunityId}'.`);
+        return { success: true, message: "Opportunity details updated successfully." };
+
+    } catch (error) {
+        logger.error(`Error updating opportunity '${opportunityId}' for user '${uid}'`, { error });
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred while updating the listing.");
+    }
+});
+
 exports.incrementOpportunityView = onCall(async (request) => {
     const { opportunityId } = request.data;
     if (!opportunityId) {
@@ -2802,7 +2962,7 @@ exports.getNextAvailableStatusSlot = onCall(async (request) => {
 });
 
 exports.rejectStatusContent = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (!request.auth.token.admin && !request.auth.token.authority) {
       throw new HttpsError("permission-denied", "You must be an admin to reject content.");
     }
     const { bookingId } = request.data;
@@ -4391,8 +4551,21 @@ exports.deleteUserAccount = onCall(async (request) => {
             throw new HttpsError("not-found", "The target user does not exist.");
         }
         
-        if (request.auth.token.authority && (targetUserDoc.data().role === 'admin' || newRole === 'admin')) {
-             throw new HttpsError("permission-denied", "Authority members cannot manage Admin roles.");
+        const targetUserRole = targetUserDoc.data().role;
+        const isCallerAdmin = request.auth.token.admin === true;
+        const isCallerAuthority = request.auth.token.authority === true;
+
+        // --- PERMISSION CHECKS ---
+        if (isCallerAdmin && targetUserRole === 'admin') {
+            throw new HttpsError("permission-denied", "Admins cannot change the roles of other admins.");
+        }
+        if (isCallerAuthority) {
+            if (targetUserRole === 'admin' || targetUserRole === 'authority') {
+                throw new HttpsError("permission-denied", "Authorities cannot change the roles of admins or other authorities.");
+            }
+            if (newRole === 'admin' || newRole === 'authority') {
+                throw new HttpsError("permission-denied", "Authorities cannot assign moderator roles.");
+            }
         }
 
         // --- THIS IS THE CRITICAL FIX ---

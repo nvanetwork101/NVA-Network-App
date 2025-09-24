@@ -110,22 +110,24 @@ const AdminDashboardScreen = ({
             setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             setLoading(false);
         }));
-        unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'pending')), (s) => setPendingCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
-        unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'active')), (s) => setActiveCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
-        
+        unsubscribers.push(onSnapshot(query(collection(db, "opportunities"), where('status', '==', 'pending')), (s) => setPendingOpportunities(s.docs.map(d=>({id:d.id,...d.data()})))));
+        unsubscribers.push(onSnapshot(query(collection(db, "opportunities"), where('status', '==', 'active')), (s) => setActiveOpportunities(s.docs.map(d=>({id:d.id,...d.data()})))));
+
         // --- THIS IS THE FIX ---
-        // Both admin-only queries are now inside this conditional block.
+        // Queries restricted to 'admin' or 'authority' roles.
+        if (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') {
+            unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'pending')), (s) => setPendingCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
+            unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'active')), (s) => setActiveCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
+            unsubscribers.push(onSnapshot(query(collection(db, "promotedStatuses"), where('status', '==', 'content_review_pending')), (s) => setPendingStatuses(s.docs.map(d=>({id:d.id,...d.data()})))));
+            unsubscribers.push(onSnapshot(query(collection(db, "reports"), where("status", "==", "pending")), (s) => setPendingReportsCount(s.size)));
+            unsubscribers.push(onSnapshot(query(collection(db, "appeals"), where("status", "==", "pending")), (s) => setPendingAppealsCount(s.size)));
+        }
+        
+        // Queries restricted to 'admin' role only.
         if (creatorProfile.role === 'admin') {
             unsubscribers.push(onSnapshot(query(collection(db, "paymentPledges"), where('status', '==', 'pending')), (s) => setPendingPledges(s.docs.map(d=>({id:d.id,...d.data()})))));
             unsubscribers.push(onSnapshot(query(collection(db, "payoutRequests"), where("status", "==", "pending"), orderBy("requestedAt", "desc")), (s) => setPayoutRequests(s.docs.map(d=>({id:d.id,...d.data()})))));
         }
-        // --- END OF FIX ---
-
-        unsubscribers.push(onSnapshot(query(collection(db, "opportunities"), where('status', '==', 'pending')), (s) => setPendingOpportunities(s.docs.map(d=>({id:d.id,...d.data()})))));
-        unsubscribers.push(onSnapshot(query(collection(db, "opportunities"), where('status', '==', 'active')), (s) => setActiveOpportunities(s.docs.map(d=>({id:d.id,...d.data()})))));
-        unsubscribers.push(onSnapshot(query(collection(db, "promotedStatuses"), where('status', '==', 'content_review_pending')), (s) => setPendingStatuses(s.docs.map(d=>({id:d.id,...d.data()})))));
-        unsubscribers.push(onSnapshot(query(collection(db, "reports"), where("status", "==", "pending")), (s) => setPendingReportsCount(s.size)));
-        unsubscribers.push(onSnapshot(query(collection(db, "appeals"), where("status", "==", "pending")), (s) => setPendingAppealsCount(s.size)));
 
         return () => unsubscribers.forEach(unsub => unsub());
     }, [creatorProfile.role]);
@@ -499,27 +501,35 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                                         {(() => {
                                                             const isTargetAdmin = user.role === 'admin';
                                                             const isTargetAuthority = user.role === 'authority';
+                                                            const viewerIsAdmin = creatorProfile.role === 'admin';
                                                             const viewerIsAuthority = creatorProfile.role === 'authority';
+
+                                                            // RULE 1: An authority cannot take action on another authority or an admin.
+                                                            const authorityActionIsDisabled = viewerIsAuthority && (isTargetAdmin || isTargetAuthority);
                                                             
-                                                            // An authority cannot take action on another authority or an admin.
-                                                            const isDisabled = viewerIsAuthority && (isTargetAdmin || isTargetAuthority);
+                                                            // RULE 2: An admin cannot take action on another admin.
+                                                            const adminOnAdminActionIsDisabled = viewerIsAdmin && isTargetAdmin;
+
+                                                            // Combine rules for destructive actions.
+                                                            const isActionDisabled = authorityActionIsDisabled || adminOnAdminActionIsDisabled;
 
                                                             return <>
-                                                                <select className="formInput" defaultValue={user.role} onChange={(e) => handleRoleChange(user, e.target.value)} style={{padding: '5px', fontSize: '12px', width: '120px'}} disabled={isDisabled || viewerIsAuthority}>
+                                                                <select className="formInput" defaultValue={user.role} onChange={(e) => handleRoleChange(user, e.target.value)} style={{padding: '5px', fontSize: '12px', width: '120px'}} disabled={isActionDisabled}>
                                                                     <option value="user">User</option>
                                                                     <option value="creator">Creator</option>
-                                                                    <option value="authority">Authority</option>
-                                                                    {creatorProfile.role === 'admin' && <option value="admin">Admin</option>}
+                                                                    {/* Only Admins can see or assign Authority/Admin roles */}
+                                                                    {viewerIsAdmin && <option value="authority">Authority</option>}
+                                                                    {viewerIsAdmin && <option value="admin">Admin</option>}
                                                                 </select>
                                                                 <div style={{display: 'flex', gap: '5px', justifyContent: 'flex-end', width: '120px'}}>
                                                                     {isSuspended ? (
-                                                                        <button className="adminActionButton approve" style={{flex: 1}} onClick={() => handleLiftSuspension(user)} disabled={isDisabled}>Reactivate</button>
+                                                                        <button className="adminActionButton approve" style={{flex: 1}} onClick={() => handleLiftSuspension(user)} disabled={isActionDisabled}>Reactivate</button>
                                                                     ) : (
-                                                                        !user.banned && <button className="adminActionButton" style={{backgroundColor: '#FF8C00', flex: 1}} onClick={() => handleOpenSuspendModal(user)} disabled={isDisabled}>Suspend</button>
+                                                                        !user.banned && <button className="adminActionButton" style={{backgroundColor: '#FF8C00', flex: 1}} onClick={() => handleOpenSuspendModal(user)} disabled={isActionDisabled}>Suspend</button>
                                                                     )}
-                                                                    <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} style={{flex: 1}} onClick={() => handleToggleBan(user)} disabled={isDisabled}>{user.banned ? 'Unban' : 'Ban'}</button>
+                                                                    <button className={`adminActionButton ${user.banned ? 'approve' : 'reject'}`} style={{flex: 1}} onClick={() => handleToggleBan(user)} disabled={isActionDisabled}>{user.banned ? 'Unban' : 'Ban'}</button>
                                                                 </div>
-                                                                <button className="adminActionButton" onClick={() => handleToggleVerified(user)} style={{backgroundColor: '#00FFFF', color: '#0A0A0A', width: '120px'}}>
+                                                                <button className="adminActionButton" onClick={() => handleToggleVerified(user)} style={{backgroundColor: '#00FFFF', color: '#0A0A0A', width: '120px'}} disabled={adminOnAdminActionIsDisabled}>
                                                                     {getUserStatusBadges(user).some(b => b.text === 'Verified') ? 'Revoke' : 'Verify'}
                                                                 </button>
                                                             </>;

@@ -8,6 +8,7 @@ import ThumbnailAdjustModal from './ThumbnailAdjustModal';
 
 const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
     const [title, setTitle] = useState('');
+    const [description, setDescription] = useState('');
     const [destinationUrl, setDestinationUrl] = useState('');
     const [imageFile, setImageFile] = useState(null);
     const [imagePreview, setImagePreview] = useState('');
@@ -99,6 +100,7 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
                 onSave({
                     type: 'external',
                     title,
+                    description, // <-- THE FIX
                     externalLink: destinationUrl,
                     imageUrl: finalImageUrl,
                     orderIndex: Date.now()
@@ -114,6 +116,7 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
             onSave({
                 type: 'external',
                 title,
+                description, // <-- THE FIX
                 externalLink: destinationUrl,
                 imageUrl: imagePreview || 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA',
                 orderIndex: Date.now()
@@ -127,6 +130,10 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
             <div className="confirmationModalContent" style={{ textAlign: 'left', maxWidth: '500px' }}>
                 <p className="confirmationModalTitle">Add External Link</p>
                 <div className="formGroup"><label className="formLabel">Title:</label><input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Summer Festival Tickets" required/></div>
+                <div className="formGroup">
+                    <label className="formLabel">Description:</label>
+                    <textarea className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional: A brief summary of the content." rows="3"></textarea>
+                </div>
                 <div className="formGroup"><label className="formLabel">Destination URL:</label><input type="url" className="formInput" value={destinationUrl} onChange={(e) => { setDestinationUrl(e.target.value); setImageFile(null); }} placeholder="https://www.externalsite.com/page" required/><p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>The app will try to fetch a preview from this link.</p></div>
                 <hr style={{borderColor: '#333', margin: '15px 0'}}/>
                 <div className="formGroup"><label className="formLabel">Upload Custom Image (Overrides Preview):</label><input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" style={{ display: 'none' }} /><button type="button" className="button" onClick={() => fileInputRef.current.click()} style={{ width: '100%', backgroundColor: '#3A3A3A' }}><span className="buttonText">Choose Image File</span></button>
@@ -258,7 +265,14 @@ function AdminCurationModal({ curationTarget, showMessage, onCancel, onSelect, c
         showMessage("Promoting external link to library...");
         try {
             const promoteFunction = httpsCallable(functions, 'promoteExternalLink');
-            const result = await promoteFunction({ title: newLinkData.title, externalLink: newLinkData.externalLink, imageUrl: newLinkData.imageUrl, appId: appId });
+            // --- THE FIX: Pass the new description field to the backend ---
+            const result = await promoteFunction({ 
+                title: newLinkData.title, 
+                description: newLinkData.description, 
+                externalLink: newLinkData.externalLink, 
+                imageUrl: newLinkData.imageUrl, 
+                appId: appId 
+            });
             if (result.data && result.data.newItem) {
                 const newItem = { ...result.data.newItem, type: 'internal', contentId: result.data.newItem.id };
                 setCuratedItems(prev => [...prev, newItem]);

@@ -1,30 +1,83 @@
 // src/components/VideoPlayerModal.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db, functions, httpsCallable, doc, onSnapshot, getDoc } from '../firebase';
 import LikeButton from './LikeButton.jsx';
-import RoleBadge from './RoleBadge.jsx'; // We will use the badge component here
+import RoleBadge from './RoleBadge.jsx';
 
 const appId = 'production-app-id';
 
+// --- REVISED & SIMPLIFIED: extractVideoInfo ---
 const extractVideoInfo = (url) => {
-    if (!url || typeof url !== 'string') return { isVertical: false, embedUrl: null };
-    if (/(youtube\.com\/shorts|tiktok\.com)/.test(url)) {
-        const youtubeMatch = url.match(/(?:youtube\.com\/shorts\/)([^"&?\/ ]{11})/);
-        if (youtubeMatch) return { embedUrl: `https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0`, isVertical: true };
-        const tiktokMatch = url.match(/tiktok\.com\/.*\/video\/(\d+)/);
-        if (tiktokMatch) return { embedUrl: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}`, isVertical: true };
+    if (!url || typeof url !== 'string') return { embedUrl: null, isVertical: false, platform: 'unknown' };
+
+    // YouTube Shorts (Vertical)
+    const ytShortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
+    if (ytShortsMatch) {
+        return { embedUrl: `https://www.youtube.com/embed/${ytShortsMatch[1]}?autoplay=1&rel=0`, isVertical: true, platform: 'youtube' };
     }
-    const youtubeMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/);
-    if (youtubeMatch) return { embedUrl: `https://www.youtube.com/embed/${youtubeMatch[1]}?autoplay=1&rel=0`, isVertical: false };
-    return { embedUrl: url, isVertical: false };
+
+    // Standard YouTube (Horizontal)
+    const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/);
+    if (ytMatch) {
+        return { embedUrl: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0`, isVertical: false, platform: 'youtube' };
+    }
+
+    // TikTok (Vertical) - Using a more robust oEmbed approach
+    const tiktokMatch = url.match(/tiktok\.com\/.*\/video\/(\d+)/);
+    if (tiktokMatch) {
+        // THE FIX: We no longer generate a direct embed URL. We will use a script-based approach
+        // which is more reliable and less prone to CORS issues for TikTok.
+        return { embedUrl: url, isVertical: true, platform: 'tiktok' };
+    }
+
+    // Default for other URLs
+    return { embedUrl: url, isVertical: false, platform: 'unknown' };
 };
+
 
 const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMessage }) => {
     const [liveContentItem, setLiveContentItem] = useState(contentItem);
     const [creatorProfile, setCreatorProfile] = useState(null);
     const [descriptionExpanded, setDescriptionExpanded] = useState(false);
     const viewCountedRef = useRef(false);
-    const itemType = liveContentItem?.itemType || (contentItem?.eventTitle ? 'event' : 'content');
+    const tiktokContainerRef = useRef(null); // Ref for the TikTok embed container
+    const itemType = useMemo(() => liveContentItem?.eventTitle ? 'event' : 'content', [liveContentItem]);
+
+    const { embedUrl, isVertical, platform } = useMemo(() => extractVideoInfo(videoUrl), [videoUrl]);
+
+    // --- REVISED: TikTok Embed Logic ---
+    useEffect(() => {
+        if (platform === 'tiktok' && tiktokContainerRef.current) {
+            // Clear any previous embeds
+            tiktokContainerRef.current.innerHTML = '';
+
+            // Create the blockquote element
+            const blockquote = document.createElement('blockquote');
+            blockquote.className = 'tiktok-embed';
+            blockquote.cite = embedUrl;
+            blockquote.setAttribute('data-video-id', embedUrl.match(/video\/(\d+)/)[1]);
+            blockquote.style.maxWidth = '100%';
+            blockquote.style.maxHeight = '100%';
+            blockquote.style.margin = '0 auto';
+
+            // Create the script element
+            const script = document.createElement('script');
+            script.src = 'https://www.tiktok.com/embed.js';
+            script.async = true;
+
+            // Append to the container
+            tiktokContainerRef.current.appendChild(blockquote);
+            document.body.appendChild(script);
+
+            // Cleanup function to remove the script when the modal closes
+            return () => {
+                const existingScript = document.querySelector('script[src="https://www.tiktok.com/embed.js"]');
+                if (existingScript) {
+                    document.body.removeChild(existingScript);
+                }
+            };
+        }
+    }, [platform, embedUrl]);
 
     useEffect(() => {
         if (!contentItem?.id) return;
@@ -35,11 +88,8 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                 const data = docSnap.data();
                 setLiveContentItem({ id: docSnap.id, ...data });
                 if (data.creatorId && data.creatorId !== creatorProfile?.id) {
-                    const creatorRef = doc(db, "creators", data.creatorId);
-                    getDoc(creatorRef).then(creatorSnap => {
-                        if (creatorSnap.exists()) {
-                            setCreatorProfile({ id: creatorSnap.id, ...creatorSnap.data() });
-                        }
+                    getDoc(doc(db, "creators", data.creatorId)).then(creatorSnap => {
+                        if (creatorSnap.exists()) setCreatorProfile({ id: creatorSnap.id, ...creatorSnap.data() });
                     });
                 }
             }
@@ -59,18 +109,22 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
 
     if (!videoUrl) return null;
 
-    const { embedUrl, isVertical } = extractVideoInfo(videoUrl);
     const displayViewCount = itemType === 'event' ? liveContentItem?.totalViewCount : liveContentItem?.viewCount;
 
     return (
         <div className="videoModalOverlay">
             <div className={`videoModalContent ${isVertical ? 'vertical' : ''}`}>
                 <button className="closeButton" onClick={onClose}>×</button>
+                
+                {/* THE FIX: Conditional rendering for different platforms */}
                 <div className={`videoIframeContainer ${isVertical ? 'vertical' : ''}`}>
-                    <iframe src={embedUrl} allow="autoplay; encrypted-media;" allowFullScreen title="Embedded Video Content"></iframe>
+                    {platform === 'tiktok' ? (
+                        <div ref={tiktokContainerRef} className="tiktok-embed-container"></div>
+                    ) : (
+                        <iframe src={embedUrl} allow="autoplay; encrypted-media;" allowFullScreen title="Embedded Video Content"></iframe>
+                    )}
                 </div>
                 
-                {/* --- DEFINITIVE YOUTUBE-STYLE LAYOUT --- */}
                 <div style={{ padding: '12px 15px', backgroundColor: '#1A1A1A' }}>
                     <h2 style={{ margin: '0 0 12px 0', fontSize: '1.2rem', color: '#FFFFFF', fontWeight: '600', lineHeight: '1.4' }}>
                         {liveContentItem?.title}
@@ -80,8 +134,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                         <div 
                             style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', minWidth: 0 }}
                             onClick={() => {
-                                const event = new CustomEvent('navigateToUserProfile', { detail: { userId: liveContentItem.creatorId } });
-                                window.dispatchEvent(event);
+                                window.dispatchEvent(new CustomEvent('navigateToUserProfile', { detail: { userId: liveContentItem.creatorId } }));
                                 onClose();
                             }}
                         >
@@ -90,13 +143,13 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                                 alt={creatorProfile?.creatorName} 
                                 style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }}
                             />
-                            <div style={{ minWidth: 0 }}>
-                                <p style={{ margin: 0, fontSize: '0.9rem', color: '#FFFFFF', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                            <div>
+                                <div style={{ margin: 0, fontSize: '0.9rem', color: '#FFFFFF', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
                                     <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                         {creatorProfile?.creatorName}
                                     </span>
                                     <RoleBadge profile={creatorProfile} />
-                                </p>
+                                </div>
                             </div>
                         </div>
 
