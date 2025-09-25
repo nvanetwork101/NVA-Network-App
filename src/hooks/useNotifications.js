@@ -50,80 +50,86 @@ export const useNotifications = (currentUser) => {
     }, [currentUser]);
     
     useEffect(() => {
-        // --- THIS IS THE FIX ---
-        // 1. Define placeholder unsubscribe functions that do nothing by default.
+        // Define placeholder unsubscribe functions. They will be reassigned if a user is logged in.
         let unsubscribePrivate = () => {};
         let unsubscribeBroadcast = () => {};
 
-        // 2. Check if a user exists.
+        // --- THE DEFINITIVE FIX ---
+        // Only attempt to set up listeners if a currentUser object exists.
         if (currentUser) {
-            // 3. All listener setup logic is now safely inside this block.
             setIsLoading(true);
             let privateNotifications = [];
             let broadcastNotifications = [];
 
+            // This function merges private and public notifications, filters out seen broadcasts,
+            // and then updates the component's state.
             const mergeAndSetNotifications = async () => {
+                // Get the IDs of broadcast notifications the user has already seen.
                 const seenRef = collection(db, "creators", currentUser.uid, "seenNotifications");
                 const seenSnapshot = await getDocs(seenRef);
                 const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
-                
+
                 const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
-                
-                // THIS IS THE FIX: The global 'notifications' state should ONLY contain UNREAD items
-                // to prevent old toasts from reappearing on login.
                 const unreadPrivateNotifications = privateNotifications.filter(p => !p.isRead);
-                
+
                 const combined = [...unreadPrivateNotifications, ...unseenBroadcasts];
+                
+                // Filter out any items that are pending deletion to avoid UI flicker.
                 const filtered = combined.filter(n => !pendingDeletes.has(n.id));
+                
+                // Ensure uniqueness, just in case of race conditions.
                 const unique = Array.from(new Map(filtered.map(item => [item.id, item])).values());
                 
+                // Sort the final list chronologically.
                 unique.sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
                 
                 setNotifications(unique);
                 setIsLoading(false);
             };
 
+            // Set up the listener for private, user-specific notifications.
             const privateNotifRef = collection(db, "notifications");
             const privateQuery = query(privateNotifRef, where("userId", "==", currentUser.uid), orderBy("timestamp", "desc"), limit(20));
-            // Assign the real unsubscribe function from the listener
             unsubscribePrivate = onSnapshot(privateQuery, (snapshot) => {
                 privateNotifications = snapshot.docs.map(doc => {
                     const data = doc.data();
-                    // --- THIS IS THE FIX ---
-                    // Ensure that every notification object has a 'type' property.
-                    // If data.type is missing or null, assign a default 'generic' type.
                     return { 
                         id: doc.id, 
                         ...data, 
-                        type: data.type || 'generic', // Guarantees the 'type' field always exists
+                        type: data.type || 'generic', // Guarantee a 'type' field exists.
                         isBroadcast: false 
                     };
                 });
                 mergeAndSetNotifications();
+            }, (error) => {
+                console.error("Error listening to private notifications:", error);
+                // Optionally handle the error, e.g., show a message to the user.
             });
 
+            // Set up the listener for public, broadcast notifications.
             const broadcastNotifRef = collection(db, "broadcast_notifications");
             const userCreationDate = new Date(currentUser.metadata.creationTime);
             const broadcastQuery = query(broadcastNotifRef, where("timestamp", ">", userCreationDate), orderBy("timestamp", "desc"));
-            // Assign the real unsubscribe function from the listener
             unsubscribeBroadcast = onSnapshot(broadcastQuery, (snapshot) => {
                 broadcastNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: true }));
                 mergeAndSetNotifications();
+            }, (error) => {
+                console.error("Error listening to broadcast notifications:", error);
             });
+
         } else {
-            // 4. If there is no user, simply clear the state.
+            // If there is no user, clear any existing notifications and stop loading.
             setNotifications([]);
             setIsLoading(false);
         }
 
-        // 5. This cleanup function is now ALWAYS returned. When the effect re-runs
-        //    due to currentUser becoming null, it calls the unsubscribe functions
-        //    captured from the PREVIOUS render, correctly detaching the listeners.
+        // The cleanup function. This will run when the component unmounts OR when
+        // `currentUser` changes. If a user logs out, it correctly calls the
+        // `unsubscribe` functions that were assigned during their session.
         return () => {
             unsubscribePrivate();
             unsubscribeBroadcast();
         };
-        // --- END OF FIX ---
     }, [currentUser, pendingDeletes]);
 
     return { notifications, isLoading, dismissNotification, markBroadcastAsSeen, markNotificationAsRead };

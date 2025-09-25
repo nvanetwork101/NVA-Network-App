@@ -5,41 +5,36 @@ import formatCurrency from '../utils/formatCurrency'; // Import the REAL formatt
 
 // --- Main AllCampaignsScreen Component ---
 
-const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignId, currencyRates, selectedCurrency }) => {
+const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignId, currencyRates, selectedCurrency, currentUser }) => {
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const PLATFORM_FEE_PERCENTAGE = 0.07; // This can be a constant
 
     useEffect(() => {
+        // This listener will now run for ALL users, logged in or not.
         const campaignsCollectionRef = collection(db, `artifacts/${appId}/public/data/campaigns`);
-        const q = query(
-            campaignsCollectionRef,
-            where('status', '==', 'active'),
-            orderBy('createdAt', 'desc')
-        );
+        const q = query(campaignsCollectionRef, where('status', '==', 'active'), orderBy('createdAt', 'desc'));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedCampaigns = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setCampaigns(fetchedCampaigns);
+            setCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             setLoading(false);
         }, (error) => {
             console.error("Error fetching campaigns:", error);
-            showMessage("Failed to load campaigns. Please try again.");
+            // Show a generic error for guests, as they can't do much about it.
+            showMessage("Failed to load campaigns.");
             setLoading(false);
         });
 
         return () => unsubscribe();
-    }, [showMessage]);
+    }, [showMessage]); // Dependency array no longer needs currentUser
 
     const filteredCampaigns = campaigns.filter(campaign => 
         campaign.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         campaign.creatorName.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    // This loading state is now correct for both logged-in and logged-out users.
     if (loading) {
         return (
             <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
@@ -62,9 +57,9 @@ const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignI
                 />
             </div>
 
-            {campaigns.length === 0 ? (
+            {campaigns.length === 0 && !loading ? (
                 <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No active campaigns found yet.</p>
-            ) : filteredCampaigns.length === 0 ? (
+            ) : filteredCampaigns.length === 0 && campaigns.length > 0 ? (
                 <p className="paragraph" style={{ textAlign: 'center', marginTop: '20px' }}>No campaigns found matching "{searchTerm}".</p>
             ) : (
                 <div className="allCampaignsList">
@@ -73,6 +68,12 @@ const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignI
                             key={campaign.id}
                             className="allCampaignsListItem"
                             onClick={() => {
+                                // This logic correctly gates the action for guests.
+                                if (!currentUser) {
+                                    showMessage("Please log in or sign up to view campaign details.");
+                                    setActiveScreen('Login');
+                                    return;
+                                }
                                 setSelectedCampaignId(campaign.id);
                                 setActiveScreen('CampaignDetails');
                             }}

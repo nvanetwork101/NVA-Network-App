@@ -13,36 +13,29 @@ const CreatorConnectScreen = ({ showMessage, setActiveScreen, currentUser, creat
     const [loading, setLoading] = useState(true);
 
    useEffect(() => {
+        // This listener now runs for ALL users.
         setLoading(true);
         const opportunitiesRef = collection(db, "opportunities");
-        const now = new Date(); // Get the current time once for comparison
+        const now = new Date();
 
-        // Query for Promoted listings that are still active
         const qPromoted = query(opportunitiesRef, where("status", "==", "active"), where("listingTier", "==", "promoted"), orderBy("createdAt", "desc"));
         const unsubPromoted = onSnapshot(qPromoted, (snapshot) => {
-            // THE FIX: Filter out expired listings on the client-side
-            const freshOpportunities = snapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(opp => opp.expiresAt && opp.expiresAt.toDate() > now);
+            const freshOpportunities = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(opp => opp.expiresAt && opp.expiresAt.toDate() > now);
             setPromotedOpportunities(freshOpportunities);
         });
 
-        // Query for Standard listings that are still active
         const qStandard = query(opportunitiesRef, where("status", "==", "active"), where("listingTier", "==", "standard"), orderBy("createdAt", "desc"));
         const unsubStandard = onSnapshot(qStandard, (snapshot) => {
-            // THE FIX: Filter out expired listings on the client-side
-            const freshOpportunities = snapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(opp => opp.expiresAt && opp.expiresAt.toDate() > now);
+            const freshOpportunities = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(opp => opp.expiresAt && opp.expiresAt.toDate() > now);
             setStandardOpportunities(freshOpportunities);
-            setLoading(false);
+            setLoading(false); // Set loading false only after the second query returns.
         });
 
         return () => {
             unsubPromoted();
             unsubStandard();
         };
-    }, []); // Runs once on component mount
+    }, []); // Dependency array is now empty as it doesn't depend on user.
 
     // THIS IS THE NEW UNIFIED CLICK HANDLER
     const handleItemClick = (opportunity) => {
@@ -121,14 +114,12 @@ const CreatorConnectScreen = ({ showMessage, setActiveScreen, currentUser, creat
                             <div key={opp.id} 
                                 className="allCampaignsListItem" 
                                 style={opp.listingTier === 'promoted' ? {border: '2px solid #FFD700', background: 'rgba(255, 215, 0, 0.05)', cursor: 'pointer'} : {cursor: 'pointer'}} 
-                                // THIS IS THE FIX: The new click handler is used here.
                                 onClick={() => handleItemClick(opp)}> 
                                 <div className="campaignListContent">
                                     <div className="campaignListTitle" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                                         <span>{opp.title}</span> 
                                         <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
                                             {opp.listingTier === 'promoted' && <span style={{fontSize: '12px', color: '#0A0A0A', backgroundColor: '#FFD700', padding: '3px 8px', borderRadius: '10px', fontWeight: 'bold'}}>★ Promoted</span>}
-                                            {/* THIS IS THE FIX: The Save button is now only visible to logged-in users. */}
                                             {currentUser && (
                                                 <SaveOpportunityButton currentUser={currentUser} opportunityId={opp.id} showMessage={showMessage} />
                                             )}

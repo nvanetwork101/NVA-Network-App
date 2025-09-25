@@ -195,16 +195,21 @@ function App() {
     useEffect(() => {
         // This now efficiently listens for the server-updated currency rates from Firestore.
         // This makes zero calls to the external currency API.
-        const ratesDocRef = doc(db, "settings", "currencyRates");
-        const unsubscribe = onSnapshot(ratesDocRef, (docSnap) => {
-            if (docSnap.exists() && docSnap.data().rates) {
-                setCurrencyRates(docSnap.data().rates);
-            } else {
-                console.warn("Currency rates document not found in Firestore!");
-            }
-        });
+        let unsubscribe = () => {};
+
+        // THE DEFINITIVE FIX: Do not attach the listener until the initial auth check is complete.
+        if (!authLoading) {
+            const ratesDocRef = doc(db, "settings", "currencyRates");
+            unsubscribe = onSnapshot(ratesDocRef, (docSnap) => {
+                if (docSnap.exists() && docSnap.data().rates) {
+                    setCurrencyRates(docSnap.data().rates);
+                } else {
+                    console.warn("Currency rates document not found in Firestore!");
+                }
+            });
+        }
         return () => unsubscribe(); // Cleanup listener on unmount
-    }, []);
+    }, [authLoading]); // Dependency on authLoading ensures this runs when the state is ready.
 
   // The new navigation handler that tracks screen history AND syncs with browser history
   const handleNavigate = useCallback((newScreen) => {
@@ -435,54 +440,67 @@ function App() {
     }, [showVideoModal]);  
        
         useEffect(() => {
-        const docRef = doc(db, "settings", "featuredContentSlots");
-        const unsubscribe = onSnapshot(docRef, (docSnap) => {
-            if (docSnap.exists()) {
-                setFeaturedContentSlots(docSnap.data());
-            } else {
-                console.warn("Featured content document not found!");
-                setFeaturedContentSlots({}); // Set to empty object to prevent errors
-            }
-        });
+        let unsubscribe = () => {};
+
+        // THE DEFINITIVE FIX: Do not attach the listener until the initial auth check is complete.
+        if (!authLoading) {
+            const docRef = doc(db, "settings", "featuredContentSlots");
+            unsubscribe = onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    setFeaturedContentSlots(docSnap.data());
+                } else {
+                    console.warn("Featured content document not found!");
+                    setFeaturedContentSlots({}); // Set to empty object to prevent errors
+                }
+            });
+        }
         return () => unsubscribe(); // Cleanup listener on unmount
-    }, []);
+    }, [authLoading]);
     // --------------------------------------------------------------------------------
 
         useEffect(() => {
-        const compRef = collection(db, "competitions");
-        const q = query(compRef, where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]), orderBy("createdAt", "desc"), limit(1));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            let competitionData = null;
-            if (!snapshot.empty) {
-                competitionData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-            }
-            // Set the state for components that still use the prop
-            setActiveCompetition(competitionData); 
-            
-            // Broadcast the change to any component that is listening
-            window.dispatchEvent(new CustomEvent('competitionUpdated', { detail: competitionData }));
-        });
+        let unsubscribe = () => {};
+
+        // THE DEFINITIVE FIX: Do not attach the listener until the initial auth check is complete.
+        if (!authLoading) {
+            const compRef = collection(db, "competitions");
+            const q = query(compRef, where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]), orderBy("createdAt", "desc"), limit(1));
+            unsubscribe = onSnapshot(q, (snapshot) => {
+                let competitionData = null;
+                if (!snapshot.empty) {
+                    competitionData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+                }
+                // Set the state for components that still use the prop
+                setActiveCompetition(competitionData);
+                
+                // Broadcast the change to any component that is listening
+                window.dispatchEvent(new CustomEvent('competitionUpdated', { detail: competitionData }));
+            });
+        }
         return () => unsubscribe();
-    }, []);
+    }, [authLoading]);
 
         useEffect(() => {
-        const liveEventDocRef = doc(db, "settings", "liveEvent");
+        let unsubscribe = () => {};
 
-        const unsubscribe = onSnapshot(liveEventDocRef, (docSnap) => {
-            if (docSnap.exists() && docSnap.data().status && docSnap.data().status !== 'no_event_scheduled') {
-                const eventData = { id: docSnap.id, ...docSnap.data() };
-                setLiveEvent(eventData);
-                // The global event dispatch is still useful for other components like the Header banner.
-                window.dispatchEvent(new CustomEvent('liveEventUpdated', { detail: eventData }));
-            } else {
-                setLiveEvent(null);
-                window.dispatchEvent(new CustomEvent('liveEventUpdated', { detail: null }));
-            }
-        });
-
+        // THE DEFINITIVE FIX: Do not attach the listener until the initial auth check is complete.
+        if (!authLoading) {
+            const liveEventDocRef = doc(db, "settings", "liveEvent");
+            unsubscribe = onSnapshot(liveEventDocRef, (docSnap) => {
+                if (docSnap.exists() && docSnap.data().status && docSnap.data().status !== 'no_event_scheduled') {
+                    const eventData = { id: docSnap.id, ...docSnap.data() };
+                    setLiveEvent(eventData);
+                    // The global event dispatch is still useful for other components like the Header banner.
+                    window.dispatchEvent(new CustomEvent('liveEventUpdated', { detail: eventData }));
+                } else {
+                    setLiveEvent(null);
+                    window.dispatchEvent(new CustomEvent('liveEventUpdated', { detail: null }));
+                }
+            });
+        }
         // The timer and complex logic are removed. App.jsx's only job is to fetch the data.
         return () => unsubscribe();
-    }, []);
+    }, [authLoading]);
 
         // ================= START: THE DEFINITIVE LIVE EVENT SYNC FIX =================
     useEffect(() => {
@@ -571,21 +589,7 @@ function App() {
       window.removeEventListener('popstate', handleBackButton);
     };
   }, [activeScreen, previousScreen, message, showMessage]);
-
-        useEffect(() => {
-                let unsubscribe = () => {};
-                if (currentUser) {
-                    const followingRef = collection(db, "creators", currentUser.uid, "following");
-                    const q = query(followingRef, where("hasNewContent", "==", true));
-                    unsubscribe = onSnapshot(q, (snapshot) => {
-                        setHasNewFollowerContent(!snapshot.empty);
-                    });
-                } else {
-                    setHasNewFollowerContent(false);
-                }
-                return () => unsubscribe();
-            }, [currentUser]);
-
+        
             // --- Audio Priming for Browser Autoplay Policy ---
     useEffect(() => {
         const primeAudio = () => {
