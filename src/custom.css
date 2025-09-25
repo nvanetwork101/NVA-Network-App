@@ -719,45 +719,37 @@ body {
     align-items: center;
     z-index: 1000;
 }
+
 .videoModalContent {
     background-color: #1A1A1A;
-    border-radius: 0; /* Removed for full screen effect */
-    width: 100vw; /* Make it take 100% of viewport width */
-    height: 100vh; /* Make it take 100% of viewport height */
-    max-width: 1200px; /* Cap maximum width for very large screens */
-    max-height: 800px; /* Cap maximum height for very large screens to maintain aspect ratio */
-    overflow: hidden;
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.7);
-    position: relative;
-    display: flex; /* Enable flex for vertical centering of iframe */
-    flex-direction: column;
-    justify-content: center; /* Center content vertically */
-    align-items: center; /* Center content horizontally */
-}
-.videoIframeContainer {
-    position: relative;
-    width: 100%;
-    padding-bottom: 56.25%; /* 16:9 Aspect Ratio (height relative to width) */
-    height: 0; /* Important for padding-bottom trick */
-    overflow: hidden;
-}
-.videoIframeContainer iframe {
-    position: absolute;
-    top: 0;
-    left: 0;
     width: 100%;
     height: 100%;
-    border: none;
-}
-.videoModalContent.vertical {
-    max-width: 450px; /* Optimal width for phone-like vertical view */
-    height: 100vh;
-    max-height: 100vh; /* Ensure it takes full viewport height */
-    justify-content: center; /* Center the iframe vertically */
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
 }
 
-.videoIframeContainer.vertical {
-    padding-bottom: 177.77%; /* 9:16 aspect ratio (16 / 9 * 100) */
+/* On larger screens, constrain the modal size */
+@media (min-width: 768px) {
+    .videoModalContent {
+        width: auto;
+        height: auto;
+        max-width: 95vw;
+        max-height: 95vh;
+        border-radius: 12px;
+    }
+}
+
+.videoIframeContainer {
+    /* This container will now be sized by its child or by inline styles */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-shrink: 1;
+    min-height: 0;
 }
 .closeButton {
     position: absolute;
