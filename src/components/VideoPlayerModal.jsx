@@ -18,7 +18,8 @@ const extractVideoInfo = (url) => {
     }
     const tiktokMatch = url.match(/tiktok\.com\/.*\/video\/(\d+)/);
     if (tiktokMatch) {
-        return { embedUrl: url, isVertical: true, platform: 'tiktok' };
+        // This is the fix: create a proper iframe embed URL.
+        return { embedUrl: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}`, isVertical: true, platform: 'tiktok' };
     }
     return { embedUrl: url, isVertical: false, platform: 'unknown' };
 };
@@ -28,31 +29,12 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
     const [creatorProfile, setCreatorProfile] = useState(null);
     const [descriptionExpanded, setDescriptionExpanded] = useState(false);
     const viewCountedRef = useRef(false);
-    const tiktokContainerRef = useRef(null);
+    // const tiktokContainerRef = useRef(null); // REMOVED
     const itemType = useMemo(() => liveContentItem?.eventTitle ? 'event' : 'content', [liveContentItem]);
     const { embedUrl, isVertical, platform } = useMemo(() => extractVideoInfo(videoUrl), [videoUrl]);
 
-    useEffect(() => {
-        if (platform === 'tiktok' && tiktokContainerRef.current) {
-            tiktokContainerRef.current.innerHTML = '';
-            const blockquote = document.createElement('blockquote');
-            blockquote.className = 'tiktok-embed';
-            blockquote.cite = embedUrl;
-            blockquote.setAttribute('data-video-id', embedUrl.match(/video\/(\d+)/)[1]);
-            blockquote.style.width = '100%';
-            blockquote.style.height = '100%';
-            blockquote.style.margin = '0';
-            const script = document.createElement('script');
-            script.src = 'https://www.tiktok.com/embed.js';
-            script.async = true;
-            tiktokContainerRef.current.appendChild(blockquote);
-            document.body.appendChild(script);
-            return () => {
-                const existingScript = document.querySelector('script[src="https://www.tiktok.com/embed.js"]');
-                if (existingScript) document.body.removeChild(existingScript);
-            };
-        }
-    }, [platform, embedUrl]);
+    // The entire useEffect hook for TikTok script injection is now REMOVED.
+
 
     useEffect(() => {
         if (!contentItem?.id) return;
@@ -96,11 +78,14 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                 <div className="flex-1 min-h-0 flex justify-center items-center bg-black">
                     {/* This inner container enforces the aspect ratio */}
                     <div className={isVertical ? 'aspect-[9/16] h-full' : 'aspect-video w-full'}>
-                        {platform === 'tiktok' ? (
-                            <div ref={tiktokContainerRef} className="w-full h-full"></div>
-                        ) : (
-                            <iframe src={embedUrl} className="w-full h-full border-none" allow="autoplay; encrypted-media;" allowFullScreen title="Embedded Video Content"></iframe>
-                        )}
+                        {/* THE FIX: Use a single, unified iframe for ALL video platforms */}
+                        <iframe 
+                           src={embedUrl} 
+                           className="w-full h-full border-none" 
+                           allow="autoplay; encrypted-media;" 
+                           allowFullScreen 
+                           title="Embedded Video Content"
+                        ></iframe>
                     </div>
                 </div>
                 
