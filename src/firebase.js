@@ -50,7 +50,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const functions = getFunctions(app);
-const analytics = getAnalytics(app);
+// const analytics = getAnalytics(app);
 
 // --- UTILITY FUNCTIONS ---
 const GENERIC_THUMBNAIL_PLACEHOLDER = 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA';
@@ -91,7 +91,7 @@ export {
     db, 
     storage, 
     functions, 
-    analytics,
+    // analytics, // Temporarily disabled to prevent console errors
     // Firestore Functions
     addDoc,
     collection,
