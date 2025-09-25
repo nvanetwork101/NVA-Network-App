@@ -88,7 +88,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
 
     return (
         <div className="videoModalOverlay">
-            {/* --- THIS IS THE CRITICAL FIX --- */}
+            {/* THE FIX: Use Tailwind classes directly on the elements */}
             <div className="bg-[#1A1A1A] w-full h-full md:w-auto md:h-auto md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col">
                 <button className="closeButton" onClick={onClose}>×</button>
                 

@@ -775,7 +775,7 @@ function App() {
       case 'AnalyticsDashboard': return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'Contact': return <ContactScreen setActiveScreen={handleNavigate} showMessage={showMessage} currentUser={currentUser} />;
       case 'NvaNetworkCharts': return <NvaNetworkChartsScreen setActiveScreen={handleNavigate} />;
-      case 'NotificationInbox': return <NotificationInboxScreen notifications={notifications} setActiveScreen={handleNavigate} dismissNotification={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
+      case 'NotificationInbox': return <NotificationInboxScreen setActiveScreen={handleNavigate} currentUser={currentUser} dismissNotification={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
       case 'Home': default: return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
     }
   };
