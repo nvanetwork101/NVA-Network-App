@@ -77,7 +77,11 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
     };
 
     const handleEntryClick = (entry) => {
-        // New rule: If results are visible, don't open the modal.
+        // THE FIX: Add a check for the 'Accepting Entries' status first.
+        if (competition?.status === 'Accepting Entries') {
+            showMessage("Voting has not yet begun. Please check back later!");
+            return;
+        }
         if (competition?.status === 'Results Visible') {
             showMessage("This competition has ended. Viewing entries is disabled.");
             return;

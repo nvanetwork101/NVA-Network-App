@@ -370,7 +370,7 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
         <>
             <div className="screenContainer">
                 <p className="heading">Admin Dashboard</p>
-               <div style={{ display: 'flex', gap: '10px', flexWrap: 'nowrap', overflowX: 'auto', justifyContent: 'center', padding: '5px 0 15px 0', marginBottom: '15px' }}>
+               <div className="admin-nav-container">
                     <button className={`admin-nav-button ${selectedAdminSubScreen === 'Overview' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('Overview')}>
                         Overview {pendingOverviewCount > 0 && <span style={{color: '#DC3545', fontWeight: 'bold'}}>({pendingOverviewCount})</span>}
                     </button>
@@ -485,7 +485,7 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                             const secondaryBadges = statusBadges.slice(1);
                                             const isSuspended = primaryStatus.text === 'Suspended';
                                             return (
-                                                <div key={user.id} className="adminDashboardItem" style={{alignItems: 'flex-start'}}>
+                                                <div key={user.id} className="adminDashboardItem admin-user-card" style={{alignItems: 'flex-start'}}>
                                                     <div style={{display: 'flex', alignItems: 'center', flexGrow: 1, marginRight: '10px', cursor: 'pointer'}} onClick={() => {setSelectedUserId(user.id); setActiveScreen('UserProfile');}}>
                                                         <img src={user.profilePictureUrl || 'https://placehold.co/50x50/555/FFF?text=P'} alt={user.creatorName} style={{width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover', marginRight: '15px'}} />
                                                         <div>
@@ -497,7 +497,7 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                                             <p style={{ fontSize: '12px', color: primaryStatus.color, fontWeight: 'bold' }}>Status: {primaryStatus.text}</p>
                                                         </div>
                                                     </div>
-                                                    <div style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end', flexShrink: 0}}>
+                                                    <div className="admin-user-card-actions" style={{display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end', flexShrink: 0}}>
                                                         {(() => {
                                                             const isTargetAdmin = user.role === 'admin';
                                                             const isTargetAuthority = user.role === 'authority';

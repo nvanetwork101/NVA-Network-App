@@ -70,23 +70,24 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
 
     return (
         <div className="videoModalOverlay flex justify-center items-center">
-            {/* THE FIX: Use Tailwind classes directly on the elements */}
-            <div className="bg-[#1A1A1A] w-full h-full md:w-auto md:h-auto md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col">
+            {/* THE FIX: For vertical video, constrain the HEIGHT. For horizontal, constrain the WIDTH. */}
+            <div className={`bg-[#1A1A1A] w-full h-full md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col ${isVertical ? 'md:h-[90vh]' : 'md:w-[90vw]'}`}>
                 <button className="closeButton" onClick={onClose}>×</button>
                 
-                {/* This container now grows to fill all available space */}
+                {/* This container grows to fill parent, centers content, and provides the black background for letterboxing */}
                 <div className="flex-1 min-h-0 flex justify-center items-center bg-black">
-                    {/* This inner container enforces the aspect ratio */}
-                    <div className={isVertical ? 'aspect-[9/16] h-full' : 'aspect-video w-full'}>
-                        {/* THE FIX: Use a single, unified iframe for ALL video platforms */}
-                        <iframe 
-                           src={embedUrl} 
-                           className="w-full h-full border-none" 
-                           allow="autoplay; encrypted-media;" 
-                           allowFullScreen 
-                           title="Embedded Video Content"
-                        ></iframe>
+                
+                    {/* This wrapper uses Tailwind's aspect-ratio utilities to perfectly size the video */}
+                    <div className={`w-full h-full md:w-auto md:h-auto ${isVertical ? 'aspect-[9/16]' : 'aspect-video'}`}>
+                        <iframe
+                            src={embedUrl}
+                            className="w-full h-full border-none"
+                            allow="autoplay; encrypted-media"
+                            allowFullScreen
+                            title="Embedded Video Content"
+                        />
                     </div>
+
                 </div>
                 
                 {/* This container for info does not grow */}
