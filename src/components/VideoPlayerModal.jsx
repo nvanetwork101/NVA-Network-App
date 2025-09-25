@@ -84,56 +84,35 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
 
     if (!videoUrl) return null;
 
-    const videoContainerStyle = {
-        backgroundColor: '#000',
-        margin: '0 auto',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        ...(isVertical 
-            ? { 
-                aspectRatio: '9 / 16',
-                width: 'auto',
-                height: '100%',
-                maxHeight: 'calc(100vh - 180px)', // Reserve space for info panel
-              }
-            : { 
-                aspectRatio: '16 / 9',
-                width: '100%',
-                maxWidth: '1200px',
-              }
-        )
-    };
-
-    const iframeStyle = {
-        width: '100%',
-        height: '100%',
-        border: 'none',
-    };
-
     const displayViewCount = itemType === 'event' ? liveContentItem?.totalViewCount : liveContentItem?.viewCount;
 
     return (
         <div className="videoModalOverlay">
-            <div className="videoModalContent">
+            {/* --- THIS IS THE CRITICAL FIX --- */}
+            <div className="bg-[#1A1A1A] w-full h-full md:w-auto md:h-auto md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col">
                 <button className="closeButton" onClick={onClose}>×</button>
                 
-                <div className="videoIframeContainer" style={videoContainerStyle}>
-                    {platform === 'tiktok' ? (
-                        <div ref={tiktokContainerRef} style={{ width: '100%', height: '100%' }}></div>
-                    ) : (
-                        <iframe src={embedUrl} style={iframeStyle} allow="autoplay; encrypted-media;" allowFullScreen title="Embedded Video Content"></iframe>
-                    )}
+                {/* This container now grows to fill all available space */}
+                <div className="flex-1 min-h-0 flex justify-center items-center bg-black">
+                    {/* This inner container enforces the aspect ratio */}
+                    <div className={isVertical ? 'aspect-[9/16] h-full' : 'aspect-video w-full'}>
+                        {platform === 'tiktok' ? (
+                            <div ref={tiktokContainerRef} className="w-full h-full"></div>
+                        ) : (
+                            <iframe src={embedUrl} className="w-full h-full border-none" allow="autoplay; encrypted-media;" allowFullScreen title="Embedded Video Content"></iframe>
+                        )}
+                    </div>
                 </div>
                 
-                <div style={{ padding: '12px 15px', backgroundColor: '#1A1A1A', overflowY: 'auto', width: '100%', flexShrink: 0 }}>
-                    <h2 style={{ margin: '0 0 12px 0', fontSize: '1.2rem', color: '#FFFFFF', fontWeight: '600', lineHeight: '1.4' }}>
+                {/* This container for info does not grow */}
+                <div className="bg-[#1A1A1A] p-3 md:p-4 overflow-y-auto w-full flex-shrink-0">
+                    <h2 className="m-0 mb-3 text-lg text-white font-semibold leading-tight">
                         {liveContentItem?.title}
                     </h2>
                     
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '15px' }}>
+                    <div className="flex justify-between items-center mb-3 gap-4">
                         <div 
-                            style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', minWidth: 0 }}
+                            className="flex items-center gap-2.5 cursor-pointer min-w-0"
                             onClick={() => {
                                 window.dispatchEvent(new CustomEvent('navigateToUserProfile', { detail: { userId: liveContentItem.creatorId } }));
                                 onClose();
@@ -142,11 +121,11 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                             <img 
                                 src={creatorProfile?.profilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} 
                                 alt={creatorProfile?.creatorName} 
-                                style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }}
+                                className="w-10 h-10 rounded-full object-cover"
                             />
-                            <div>
-                                <div style={{ margin: 0, fontSize: '0.9rem', color: '#FFFFFF', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <div className="min-w-0">
+                                <div className="m-0 text-sm text-white font-bold flex items-center">
+                                    <span className="whitespace-nowrap overflow-hidden text-ellipsis">
                                         {creatorProfile?.creatorName}
                                     </span>
                                     <RoleBadge profile={creatorProfile} />
@@ -155,20 +134,20 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                         </div>
 
                         {currentUser && liveContentItem?.id && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                            <div className="flex items-center gap-2 flex-shrink-0">
                                 <LikeButton contentItem={liveContentItem} currentUser={currentUser} showMessage={showMessage} itemType={itemType} />
                                 <button
                                     onClick={() => window.dispatchEvent(new CustomEvent('openCommentsModal', { detail: { item: liveContentItem, itemType: itemType } }))}
-                                    style={{ background: '#3A3A3A', border: 'none', borderRadius: '50px', display: 'flex', alignItems: 'center', cursor: 'pointer', color: '#FFF', gap: '6px', padding: '0 12px', height: '36px' }}
+                                    className="bg-[#3A3A3A] border-none rounded-full flex items-center cursor-pointer text-white gap-1.5 px-3 h-9"
                                 >
-                                    <svg viewBox="0 0 24 24" style={{ width: '20px', height: '20px', fill: 'currentColor' }}><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"></path></svg>
+                                    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"></path></svg>
                                     <span>{(liveContentItem?.commentCount || 0).toLocaleString()}</span>
                                 </button>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('openReportModal', { detail: liveContentItem })); }}
-                                    style={{ background: '#3A3A3A', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#FFF' }}
+                                    className="bg-[#3A3A3A] border-none rounded-full w-9 h-9 flex items-center justify-center cursor-pointer text-white"
                                 >
-                                    <svg viewBox="0 0 24 24" style={{ width: '20px', height: '20px', fill: 'currentColor' }}><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+                                    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
                                 </button>
                             </div>
                         )}
@@ -176,18 +155,16 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
 
                     {liveContentItem?.description && (
                         <div 
-                            style={{ backgroundColor: '#2A2A2A', padding: '12px', borderRadius: '12px', cursor: 'pointer' }}
+                            className="bg-[#2A2A2A] p-3 rounded-xl cursor-pointer"
                             onClick={() => setDescriptionExpanded(!descriptionExpanded)}
                         >
-                            <p style={{ margin: '0 0 8px 0', fontSize: '0.9rem', color: '#FFFFFF', fontWeight: 'bold' }}>
+                            <p className="m-0 mb-2 text-sm text-white font-bold">
                                 {(displayViewCount || 0).toLocaleString()} Views
                             </p>
-                            <p style={{ margin: 0, fontSize: '0.85rem', color: '#DDDDDD', lineHeight: 1.5, whiteSpace: 'pre-wrap',
-                                ...(descriptionExpanded ? {} : { overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' })
-                            }}>
+                            <p className={`m-0 text-sm text-[#DDDDDD] leading-normal whitespace-pre-wrap ${!descriptionExpanded && 'line-clamp-2'}`}>
                                 {liveContentItem.description}
                             </p>
-                            <span style={{ color: '#AAAAAA', fontSize: '0.8rem', fontWeight: 'bold', marginTop: '4px', display: 'inline-block' }}>
+                            <span className="text-[#AAAAAA] text-xs font-bold mt-1 inline-block">
                                 {descriptionExpanded ? 'Show less' : '...more'}
                             </span>
                         </div>

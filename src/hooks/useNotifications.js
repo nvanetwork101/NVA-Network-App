@@ -69,11 +69,11 @@ export const useNotifications = (currentUser) => {
                 
                 const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
                 
-                // THE FIX: We pass ALL recent private notifications to the inbox, not just unread ones.
-                // The inbox component is responsible for visually distinguishing them.
-                const allPrivateNotifications = privateNotifications;
+                // THIS IS THE FIX: The global 'notifications' state should ONLY contain UNREAD items
+                // to prevent old toasts from reappearing on login.
+                const unreadPrivateNotifications = privateNotifications.filter(p => !p.isRead);
                 
-                const combined = [...allPrivateNotifications, ...unseenBroadcasts];
+                const combined = [...unreadPrivateNotifications, ...unseenBroadcasts];
                 const filtered = combined.filter(n => !pendingDeletes.has(n.id));
                 const unique = Array.from(new Map(filtered.map(item => [item.id, item])).values());
                 
