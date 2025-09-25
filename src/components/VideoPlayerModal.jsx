@@ -87,7 +87,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
     const displayViewCount = itemType === 'event' ? liveContentItem?.totalViewCount : liveContentItem?.viewCount;
 
     return (
-        <div className="videoModalOverlay">
+        <div className="videoModalOverlay flex justify-center items-center">
             {/* THE FIX: Use Tailwind classes directly on the elements */}
             <div className="bg-[#1A1A1A] w-full h-full md:w-auto md:h-auto md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col">
                 <button className="closeButton" onClick={onClose}>×</button>
