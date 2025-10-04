@@ -27,7 +27,7 @@ const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignI
         });
 
         return () => unsubscribe();
-    }, [showMessage]); // Dependency array no longer needs currentUser
+    }, [showMessage, currentUser]); // THIS IS THE FIX: Re-run effect when currentUser changes.
 
     const filteredCampaigns = campaigns.filter(campaign => 
         campaign.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -68,14 +68,7 @@ const AllCampaignsScreen = ({ showMessage, setActiveScreen, setSelectedCampaignI
                             key={campaign.id}
                             className="allCampaignsListItem"
                             onClick={() => {
-                                // This logic correctly gates the action for guests.
-                                if (!currentUser) {
-                                    showMessage("Please log in or sign up to view campaign details.");
-                                    setActiveScreen('Login');
-                                    return;
-                                }
-                                setSelectedCampaignId(campaign.id);
-                                setActiveScreen('CampaignDetails');
+                        window.dispatchEvent(new CustomEvent('viewCampaignDetails', { detail: { campaignId: campaign.id } }));
                             }}
                         >
                             <div

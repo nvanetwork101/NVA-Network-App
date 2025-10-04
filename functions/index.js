@@ -6,7 +6,7 @@ const {logger} = require("firebase-functions");
 
 // The Firebase Admin SDK to access Firestore.
 const admin = require("firebase-admin");
-admin.initializeApp();
+admin.initializeApp({ projectId: "nvanetworkapp" });
 
 const PLATFORM_FEE_PERCENTAGE = 0.07; // 7% platform fee
 

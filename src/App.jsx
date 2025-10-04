@@ -421,6 +421,31 @@ useEffect(() => {
 }, [currentUser]); // This effect runs once when a user logs in
 // ======================== END: PUSH NOTIFICATION SETUP ========================
     
+    // ======================= START: CAMPAIGN VIEW HANDLER =======================
+useEffect(() => {
+    const handleViewCampaign = (event) => {
+        const { campaignId } = event.detail;
+
+        // This check uses the reliable, up-to-date currentUser state from App.jsx
+        if (!currentUser) {
+            showMessage("Please log in or sign up to view campaign details.");
+            handleNavigate('Login'); // Use the navigation handler for history
+            return;
+        }
+
+        // If the user is logged in, proceed to the campaign.
+        setSelectedCampaignId(campaignId);
+        handleNavigate('CampaignDetails'); // Use the navigation handler for history
+    };
+
+    window.addEventListener('viewCampaignDetails', handleViewCampaign);
+
+    return () => {
+        window.removeEventListener('viewCampaignDetails', handleViewCampaign);
+    };
+}, [currentUser, handleNavigate, showMessage]); // Dependencies ensure the function has the latest state
+// ======================== END: CAMPAIGN VIEW HANDLER ========================
+
 	useEffect(() => {
         const requestHandler = () => {
             // When a component requests the state, re-dispatch the last known state.
