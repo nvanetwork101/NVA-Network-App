@@ -77,8 +77,17 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                 {/* This container grows to fill parent, centers content, and provides the black background for letterboxing */}
                 <div className="flex-1 min-h-0 flex justify-center items-center bg-black">
                 
-                    {/* This wrapper uses Tailwind's aspect-ratio utilities to perfectly size the video */}
-                    <div className={`w-full h-full md:w-auto md:h-auto ${isVertical ? 'aspect-[9/16]' : 'aspect-video'}`}>
+                    {/* 
+                      This is the final, robust fix. It uses a simple, declarative approach.
+                      - Horizontal videos get a full-width, 16:9 container.
+                      - Vertical videos get a full-height, 9:16 container.
+                      This properly constrains all video types within the modal.
+                    */}
+                    <div className={`
+                        w-full h-full 
+                        md:w-auto md:h-auto 
+                        ${isVertical ? 'md:h-full md:aspect-[9/16]' : 'md:w-full md:aspect-video'}
+                    `}>
                         <iframe
                             src={embedUrl}
                             className="w-full h-full border-none"

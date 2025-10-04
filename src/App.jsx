@@ -20,6 +20,8 @@ import BlockedListScreen from './components/BlockedListScreen';
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from './firebase.js';
 import { httpsCallable } from 'firebase/functions';
+import { getMessaging, getToken, onMessage } from "firebase/messaging";
+import { messaging } from './firebase.js';
 import { functions } from './firebase.js'; // This line is also needed
 
 // Import all your components
@@ -174,7 +176,7 @@ function App() {
     return saved ? new Set(JSON.parse(saved)) : new Set();
   });  const notificationSoundRef = useRef(null);
   const unreadCount = notifications.filter(n => !n.isBroadcast && !n.isRead).length;
-
+  const [notificationBadgeCount, setNotificationBadgeCount] = useState(0);
     const markAllAsRead = () => {
     notifications.forEach(notification => {
       if (!notification.isBroadcast && !notification.isRead) {
@@ -303,13 +305,17 @@ function App() {
 
             // --- Re-initialize all user-specific listeners here ---
             unsubProfile = onSnapshot(userDocRef, (snap) => {
-                if (snap.exists()) {
-                    setCurrentUser(user); // Keep currentUser in sync
-                    setCreatorProfile(snap.data());
-                } else {
-                    signOut(auth);
-                }
-            });
+    if (snap.exists()) {
+        const profileData = snap.data();
+        setCurrentUser(user); // Keep currentUser in sync
+        setCreatorProfile(profileData);
+        // THIS IS THE FIX: Get the count directly from the user's document
+        setNotificationBadgeCount(profileData.unreadNotificationCount || 0);
+    } else {
+        // If the profile is deleted from under the user, log them out.
+        signOut(auth);
+    }
+  });
 
             const followingRef = collection(db, "creators", user.uid, "following");
             const q = query(followingRef, where("hasNewContent", "==", true));
@@ -342,6 +348,7 @@ function App() {
         setCurrentUser(null);
         setCreatorProfile(null);
         setHasNewFollowerContent(false); // Explicitly reset state related to listeners
+        setNotificationBadgeCount(0); // Reset badge count on logout
         const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
         if (protectedScreens.includes(activeScreen)) {
             setActiveScreen('Home');
@@ -360,6 +367,60 @@ function App() {
    }, [activeScreen]); // Dependency remains the same
   // =========================== END: LOGOUT RACE CONDITION FIX ===========================
  
+        // ======================= START: PUSH NOTIFICATION SETUP =======================
+useEffect(() => {
+    if (!currentUser) return; // Only run for logged-in users
+
+    // Define an async function inside the effect
+    const requestPermissionAndSaveToken = async () => {
+        // Check if we've already asked for permission this session to avoid spamming the user
+        if (sessionStorage.getItem('notificationPermissionRequested')) {
+            return;
+        }
+        sessionStorage.setItem('notificationPermissionRequested', 'true');
+
+        try {
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+                console.log("Notification permission granted.");
+                
+                // Get the token
+                const currentToken = await getToken(messaging, { vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0' });
+                
+                if (currentToken) {
+                    // Send the token to your server
+                    const saveTokenFunction = httpsCallable(functions, 'saveFCMToken');
+                    await saveTokenFunction({ token: currentToken });
+                    console.log("FCM Token saved successfully.");
+                } else {
+                    console.warn("No registration token available. Request permission to generate one.");
+                }
+            } else {
+                console.warn("Notification permission denied.");
+            }
+        } catch (error) {
+            console.error("An error occurred while getting token. ", error);
+        }
+    };
+
+    requestPermissionAndSaveToken();
+
+    // Handle messages that arrive while the app is in the foreground
+    const unsubscribeOnMessage = onMessage(messaging, (payload) => {
+        console.log("Message received in foreground: ", payload);
+        // Play the notification sound for immediate feedback
+        notificationSoundRef.current?.play().catch(e => console.error("Audio play failed:", e));
+        // Note: The UI badge will update automatically via the Firestore listener.
+    });
+
+    // Cleanup function to unsubscribe when the component unmounts or user logs out
+    return () => {
+        unsubscribeOnMessage();
+    };
+
+}, [currentUser]); // This effect runs once when a user logs in
+// ======================== END: PUSH NOTIFICATION SETUP ========================
+    
 	useEffect(() => {
         const requestHandler = () => {
             // When a component requests the state, re-dispatch the last known state.
@@ -833,7 +894,7 @@ return (
               creatorProfile={creatorProfile}
               showMessage={showMessage}
               hasNewFollowerContent={hasNewFollowerContent}
-              unreadCount={unreadCount}
+              unreadCount={notificationBadgeCount}
             />
           )}
 

@@ -226,39 +226,44 @@ function DiscoverScreen({
                     ? `${embedUrl}&autoplay=1&mute=1&modestbranding=1&rel=0`
                     : `${embedUrl}?autoplay=1&mute=1&modestbranding=1&rel=0`;
                 return (
-                    <>
-                        <div style={{ position: 'relative', width: '100%', maxWidth: '900px', margin: '0 auto' }}>
-                            <div className="videoIframeContainer">
-                                <iframe 
-                                    src={finalUrl} 
-                                    allow="autoplay; fullscreen; picture-in-picture; encrypted-media; gyroscope;" 
-                                    title="Live Premiere"
-                                ></iframe>
-                            </div>
-                            {/* --- NEW UI FOR STATS AND LIKE BUTTON --- */}
-                            <div className="live-event-controls" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', backgroundColor: '#1A1A1A', borderRadius: '8px', marginTop: '10px' }}>
-                                <div className="event-stats" style={{ display: 'flex', gap: '20px', color: '#FFF' }}>
-                                    <span>👀 {masterEventDetails.totalViewCount || 0} Viewers</span>
-                                    <span>❤️ {masterEventDetails.likeCount || 0} Likes</span>
-                                </div>
-                                <button 
-                                    className={`button ${hasLiked ? 'liked' : ''}`} 
-                                    onClick={handleLike} 
-                                    disabled={isLiking || !currentUser}
-                                    style={{
-                                        backgroundColor: hasLiked ? '#DC3545' : '#007BFF',
-                                        color: 'white',
-                                        border: 'none',
-                                        padding: '10px 20px',
-                                        borderRadius: '5px',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    {hasLiked ? 'Liked' : 'Like'}
-                                </button>
-                            </div>
+                    // This parent div is the fix. It provides a stable block container for the
+                    // centered, max-width video player, preventing it from collapsing inside the
+                    // parent flex layout.
+                    <div>
+                        <div className="w-full max-w-[900px] mx-auto bg-black md:rounded-lg overflow-hidden aspect-video">
+                            <iframe 
+                                src={finalUrl}
+                                className="w-full h-full border-0"
+                                allow="autoplay; fullscreen; picture-in-picture; encrypted-media; gyroscope;" 
+                                allowFullScreen
+                                title="Live Premiere"
+                            ></iframe>
                         </div>
-                    </>
+                        
+                        {/* --- UI FOR STATS AND LIKE BUTTON (Now outside the video container) --- */}
+                        <div className="live-event-controls" style={{ maxWidth: '900px', margin: '10px auto 0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', backgroundColor: '#1A1A1A', borderRadius: '8px' }}>
+                            <div className="event-stats" style={{ display: 'flex', gap: '20px', color: '#FFF' }}>
+                                <span>👀 {masterEventDetails.totalViewCount || 0} Viewers</span>
+                                <span>❤️ {masterEventDetails.likeCount || 0} Likes</span>
+                            </div>
+                            <button 
+                                className={`button ${hasLiked ? 'liked' : ''}`} 
+                                onClick={handleLike} 
+                                disabled={isLiking || !currentUser}
+                                style={{
+                                    backgroundColor: hasLiked ? '#DC3545' : '#007BFF',
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '10px 20px',
+                                    borderRadius: '5px',
+                                    cursor: 'pointer',
+                                    margin: 0 /* Override default button margin */
+                                }}
+                            >
+                                {hasLiked ? 'Liked' : 'Like'}
+                            </button>
+                        </div>
+                    </div>
                 );
             } else if (masterEventDetails.isTicketed) {
                 // If access is denied AND it's a ticketed event, show the paywall.

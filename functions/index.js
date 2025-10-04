@@ -112,6 +112,9 @@ exports.approvePledge = onCall(async (request) => {
                     timestamp: approvalTimestamp
                 };
                 transaction.set(notificationsRef.doc(), goalReachedNotification);
+                // Badge Logic
+                const campaignCreatorRef = db.collection("creators").doc(campaignData.creatorId);
+                transaction.update(campaignCreatorRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
             }
         
             const campaignCreatorId = campaignData.creatorId;
@@ -121,6 +124,9 @@ exports.approvePledge = onCall(async (request) => {
                 link: `/CreatorDashboard`, isRead: false, timestamp: approvalTimestamp
             };
             transaction.set(notificationsRef.doc(), creatorNotification);
+            // Badge Logic
+            const creatorRefForDonation = db.collection("creators").doc(campaignCreatorId);
+            transaction.update(creatorRefForDonation, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
         }
         
         const donorNotification = {
@@ -129,6 +135,8 @@ exports.approvePledge = onCall(async (request) => {
             link: `/Home`, isRead: false, timestamp: approvalTimestamp
         };
         transaction.set(notificationsRef.doc(), donorNotification);
+        // Badge Logic
+        transaction.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
 
         const broadcastNotification = {
             broadcastType: "DONATION", 
@@ -152,6 +160,8 @@ exports.approvePledge = onCall(async (request) => {
             link: '/CreatorDashboard', isRead: false, timestamp: approvalTimestamp
         };
         transaction.set(notificationsRef.doc(), userNotification);
+        // Badge Logic
+        transaction.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
 
       } else if (pledgeData.paymentType === 'promotedStatus') {
         transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
@@ -175,6 +185,8 @@ exports.approvePledge = onCall(async (request) => {
             timestamp: approvalTimestamp
         };
         transaction.set(notificationsRef.doc(), userNotification);
+        // Badge Logic
+        transaction.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
       
       } else if (pledgeData.paymentType === 'eventTicket') {
         const eventId = pledgeData.targetEventId;
@@ -198,7 +210,8 @@ exports.approvePledge = onCall(async (request) => {
             isRead: false, timestamp: approvalTimestamp
         };
         transaction.set(notificationsRef.doc(), userNotification);
-        
+        // Badge Logic
+        transaction.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });        
         if (eventId) {
             // Grant the user their ticket
             transaction.set(userRef, { purchasedTickets: { [eventId]: true } }, { merge: true });
@@ -221,6 +234,60 @@ exports.approvePledge = onCall(async (request) => {
       }
     });
     logger.info(`Pledge '${pledgeId}' approved successfully.`);
+
+    // --- START: PUSH NOTIFICATION LOGIC (AFTER TRANSACTION) ---
+    const finalPledgeDoc = await db.collection("paymentPledges").doc(pledgeId).get();
+    const finalPledgeData = finalPledgeDoc.data();
+    
+    if (finalPledgeData.paymentType === 'donation') {
+        const campaignDoc = await db.collection(`artifacts/${appId}/public/data/campaigns`).doc(finalPledgeData.targetCampaignId).get();
+        if (campaignDoc.exists) {
+            const campaignData = campaignDoc.data();
+            const campaignCreatorId = campaignData.creatorId;
+            // Push to Creator
+            await sendPushNotification(campaignCreatorId, {
+                title: 'Donation Received!',
+                body: `${finalPledgeData.userName} donated $${finalPledgeData.amount.toFixed(2)} to your campaign "${finalPledgeData.targetCampaignTitle}"!`,
+                link: '/CreatorDashboard'
+            });
+            // Check if goal was reached to send a second push
+            const newRaisedAmount = (campaignData.raised || 0); // Raised amount is already updated by the transaction
+            const oldRaisedAmount = newRaisedAmount - (finalPledgeData.amount * (1 - PLATFORM_FEE_PERCENTAGE));
+            if (oldRaisedAmount < campaignData.goal && newRaisedAmount >= campaignData.goal) {
+                 await sendPushNotification(campaignCreatorId, {
+                    title: 'Campaign Goal Reached!',
+                    body: `Congratulations! Your campaign "${campaignData.title}" has reached its funding goal!`,
+                    link: '/CreatorDashboard'
+                });
+            }
+        }
+        // Push to Donor
+        await sendPushNotification(finalPledgeData.userId, {
+            title: 'Donation Confirmed',
+            body: `Your donation of $${finalPledgeData.amount.toFixed(2)} to "${finalPledgeData.targetCampaignTitle}" was approved. Thank you!`,
+            link: '/Home'
+        });
+    } else if (finalPledgeData.paymentType === 'premium') {
+        await sendPushNotification(finalPledgeData.userId, {
+            title: 'Subscription Activated!',
+            body: 'Your NVA Premium subscription is now active!',
+            link: '/CreatorDashboard'
+        });
+    } else if (finalPledgeData.paymentType === 'promotedStatus') {
+         await sendPushNotification(finalPledgeData.userId, {
+            title: 'Booking Confirmed!',
+            body: `Your Promoted Status booking for ${new Date(finalPledgeData.scheduledStartTime).toLocaleDateString()} is confirmed!`,
+            link: '/PromotedStatus'
+        });
+    } else if (finalPledgeData.paymentType === 'eventTicket') {
+        await sendPushNotification(finalPledgeData.userId, {
+            title: 'Ticket Purchase Confirmed!',
+            body: `Your ticket for "${finalPledgeData.targetEventTitle || 'the Live Premiere'}" is confirmed!`,
+            link: '/Discover'
+        });
+    }
+    // --- END: PUSH NOTIFICATION LOGIC ---
+
     return { message: "Pledge approved and all relevant notifications sent." };
   } catch (error) {
     logger.error("Error approving pledge", { error });
@@ -1027,34 +1094,56 @@ exports.onPremiereUpdate = onDocumentUpdated("content_categories/{categoryId}", 
     return null;
 });
 
-exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/data/campaigns/{campaignId}", (event) => {
+exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/data/campaigns/{campaignId}", async (event) => {
     const dataAfter = event.data.after.data();
     const dataBefore = event.data.before.data();
+    const creatorId = dataAfter.creatorId;
+
+    if (!creatorId) return null;
+
+    const db = admin.firestore();
+    const userRef = db.collection("creators").doc(creatorId);
+    let notification;
+    let pushPayload;
 
     if (dataBefore.status === 'pending' && dataAfter.status === 'active') {
         logger.info(`Campaign '${event.params.campaignId}' approved. Notifying creator.`);
-        const creatorNotification = {
-            userId: dataAfter.creatorId,
+        notification = {
+            userId: creatorId,
             type: 'CAMPAIGN_APPROVED',
             message: `Congratulations! Your campaign "${dataAfter.title}" has been approved and is now live.`,
             link: '/CreatorDashboard',
             isRead: false,
             timestamp: new Date()
         };
-        return admin.firestore().collection("notifications").add(creatorNotification);
-    
+        pushPayload = {
+            title: 'Campaign Approved!',
+            body: `Your campaign "${dataAfter.title}" is now live.`,
+            link: '/CreatorDashboard'
+        };
     } else if (dataBefore.status === 'pending' && dataAfter.status === 'rejected') {
         logger.info(`Campaign '${event.params.campaignId}' rejected. Notifying creator.`);
-        const rejectionNotification = {
-            userId: dataAfter.creatorId,
+        notification = {
+            userId: creatorId,
             type: 'CAMPAIGN_REJECTED',
             message: `Your campaign "${dataAfter.title}" was reviewed but could not be approved.`,
             link: '/CreatorDashboard',
             isRead: false,
             timestamp: new Date()
         };
-        return admin.firestore().collection("notifications").add(rejectionNotification);
+        pushPayload = {
+            title: 'Campaign Update',
+            body: `Your campaign "${dataAfter.title}" was not approved.`,
+            link: '/CreatorDashboard'
+        };
     }
+
+    if (notification && pushPayload) {
+        await db.collection("notifications").add(notification);
+        await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        await sendPushNotification(creatorId, pushPayload);
+    }
+
     return null;
 });
 
@@ -1154,26 +1243,33 @@ exports.deleteNotification = onCall(async (request) => {
 
     const db = admin.firestore();
     const notificationRef = db.collection("notifications").doc(notificationId);
+    const userRef = db.collection("creators").doc(uid);
 
     try {
         const notificationDoc = await notificationRef.get();
         if (!notificationDoc.exists) {
-            // If the notification doesn't exist, it's not an error. It might have been deleted.
             logger.warn(`User '${uid}' tried to mark non-existent notification '${notificationId}' as read.`);
             return { success: true, message: "Notification not found." };
         }
 
         const notificationData = notificationDoc.data();
         
-        // --- CRITICAL SECURITY CHECK ---
-        // This ensures a user can only mark THEIR OWN notifications as read.
         if (notificationData.userId !== uid) {
             throw new HttpsError("permission-denied", "You do not have permission to modify this notification.");
         }
 
-        await notificationRef.update({ isRead: true });
-
-        return { success: true, message: "Notification marked as read." };
+        // Only decrement the counter if the notification was previously unread.
+        if (notificationData.isRead === false) {
+            await db.runTransaction(async (transaction) => {
+                transaction.update(notificationRef, { isRead: true });
+                transaction.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(-1) });
+            });
+            return { success: true, message: "Notification marked as read and counter updated." };
+        } else {
+            // If it was already read, just ensure it's marked as such, without touching the counter.
+            await notificationRef.update({ isRead: true });
+            return { success: true, message: "Notification was already marked as read." };
+        }
 
     } catch (error) {
         logger.error(`Error marking notification '${notificationId}' as read for user '${uid}'`, { error });
@@ -1184,19 +1280,32 @@ exports.deleteNotification = onCall(async (request) => {
     }
 });
 
-exports.onPledgeDelete = onDocumentDeleted("paymentPledges/{pledgeId}", (event) => {
+exports.onPledgeDelete = onDocumentDeleted("paymentPledges/{pledgeId}", async (event) => {
     const deletedPledge = event.data.data();
-    if (deletedPledge.status === 'pending') {
+    if (deletedPledge.status === 'pending' && deletedPledge.userId) {
         logger.info(`Pledge '${event.params.pledgeId}' was denied. Notifying user.`);
+        
+        const db = admin.firestore();
+        const userId = deletedPledge.userId;
+        const userRef = db.collection("creators").doc(userId);
+
         const denialNotification = {
-            userId: deletedPledge.userId,
+            userId: userId,
             type: 'PLEDGE_DENIED',
             message: `Your payment pledge of $${deletedPledge.amount.toFixed(2)} was not approved.`,
             link: '/Contact',
             isRead: false,
             timestamp: new Date()
         };
-        return admin.firestore().collection("notifications").add(denialNotification);
+        const pushPayload = {
+            title: 'Payment Update',
+            body: `Your payment pledge of $${deletedPledge.amount.toFixed(2)} was not approved.`,
+            link: '/Contact'
+        };
+
+        await db.collection("notifications").add(denialNotification);
+        await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        await sendPushNotification(userId, pushPayload);
     }
     return null;
 });
@@ -1208,7 +1317,10 @@ exports.onNewFollower = onDocumentCreated("creators/{creatorId}/followers/{follo
     try {
         const followerDoc = await db.collection("creators").doc(followerId).get();
         if (!followerDoc.exists) return null;
+        
+        const userToNotifyRef = db.collection("creators").doc(creatorId);
         const followerName = followerDoc.data().creatorName || "A new user";
+
         const newFollowerNotification = {
             userId: creatorId,
             type: 'NEW_FOLLOWER',
@@ -1217,14 +1329,23 @@ exports.onNewFollower = onDocumentCreated("creators/{creatorId}/followers/{follo
             isRead: false,
             timestamp: new Date()
         };
-        return db.collection("notifications").add(newFollowerNotification);
+        const pushPayload = {
+            title: 'New Follower!',
+            body: `${followerName} is now following you!`,
+            link: '/Followers'
+        };
+
+        await db.collection("notifications").add(newFollowerNotification);
+        await userToNotifyRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        await sendPushNotification(creatorId, pushPayload);
+
     } catch (error) {
         logger.error(`Failed to send 'NEW_FOLLOWER' notification to '${creatorId}'`, { error });
-        return null;
     }
+    return null;
 });
 
-    exports.onPayoutRequestUpdate = onDocumentUpdated("payoutRequests/{requestId}", (event) => {
+    exports.onPayoutRequestUpdate = onDocumentUpdated("payoutRequests/{requestId}", async (event) => {
     const dataBefore = event.data.before.data();
     const dataAfter = event.data.after.data();
     const creatorId = dataAfter.creatorId;
@@ -1257,8 +1378,10 @@ exports.onNewFollower = onDocumentCreated("creators/{creatorId}/followers/{follo
         };
     }
 
-    if (notification) {
-        return admin.firestore().collection("notifications").add(notification);
+    if (notification && pushPayload) {
+        await db.collection("notifications").add(notification);
+        await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        await sendPushNotification(creatorId, pushPayload);
     }
 
     return null;
@@ -2324,23 +2447,37 @@ exports.removeReportedContent = onCall(async (request) => {
         
         // 3. Create the appealable notification for the creator
         if (contentCreatorId) {
-            const notificationsRef = db.collection("notifications").doc();
-            const notification = {
-                userId: contentCreatorId,
-                type: 'CONTENT_REMOVED',
-                message: `Your content "${contentData.title}" was removed. Reason: ${removalReason}.`,
-                link: `/AppealContent/${contentId}`, // Special link for the frontend
-                isAppealable: true,
-                contentId: contentId,
-                isRead: false,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            };
-            batch.set(notificationsRef, notification);
-        } else {
-            logger.warn(`Content ${contentId} has no creatorId. Cannot send notification.`);
-        }
+        const notificationsRef = db.collection("notifications").doc();
+        const notification = {
+            userId: contentCreatorId,
+            type: 'CONTENT_REMOVED',
+            message: `Your content "${contentData.title}" was removed. Reason: ${removalReason}.`,
+            link: `/AppealContent/${contentId}`, // Special link for the frontend
+            isAppealable: true,
+            contentId: contentId,
+            isRead: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        };
+        batch.set(notificationsRef, notification);
+
+        // Badge Logic
+        const creatorRef = db.collection("creators").doc(contentCreatorId);
+        batch.update(creatorRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+    } else {
+        logger.warn(`Content ${contentId} has no creatorId. Cannot send notification.`);
+    }
 
         await batch.commit();
+        
+        // Push notification after batch commits
+    if (contentCreatorId) {
+        await sendPushNotification(contentCreatorId, {
+            title: 'Content Removed',
+            body: `Your content "${contentData.title}" was removed.`,
+            link: `/AppealContent/${contentId}`
+        });
+    }
+        
         return { success: true, message: "Content has been removed and the user has been notified." };
 
     } catch (error) {
@@ -2736,18 +2873,27 @@ exports.endOpportunityByAdmin = onCall(async (request) => {
 
     await opportunityRef.update({ status: 'expired' });
 
-    const posterId = opportunityDoc.data().postedByUid;
-    const notification = {
-        userId: posterId,
-        type: 'OPPORTUNITY_ENDED_BY_ADMIN',
-        message: `Your opportunity "${opportunityDoc.data().title}" was ended by a moderator.`,
-        link: '/MyListings',
-        isRead: false,
-        timestamp: new Date()
-    };
-    await db.collection("notifications").add(notification);
+const posterId = opportunityDoc.data().postedByUid;
+const posterRef = db.collection("creators").doc(posterId);
+const notification = {
+    userId: posterId,
+    type: 'OPPORTUNITY_ENDED_BY_ADMIN',
+    message: `Your opportunity "${opportunityDoc.data().title}" was ended by a moderator.`,
+    link: '/MyListings',
+    isRead: false,
+    timestamp: new Date()
+};
+const pushPayload = {
+    title: 'Listing Update',
+    body: `Your opportunity "${opportunityDoc.data().title}" was ended by a moderator.`,
+    link: '/MyListings'
+};
 
-    return { success: true, message: "Opportunity has been manually ended." };
+await db.collection("notifications").add(notification);
+await posterRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+await sendPushNotification(posterId, pushPayload);
+
+return { success: true, message: "Opportunity has been manually ended." };
 });
 
 exports.deleteOpportunity = onCall(async (request) => {
@@ -2978,18 +3124,27 @@ exports.rejectStatusContent = onCall(async (request) => {
     
     await bookingRef.update({ status: 'content_pending' });
 
-    const posterId = bookingDoc.data().postedByUid;
-    const notification = {
-        userId: posterId,
-        type: 'PROMO_CONTENT_REJECTED',
-        message: `Your submitted content for the Promoted Status on ${bookingDoc.data().startTime.toDate().toLocaleDateString()} was not approved. Please submit new content.`,
-        link: '/PromotedStatus',
-        isRead: false,
-        timestamp: new Date()
-    };
-    await db.collection("notifications").add(notification);
-    
-    return { success: true, message: "Content rejected. The advertiser has been notified to resubmit." };
+const posterId = bookingDoc.data().postedByUid;
+const posterRef = db.collection("creators").doc(posterId);
+const notification = {
+    userId: posterId,
+    type: 'PROMO_CONTENT_REJECTED',
+    message: `Your submitted content for the Promoted Status on ${bookingDoc.data().startTime.toDate().toLocaleDateString()} was not approved. Please submit new content.`,
+    link: '/PromotedStatus',
+    isRead: false,
+    timestamp: new Date()
+};
+const pushPayload = {
+    title: 'Ad Content Rejected',
+    body: 'Your submitted ad content was not approved. Please submit new content.',
+    link: '/PromotedStatus'
+};
+
+await db.collection("notifications").add(notification);
+await posterRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+await sendPushNotification(posterId, pushPayload);
+
+return { success: true, message: "Content rejected. The advertiser has been notified to resubmit." };
 });
 
 exports.endPromotedStatusByAdmin = onCall(async (request) => {
@@ -3007,18 +3162,27 @@ exports.endPromotedStatusByAdmin = onCall(async (request) => {
 
     await bookingRef.update({ status: 'expired' });
 
-    const posterId = bookingDoc.data().postedByUid;
-    const notification = {
-        userId: posterId,
-        type: 'PROMO_ENDED_BY_ADMIN',
-        message: `Your Promoted Status for ${bookingDoc.data().startTime.toDate().toLocaleDateString()} was ended by a moderator.`,
-        link: '/PromotedStatus',
-        isRead: false,
-        timestamp: new Date()
-    };
-    await db.collection("notifications").add(notification);
-    
-    return { success: true, message: "Promoted Status has been taken down." };
+const posterId = bookingDoc.data().postedByUid;
+const posterRef = db.collection("creators").doc(posterId);
+const notification = {
+    userId: posterId,
+    type: 'PROMO_ENDED_BY_ADMIN',
+    message: `Your Promoted Status for ${bookingDoc.data().startTime.toDate().toLocaleDateString()} was ended by a moderator.`,
+    link: '/PromotedStatus',
+    isRead: false,
+    timestamp: new Date()
+};
+const pushPayload = {
+    title: 'Ad Status Update',
+    body: `Your Promoted Status for ${bookingDoc.data().startTime.toDate().toLocaleDateString()} was ended by a moderator.`,
+    link: '/PromotedStatus'
+};
+
+await db.collection("notifications").add(notification);
+await posterRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+await sendPushNotification(posterId, pushPayload);
+
+return { success: true, message: "Promoted Status has been taken down." };
 });
 
 exports.createBookingAndPledge = onCall(async (request) => {
@@ -3849,53 +4013,85 @@ exports.triggerManualAutomation = onCall(async (request) => {
     // --- END OF FIX ---
 
     const commentsRef = itemRef.collection("comments");
-    await db.runTransaction(async (transaction) => {
-        const newCommentRef = commentsRef.doc();
-        transaction.set(newCommentRef, newComment);
-        transaction.update(creatorRef, { lastCommentTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-        transaction.update(itemRef, { commentCount: admin.firestore.FieldValue.increment(1) });
-        const notificationsRef = db.collection("notifications");
-        // Accommodate different owner ID fields (creatorId, postedByUid)
-        const contentOwnerId = itemData.creatorId || itemData.postedByUid;
 
-        if (contentOwnerId && contentOwnerId !== uid) {
-            const ownerNotification = {
-                userId: contentOwnerId,
-                type: 'NEW_COMMENT',
-                message: `${creatorData.creatorName} commented on ${itemTitle}`,
-                link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings',
-                isRead: false,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            };
-            transaction.set(notificationsRef.doc(), ownerNotification);
-        }
+let ownerPushPayload = null;
+let replyPushPayload = null;
 
-        if (replyTo && replyTo.userId && replyTo.userId !== uid && replyTo.userId !== contentOwnerId) {
-             const replyNotification = {
-                userId: replyTo.userId,
-                type: 'COMMENT_REPLY',
-                message: `${creatorData.creatorName} replied to your comment on ${itemTitle}`,
-                link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings',
-                isRead: false,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            };
-            transaction.set(notificationsRef.doc(), replyNotification);
-        }
-    });
+await db.runTransaction(async (transaction) => {
+    const newCommentRef = commentsRef.doc();
+    transaction.set(newCommentRef, newComment);
+    transaction.update(creatorRef, { lastCommentTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+    transaction.update(itemRef, { commentCount: admin.firestore.FieldValue.increment(1) });
+    const notificationsRef = db.collection("notifications");
+    
+    const contentOwnerId = itemData.creatorId || itemData.postedByUid;
 
-    const snapshot = await commentsRef.count().get();
-    const count = snapshot.data().count;
-    if (count > 500) {
-        const oldestCommentQuery = commentsRef.orderBy('createdAt', 'asc').limit(1);
-        const oldestCommentSnapshot = await oldestCommentQuery.get();
-        if (!oldestCommentSnapshot.empty) {
-            const oldestCommentId = oldestCommentSnapshot.docs[0].id;
-            await commentsRef.doc(oldestCommentId).delete();
-            logger.info(`Culled oldest comment from item '${itemId}' to maintain count limit.`);
-        }
+    if (contentOwnerId && contentOwnerId !== uid) {
+        const ownerNotification = {
+            userId: contentOwnerId,
+            type: 'NEW_COMMENT',
+            message: `${creatorData.creatorName} commented on ${itemTitle}`,
+            link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings',
+            isRead: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        };
+        transaction.set(notificationsRef.doc(), ownerNotification);
+        
+        const ownerRef = db.collection("creators").doc(contentOwnerId);
+        transaction.update(ownerRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+
+        ownerPushPayload = { // Prepare the push payload
+            userId: contentOwnerId,
+            title: 'New Comment',
+            body: `${creatorData.creatorName} commented on ${itemTitle}`,
+            link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings'
+        };
     }
 
-    return { success: true, message: "Comment posted." };
+    if (replyTo && replyTo.userId && replyTo.userId !== uid && replyTo.userId !== contentOwnerId) {
+         const replyNotification = {
+            userId: replyTo.userId,
+            type: 'COMMENT_REPLY',
+            message: `${creatorData.creatorName} replied to your comment on ${itemTitle}`,
+            link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings',
+            isRead: false,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        };
+        transaction.set(notificationsRef.doc(), replyNotification);
+
+        const replyToRef = db.collection("creators").doc(replyTo.userId);
+        transaction.update(replyToRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+
+        replyPushPayload = { // Prepare the push payload
+            userId: replyTo.userId,
+            title: 'New Reply',
+            body: `${creatorData.creatorName} replied to your comment on ${itemTitle}`,
+            link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings'
+        };
+    }
+});
+
+// Send push notifications AFTER the transaction has successfully completed.
+if (ownerPushPayload) {
+    await sendPushNotification(ownerPushPayload.userId, ownerPushPayload);
+}
+if (replyPushPayload) {
+    await sendPushNotification(replyPushPayload.userId, replyPushPayload);
+}
+
+const snapshot = await commentsRef.count().get();
+const count = snapshot.data().count;
+if (count > 500) {
+    const oldestCommentQuery = commentsRef.orderBy('createdAt', 'asc').limit(1);
+    const oldestCommentSnapshot = await oldestCommentQuery.get();
+    if (!oldestCommentSnapshot.empty) {
+        const oldestCommentId = oldestCommentSnapshot.docs[0].id;
+        await commentsRef.doc(oldestCommentId).delete();
+        logger.info(`Culled oldest comment from item '${itemId}' to maintain count limit.`);
+    }
+}
+
+return { success: true, message: "Comment posted." };
 });
 
 exports.submitStatusContent = onCall(async (request) => {
@@ -3956,18 +4152,27 @@ exports.approveStatusContent = onCall(async (request) => {
 
     await bookingRef.update({ status: 'approved_and_scheduled' });
 
-    const posterId = bookingDoc.data().postedByUid;
-    const notification = {
-        userId: posterId,
-        type: 'PROMO_CONTENT_APPROVED',
-        message: `Your content for the Promoted Status on ${bookingDoc.data().startTime.toDate().toLocaleDateString()} has been approved!`,
-        link: '/PromotedStatus',
-        isRead: false,
-        timestamp: new Date()
-    };
-    await db.collection("notifications").add(notification);
-    
-    return { success: true, message: "Promoted content approved and scheduled." };
+const posterId = bookingDoc.data().postedByUid;
+const posterRef = db.collection("creators").doc(posterId);
+const notification = {
+    userId: posterId,
+    type: 'PROMO_CONTENT_APPROVED',
+    message: `Your content for the Promoted Status on ${bookingDoc.data().startTime.toDate().toLocaleDateString()} has been approved!`,
+    link: '/PromotedStatus',
+    isRead: false,
+    timestamp: new Date()
+};
+const pushPayload = {
+    title: 'Ad Content Approved!',
+    body: `Your ad for ${bookingDoc.data().startTime.toDate().toLocaleDateString()} has been approved!`,
+    link: '/PromotedStatus'
+};
+
+await db.collection("notifications").add(notification);
+await posterRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+await sendPushNotification(posterId, pushPayload);
+
+return { success: true, message: "Promoted content approved and scheduled." };
 });
 
 
@@ -4391,6 +4596,133 @@ exports.liftCampaignCooldown = onCall(async (request) => {
     }
 });
 
+    // =====================================================================
+// ============ START: USER-INITIATED ACCOUNT DELETION =================
+// =====================================================================
+
+// Helper function to delete all documents in a collection/sub-collection.
+async function deleteCollection(db, collectionRef, batchSize) {
+    const query = collectionRef.orderBy('__name__').limit(batchSize);
+    return new Promise((resolve, reject) => {
+        deleteQueryBatch(db, query, resolve).catch(reject);
+    });
+}
+async function deleteQueryBatch(db, query, resolve) {
+    const snapshot = await query.get();
+    if (snapshot.size === 0) {
+        resolve();
+        return;
+    }
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => {
+        batch.delete(doc.ref);
+    });
+    await batch.commit();
+    process.nextTick(() => {
+        deleteQueryBatch(db, query, resolve);
+    });
+}
+
+// Helper function to recursively delete all files in a storage folder.
+async function deleteStorageFolder(bucket, path) {
+    try {
+        await bucket.deleteFiles({ prefix: path });
+        logger.info(`Successfully deleted all files in storage path: ${path}`);
+    } catch (error) {
+        logger.error(`Error deleting storage folder ${path}:`, error);
+    }
+}
+
+exports.deleteOwnAccount = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to delete your account.");
+    }
+
+    logger.warn(`[DESTRUCTIVE ACTION] User '${uid}' has initiated their own account deletion. Wiping all associated data.`);
+
+    const db = admin.firestore();
+    const bucket = admin.storage().bucket();
+    const batchSize = 400;
+
+    try {
+        // --- STEP 1: Anonymize Comments ---
+        // CRITICAL: This requires a Firestore index. See instructions.
+        const commentsQuery = db.collectionGroup('comments').where('userId', '==', uid);
+        const commentsSnapshot = await commentsQuery.get();
+        if (!commentsSnapshot.empty) {
+            let batch = db.batch();
+            let i = 0;
+            for (const doc of commentsSnapshot.docs) {
+                batch.update(doc.ref, { userName: "[Deleted User]", userProfilePicture: '', userId: 'deleted_user' });
+                i++;
+                if (i >= batchSize) { await batch.commit(); batch = db.batch(); i = 0; }
+            }
+            if (i > 0) await batch.commit();
+            logger.info(`Anonymized ${commentsSnapshot.size} comments for user '${uid}'.`);
+        }
+        
+        // --- STEP 2: Delete All Top-Level Content ---
+        const collectionsToDelete = [
+            `artifacts/production-app-id/public/data/content_items`,
+            `artifacts/production-app-id/public/data/campaigns`,
+            'opportunities',
+            'reports',
+        ];
+        const idFieldMap = { 'opportunities': 'postedByUid', 'reports': 'reporterId' };
+        
+        for (const colPath of collectionsToDelete) {
+            const idField = idFieldMap[colPath] || 'creatorId';
+            const q = db.collection(colPath).where(idField, '==', uid);
+            const snapshot = await q.get();
+            if (!snapshot.empty) {
+                let batch = db.batch();
+                let i = 0;
+                for (const doc of snapshot.docs) {
+                    batch.delete(doc.ref);
+                    i++;
+                    if (i >= batchSize) { await batch.commit(); batch = db.batch(); i = 0; }
+                }
+                if (i > 0) await batch.commit();
+                logger.info(`Deleted ${snapshot.size} documents from '${colPath}' for user '${uid}'.`);
+            }
+        }
+
+        // --- STEP 3: Delete all uploaded files from Cloud Storage ---
+        await deleteStorageFolder(bucket, `profile_pictures/${uid}/`);
+        await deleteStorageFolder(bucket, `content_thumbnails/${uid}/`);
+        await deleteStorageFolder(bucket, `campaign_thumbnails/${uid}/`);
+        await deleteStorageFolder(bucket, `opportunity_flyers/${uid}/`);
+        await deleteStorageFolder(bucket, `promo_flyers/${uid}/`);
+        await deleteStorageFolder(bucket, `creator_uploads/${uid}/`);
+
+        // --- REVISED STEP 4: Manually delete known sub-collections before deleting the main document ---
+        const userRef = db.collection('creators').doc(uid);
+        const subcollections = ['followers', 'following', 'blockedUsers', 'blockedBy', 'savedOpportunities', 'seenNotifications', 'feed'];
+        for (const sub of subcollections) {
+            await deleteCollection(db, userRef.collection(sub), batchSize);
+            logger.info(`Deleted sub-collection '${sub}' for user '${uid}'.`);
+        }
+        
+        // Now delete the main document itself.
+        await userRef.delete();
+        logger.info(`Deleted main creator document for '${uid}'.`);
+        
+        // --- FINAL STEP: Delete the Firebase Auth User ---
+        await admin.auth().deleteUser(uid);
+        logger.info(`Permanently deleted Auth user '${uid}'. Deletion process complete.`);
+
+        return { success: true, message: "Account successfully deleted." };
+
+    } catch (error) {
+        logger.error(`[FATAL DELETION ERROR] for user ${uid}:`, error);
+        throw new HttpsError("internal", `An error occurred during account deletion: ${error.message}`);
+    }
+});
+// =====================================================================
+// ============== END: USER-INITIATED ACCOUNT DELETION =================
+// =====================================================================
+
 // This is the reusable core logic for the cleanup process.
 async function runGhostAccountCleanup() {
     logger.info("Executing ghost account cleanup logic...");
@@ -4714,3 +5046,134 @@ exports.setAdminClaim = onCall(async (request) => {
     // This function simply returns the current server timestamp.
     return { serverTime: new Date().toISOString() };
 });
+
+    // =====================================================================
+// =========== START: NOTIFICATION BADGE & PUSH SYSTEM =================
+// =====================================================================
+
+// Internal helper function to handle sending push notifications.
+const sendPushNotification = async (userId, payload) => {
+    const db = admin.firestore();
+    const userRef = db.collection("creators").doc(userId);
+
+    try {
+        const userDoc = await userRef.get();
+        if (!userDoc.exists) {
+            logger.warn(`Cannot send push notification to non-existent user: ${userId}`);
+            return;
+        }
+
+        const tokens = userDoc.data().fcmTokens || [];
+        if (tokens.length === 0) {
+            // logger.info(`User ${userId} has no push tokens. Skipping push notification.`);
+            return; // Silently fail if user has no tokens.
+        }
+
+        const message = {
+            notification: {
+                title: payload.title,
+                body: payload.body,
+            },
+            data: {
+                link: payload.link,
+            },
+            tokens: tokens,
+        };
+
+        const response = await admin.messaging().sendMulticast(message);
+        
+        // Cleanup logic for stale tokens
+        const tokensToDelete = [];
+        response.responses.forEach((result, index) => {
+            if (!result.success) {
+                const error = result.error;
+                if (error.code === 'messaging/registration-token-not-registered' ||
+                    error.code === 'messaging/invalid-registration-token') {
+                    tokensToDelete.push(tokens[index]);
+                }
+            }
+        });
+
+        if (tokensToDelete.length > 0) {
+            await userRef.update({
+                fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToDelete)
+            });
+            logger.info(`Cleaned up ${tokensToDelete.length} stale push tokens for user ${userId}.`);
+        }
+
+    } catch (error) {
+        logger.error(`Failed to send push notification to user ${userId}`, { error });
+    }
+};
+
+// Called by the frontend to save a device's push notification token.
+exports.saveFCMToken = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    const { token } = request.data;
+    if (!token) {
+        throw new HttpsError("invalid-argument", "Missing FCM token.");
+    }
+    const userRef = admin.firestore().collection("creators").doc(uid);
+    await userRef.update({
+        fcmTokens: admin.firestore.FieldValue.arrayUnion(token)
+    });
+    return { success: true, message: "Token saved." };
+});
+
+// Called when a user wants to clear their badge and mark all notifications as read.
+exports.markAllNotificationsAsRead = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    const db = admin.firestore();
+    const userRef = db.collection("creators").doc(uid);
+    const notificationsRef = db.collection("notifications");
+
+    // Reset the counter first for immediate UI feedback.
+    await userRef.update({ unreadNotificationCount: 0 });
+
+    // In the background, mark all the documents as read.
+    const query = notificationsRef.where("userId", "==", uid).where("isRead", "==", false);
+    const snapshot = await query.get();
+    if (snapshot.empty) {
+        return { success: true, message: "No unread notifications to mark." };
+    }
+    const batch = db.batch();
+    snapshot.forEach(doc => {
+        batch.update(doc.ref, { isRead: true });
+    });
+    await batch.commit();
+
+    return { success: true, message: `Marked ${snapshot.size} notifications as read.` };
+});
+
+// Utility function for users to delete their old, read notifications.
+exports.deleteReadNotifications = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    const db = admin.firestore();
+    const notificationsRef = db.collection("notifications");
+    const query = notificationsRef.where("userId", "==", uid).where("isRead", "==", true);
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+        return { success: true, message: "No read notifications to delete." };
+    }
+    const batch = db.batch();
+    snapshot.forEach(doc => {
+        batch.delete(doc.ref);
+    });
+    await batch.commit();
+
+    return { success: true, message: `Deleted ${snapshot.size} read notifications.` };
+});
+
+// =====================================================================
+// ============ END: NOTIFICATION BADGE & PUSH SYSTEM ===================
+// =====================================================================

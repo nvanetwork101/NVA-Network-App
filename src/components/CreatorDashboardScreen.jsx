@@ -165,6 +165,10 @@ const CreatorDashboardScreen = ({
     const [showPayoutModal, setShowPayoutModal] = useState(false);
     const [payoutCampaign, setPayoutCampaign] = useState(null);
 
+    // --- NEW STATE for Account Deletion ---
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
+
     // --- MEMOIZED VALUES ---
     const isCampaignAdmin = useMemo(() => creatorProfile?.role === 'admin', [creatorProfile]);
     
@@ -247,6 +251,21 @@ const CreatorDashboardScreen = ({
     
     const deleteCampaignLogic = async (campaignId) => { try { const deleteCallable = httpsCallable(functions, 'deleteCampaign'); await deleteCallable({ campaignId, appId }); showMessage("Campaign deleted successfully."); } catch (error) { showMessage(`Error: ${error.message}`); } };
     const confirmDeleteCampaign = (campaign) => { setConfirmationTitle("Delete Campaign?"); setConfirmationMessage(`Are you sure you want to permanently delete "${campaign.title}"? This cannot be undone.`); setOnConfirmationAction(() => () => deleteCampaignLogic(campaign.id)); setShowConfirmationModal(true); };
+
+    // --- NEW HANDLER for user account deletion ---
+    const handleDeleteAccount = async () => {
+        setIsDeleting(true);
+        showMessage("Processing account deletion...");
+        try {
+            const deleteOwnAccount = httpsCallable(functions, 'deleteOwnAccount');
+            await deleteOwnAccount();
+            // No need to show a success message here. The onAuthStateChanged listener in App.jsx
+            // will detect the user deletion, log them out, and redirect them automatically.
+        } catch (error) {
+            showMessage(`Error: ${error.message}`);
+            setIsDeleting(false); // Only reset on error
+        }
+    };
 
     // --- UPDATED Payout Logic ---
    const handleOpenPayoutModal = (campaign) => {
@@ -565,6 +584,41 @@ const CreatorDashboardScreen = ({
                 )}
                 {(isVerified || isPremium) && (<div className="dashboardSection"><p className="dashboardSectionTitle">My Opportunity Listings</p><p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>Manage your posts for the Creator Connect hub.</p><button className="button" onClick={() => setActiveScreen('MyListings')} style={{marginTop: '0px'}}><span className="buttonText">Manage My Listings</span></button></div>)}
                 <div className="dashboardSection"><p className="dashboardSectionTitle">My Saved Opportunities</p><p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>View the listings you have bookmarked.</p><button className="button" onClick={() => setActiveScreen('SavedOpportunities')} style={{marginTop: '0px'}}><span className="buttonText">View Saved</span></button><p className="dashboardSectionTitle" style={{marginTop: '20px'}}>Account Settings</p><button className="button" onClick={() => setActiveScreen('BlockedList')} style={{marginTop: '0px', backgroundColor: '#555'}}><span className="buttonText light">Manage Blocked Users</span></button></div>
+                {/* --- START: DANGER ZONE FOR ACCOUNT DELETION --- */}
+                <div className="dashboardSection" style={{ border: '1px solid #DC3545', marginTop: '30px' }}>
+                    <p className="dashboardSectionTitle" style={{ color: '#DC3545' }}>Danger Zone</p>
+                    <p className="dashboardItem" style={{ color: '#AAA', lineHeight: 1.4, marginBottom: '15px' }}>
+                        Permanently delete your account and all of your associated data. This action is irreversible.
+                    </p>
+                    <div className="formGroup">
+                        <label htmlFor="deleteConfirm" className="formLabel" style={{ color: '#FFD700' }}>
+                            To confirm, please type your creator name: <strong style={{color: '#FFF'}}>{creatorProfile.creatorName}</strong>
+                        </label>
+                        <input
+                            id="deleteConfirm"
+                            type="text"
+                            className="formInput"
+                            value={deleteConfirmationText}
+                            onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                            placeholder="Type creator name to confirm"
+                            disabled={isDeleting}
+                        />
+                    </div>
+                    <button
+                        className="button"
+                        onClick={handleDeleteAccount}
+                        disabled={deleteConfirmationText !== creatorProfile.creatorName || isDeleting}
+                        style={{ 
+                            width: '100%',
+                            backgroundColor: (deleteConfirmationText !== creatorProfile.creatorName || isDeleting) ? '#555' : '#DC3545',
+                            cursor: (deleteConfirmationText !== creatorProfile.creatorName || isDeleting) ? 'not-allowed' : 'pointer'
+                        }}
+                    >
+                        <span className="buttonText">{isDeleting ? 'DELETING...' : 'Permanently Delete My Account'}</span>
+                    </button>
+                </div>
+                {/* --- END: DANGER ZONE --- */}
+
                 <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A', marginTop: '30px' }}><span className="buttonText light">Back to Home</span></button>
             </div>
             

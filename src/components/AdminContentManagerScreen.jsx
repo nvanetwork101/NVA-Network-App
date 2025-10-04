@@ -34,6 +34,10 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
     const [showManageModal, setShowManageModal] = useState(false);
     const [itemToManage, setItemToManage] = useState(null);
 
+    // --- NEW STATE for Search and Filter ---
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filterType, setFilterType] = useState('All');
+
     // --- THIS IS THE NEW DYNAMIC CATEGORY LOGIC ---
     const [dynamicCategories, setDynamicCategories] = useState([]);
 
@@ -54,6 +58,22 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
         return ['Live Feed', ...dynamicCategories.map(cat => cat.name)];
     }, [dynamicCategories]);
     // --- END OF NEW LOGIC ---
+
+    // --- NEW FILTERING LOGIC ---
+    const filteredContentItems = useMemo(() => {
+        return contentItems.filter(item => {
+            const searchTermLower = searchTerm.toLowerCase();
+            const matchesSearchTerm = (
+                item.title?.toLowerCase().includes(searchTermLower) ||
+                item.creatorName?.toLowerCase().includes(searchTermLower)
+            );
+            const matchesFilterType = (
+                filterType === 'All' || 
+                item.contentType === filterType
+            );
+            return matchesSearchTerm && matchesFilterType;
+        });
+    }, [contentItems, searchTerm, filterType]);
 
     useEffect(() => {
         setLoadingContent(true);
@@ -301,15 +321,46 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
 
             <div className="dashboardSection" style={{ marginTop: '30px' }}>
                 <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsContentListExpanded(!isContentListExpanded)}>
-                    <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Existing Content Items ({contentItems.length})</p>
+                    <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Existing Content Items ({filteredContentItems.length} / {contentItems.length})</p>
                     <span className="text-xl font-bold text-white">{isContentListExpanded ? '▼' : '▶'}</span>
                 </div>
                 
                 <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isContentListExpanded ? 'max-h-[3000px] mt-4' : 'max-h-0'}`}>
                     <div className="pt-4 border-t" style={{borderColor: '#3A3A3A'}}>
+                        
+                        {/* --- START: NEW FILTER CONTROLS --- */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div className="formGroup">
+                                <label htmlFor="searchTerm" className="formLabel">Search by Title or Creator:</label>
+                                <input
+                                    type="text"
+                                    id="searchTerm"
+                                    className="formInput"
+                                    placeholder="Start typing..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <div className="formGroup">
+                                <label htmlFor="filterType" className="formLabel">Filter by Content Type:</label>
+                                <select
+                                    id="filterType"
+                                    className="formInput"
+                                    value={filterType}
+                                    onChange={(e) => setFilterType(e.target.value)}
+                                >
+                                    <option value="All">All Types</option>
+                                    {availableCategories.map(cat => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        {/* --- END: NEW FILTER CONTROLS --- */}
+
                         {loadingContent ? <p>Loading...</p> : (
                             <div className="dashboardContentList" style={{ maxHeight: '500px', overflowY: 'auto', paddingRight: '10px' }}>
-                                {contentItems.map(item => (
+                                {filteredContentItems.length > 0 ? filteredContentItems.map(item => (
                                     <div key={item.id} className="adminDashboardItem">
                                         <img src={item.customThumbnailUrl || 'https://placehold.co/50x50/3A3A3A/FFF?text=X'} alt="Thumbnail" style={{ width: '50px', height: '50px', borderRadius: '5px', objectFit: 'cover', marginRight: '10px' }} />
                                         <div style={{ flexGrow: 1 }}>
@@ -327,7 +378,7 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
 
                                         <button className="adminActionButton reject" onClick={() => handleDelete(item)}>Delete</button>
                                     </div>
-                                ))}
+                                )) : <p className="text-center text-gray-400 mt-4">No content items match your current filters.</p>}
                             </div>
                         )}
                     </div>

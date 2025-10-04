@@ -32,6 +32,7 @@ import {
 } from "firebase/storage";
 import { getAnalytics } from "firebase/analytics";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import { getMessaging } from "firebase/messaging";
 
 // Your web app's Firebase configuration using environment variables
 const firebaseConfig = {
@@ -50,6 +51,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const functions = getFunctions(app);
+const messaging = getMessaging(app);
 // const analytics = getAnalytics(app);
 
 // --- UTILITY FUNCTIONS ---
@@ -91,6 +93,7 @@ export {
     db, 
     storage, 
     functions, 
+    messaging, // <-- THIS LINE IS ADDED
     // analytics, // Temporarily disabled to prevent console errors
     // Firestore Functions
     addDoc,
