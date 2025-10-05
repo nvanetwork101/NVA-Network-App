@@ -105,6 +105,21 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
     };
     // ======================= END: MODIFIED CODE BLOCK (HANDLERS) =======================
 
+      const getEntryThumbnail = (entry) => {
+        if (entry.photoUrl) return entry.photoUrl; // Priority 1: Direct photo upload
+        if (entry.customThumbnailUrl) return entry.customThumbnailUrl; // Priority 2: Custom thumbnail from a link
+
+        // Priority 3: Auto-generate a thumbnail from a YouTube link
+        if (entry.submissionUrl && (entry.submissionUrl.includes('youtu.be') || entry.submissionUrl.includes('youtube.com'))) {
+            const videoIdMatch = entry.submissionUrl.match(/(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/);
+            if (videoIdMatch && videoIdMatch[1].length === 11) {
+                return `https://img.youtube.com/vi/${videoIdMatch[1]}/mqdefault.jpg`;
+            }
+        }
+        
+        // Fallback to the user's profile picture if no other image is available
+        return entry.userProfilePicture || 'https://placehold.co/80x80/2A2A2A/FFF?text=N/A';
+    };
 
     // --- RENDER LOGIC ---
     if (loading) {
@@ -128,7 +143,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                     <button onClick={() => setActiveScreen('Home')} style={{ background: 'none', border: '1px solid #00FFFF', color: '#00FFFF', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
                         &#x2190;
                     </button>
-                    <p className="heading" style={{ margin: 0, textAlign: 'center', flexGrow: 1, color: '#00FFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <p className="heading" style={{ margin: 0, textAlign: 'center', flexGrow: 1, color: '#00FFFF' }}>
                         {competition.title}
                     </p>
                     <div style={{ flexShrink: 0 }}>
@@ -140,6 +155,20 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                         />
                     </div>
                 </div>
+                
+                {competition.flyerImageUrl && (
+                    <img 
+                        src={competition.flyerImageUrl} 
+                        alt={competition.title}
+                        style={{
+                            width: '100%',
+                            borderRadius: '8px',
+                            marginBottom: '15px',
+                            objectFit: 'cover'
+                        }}
+                    />
+                )}
+                
                 {competition.noticeText && (
                     <div className="dashboardSection" style={{padding: '10px', border: '1px solid #FFD700', margin: '0 0 10px 0'}}>
                         <p className="dashboardSectionTitle" style={{fontSize: '14px', marginBottom: '5px'}}>Notice</p>
@@ -195,7 +224,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                             {rankedEntries.map((entry, index) => (
                                 <div key={entry.id} className="allCampaignsListItem" style={{borderLeft: '5px solid #00FFFF', position: 'relative', cursor: 'pointer'}} onClick={() => handleEntryClick(entry)}>
                                     <div style={{position: 'absolute', top: '-1px', left: '-1px', backgroundColor: '#00FFFF', color: '#0A0A0A', padding: '5px 10px', borderTopLeftRadius: '8px', borderBottomRightRadius: '8px', fontWeight: 'bold'}}>#{index + 1}</div>
-                                    <img src={entry.photoUrl || entry.customThumbnailUrl || extractVideoInfo(entry.submissionUrl).thumbnailUrl || entry.userProfilePicture} alt={entry.title} className="creator-campaign-thumbnail" style={{width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px'}}/>
+                                    <img src={getEntryThumbnail(entry)} alt={entry.title} className="creator-campaign-thumbnail" style={{width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px'}} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/80x80/2A2A2A/FFF?text=N/A'; }}/>
                                     <div className="campaignListContent">
                                         <p className="campaignListTitle" style={{color: '#FFF'}}>{entry.title}</p>
                                         <div className="campaignListCreator"><img src={entry.userProfilePicture || 'https://placehold.co/24x24/555/FFF?text=P'} alt={entry.userName} className="campaignListCreatorProfilePic"/><span>by {entry.userName}</span></div>

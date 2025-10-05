@@ -112,7 +112,7 @@ const AdminDashboardScreen = ({
             setLoading(false);
         }));
         unsubscribers.push(onSnapshot(query(collection(db, "opportunities"), where('status', '==', 'pending')), (s) => setPendingOpportunities(s.docs.map(d=>({id:d.id,...d.data()})))));
-        unsubscribers.push(onSnapshot(query(collection(db, "opportunities"), where('status', '==', 'active')), (s) => setActiveOpportunities(s.docs.map(d=>({id:d.id,...d.data()})))));
+        unsubscribers.push(onSnapshot(query(collection(db, "opportunities"), where('status', '==', 'active'), where('expiresAt', '>', new Date())), (s) => setActiveOpportunities(s.docs.map(d=>({id:d.id,...d.data()})))));
 
         // --- THIS IS THE FIX ---
         // Queries restricted to 'admin' or 'authority' roles.
