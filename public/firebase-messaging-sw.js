@@ -22,11 +22,12 @@ const messaging = firebase.messaging();
 // --- THIS IS THE FIX ---
 // Add an event listener for when a user clicks on a notification.
 self.addEventListener('notificationclick', (event) => {
-  // Close the notification.
   event.notification.close();
 
-  const link = event.notification.data.FCM_MSG.data.link;
+  // THIS IS THE CORRECT PATH TO THE LINK DATA
+  const link = event.notification.data.link;
   
-  // This opens the app to the correct URL.
-  event.waitUntil(clients.openWindow(link));
+  if (link) {
+    event.waitUntil(clients.openWindow(link));
+  }
 });
