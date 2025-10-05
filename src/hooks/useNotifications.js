@@ -70,9 +70,11 @@ export const useNotifications = (currentUser) => {
                 const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
 
                 const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
-                const unreadPrivateNotifications = privateNotifications.filter(p => !p.isRead);
 
-                const combined = [...unreadPrivateNotifications, ...unseenBroadcasts];
+                // THIS IS THE FIX: We no longer filter out read private notifications.
+                // The hook's job is to provide the full, synchronized list. The UI
+                // component will be responsible for how it displays read vs. unread items.
+                const combined = [...privateNotifications, ...unseenBroadcasts];
                 
                 // Filter out any items that are pending deletion to avoid UI flicker.
                 const filtered = combined.filter(n => !pendingDeletes.has(n.id));

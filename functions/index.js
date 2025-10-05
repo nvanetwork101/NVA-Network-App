@@ -1,12 +1,14 @@
+// FORCED UPDATE: 2025-10-04 23:59
 // The Cloud Functions for Firebase SDK to create Cloud Functions and set up triggers.
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentUpdated, onDocumentDeleted, onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {logger} = require("firebase-functions");
+const {onRequest} = require("firebase-functions/v2/https");
 
 // The Firebase Admin SDK to access Firestore.
 const admin = require("firebase-admin");
-admin.initializeApp({ projectId: "nvanetworkapp" });
+admin.initializeApp(); // THIS IS THE CORRECT, DEFAULT INITIALIZATION
 
 const PLATFORM_FEE_PERCENTAGE = 0.07; // 7% platform fee
 
@@ -473,6 +475,45 @@ exports.runDataIntegrityAudit = onCall(async (request) => {
         throw new HttpsError("internal", "An error occurred during the audit process.", error.message);
     }
     // ...to here, at the end of the function before the 'catch' block.
+});
+
+  exports.cleanupDuplicateFCMTokens = onCall(async (request) => {
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to run this task.");
+    }
+    logger.info(`Admin '${request.auth.uid}' initiated a cleanup of duplicate FCM tokens.`);
+    const db = admin.firestore();
+    let usersProcessed = 0;
+    let usersCleaned = 0;
+
+    try {
+        const creatorsSnapshot = await db.collection("creators").get();
+        const batch = db.batch();
+
+        creatorsSnapshot.forEach(doc => {
+            usersProcessed++;
+            const data = doc.data();
+            const tokens = data.fcmTokens;
+
+            if (Array.isArray(tokens) && tokens.length > 0) {
+                const uniqueTokens = [...new Set(tokens)];
+                if (tokens.length !== uniqueTokens.length) {
+                    usersCleaned++;
+                    batch.update(doc.ref, { fcmTokens: uniqueTokens });
+                }
+            }
+        });
+
+        await batch.commit();
+
+        const message = `Cleanup complete. Processed ${usersProcessed} users. Found and removed duplicate tokens from ${usersCleaned} users.`;
+        logger.info(message);
+        return { success: true, message: message };
+
+    } catch (error) {
+        logger.error("Error during FCM token cleanup:", error);
+        throw new HttpsError("internal", "An error occurred during the cleanup process.");
+    }
 });
 
  exports.addContentToLibrary = onCall(async (request) => {
@@ -1644,6 +1685,83 @@ exports.oEmbedProxy = onCall(async (request) => {
     if (error instanceof HttpsError) throw error;
     throw new HttpsError("unknown", "An unexpected error occurred.");
   }
+});
+
+exports.socialCardRenderer = onRequest({ cors: true }, async (req, res) => {
+    const db = admin.firestore();
+    const path = req.path; // e.g., /user/someUserId
+    const parts = path.split('/').filter(Boolean);
+    const rootUrl = `https://${req.hostname}`; // Use req.hostname for dynamic URL
+
+    const defaultTitle = "NVA Network";
+    const defaultDescription = "Caribbean Content to a Global Stage.";
+    const defaultImage = `${rootUrl}/default-social-image.png`; // A default image in your hosting public folder
+
+    let ogTitle = defaultTitle;
+    let ogDescription = defaultDescription;
+    let ogImage = defaultImage;
+    let ogUrl = rootUrl + path;
+
+    try {
+        if (parts.length > 0) {
+            const screen = parts[0];
+            const id = parts[1];
+
+            if (screen === 'user' && id) {
+                const userDoc = await db.collection('creators').doc(id).get();
+                if (userDoc.exists) {
+                    const userData = userDoc.data();
+                    ogTitle = userData.creatorName || defaultTitle;
+                    ogDescription = userData.bio || defaultDescription;
+                    ogImage = userData.profilePictureUrl || defaultImage;
+                }
+            } else if (screen === 'competition') {
+                const compQuery = query(collection(db, "competitions"), where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]), orderBy("createdAt", "desc"), limit(1));
+                const compSnapshot = await compQuery.get();
+                if (!compSnapshot.empty) {
+                    const compData = compSnapshot.docs[0].data();
+                    ogTitle = compData.title || "NVA Competition";
+                    ogDescription = compData.description || defaultDescription;
+                    ogImage = compData.flyerImageUrl || defaultImage;
+                }
+            } else if (screen === 'opportunity' && id) {
+                const oppDoc = await db.collection('opportunities').doc(id).get();
+                if (oppDoc.exists) {
+                    const oppData = oppDoc.data();
+                    ogTitle = oppData.title;
+                    ogDescription = oppData.description;
+                    ogImage = oppData.flyerImageUrl || defaultImage;
+                }
+            }
+            // Add other content types like 'content' here in the future
+        }
+    } catch (error) {
+        logger.error("Error fetching social card data:", { path, error });
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>${ogTitle}</title>
+          <meta property="og:title" content="${ogTitle}" />
+          <meta property="og:description" content="${ogDescription}" />
+          <meta property="og:image" content="${ogImage}" />
+          <meta property="og:url" content="${ogUrl}" />
+          <meta property="og:type" content="website" />
+          <script>
+            // Redirect non-crawler users to the actual SPA
+            window.location.href = "${path}";
+          </script>
+        </head>
+        <body>
+          <h1>${ogTitle}</h1>
+          <p>${ogDescription}</p>
+        </body>
+      </html>
+    `;
+
+    res.status(200).send(html);
 });
 
 exports.onNewContentPublished = onDocumentCreated("artifacts/{appId}/public/data/content_items/{contentId}", async (event) => {
@@ -5065,36 +5183,39 @@ const sendPushNotification = async (userId, payload) => {
 
         const tokens = userDoc.data().fcmTokens || [];
         if (tokens.length === 0) {
-            // logger.info(`User ${userId} has no push tokens. Skipping push notification.`);
-            return; // Silently fail if user has no tokens.
+            return; // No tokens, nothing to do.
         }
 
+        // Use sendEachForMulticast which is robust and provides detailed results.
         const message = {
             notification: {
                 title: payload.title,
                 body: payload.body,
             },
             data: {
-                link: payload.link,
+                link: payload.link || '/',
             },
             tokens: tokens,
         };
 
-        const response = await admin.messaging().sendMulticast(message);
+        const response = await admin.messaging().sendEachForMulticast(message);
         
-        // Cleanup logic for stale tokens
+        // --- THIS IS THE FIX: Cleanup logic for stale/invalid tokens ---
         const tokensToDelete = [];
         response.responses.forEach((result, index) => {
             if (!result.success) {
                 const error = result.error;
+                logger.warn(`Failed to send notification to a token for user ${userId}`, { errorCode: error.code });
                 if (error.code === 'messaging/registration-token-not-registered' ||
                     error.code === 'messaging/invalid-registration-token') {
+                    // This token is invalid, so we schedule it for deletion.
                     tokensToDelete.push(tokens[index]);
                 }
             }
         });
 
         if (tokensToDelete.length > 0) {
+            // Remove the invalid tokens from the user's document.
             await userRef.update({
                 fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToDelete)
             });
@@ -5102,7 +5223,12 @@ const sendPushNotification = async (userId, payload) => {
         }
 
     } catch (error) {
-        logger.error(`Failed to send push notification to user ${userId}`, { error });
+        // This log will now only catch fatal errors, not individual token failures.
+        logger.error(`A fatal error occurred while sending push notifications to user ${userId}`, {
+            errorMessage: error.message,
+            errorCode: error.code,
+            fullError: JSON.stringify(error)
+        });
     }
 };
 

@@ -48,14 +48,46 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
     }, [currentUser]);
 
     const handleNotificationClick = (notification) => {
-        // Navigation logic remains the same.
-        if (notification.link) {
-            // Mark as read when clicked to navigate
-            if (!notification.isRead) {
-                dismissNotification(notification.id);
-            }
-            const screen = notification.link.replace('/', '');
-            setActiveScreen(screen);
+        if (!notification.link) return;
+
+        // Mark as read when clicked to navigate
+        if (!notification.isRead) {
+            dismissNotification(notification.id);
+        }
+
+        const path = notification.link;
+        const parts = path.split('/').filter(Boolean); // e.g., /user/123 -> ['user', '123']
+
+        if (parts.length === 0) {
+            setActiveScreen('Home'); // Root path
+            return;
+        }
+
+        const screen = parts[0];
+        const id = parts[1];
+
+        // This logic mimics the routing in App.jsx
+        switch (screen) {
+            case 'competition':
+                setActiveScreen('CompetitionScreen');
+                break;
+            case 'opportunity':
+                if (id) {
+                    // We need a way to pass the selected ID back up to App.jsx
+                    // The best way is to fire a custom event that App.jsx can listen for.
+                    window.dispatchEvent(new CustomEvent('navigateToOpportunity', { detail: { id: id } }));
+                }
+                break;
+            case 'user':
+                if (id) {
+                    window.dispatchEvent(new CustomEvent('navigateToUser', { detail: { id: id } }));
+                }
+                break;
+            default:
+                // For simple, non-dynamic links like /CreatorDashboard
+                const screenName = screen.charAt(0).toUpperCase() + screen.slice(1);
+                setActiveScreen(screenName);
+                break;
         }
     };
 

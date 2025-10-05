@@ -72,7 +72,8 @@ const AdminDashboardScreen = ({
     const [selectedRole, setSelectedRole] = useState('All');
     const [pledgeSearchTerm, setPledgeSearchTerm] = useState('');
     const [pledgeSortType, setPledgeSortType] = useState('date');
-    
+    const [campaignSearchTerm, setCampaignSearchTerm] = useState('');
+
     // State for Notification Badges
     const [pendingReportsCount, setPendingReportsCount] = useState(0);
     const [pendingAppealsCount, setPendingAppealsCount] = useState(0);
@@ -562,7 +563,31 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                             </div>
                              <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}>
                                 <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
-                                    {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : activeCampaigns.map(c => <div key={c.id} className="adminDashboardItem" onClick={() => {setSelectedAdminCampaignId(c.id); setActiveScreen('AdminCampaignDetails');}} style={{cursor: 'pointer'}}><img src={c.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Thumb" style={{width:'80px', height:'45px', objectFit:'cover', borderRadius:'4px', marginRight:'15px'}}/><div className="flex-grow"><p className="adminDashboardItemTitle">{c.title}</p><p className="text-sm" style={{color:'#CCC'}}>by {c.creatorName}</p></div><button className="adminActionButton">Manage</button></div>)}
+                                    <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                                        <input
+                                            type="text"
+                                            className="formInput"
+                                            placeholder="Search by campaign title or creator name..."
+                                            value={campaignSearchTerm}
+                                            onChange={(e) => setCampaignSearchTerm(e.target.value)}
+                                        />
+                                    </div>
+                                    {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : activeCampaigns
+                                        .filter(c => 
+                                            c.title.toLowerCase().includes(campaignSearchTerm.toLowerCase()) || 
+                                            c.creatorName.toLowerCase().includes(campaignSearchTerm.toLowerCase())
+                                        )
+                                        .map(c => (
+                                            <div key={c.id} className="adminDashboardItem" onClick={() => {setSelectedAdminCampaignId(c.id); setActiveScreen('AdminCampaignDetails');}} style={{cursor: 'pointer'}}>
+                                                <img src={c.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Thumb" style={{width:'80px', height:'45px', objectFit:'cover', borderRadius:'4px', marginRight:'15px'}}/>
+                                                <div className="flex-grow">
+                                                    <p className="adminDashboardItemTitle">{c.title}</p>
+                                                    <p className="text-sm" style={{color:'#CCC'}}>by {c.creatorName}</p>
+                                                </div>
+                                                <button className="adminActionButton">Manage</button>
+                                            </div>
+                                        ))
+                                    }
                                 </div>
                             </div>
                         </section>
@@ -588,7 +613,23 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                 <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPaymentsExpanded ? 'max-h-screen' : 'max-h-0'}`}>
                                     <div className="pt-4 border-t mt-4" style={{borderColor: '#444'}}>
                                         <input type="text" className="formInput" placeholder="Search by Pledge ID or User Name..." value={pledgeSearchTerm} onChange={(e) => setPledgeSearchTerm(e.target.value)} />
-                                        {filteredAndSortedPledges.map(p => <div key={p.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}><div className="flex justify-between w-full"><p>{p.paymentType} by {p.userName}</p><p style={{color:'#FFD700'}}>${p.amount.toFixed(2)}</p></div><div className="flex justify-end gap-4 mt-2"><button className="adminActionButton reject" onClick={() => denyPledgeLogic(p.id)}>Deny</button><button className="adminActionButton approve" onClick={() => handleApprovePledge(p.id)}>Approve</button></div></div>)}
+                                        {filteredAndSortedPledges.map(p => (
+                                            <div key={p.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '8px'}}>
+                                                <div className="flex justify-between w-full">
+                                                    <p className="adminDashboardItemTitle" style={{margin: 0}}>{p.targetCampaignTitle || `[${p.paymentType.toUpperCase()}] Pledge`}</p>
+                                                    <p style={{color:'#FFD700', fontWeight: 'bold', fontSize: '1.1rem'}}>{formatCurrency(p.amount, selectedCurrency, currencyRates)}</p>
+                                                </div>
+                                                <div style={{fontSize: '13px', color: '#CCC', borderTop: '1px solid #444', paddingTop: '8px'}}>
+                                                    <p style={{margin: 0}}><strong>Pledged By:</strong> {p.userName}</p>
+                                                    <p style={{margin: '4px 0'}}><strong>Pledge ID:</strong> {p.pledgeId || p.id}</p>
+                                                    <p style={{margin: 0}}><strong>Date:</strong> {new Date(p.createdAt).toLocaleString()}</p>
+                                                </div>
+                                                <div className="flex justify-end gap-4 mt-2">
+                                                    <button className="adminActionButton reject" onClick={() => denyPledgeLogic(p.id)}>Deny</button>
+                                                    <button className="adminActionButton approve" onClick={() => handleApprovePledge(p.id)}>Approve</button>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </section>

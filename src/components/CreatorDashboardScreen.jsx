@@ -522,16 +522,16 @@ const CreatorDashboardScreen = ({
                                                 {campaign.status === 'active' && campaign.raised >= campaign.goal && (
                                                     <button className="modern-button end-early" onClick={(e) => { e.stopPropagation(); confirmEndCampaignEarly(campaign); }}>End Campaign Early</button>
                                                 )}
-                                                {campaign.status === 'ended' && !payoutStatuses[campaign.id] && (
+                                                {campaign.status === 'ended' && !campaign.payoutStatus && (
                                                     <button className="modern-button payout" onClick={(e) => { e.stopPropagation(); handleOpenPayoutModal(campaign); }}>Collect Funds</button>
                                                 )}
-                                                {campaign.status === 'ended' && payoutStatuses[campaign.id] === 'pending' && (
+                                                {campaign.status === 'ended' && campaign.payoutStatus === 'requested' && (
                                                     <p className="smallText" style={{color: '#00FFFF'}}>Payout Requested</p>
                                                 )}
-                                                {campaign.status === 'ended' && payoutStatuses[campaign.id] === 'paid' && (
+                                                {campaign.status === 'ended' && campaign.payoutStatus === 'paid' && (
                                                     <p className="smallText" style={{color: '#00FF00'}}>Paid</p>
                                                 )}
-                                                {campaign.status === 'ended' && payoutStatuses[campaign.id] === 'dismissed' && (
+                                                {campaign.status === 'ended' && campaign.payoutStatus === 'dismissed' && (
                                                     <p className="smallText" style={{color: '#DC3545'}}>Dismissed</p>
                                                 )}
                                                 {campaign.status !== 'active' && (

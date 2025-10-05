@@ -6,6 +6,7 @@ import { db, functions, httpsCallable, extractVideoInfo } from '../firebase.js';
 import LiveEventChat from './LiveEventChat';
 
 // --- Replay Card Component ---
+import ShareButton from './ShareButton';
 const ReplayEventCard = ({ event, onClick }) => {
     const thumbnailUrl = event.customThumbnailUrl || event.thumbnailUrl || 'https://placehold.co/128x72/2A2A2A/FFF?text=N/A';
     const formatDate = (timestamp) => {
@@ -246,22 +247,30 @@ function DiscoverScreen({
                                 <span>👀 {masterEventDetails.totalViewCount || 0} Viewers</span>
                                 <span>❤️ {masterEventDetails.likeCount || 0} Likes</span>
                             </div>
-                            <button 
-                                className={`button ${hasLiked ? 'liked' : ''}`} 
-                                onClick={handleLike} 
-                                disabled={isLiking || !currentUser}
-                                style={{
-                                    backgroundColor: hasLiked ? '#DC3545' : '#007BFF',
-                                    color: 'white',
-                                    border: 'none',
-                                    padding: '10px 20px',
-                                    borderRadius: '5px',
-                                    cursor: 'pointer',
-                                    margin: 0 /* Override default button margin */
-                                }}
-                            >
-                                {hasLiked ? 'Liked' : 'Like'}
-                            </button>
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                <ShareButton
+                                    title={masterEventDetails.eventTitle}
+                                    text={`Watch the live premiere of "${masterEventDetails.eventTitle}" on NVA Network!`}
+                                    url={'/discover'}
+                                    showMessage={showMessage}
+                                />
+                                <button 
+                                    className={`button ${hasLiked ? 'liked' : ''}`} 
+                                    onClick={handleLike} 
+                                    disabled={isLiking || !currentUser}
+                                    style={{
+                                        backgroundColor: hasLiked ? '#DC3545' : '#007BFF',
+                                        color: 'white',
+                                        border: 'none',
+                                        padding: '10px 20px',
+                                        borderRadius: '5px',
+                                        cursor: 'pointer',
+                                        margin: 0
+                                    }}
+                                >
+                                    {hasLiked ? 'Liked' : 'Like'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 );
@@ -319,6 +328,14 @@ function DiscoverScreen({
                     <div style={{ marginTop: '20px', backgroundColor: '#1A1A1A', padding: '15px', borderRadius: '10px', border: '1px solid #FFD700', display: 'inline-block' }}>
                         <p className="heading">Premiere Begins In:</p>
                         <p className="subHeading" style={{ color: '#FFD700', fontSize: '28px', margin: 0 }}>{countdownText}</p>
+                    </div>
+                    <div style={{ marginTop: '20px' }}>
+                        <ShareButton
+                            title={masterEventDetails.eventTitle}
+                            text={`Join me for the live premiere of "${masterEventDetails.eventTitle}" on NVA Network!`}
+                            url={'/discover'}
+                            showMessage={showMessage}
+                        />
                     </div>
                     {masterEventDetails.isTicketed && !hasAccess() && (
                         <button 

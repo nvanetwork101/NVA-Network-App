@@ -1,16 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react'; // <-- Import useRef
+import React, { useState, useEffect, useRef } from 'react';
 import FlyerModal from './FlyerModal';
 import { functions, httpsCallable } from '../firebase';
+import ShareButton from './ShareButton';
 
 const OpportunityDetailsScreen = ({ showMessage, setActiveScreen, selectedOpportunity }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const viewCountedRef = useRef(false); // <-- Create the ref flag
+    const viewCountedRef = useRef(false);
 
-    // --- THIS IS THE DEFINITIVE FIX FOR A SINGLE VIEW COUNT ---
     useEffect(() => {
-        // This effect only runs its logic if the component has the opportunity data AND the view has not been counted yet.
         if (selectedOpportunity && selectedOpportunity.id && !viewCountedRef.current) {
-            // Immediately set the flag to true. This prevents this logic from ever running again for this instance of the component.
             viewCountedRef.current = true;
             
             const incrementView = async () => {
@@ -23,8 +21,7 @@ const OpportunityDetailsScreen = ({ showMessage, setActiveScreen, selectedOpport
             };
             incrementView();
         }
-    }, [selectedOpportunity]); // The effect listens for the opportunity prop to be available.
-    // --- END OF FIX ---
+    }, [selectedOpportunity]);
 
     if (!selectedOpportunity) {
         React.useEffect(() => setActiveScreen('CreatorConnect'), []);
@@ -60,7 +57,6 @@ const OpportunityDetailsScreen = ({ showMessage, setActiveScreen, selectedOpport
                     <p className="paragraph" style={{whiteSpace: 'pre-wrap'}}>{selectedOpportunity.description}</p>
                 </div>
 
-                {/* THE FIX: Add a dedicated, clickable link if the URL exists */}
                 {selectedOpportunity.mainUrl && (
                      <div className="dashboardSection" style={{ border: '1px solid #00FFFF', marginTop: '20px' }}>
                         <p className="dashboardSectionTitle" style={{color: '#00FFFF'}}>Project Link</p>
@@ -79,6 +75,12 @@ const OpportunityDetailsScreen = ({ showMessage, setActiveScreen, selectedOpport
                     <button className="button" onClick={() => window.dispatchEvent(new CustomEvent('openCommentsModal', { detail: { item: selectedOpportunity, itemType: 'opportunity' } }))} style={{margin: 0}}>
                         <span className="buttonText">View Comments</span>
                     </button>
+                    <ShareButton
+                        title={selectedOpportunity.title}
+                        text={`Check out the opportunity "${selectedOpportunity.title}" on NVA Network!`}
+                        url={`/opportunity/${selectedOpportunity.id}`}
+                        showMessage={showMessage}
+                    />
                     <button className="button" onClick={() => setActiveScreen('CreatorConnect')} style={{backgroundColor: '#3A3A3A', margin: 0}}>
                         <span className="buttonText light">Back to All Opportunities</span>
                     </button>

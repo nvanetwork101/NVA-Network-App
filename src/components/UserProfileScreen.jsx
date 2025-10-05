@@ -6,6 +6,8 @@ import ProfilePictureModal from './ProfilePictureModal';
 import RoleBadge from './RoleBadge'; // <-- ADD THIS IMPORT
 
 // --- Reusable Child Component for Stats ---
+import ShareButton from './ShareButton';
+
 const ContentStats = ({ item, currentUser, showMessage }) => {
     const LikeButtonVisual = () => (
          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(10,10,10,0.7)', padding: '4px 8px', borderRadius: '15px', border: '1px solid #444' }}>
@@ -248,9 +250,9 @@ const UserProfileScreen = ({
                 <div className="dashboardSection">
                     <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
                         <img src={profile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt="Profile" style={{width: '80px', height: '80px', borderRadius: '50%', border: '2px solid #FFD700', objectFit: 'cover', cursor: 'pointer'}} onClick={() => setShowPfpModal(true)} />
-                        <div style={{flexGrow: 1}}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
-                                <p className="dashboardItem" style={{fontSize: '20px', fontWeight: 'bold', color: '#FFF', margin: 0}}>
+                        <div style={{flexGrow: 1, minWidth: 0}}>
+                            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '5px' }}>
+                                <p className="dashboardItem" style={{fontSize: '20px', fontWeight: 'bold', color: '#FFF', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
                                     {profile.creatorName}
                                 </p>
                                 <RoleBadge profile={profile} />
@@ -275,10 +277,28 @@ const UserProfileScreen = ({
 
                     {currentUser && currentUser.uid !== selectedUserId && (
                         <div style={{display: 'flex', gap: '10px', marginTop: '15px'}}>
-                            <button className={`follow-button ${isFollowing ? 'following' : 'not-following'}`} onClick={handleFollowToggle} disabled={isFollowLoading}>
-                                {isFollowLoading ? '...' : (isFollowing ? 'Following' : 'Follow')}
+                            <button 
+                                className="button" 
+                                onClick={handleFollowToggle} 
+                                disabled={isFollowLoading}
+                                style={{
+                                    margin: 0,
+                                    backgroundColor: isFollowing ? 'transparent' : '#FFD700',
+                                    border: '1px solid #FFD700',
+                                    flex: 1
+                                }}
+                            >
+                                <span className="buttonText" style={{ color: isFollowing ? '#FFD700' : '#0A0A0A', fontWeight: 'bold' }}>
+                                    {isFollowLoading ? '...' : (isFollowing ? 'Following' : 'Follow')}
+                                </span>
                             </button>
-                            <button className="button" onClick={handleToggleBlock} disabled={isBlockLoading} style={{margin: 0, backgroundColor: isBlocked ? '#FF8C00' : '#DC3545'}}>
+                            <ShareButton
+                                title={profile.creatorName}
+                                text={`Check out ${profile.creatorName}'s profile on NVA Network!`}
+                                url={`/user/${profile.id}`}
+                                showMessage={showMessage}
+                            />
+                            <button className="button" onClick={handleToggleBlock} disabled={isBlockLoading} style={{margin: 0, backgroundColor: isBlocked ? '#FF8C00' : '#DC3545', flex: 1}}>
                                 <span className="buttonText">{isBlockLoading ? '...' : (isBlocked ? 'Unblock' : 'Block')}</span>
                             </button>
                         </div>

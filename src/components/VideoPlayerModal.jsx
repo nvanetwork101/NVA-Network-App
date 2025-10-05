@@ -5,7 +5,7 @@ import LikeButton from './LikeButton.jsx';
 import RoleBadge from './RoleBadge.jsx';
 
 const appId = 'production-app-id';
-
+import ShareButton from './ShareButton';
 const extractVideoInfo = (url) => {
     if (!url || typeof url !== 'string') return { embedUrl: null, isVertical: false, platform: 'unknown' };
     const ytShortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
@@ -101,9 +101,26 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                 
                 {/* This container for info does not grow */}
                 <div className="bg-[#1A1A1A] p-3 md:p-4 overflow-y-auto w-full flex-shrink-0">
-                    <h2 className="m-0 mb-3 text-lg text-white font-semibold leading-tight">
-                        {liveContentItem?.title}
-                    </h2>
+                    <div className="flex justify-between items-start mb-3 gap-4">
+                        <h2 className="m-0 text-lg text-white font-semibold leading-tight flex-1">
+                            {liveContentItem?.title}
+                        </h2>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                            <ShareButton
+                                title={liveContentItem?.title || 'NVA Content'}
+                                text={`Check out "${liveContentItem?.title || 'this content'}" on NVA Network!`}
+                                url={`/content/${liveContentItem?.id}`}
+                                showMessage={showMessage}
+                            />
+                            <button
+                                onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('openReportModal', { detail: liveContentItem })); }}
+                                className="bg-[#3A3A3A] border-none rounded-full w-9 h-9 flex items-center justify-center cursor-pointer text-white"
+                                title="More options"
+                            >
+                                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
+                            </button>
+                        </div>
+                    </div>
                     
                     <div className="flex justify-between items-center mb-3 gap-4">
                         <div 
@@ -119,7 +136,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                                 className="w-10 h-10 rounded-full object-cover"
                             />
                             <div className="min-w-0">
-                                <div className="m-0 text-sm text-white font-bold flex items-center">
+                                <div className="m-0 text-sm text-white font-bold flex items-center flex-wrap gap-y-1">
                                     <span className="whitespace-nowrap overflow-hidden text-ellipsis">
                                         {creatorProfile?.creatorName}
                                     </span>
@@ -129,7 +146,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                         </div>
 
                         {currentUser && liveContentItem?.id && (
-                            <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
                                 <LikeButton contentItem={liveContentItem} currentUser={currentUser} showMessage={showMessage} itemType={itemType} />
                                 <button
                                     onClick={() => window.dispatchEvent(new CustomEvent('openCommentsModal', { detail: { item: liveContentItem, itemType: itemType } }))}
@@ -138,12 +155,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                                     <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"></path></svg>
                                     <span>{(liveContentItem?.commentCount || 0).toLocaleString()}</span>
                                 </button>
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent('openReportModal', { detail: liveContentItem })); }}
-                                    className="bg-[#3A3A3A] border-none rounded-full w-9 h-9 flex items-center justify-center cursor-pointer text-white"
-                                >
-                                    <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                                </button>
+                                                                                                
                             </div>
                         )}
                     </div>

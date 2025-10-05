@@ -102,6 +102,8 @@ import { useRef } from 'react';
 
 function App() {
   // --- STATE MANAGEMENT ---
+  const routingDoneRef = useRef(false);
+  
   const [currentUser, setCurrentUser] = useState(null);
   const [creatorProfile, setCreatorProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -420,7 +422,51 @@ useEffect(() => {
 
 }, [currentUser]); // This effect runs once when a user logs in
 // ======================== END: PUSH NOTIFICATION SETUP ========================
-    
+
+    // ======================= START: DEEP LINKING / ROUTING ======================
+  useEffect(() => {
+    // This effect should only run ONCE after the initial authentication check is complete.
+    if (authLoading || routingDoneRef.current) {
+      return;
+    }
+    routingDoneRef.current = true; // Mark as run
+
+    const path = window.location.pathname;
+    const parts = path.split('/').filter(Boolean); // e.g., /user/123 -> ['user', '123']
+
+    if (parts.length === 0) {
+      return; // It's the root path, do nothing.
+    }
+
+    const screen = parts[0];
+    const id = parts[1];
+
+    switch (screen) {
+      case 'competition':
+        handleNavigate('CompetitionScreen');
+        break;
+      case 'opportunity':
+        if (id) {
+          // The OpportunityDetailsScreen will fetch details using this ID
+          setSelectedOpportunity({ id: id }); 
+          handleNavigate('OpportunityDetailsScreen');
+        }
+        break;
+      case 'user':
+        if (id) {
+          setSelectedUserId(id);
+          handleNavigate('UserProfileScreen');
+        }
+        break;
+      // Add other top-level routes here as needed
+      // e.g., case 'discover': handleNavigate('Discover'); break;
+      default:
+        // Path not recognized, do nothing and let the app load to Home.
+        break;
+    }
+  }, [authLoading, handleNavigate]);
+  // ======================== END: DEEP LINKING / ROUTING =======================
+
     // ======================= START: CAMPAIGN VIEW HANDLER =======================
 useEffect(() => {
     const handleViewCampaign = (event) => {
@@ -445,6 +491,29 @@ useEffect(() => {
     };
 }, [currentUser, handleNavigate, showMessage]); // Dependencies ensure the function has the latest state
 // ======================== END: CAMPAIGN VIEW HANDLER ========================
+
+  // ======================= START: NOTIFICATION INBOX HANDLERS =======================
+useEffect(() => {
+    const handleNavToOpp = (event) => {
+        const { id } = event.detail;
+        setSelectedOpportunity({ id: id });
+        handleNavigate('OpportunityDetailsScreen');
+    };
+    const handleNavToUser = (event) => {
+        const { id } = event.detail;
+        setSelectedUserId(id);
+        handleNavigate('UserProfileScreen');
+    };
+
+    window.addEventListener('navigateToOpportunity', handleNavToOpp);
+    window.addEventListener('navigateToUser', handleNavToUser);
+
+    return () => {
+        window.removeEventListener('navigateToOpportunity', handleNavToOpp);
+        window.removeEventListener('navigateToUser', handleNavToUser);
+    };
+}, [handleNavigate]); // Dependency on handleNavigate is correct
+// ======================== END: NOTIFICATION INBOX HANDLERS ========================
 
 	useEffect(() => {
         const requestHandler = () => {

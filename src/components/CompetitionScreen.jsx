@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
 import { extractVideoInfo } from '../firebase';
+import ShareButton from './ShareButton';
 
 // --- Real Component Imports ---
 import PrizesModal from './PrizesModal';
@@ -123,12 +124,21 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
         <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {/* Header section */}
             <div style={{ flexShrink: 0, paddingBottom: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
-                    <button onClick={() => setActiveScreen('Home')} style={{ background: 'none', border: '1px solid #00FFFF', color: '#00FFFF', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginRight: '15px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', gap: '15px' }}>
+                    <button onClick={() => setActiveScreen('Home')} style={{ background: 'none', border: '1px solid #00FFFF', color: '#00FFFF', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
                         &#x2190;
                     </button>
-                    <p className="heading" style={{ margin: 0, textAlign: 'center', flexGrow: 1, color: '#00FFFF' }}>{competition.title}</p>
-                    <div style={{ width: '40px' }}></div>
+                    <p className="heading" style={{ margin: 0, textAlign: 'center', flexGrow: 1, color: '#00FFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {competition.title}
+                    </p>
+                    <div style={{ flexShrink: 0 }}>
+                        <ShareButton
+                            title={competition.title}
+                            text={`Join the "${competition.title}" competition on NVA Network!`}
+                            url="/competition"
+                            showMessage={showMessage}
+                        />
+                    </div>
                 </div>
                 {competition.noticeText && (
                     <div className="dashboardSection" style={{padding: '10px', border: '1px solid #FFD700', margin: '0 0 10px 0'}}>
