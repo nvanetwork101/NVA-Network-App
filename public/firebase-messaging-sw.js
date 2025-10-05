@@ -24,22 +24,23 @@ const messaging = firebase.messaging();
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
+  // Get the link from the notification payload.
   const link = event.notification.data.link; // e.g., "/user/123"
   
   if (link) {
-    // Construct the full, absolute URL required by openWindow.
+    // Construct the full, absolute URL required to open a window.
     const fullUrl = new URL(link, self.location.origin).href;
     
-    // This logic finds an already-open app window and focuses it, or opens a new one.
+    // This logic finds an already-open app window with the same path and focuses it.
+    // If it can't find one, it opens a new window to the correct URL.
     event.waitUntil(
       clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
         for (const client of clientList) {
-          // If a window with the target URL already exists, focus it.
-          if (new URL(client.url).pathname === link && 'focus' in client) {
+          const clientUrl = new URL(client.url);
+          if (clientUrl.pathname === link && 'focus' in client) {
             return client.focus();
           }
         }
-        // Otherwise, open a new window.
         if (clients.openWindow) {
           return clients.openWindow(fullUrl);
         }

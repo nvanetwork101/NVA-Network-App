@@ -137,7 +137,8 @@ function App() {
   const [selectedCampaignId, setSelectedCampaignId] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [selectedOpportunity, setSelectedOpportunity] = useState(null);
- 
+  const [sharedContentId, setSharedContentId] = useState(null);
+
   // State for payment and confirmation flows
   const [pledgeContext, setPledgeContext] = useState(null);
   const [pledgeIdForConfirmation, setPledgeIdForConfirmation] = useState(null);
@@ -428,6 +429,17 @@ useEffect(() => {
     }
     routingDoneRef.current = true; // Mark as run
 
+    // --- THIS IS THE FIX ---
+    // First, check for a contentId in the query parameters for shared links.
+    const queryParams = new URLSearchParams(window.location.search);
+    const contentId = queryParams.get('contentId');
+
+    if (contentId) {
+      setSharedContentId(contentId);
+      return; // Prioritize loading shared content over path-based routing.
+    }
+    // --- END OF FIX ---
+
     const path = window.location.pathname;
     const parts = path.split('/').filter(Boolean); // e.g., /user/123 -> ['user', '123']
 
@@ -445,7 +457,7 @@ useEffect(() => {
       case 'opportunity':
         if (id) {
           // The OpportunityDetailsScreen will fetch details using this ID
-          setSelectedOpportunity({ id: id }); 
+          setSelectedOpportunity({ id: id });
           handleNavigate('OpportunityDetailsScreen');
         }
         break;
@@ -463,6 +475,31 @@ useEffect(() => {
     }
   }, [authLoading, handleNavigate]);
   // ======================== END: DEEP LINKING / ROUTING =======================
+
+    // --- THIS IS THE FIX for loading shared content ---
+  useEffect(() => {
+    if (!sharedContentId || !currentUser) return; // Only run if we have an ID and a logged-in user
+
+    const fetchContentAndPlay = async () => {
+      try {
+        const contentRef = doc(db, "artifacts", sharedContentId);
+        const docSnap = await getDoc(contentRef);
+
+        if (docSnap.exists()) {
+          const contentData = { id: docSnap.id, ...docSnap.data() };
+          // Reuse the existing video player logic
+          handleVideoPress(contentData.videoUrl, contentData);
+        } else {
+          showMessage("The shared content could not be found.");
+        }
+      } catch (error) {
+        console.error("Error fetching shared content:", error);
+        showMessage("There was an error loading the shared content.");
+      }
+    };
+
+    fetchContentAndPlay();
+  }, [sharedContentId, currentUser]); // Effect triggers when ID is set from URL and user is loaded
 
     // ======================= START: CAMPAIGN VIEW HANDLER =======================
 useEffect(() => {
