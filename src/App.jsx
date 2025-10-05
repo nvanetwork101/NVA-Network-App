@@ -169,14 +169,11 @@ function App() {
     const [hasNewFollowerContent, setHasNewFollowerContent] = useState(false);
 
     // --- Notification Toast System State ---
-  const { notifications, markBroadcastAsSeen, markNotificationAsRead } = useNotifications(currentUser);
+  const { notifications, markToastAsSeen, markNotificationAsRead } = useNotifications(currentUser);
   const [toastQueue, setToastQueue] = useState([]);
   const [currentToast, setCurrentToast] = useState(null);
-  // Load processed IDs from sessionStorage on initial load to survive reloads.
-  const [processedToastIds, setProcessedToastIds] = useState(() => {
-    const saved = sessionStorage.getItem('processedToastIds');
-    return saved ? new Set(JSON.parse(saved)) : new Set();
-  });  const notificationSoundRef = useRef(null);
+  const processedToastIds = useRef(new Set()); // Use a ref to prevent re-renders
+  const notificationSoundRef = useRef(null);
   const unreadCount = notifications.filter(n => !n.isBroadcast && !n.isRead).length;
   const [notificationBadgeCount, setNotificationBadgeCount] = useState(0);
     const markAllAsRead = () => {
@@ -819,31 +816,14 @@ useEffect(() => {
         // New Code to Add
   // --- Notification Toast System Logic ---
   useEffect(() => {
-      // 1. DEFINITIVE FIX: Filter notifications to solve race conditions on reload.
-      const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
-      
-      const newNotifications = notifications.filter(n => {
-          // Rule 1: It must not have been processed in this session.
-          const notProcessedThisSession = !processedToastIds.has(n.id);
-          // Rule 2: Its timestamp must be within the last 5 days.
-          const isRecent = n.timestamp.toDate() > fiveDaysAgo;
-
-          return notProcessedThisSession && isRecent;
-      });
+      // This logic now correctly filters out notifications that have already been queued in this session.
+      const newNotifications = notifications.filter(n => !processedToastIds.current.has(n.id));
 
       if (newNotifications.length > 0) {
-          // 2. Add them to the queue and mark them as processed to prevent re-adding.
           setToastQueue(prev => [...prev, ...newNotifications]);
-          
-          // Update both React state and sessionStorage for persistence.
-          const newIds = newNotifications.map(n => n.id);
-          setProcessedToastIds(prev => {
-              const newSet = new Set([...prev, ...newIds]);
-              sessionStorage.setItem('processedToastIds', JSON.stringify(Array.from(newSet)));
-              return newSet;
-          });
+          newNotifications.forEach(n => processedToastIds.current.add(n.id));
       }
-  }, [notifications, processedToastIds]); // CORRECTED DEPENDENCY ARRAY
+  }, [notifications]);
 
   useEffect(() => {
       // If there is no active toast but there are items in the queue, show the next one.
@@ -878,14 +858,10 @@ useEffect(() => {
           }
           // --- END OF FIX ---
 
-          // A toast appearing should not mark the item as read.
-          // This will now be handled inside the NotificationInboxScreen.
-          // The markBroadcastAsSeen is still used for transient broadcast tickers.
-          if (nextToast.isBroadcast) {
-              markBroadcastAsSeen(nextToast.id);
-          }
+          // A toast appearing should now mark the item as "seen" in the database.
+          markToastAsSeen(nextToast.id);
       }
-  }, [toastQueue, currentToast, markBroadcastAsSeen, markNotificationAsRead]);
+  }, [toastQueue, currentToast, markToastAsSeen, markNotificationAsRead]);
 
    const renderScreen = () => {
     if (activeScreen === 'Banned') return <BannedScreen setActiveScreen={handleNavigate} />;

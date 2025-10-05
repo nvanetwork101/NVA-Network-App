@@ -5303,3 +5303,24 @@ exports.deleteReadNotifications = onCall(async (request) => {
 // =====================================================================
 // ============ END: NOTIFICATION BADGE & PUSH SYSTEM ===================
 // =====================================================================
+
+exports.markToastAsSeen = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    const { notificationId } = request.data;
+    if (!notificationId) {
+        throw new HttpsError("invalid-argument", "Missing notificationId.");
+    }
+
+    const db = admin.firestore();
+    try {
+        const seenRef = db.doc(`creators/${uid}/seenNotifications/${notificationId}`);
+        await seenRef.set({ seenAt: new Date() });
+        return { success: true };
+    } catch (error) {
+        logger.error(`Failed to mark toast ${notificationId} as seen for user ${uid}`, { error });
+        throw new HttpsError("internal", "An error occurred while saving notification status.");
+    }
+});
