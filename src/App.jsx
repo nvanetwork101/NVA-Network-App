@@ -478,16 +478,25 @@ useEffect(() => {
 
     // --- THIS IS THE FIX for loading shared content ---
   useEffect(() => {
-    if (!sharedContentId || !currentUser) return; // Only run if we have an ID and a logged-in user
+    // Do not run until auth is settled and we have a content ID.
+    if (authLoading || !sharedContentId) return;
 
     const fetchContentAndPlay = async () => {
+      // The handleVideoPress function internally handles the case where a user is not logged in
+      // by showing a login message, so we can call it directly.
+      if (!currentUser) {
+        handleVideoPress(null, null);
+        return;
+      }
+
       try {
-        const contentRef = doc(db, "artifacts", sharedContentId);
+        // THIS IS THE DEFINITIVE FIX (V3): The database path verified by the final screenshot.
+        const contentRef = doc(db, "artifacts", "production-app-id", "public", "data", "content_items", sharedContentId);
         const docSnap = await getDoc(contentRef);
 
         if (docSnap.exists()) {
           const contentData = { id: docSnap.id, ...docSnap.data() };
-          // Reuse the existing video player logic
+          // Reuse the existing video player logic to open the modal
           handleVideoPress(contentData.videoUrl, contentData);
         } else {
           showMessage("The shared content could not be found.");
@@ -495,11 +504,15 @@ useEffect(() => {
       } catch (error) {
         console.error("Error fetching shared content:", error);
         showMessage("There was an error loading the shared content.");
+      } finally {
+        // Clear the ID after attempting to load to prevent re-triggering.
+        setSharedContentId(null);
       }
     };
 
     fetchContentAndPlay();
-  }, [sharedContentId, currentUser]); // Effect triggers when ID is set from URL and user is loaded
+    
+  }, [sharedContentId, currentUser, authLoading]); // Effect triggers when ID is set or auth state changes.
 
     // ======================= START: CAMPAIGN VIEW HANDLER =======================
 useEffect(() => {
