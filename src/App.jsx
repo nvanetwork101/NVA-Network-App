@@ -472,23 +472,22 @@ useEffect(() => {
 
      // --- THIS IS THE FIX for loading shared content ---
   useEffect(() => {
-    // This effect's only job is to react to a shared ID, once authentication is complete.
-    // It will not run if auth is loading or if there's no ID to look for.
-    if (authLoading || !sharedContentId) {
+    // This effect will ONLY run if and when sharedContentId has a value.
+    if (!sharedContentId) {
       return;
     }
 
-    const fetchContentAndPlay = async () => {
-      // Now that authLoading is false, we can definitively know the user's status.
-      if (!currentUser) {
+    // Now, we check the user's status. It's possible the user object hasn't loaded yet.
+    // By checking for currentUser directly, we ensure we don't proceed without it.
+    if (!currentUser) {
         showMessage("Please sign up or log in to engage with content!");
-        // Clear the ID to prevent this from running again.
-        setSharedContentId(null);
+        // We do NOT clear the ID here. This allows the effect to re-run if the currentUser
+        // object loads a moment later.
         return;
-      }
+    }
 
+    const fetchContentAndPlay = async () => {
       try {
-        // The path verified by the screenshot.
         const contentRef = doc(db, "artifacts", "production-app-id", "public", "data", "content_items", sharedContentId);
         const docSnap = await getDoc(contentRef);
 
@@ -496,22 +495,21 @@ useEffect(() => {
           const contentData = { id: docSnap.id, ...docSnap.data() };
           handleVideoPress(contentData.videoUrl, contentData);
         } else {
-          // This message now correctly indicates the content truly does not exist at the path.
           showMessage("The shared content could not be found.");
         }
       } catch (error) {
-        // This will catch other errors, like permission-denied from Firestore rules.
         console.error("Critical error fetching shared content:", error);
         showMessage("An error occurred while loading the content.");
       } finally {
-        // Always clear the ID after the attempt.
+        // Now that the definitive action (success or fail) has been taken, clear the ID.
         setSharedContentId(null);
       }
     };
 
+    // We have a sharedContentId AND a currentUser, so we can proceed.
     fetchContentAndPlay();
 
-  }, [sharedContentId, authLoading, currentUser]); // Dependencies are correct
+  }, [sharedContentId, currentUser]); // This effect is now simpler and more robust.
 
     // ======================= START: CAMPAIGN VIEW HANDLER =======================
 useEffect(() => {
