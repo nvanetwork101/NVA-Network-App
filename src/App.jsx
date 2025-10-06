@@ -429,17 +429,6 @@ useEffect(() => {
     }
     routingDoneRef.current = true; // Mark as run
 
-    // --- THIS IS THE FIX ---
-    // First, check for a contentId in the query parameters for shared links.
-    const queryParams = new URLSearchParams(window.location.search);
-    const contentId = queryParams.get('contentId');
-
-    if (contentId) {
-      setSharedContentId(contentId);
-      return; // Prioritize loading shared content over path-based routing.
-    }
-    // --- END OF FIX ---
-
     const path = window.location.pathname;
     const parts = path.split('/').filter(Boolean); // e.g., /user/123 -> ['user', '123']
 
@@ -450,14 +439,21 @@ useEffect(() => {
     const screen = parts[0];
     const id = parts[1];
 
+    // --- THIS IS THE DEFINITIVE FIX, BASED ON THE SCREENSHOT ---
+    // Prioritize shared content links, which have the format /content/[id]
+    if (screen === 'content' && id) {
+      setSharedContentId(id);
+      return; // Stop further routing to allow the content loader to take over.
+    }
+    // --- END OF FIX ---
+
     switch (screen) {
       case 'competition':
         handleNavigate('CompetitionScreen');
         break;
       case 'opportunity':
         if (id) {
-          // The OpportunityDetailsScreen will fetch details using this ID
-          setSelectedOpportunity({ id: id });
+          setSelectedOpportunity({ id: id }); 
           handleNavigate('OpportunityDetailsScreen');
         }
         break;
@@ -467,8 +463,6 @@ useEffect(() => {
           handleNavigate('UserProfileScreen');
         }
         break;
-      // Add other top-level routes here as needed
-      // e.g., case 'discover': handleNavigate('Discover'); break;
       default:
         // Path not recognized, do nothing and let the app load to Home.
         break;
