@@ -472,44 +472,57 @@ useEffect(() => {
 
      // --- THIS IS THE FIX for loading shared content ---
   useEffect(() => {
-    // This effect will ONLY run if and when sharedContentId has a value.
     if (!sharedContentId) {
       return;
     }
 
-    // Now, we check the user's status. It's possible the user object hasn't loaded yet.
-    // By checking for currentUser directly, we ensure we don't proceed without it.
     if (!currentUser) {
-        showMessage("Please sign up or log in to engage with content!");
-        // We do NOT clear the ID here. This allows the effect to re-run if the currentUser
-        // object loads a moment later.
-        return;
+      showMessage("Please sign up or log in to engage with content!");
+      return;
     }
 
     const fetchContentAndPlay = async () => {
+      let contentData = null;
+      let docSnap = null;
+
       try {
-        const contentRef = doc(db, "artifacts", "production-app-id", "public", "data", "content_items", sharedContentId);
-        const docSnap = await getDoc(contentRef);
+        // --- Step 1: Search the public collection first. ---
+        const publicPath = doc(db, "artifacts", "production-app-id", "public", "data", "content_items", sharedContentId);
+        docSnap = await getDoc(publicPath);
 
         if (docSnap.exists()) {
-          const contentData = { id: docSnap.id, ...docSnap.data() };
+          contentData = { id: docSnap.id, ...docSnap.data() };
+        } else {
+          // --- Step 2: If not found, search the user's private VOD library. ---
+          // This path is inferred from the database schema and the purpose of the VOD Library.
+          const privatePath = doc(db, "creators", currentUser.uid, "content_items", sharedContentId);
+          docSnap = await getDoc(privatePath);
+
+          if (docSnap.exists()) {
+            contentData = { id: docSnap.id, ...docSnap.data() };
+          }
+        }
+
+        // --- Step 3: Act on the result. ---
+        if (contentData) {
           handleVideoPress(contentData.videoUrl, contentData);
         } else {
+          // If we reach here, it was not found in any known location.
           showMessage("The shared content could not be found.");
         }
+
       } catch (error) {
         console.error("Critical error fetching shared content:", error);
         showMessage("An error occurred while loading the content.");
       } finally {
-        // Now that the definitive action (success or fail) has been taken, clear the ID.
+        // Always clear the ID after the attempt.
         setSharedContentId(null);
       }
     };
 
-    // We have a sharedContentId AND a currentUser, so we can proceed.
     fetchContentAndPlay();
 
-  }, [sharedContentId, currentUser]); // This effect is now simpler and more robust.
+  }, [sharedContentId, currentUser]);
 
     // ======================= START: CAMPAIGN VIEW HANDLER =======================
 useEffect(() => {
