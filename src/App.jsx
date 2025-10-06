@@ -460,7 +460,7 @@ useEffect(() => {
       case 'user':
         if (id) {
           setSelectedUserId(id);
-          handleNavigate('UserProfileScreen');
+          handleNavigate('UserProfile');
         }
         break;
       default:
@@ -470,43 +470,48 @@ useEffect(() => {
   }, [authLoading, handleNavigate]);
   // ======================== END: DEEP LINKING / ROUTING =======================
 
-    // --- THIS IS THE FIX for loading shared content ---
+     // --- THIS IS THE FIX for loading shared content ---
   useEffect(() => {
-    // Do not run until auth is settled and we have a content ID.
-    if (authLoading || !sharedContentId) return;
+    // This effect's only job is to react to a shared ID, once authentication is complete.
+    // It will not run if auth is loading or if there's no ID to look for.
+    if (authLoading || !sharedContentId) {
+      return;
+    }
 
     const fetchContentAndPlay = async () => {
-      // The handleVideoPress function internally handles the case where a user is not logged in
-      // by showing a login message, so we can call it directly.
+      // Now that authLoading is false, we can definitively know the user's status.
       if (!currentUser) {
-        handleVideoPress(null, null);
+        showMessage("Please sign up or log in to engage with content!");
+        // Clear the ID to prevent this from running again.
+        setSharedContentId(null);
         return;
       }
 
       try {
-        // THIS IS THE DEFINITIVE FIX (V3): The database path verified by the final screenshot.
+        // The path verified by the screenshot.
         const contentRef = doc(db, "artifacts", "production-app-id", "public", "data", "content_items", sharedContentId);
         const docSnap = await getDoc(contentRef);
 
         if (docSnap.exists()) {
           const contentData = { id: docSnap.id, ...docSnap.data() };
-          // Reuse the existing video player logic to open the modal
           handleVideoPress(contentData.videoUrl, contentData);
         } else {
+          // This message now correctly indicates the content truly does not exist at the path.
           showMessage("The shared content could not be found.");
         }
       } catch (error) {
-        console.error("Error fetching shared content:", error);
-        showMessage("There was an error loading the shared content.");
+        // This will catch other errors, like permission-denied from Firestore rules.
+        console.error("Critical error fetching shared content:", error);
+        showMessage("An error occurred while loading the content.");
       } finally {
-        // Clear the ID after attempting to load to prevent re-triggering.
+        // Always clear the ID after the attempt.
         setSharedContentId(null);
       }
     };
 
     fetchContentAndPlay();
-    
-  }, [sharedContentId, currentUser, authLoading]); // Effect triggers when ID is set or auth state changes.
+
+  }, [sharedContentId, authLoading, currentUser]); // Dependencies are correct
 
     // ======================= START: CAMPAIGN VIEW HANDLER =======================
 useEffect(() => {
