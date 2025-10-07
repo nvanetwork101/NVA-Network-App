@@ -373,7 +373,13 @@ function App() {
                                         }
 
                                         if (contentData) {
-                                            handleVideoPress(contentData.videoUrl, contentData);
+                                            // DEFINITIVE FIX: Directly set state here to bypass the race condition.
+                                            // The handleVideoPress function checks the `currentUser` state, which has not yet been
+                                            // updated in this render cycle. By setting state directly, we open the modal
+                                            // immediately with the fetched data, as we know the user is authenticated at this point.
+                                            setCurrentVideoUrl(contentData.videoUrl);
+                                            setCurrentContentItem(contentData);
+                                            setShowVideoModal(true);
                                         } else {
                                             showMessage("The shared content could not be found.");
                                         }
