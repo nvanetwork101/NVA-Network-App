@@ -137,8 +137,7 @@ function App() {
   const [selectedCampaignId, setSelectedCampaignId] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [selectedOpportunity, setSelectedOpportunity] = useState(null);
-  const [sharedContentId, setSharedContentId] = useState(null);
-
+  
   // State for payment and confirmation flows
   const [pledgeContext, setPledgeContext] = useState(null);
   const [pledgeIdForConfirmation, setPledgeIdForConfirmation] = useState(null);
@@ -332,6 +331,85 @@ function App() {
               }
             }
 
+            // --- START: DEFINITIVE ROUTING & DEEP LINKING LOGIC ---
+            if (!routingDoneRef.current) {
+                routingDoneRef.current = true; // Lock this logic so it only runs once per page load.
+
+                const path = window.location.pathname;
+                const parts = path.split('/').filter(Boolean);
+
+                if (parts.length > 0) {
+                    const screen = parts[0];
+                    const id = parts[1];
+
+                    // This switch handles all possible deep links.
+                    // It runs with a fully authenticated user context.
+                    switch (screen) {
+                        case 'content':
+                            if (id) {
+                                (async () => {
+                                    let contentData = null;
+                                    let docSnap = null;
+                                    const appId = "production-app-id";
+
+                                    try {
+                                        // Search 1: The main content_items collection (for creator uploads and published VODs)
+                                        const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
+                                        docSnap = await getDoc(contentRef);
+
+                                        if (docSnap.exists()) {
+                                            contentData = { id: docSnap.id, ...docSnap.data() };
+                                            // Ensure a playable URL is designated
+                                            contentData.videoUrl = contentData.embedUrl || contentData.mainUrl;
+                                        } else {
+                                            // Search 2: The events collection (for completed events that may not be published yet)
+                                            const eventRef = doc(db, "events", id);
+                                            docSnap = await getDoc(eventRef);
+                                            if (docSnap.exists()) {
+                                                const eventItem = { id: docSnap.id, ...docSnap.data() };
+                                                // Use the live stream URL as the playable video for VODs
+                                                contentData = { ...eventItem, videoUrl: eventItem.liveStreamUrl };
+                                            }
+                                        }
+
+                                        if (contentData) {
+                                            handleVideoPress(contentData.videoUrl, contentData);
+                                        } else {
+                                            showMessage("The shared content could not be found.");
+                                        }
+                                    } catch (error) {
+                                        console.error("Deep link fetch error:", error);
+                                        showMessage("Error loading shared content.");
+                                    }
+                                })();
+                            }
+                            break;
+
+                        case 'user':
+                            if (id) {
+                                setSelectedUserId(id);
+                                handleNavigate('UserProfile');
+                            }
+                            break;
+
+                        case 'competition':
+                            handleNavigate('CompetitionScreen');
+                            break;
+                        
+                        case 'opportunity':
+                            if (id) {
+                                setSelectedOpportunity({ id: id });
+                                handleNavigate('OpportunityDetailsScreen');
+                            }
+                            break;
+
+                        default:
+                            break;
+                    }
+                }
+            }
+            // --- END: DEFINITIVE ROUTING & DEEP LINKING LOGIC ---
+
           } else {
             showMessage("User profile not found. Logging out.");
             signOut(auth);
@@ -420,110 +498,8 @@ useEffect(() => {
 
 }, [currentUser]); // This effect runs once when a user logs in
 // ======================== END: PUSH NOTIFICATION SETUP ========================
-
-    // ======================= START: DEEP LINKING / ROUTING ======================
-  useEffect(() => {
-    // This effect should only run ONCE after the initial authentication check is complete.
-    if (authLoading || routingDoneRef.current) {
-      return;
-    }
-    routingDoneRef.current = true; // Mark as run
-
-    const path = window.location.pathname;
-    const parts = path.split('/').filter(Boolean); // e.g., /user/123 -> ['user', '123']
-
-    if (parts.length === 0) {
-      return; // It's the root path, do nothing.
-    }
-
-    const screen = parts[0];
-    const id = parts[1];
-
-    // --- THIS IS THE DEFINITIVE FIX, BASED ON THE SCREENSHOT ---
-    // Prioritize shared content links, which have the format /content/[id]
-    if (screen === 'content' && id) {
-      setSharedContentId(id);
-      return; // Stop further routing to allow the content loader to take over.
-    }
-    // --- END OF FIX ---
-
-    switch (screen) {
-      case 'competition':
-        handleNavigate('CompetitionScreen');
-        break;
-      case 'opportunity':
-        if (id) {
-          setSelectedOpportunity({ id: id }); 
-          handleNavigate('OpportunityDetailsScreen');
-        }
-        break;
-      case 'user':
-        if (id) {
-          setSelectedUserId(id);
-          handleNavigate('UserProfile');
-        }
-        break;
-      default:
-        // Path not recognized, do nothing and let the app load to Home.
-        break;
-    }
-  }, [authLoading, handleNavigate]);
-  // ======================== END: DEEP LINKING / ROUTING =======================
-
-     // --- THIS IS THE FIX for loading shared content ---
-  useEffect(() => {
-    if (!sharedContentId) {
-      return;
-    }
-
-    if (!currentUser) {
-      showMessage("Please sign up or log in to engage with content!");
-      return;
-    }
-
-    const fetchContentAndPlay = async () => {
-      let contentData = null;
-      let docSnap = null;
-
-      try {
-        // --- Step 1: Search the public collection first. ---
-        const publicPath = doc(db, "artifacts", "production-app-id", "public", "data", "content_items", sharedContentId);
-        docSnap = await getDoc(publicPath);
-
-        if (docSnap.exists()) {
-          contentData = { id: docSnap.id, ...docSnap.data() };
-        } else {
-          // --- Step 2: If not found, search the user's private VOD library. ---
-          // This path is inferred from the database schema and the purpose of the VOD Library.
-          const privatePath = doc(db, "creators", currentUser.uid, "content_items", sharedContentId);
-          docSnap = await getDoc(privatePath);
-
-          if (docSnap.exists()) {
-            contentData = { id: docSnap.id, ...docSnap.data() };
-          }
-        }
-
-        // --- Step 3: Act on the result. ---
-        if (contentData) {
-          handleVideoPress(contentData.videoUrl, contentData);
-        } else {
-          // If we reach here, it was not found in any known location.
-          showMessage("The shared content could not be found.");
-        }
-
-      } catch (error) {
-        console.error("Critical error fetching shared content:", error);
-        showMessage("An error occurred while loading the content.");
-      } finally {
-        // Always clear the ID after the attempt.
-        setSharedContentId(null);
-      }
-    };
-
-    fetchContentAndPlay();
-
-  }, [sharedContentId, currentUser]);
-
+    
+     
     // ======================= START: CAMPAIGN VIEW HANDLER =======================
 useEffect(() => {
     const handleViewCampaign = (event) => {
