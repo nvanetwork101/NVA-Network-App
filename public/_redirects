@@ -1,1 +1,2 @@
-/*    /index.html   200
+/content/:id     https://us-central1-nvanetworkapp.cloudfunctions.net/generateSharePreview/content/:id    200
+/*               /index.html                                                                              200

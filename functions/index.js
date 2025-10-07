@@ -5324,3 +5324,80 @@ exports.markToastAsSeen = onCall(async (request) => {
         throw new HttpsError("internal", "An error occurred while saving notification status.");
     }
 });
+
+// --- START: Dynamic Social Share Thumbnail Function ---
+const functions = require("firebase-functions"); // This is required here to define the function.
+const axios = require("axios"); // This is the new dependency for this function.
+
+// NOTE: This function assumes the 'admin' variable has already been initialized
+// at the top of your index.js file, so we do not re-declare it.
+const db = admin.firestore();
+const appId = "production-app-id"; // Ensure this matches your app's ID
+
+exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
+    try {
+        const path = req.path; // e.g., "/content/Pc67dwhabTlgygg1ZL2u"
+        const parts = path.split('/').filter(Boolean);
+
+        // Fetch the base index.html from your live site
+        const { data: indexHtml } = await axios.get("https://nvanetwork.netlify.app");
+
+        // If it's not a content share link, just return the default HTML
+        if (parts.length < 2 || parts[0] !== 'content') {
+            return res.status(200).send(indexHtml);
+        }
+
+        const contentId = parts[1];
+        let contentData = null;
+        let docSnap;
+
+        // --- Database Lookup Logic (copied from App.jsx for consistency) ---
+        // Search 1: The main content_items collection
+        const contentRef = db.doc(`artifacts/${appId}/public/data/content_items/${contentId}`);
+        docSnap = await contentRef.get();
+
+        if (docSnap.exists) {
+            contentData = docSnap.data();
+        } else {
+            // Search 2: The events collection
+            const eventRef = db.doc(`events/${contentId}`);
+            docSnap = await eventRef.get();
+            if (docSnap.exists) {
+                contentData = docSnap.data();
+            }
+        }
+        // --- End of Database Lookup ---
+
+        if (!contentData) {
+            // Content not found, serve default page
+            return res.status(200).send(indexHtml);
+        }
+
+        // --- Replace Placeholders ---
+        // Use the custom thumbnail if available, otherwise use a default image.
+        const imageUrl = contentData.customThumbnailUrl || "https://firebasestorage.googleapis.com/v0/b/nvanetwork-33838.appspot.com/o/public_assets%2Fsocial_share_default.png?alt=media&token=3852c062-8173-4297-8a3a-23137d6e8779";
+        const title = contentData.title || "NVA Network";
+        const description = contentData.description ? contentData.description.substring(0, 150) + '...' : "The Nexus of Viral Ascent - Discover, Compete, Connect.";
+        const url = `https://nvanetwork.netlify.app/content/${contentId}`;
+
+        let finalHtml = indexHtml;
+        finalHtml = finalHtml.replace(/<meta property="og:title" content=".*?" \/>/, `<meta property="og:title" content="${title}" />`);
+        finalHtml = finalHtml.replace(/<meta property="og:description" content=".*?" \/>/, `<meta property="og:description" content="${description}" />`);
+        finalHtml = finalHtml.replace(/<meta property="og:image" content=".*?" \/>/, `<meta property="og:image" content="${imageUrl}" />`);
+        finalHtml = finalHtml.replace(/<meta property="og:url" content=".*?" \/>/, `<meta property="og:url" content="${url}" />`);
+
+        res.set('Cache-Control', 'public, max-age=600, s-maxage=1200');
+        return res.status(200).send(finalHtml);
+
+    } catch (error) {
+        console.error("Error generating share preview:", error);
+        // On error, gracefully fail by sending the original index.html
+        try {
+            const { data: indexHtml } = await axios.get("https://nvanetwork.netlify.app");
+            return res.status(500).send(indexHtml);
+        } catch (fallbackError) {
+            return res.status(500).send("<html><head><title>Error</title></head><body>An error occurred.</body></html>");
+        }
+    }
+});
+// --- END: Dynamic Social Share Thumbnail Function ---
