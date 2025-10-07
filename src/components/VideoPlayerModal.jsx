@@ -71,7 +71,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
     return (
         <div className="videoModalOverlay flex justify-center items-center">
             {/* THE FIX: For vertical video, constrain the HEIGHT. For horizontal, constrain the WIDTH. */}
-            <div className={`bg-[#1A1A1A] w-full h-full md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col ${isVertical ? 'md:h-[90vh]' : 'md:w-[90vw]'}`}>
+            <div className={`bg-[#1A1A1A] w-full h-full md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col`}>
                 <button className="closeButton" onClick={onClose}>×</button>
                 
                 {/* This container grows to fill parent, centers content, and provides the black background for letterboxing */}
@@ -86,7 +86,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                     <div className={`
                         w-full h-full 
                         md:w-auto md:h-auto 
-                        ${isVertical ? 'md:h-full md:aspect-[9/16]' : 'md:w-full md:aspect-video'}
+                        ${isVertical ? 'md:h-full md:aspect-[9/16]' : 'md:h-full md:aspect-video'}
                     `}>
                         <iframe
                             src={embedUrl}
