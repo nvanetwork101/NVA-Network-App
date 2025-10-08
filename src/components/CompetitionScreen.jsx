@@ -136,7 +136,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
     }
 
     return (
-        <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <div className="screenContainer">
             {/* Header section */}
             <div style={{ flexShrink: 0, paddingBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', gap: '15px' }}>
@@ -197,7 +197,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
             </div>
 
             {/* Entries list */}
-            <div style={{ flex: '1 1 auto', overflowY: 'auto', paddingTop: '15px' }}>
+            <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingTop: '15px' }}>
                 {(() => {
                     const isModerator = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';
                     const isJudgingPublicView = competition.status === 'Judging' && !isModerator;

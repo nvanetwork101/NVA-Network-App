@@ -279,7 +279,7 @@ import PromotedSlot from './PromotedSlot';
                     (displayFeatured.map((item, index) => (
                         <div key={`${item.id || item.title}-${index}`} className="horizontal-carousel-item" onClick={() => handleItemClick(item)} style={{cursor: 'pointer'}}>
                             <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="carousel-image" />
-                            {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                            {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} itemType={'content'} />}
                         </div>
                     )))}
                 </div>
@@ -317,7 +317,7 @@ import PromotedSlot from './PromotedSlot';
                                 <p className="liveFeedCreator">by {item.creatorName}</p>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px', marginTop: '4px' }}><svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg><span>{item.viewCount || 0} views</span></div>
                             </div>
-                            {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} />}
+                            {currentUser && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} itemType={'content'} />}
                         </div>
                     )))}
                 </div>
