@@ -1,5 +1,5 @@
---- Rule for Social Media Crawlers (Definitive Fix) ---
-This now passes the full path to the function, which is the expected format.
-/content/:id User-Agent=FacebookBot,Twitterbot,WhatsApp,Pinterest,LinkedInBot,Discordbot,Instagram,Threads-External-Hit/1.0 https://us-central1-nvanetworkapp.cloudfunctions.net/generateSharePreview/content/:id 200
---- Rule for All Other Traffic (Regular Users) ---
-/* /index.html 200
+# --- Rule for Social Media Crawlers (Correct Project ID) ---
+/content/:id    User-Agent=FacebookBot,Twitterbot,WhatsApp,Pinterest,LinkedInBot,Discordbot,Instagram,Threads-External-Hit/1.0    https://us-central1-nvanetworkapp.cloudfunctions.net/generateSharePreview?id=:id    200
+
+# --- Rule for All Other Traffic (Regular Users) ---
+/*              /index.html     200                                                                             200
