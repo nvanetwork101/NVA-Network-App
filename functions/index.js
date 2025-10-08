@@ -5325,55 +5325,48 @@ exports.markToastAsSeen = onCall(async (request) => {
     }
 });
 
-// --- START: Definitive Social Share Thumbnail Function ---
+// --- START: Definitive Social Share Thumbnail Function (Firebase Hosting Version) ---
 const functions = require("firebase-functions");
 const axios = require("axios");
 
 const db = admin.firestore();
-const appId = "production-app-id"; // Per your protocol
+const appId = "production-app-id";
 
 exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
     try {
-        // THE FIX: Read the full path from the new query parameter.
-        const path = req.query.path;
-        const { data: indexHtml } = await axios.get("https://nvanetwork.netlify.app", { timeout: 5000 });
-
-        if (!path) {
-            // If no path is provided, serve the default page.
-            return res.status(200).send(indexHtml);
-        }
-
+        // THE FIX: With Firebase Hosting rewrites, the original path is in req.path.
+        const path = req.path;
         const parts = path.split('/').filter(Boolean); // e.g., ['content', 'some-id']
-        
-        // Check if the path is for content and has an ID.
+
+        // Fetch the base HTML from our new live domain.
+        const { data: indexHtml } = await axios.get("https://nvanetworkapp.com", { timeout: 5000 });
+
         if (parts.length < 2 || parts[0] !== 'content') {
+            // This case should not be hit if firebase.json is correct, but is a good safeguard.
             return res.status(200).send(indexHtml);
         }
         
         const contentId = parts[1];
         
-        // --- Simplified & Robust Database Lookup ---
+        // --- Database Lookup ---
         const contentPath = `artifacts/${appId}/public/data/content_items/${contentId}`;
         const contentRef = db.doc(contentPath);
         const docSnap = await contentRef.get();
 
         if (!docSnap.exists) {
-            // The specific content item was not found. Return default page with a debug comment.
-            const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Content ID '${contentId}' not found in 'content_items' collection. --></head>`);
+            const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Content ID '${contentId}' not found in database at '${contentPath}'. --></head>`);
             return res.status(200).send(debugHtml);
         }
 
         const contentData = docSnap.data();
 
-        // --- Replace Placeholders with Clear Fallbacks ---
-        const title = contentData.title || "NVA Network";
+        // --- Meta Tag Replacement ---
+        const title = contentData.title ? contentData.title.replace(/"/g, '&quot;') : "NVA Network";
         const description = contentData.description ? contentData.description.substring(0, 150).replace(/"/g, '&quot;') + '...' : "The Nexus of Viral Ascent - Discover, Compete, Connect.";
         const imageUrl = contentData.customThumbnailUrl || contentData.thumbnailUrl || contentData.liveThumbnail || "https://firebasestorage.googleapis.com/v0/b/nvanetwork-33838.appspot.com/o/public_assets%2Fsocial_share_default.png?alt=media&token=3852c062-8173-4297-8a3a-23137d6e8779";
-        const url = `https://nvanetwork.netlify.app/content/${contentId}`;
+        const url = `https://nvanetworkapp.com/content/${contentId}`;
 
         let finalHtml = indexHtml;
-
-        // Use robust regex to replace placeholder meta tags
         finalHtml = finalHtml.replace(/<meta property="og:title" content=".*?"\/?>/, `<meta property="og:title" content="${title}" />`);
         finalHtml = finalHtml.replace(/<meta property="og:description" content=".*?"\/?>/, `<meta property="og:description" content="${description}" />`);
         finalHtml = finalHtml.replace(/<meta property="og:image" content=".*?"\/?>/, `<meta property="og:image" content="${imageUrl}" />`);
@@ -5383,9 +5376,9 @@ exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
         return res.status(200).send(finalHtml);
 
     } catch (error) {
-        console.error("FATAL Error in generateSharePreview:", error);
+        console.error("FATAL Error in generateSharePreview:", { message: error.message, path: req.path });
         try {
-            const { data: indexHtml } = await axios.get("https://nvanetwork.netlify.app");
+            const { data: indexHtml } = await axios.get("https://nvanetworkapp.com");
             const errorHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Function crashed. Error: ${error.message} --></head>`);
             return res.status(500).send(errorHtml);
         } catch (fallbackError) {
@@ -5393,4 +5386,4 @@ exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
         }
     }
 });
-// --- END: Definitive Social Share Thumbnail Function ---
+// --- END: Definitive Social Share Thumbnail Function (Firebase Hosting Version) ---

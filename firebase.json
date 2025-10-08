@@ -18,9 +18,8 @@
     ],
     "rewrites": [
       {
-        "source": "/@(user|competition|opportunity)/**",
-        "function": "socialCardRenderer",
-        "userAgent": "(bot|crawler|spider|crawling|facebookexternalhit|twitterbot|pinterest|linkedinbot|whatsapp|googlebot|bingbot|yandexbot)"
+        "source": "/content/**",
+        "function": "generateSharePreview"
       },
       {
         "source": "**",
