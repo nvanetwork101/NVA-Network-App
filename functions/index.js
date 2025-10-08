@@ -5330,71 +5330,66 @@ const functions = require("firebase-functions");
 const axios = require("axios");
 
 const db = admin.firestore();
-const appId = "production-app-id";
+const appId = "production-app-id"; // Per your protocol
 
 exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
     try {
-        const path = req.path;
-        const parts = path.split('/').filter(Boolean);
+        // THE FIX: Read the full path from the new query parameter.
+        const path = req.query.path;
+        const { data: indexHtml } = await axios.get("https://nvanetwork.netlify.app", { timeout: 5000 });
 
-        const { data: indexHtml } = await axios.get("https://nvanetwork.netlify.app");
-
-        if (parts.length < 2 || parts[0] !== 'content') {
+        if (!path) {
+            // If no path is provided, serve the default page.
             return res.status(200).send(indexHtml);
         }
 
-        const contentId = parts[1];
-        let contentData = null;
-        let docSnap;
-        let searchPath = "Unknown"; // For debugging
-
-        // --- Database Lookup Logic ---
-        searchPath = `artifacts/${appId}/public/data/content_items/${contentId}`;
-        const contentRef = db.doc(searchPath);
-        docSnap = await contentRef.get();
-
-        if (docSnap.exists) {
-            contentData = docSnap.data();
-        } else {
-            searchPath = `events/${contentId}`; // Try events collection
-            const eventRef = db.doc(searchPath);
-            docSnap = await eventRef.get();
-            if (docSnap.exists) {
-                contentData = docSnap.data();
-            }
+        const parts = path.split('/').filter(Boolean); // e.g., ['content', 'some-id']
+        
+        // Check if the path is for content and has an ID.
+        if (parts.length < 2 || parts[0] !== 'content') {
+            return res.status(200).send(indexHtml);
         }
+        
+        const contentId = parts[1];
+        
+        // --- Simplified & Robust Database Lookup ---
+        const contentPath = `artifacts/${appId}/public/data/content_items/${contentId}`;
+        const contentRef = db.doc(contentPath);
+        const docSnap = await contentRef.get();
 
-        if (!contentData) {
-            // DEFINITIVE FIX 1: Add a debug comment to the HTML if content is not found.
-            const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Content ID '${contentId}' not found at path '${searchPath}'. --></head>`);
+        if (!docSnap.exists) {
+            // The specific content item was not found. Return default page with a debug comment.
+            const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Content ID '${contentId}' not found in 'content_items' collection. --></head>`);
             return res.status(200).send(debugHtml);
         }
 
-        // --- Replace Placeholders ---
-        const imageUrl = contentData.customThumbnailUrl || contentData.thumbnailUrl || contentData.liveThumbnail || "https://firebasestorage.googleapis.com/v0/b/nvanetwork-33838.appspot.com/o/public_assets%2Fsocial_share_default.png?alt=media&token=3852c062-8173-4297-8a3a-23137d6e8779";
+        const contentData = docSnap.data();
+
+        // --- Replace Placeholders with Clear Fallbacks ---
         const title = contentData.title || "NVA Network";
-        const description = contentData.description ? contentData.description.substring(0, 150) + '...' : "The Nexus of Viral Ascent - Discover, Compete, Connect.";
+        const description = contentData.description ? contentData.description.substring(0, 150).replace(/"/g, '&quot;') + '...' : "The Nexus of Viral Ascent - Discover, Compete, Connect.";
+        const imageUrl = contentData.customThumbnailUrl || contentData.thumbnailUrl || contentData.liveThumbnail || "https://firebasestorage.googleapis.com/v0/b/nvanetwork-33838.appspot.com/o/public_assets%2Fsocial_share_default.png?alt=media&token=3852c062-8173-4297-8a3a-23137d6e8779";
         const url = `https://nvanetwork.netlify.app/content/${contentId}`;
 
         let finalHtml = indexHtml;
 
-        // DEFINITIVE FIX 2: Use more robust regex that handles both `>` and `/>` endings.
-        finalHtml = finalHtml.replace(/<meta property="og:title" content=".*?"\/?>/, `<meta property="og:title" content="${title}">`);
-        finalHtml = finalHtml.replace(/<meta property="og:description" content=".*?"\/?>/, `<meta property="og:description" content="${description}">`);
-        finalHtml = finalHtml.replace(/<meta property="og:image" content=".*?"\/?>/, `<meta property="og:image" content="${imageUrl}">`);
-        finalHtml = finalHtml.replace(/<meta property="og:url" content=".*?"\/?>/, `<meta property="og:url" content="${url}">`);
+        // Use robust regex to replace placeholder meta tags
+        finalHtml = finalHtml.replace(/<meta property="og:title" content=".*?"\/?>/, `<meta property="og:title" content="${title}" />`);
+        finalHtml = finalHtml.replace(/<meta property="og:description" content=".*?"\/?>/, `<meta property="og:description" content="${description}" />`);
+        finalHtml = finalHtml.replace(/<meta property="og:image" content=".*?"\/?>/, `<meta property="og:image" content="${imageUrl}" />`);
+        finalHtml = finalHtml.replace(/<meta property="og:url" content=".*?"\/?>/, `<meta property="og:url" content="${url}" />`);
 
-        res.set('Cache-Control', 'public, max-age=600, s-maxage=1200');
+        res.set('Cache-Control', 'public, max-age=300, s-maxage=600');
         return res.status(200).send(finalHtml);
 
     } catch (error) {
-        console.error("Error generating share preview:", error);
+        console.error("FATAL Error in generateSharePreview:", error);
         try {
             const { data: indexHtml } = await axios.get("https://nvanetwork.netlify.app");
             const errorHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Function crashed. Error: ${error.message} --></head>`);
             return res.status(500).send(errorHtml);
         } catch (fallbackError) {
-            return res.status(500).send("<html><head><title>Error</title></head><body>An error occurred.</body></html>");
+            return res.status(500).send("<html><head><title>Error</title></head><body>A server error occurred.</body></html>");
         }
     }
 });
