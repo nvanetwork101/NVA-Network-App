@@ -5364,10 +5364,10 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
         const url = `https://nvanetworkapp.com/content/${contentId}`;
 
         let finalHtml = indexHtml;
-        finalHtml = finalHtml.replace(/<meta property="og:title" content=".*?"\/?>/, `<meta property="og:title" content="${title}" />`);
-        finalHtml = finalHtml.replace(/<meta property="og:description" content=".*?"\/?>/, `<meta property="og:description" content="${description}" />`);
-        finalHtml = finalHtml.replace(/<meta property="og:image" content=".*?"\/?>/, `<meta property="og:image" content="${imageUrl}" />`);
-        finalHtml = finalHtml.replace(/<meta property="og:url" content=".*?"\/?>/, `<meta property="og:url" content="${url}" />`);
+        finalHtml = finalHtml.replace('__OG_TITLE__', title);
+        finalHtml = finalHtml.replace('__OG_DESCRIPTION__', description);
+        finalHtml = finalHtml.replace('__OG_IMAGE_URL__', imageUrl);
+        finalHtml = finalHtml.replace('__OG_URL__', url);
 
         response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
         return response.status(200).send(finalHtml);
