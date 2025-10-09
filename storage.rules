@@ -1,0 +1,74 @@
+rules_version = '2';
+
+// =====================================================================
+// ===================== SERVICE: FIREBASE STORAGE =====================
+// =====================================================================
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // --- HELPER FUNCTIONS ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+    function isAuthority() {
+      return isAuthenticated() && request.auth.token.authority == true;
+    }
+    function isModerator() {
+      return isAuthenticated() && (isAdmin() || isAuthority());
+    }
+
+    // --- GLOBAL READ RULE ---
+    // Allow public read access to all files by default.
+    match /{allPaths=**} {
+      allow read;
+    }
+
+    // --- SECURE WRITE RULES ---
+    // These rules restrict who can upload files to specific folders.
+
+    // Moderator & Admin Only Folders
+    match /curated_thumbnails/{allPaths=**} {
+      allow write: if isModerator();
+    }
+    match /premiere_thumbnails/{allPaths=**} {
+      allow write: if isModerator();
+    }
+    match /event_thumbnails/{allPaths=**} {
+      allow write: if isModerator();
+    }
+    match /competition_flyers/{allPaths=**} {
+      allow write: if isAdmin();
+    }
+    // THE FIX: Add this rule to allow moderators to upload to the general content thumbnails path.
+    match /content_thumbnails/{allPaths=**} {
+      allow write: if isModerator();
+    }
+
+    // User-Specific Folders: A user can only write to their own folder.
+    // This is the definitive fix for the error you are seeing.
+    match /profile_pictures/{userId}/{allPaths=**} {
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    match /content_thumbnails/{userId}/{allPaths=**} {
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    match /campaign_thumbnails/{userId}/{allPaths=**} {
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    match /opportunity_flyers/{userId}/{allPaths=**} {
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    match /promo_flyers/{userId}/{allPaths=**} {
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    match /creator_uploads/{userId}/{allPaths=**} {
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+    match /competition_entries/{compId}/{userId}/{allPaths=**} {
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+  }
+}

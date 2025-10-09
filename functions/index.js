@@ -5325,7 +5325,7 @@ exports.markToastAsSeen = onCall(async (request) => {
     }
 });
 
-// --- START: Definitive Social Share Thumbnail Function (Firebase Hosting Version) ---
+// --- START: Definitive Social Share Thumbnail Function (Correct Header Version) ---
 const functions = require("firebase-functions");
 const axios = require("axios");
 
@@ -5334,15 +5334,22 @@ const appId = "production-app-id";
 
 exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
     try {
-        // THE FIX: With Firebase Hosting rewrites, the original path is in req.path.
-        const path = req.path;
-        const parts = path.split('/').filter(Boolean); // e.g., ['content', 'some-id']
-
-        // Fetch the base HTML from our new live domain.
+        // THE DEFINITIVE FIX: Firebase Hosting provides the original path in the 'x-original-url' header.
+        const path = req.headers['x-original-url'];
+        
+        // Fetch the base HTML from our live domain.
         const { data: indexHtml } = await axios.get("https://nvanetworkapp.com", { timeout: 5000 });
 
+        if (!path) {
+            // If the header is missing, we cannot proceed.
+            const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: x-original-url header was NOT found. Cannot determine content ID. --></head>`);
+            return res.status(200).send(debugHtml);
+        }
+
+        const parts = path.split('/').filter(Boolean); // e.g., ['content', 'some-id']
+        
         if (parts.length < 2 || parts[0] !== 'content') {
-            // This case should not be hit if firebase.json is correct, but is a good safeguard.
+            // The path is not for a content item.
             return res.status(200).send(indexHtml);
         }
         
@@ -5354,7 +5361,7 @@ exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
         const docSnap = await contentRef.get();
 
         if (!docSnap.exists) {
-            const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Content ID '${contentId}' not found in database at '${contentPath}'. --></head>`);
+            const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Content ID '${contentId}' found in header, but NOT in database at '${contentPath}'. --></head>`);
             return res.status(200).send(debugHtml);
         }
 
@@ -5376,7 +5383,7 @@ exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
         return res.status(200).send(finalHtml);
 
     } catch (error) {
-        console.error("FATAL Error in generateSharePreview:", { message: error.message, path: req.path });
+        console.error("FATAL Error in generateSharePreview:", { message: error.message, headers: req.headers });
         try {
             const { data: indexHtml } = await axios.get("https://nvanetworkapp.com");
             const errorHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Function crashed. Error: ${error.message} --></head>`);
@@ -5386,4 +5393,4 @@ exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
         }
     }
 });
-// --- END: Definitive Social Share Thumbnail Function (Firebase Hosting Version) ---
+// --- END: Definitive Social Share Thumbnail Function (Correct Header Version) ---
