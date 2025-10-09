@@ -325,6 +325,9 @@ function App() {
               setCurrentUser(user); setCreatorProfile(data); setNotificationBadgeCount(data.unreadNotificationCount || 0);
             } else { signOut(auth); }
           });
+          
+          const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
+          
           unsubFollowing = onSnapshot(q, (snapshot) => { setHasNewFollowerContent(!snapshot.empty); });
 
           // Handle content deep link for logged-in users
