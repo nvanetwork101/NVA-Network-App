@@ -181,6 +181,45 @@ function App() {
     notifications.forEach(notification => {
       if (!notification.isBroadcast && !notification.isRead) {
         // We use the existing function from our hook to ensure consistency.
+        
+       // --- START: DEDICATED DEEP LINKING ROUTER ---
+  useEffect(() => {
+    // This block runs only once on initial page load.
+    if (routingDoneRef.current) return;
+    routingDoneRef.current = true; // Mark that routing has been handled.
+
+    const path = window.location.pathname;
+    const parts = path.split('/').filter(Boolean);
+
+    if (parts.length > 0) {
+      const screen = parts[0];
+      const id = parts[1];
+
+      switch (screen) {
+        case 'opportunity':
+          if (id) {
+            setSelectedOpportunity({ id });
+            setActiveScreen('OpportunityDetails');
+          }
+          break;
+        case 'discover':
+          setActiveScreen('Discover');
+          break;
+        case 'user':
+          if (id) {
+            setSelectedUserId(id);
+            setActiveScreen('UserProfile');
+          }
+          break;
+        case 'competition':
+          setActiveScreen('CompetitionScreen');
+          break;
+        // NOTE: 'content' links are correctly handled later, inside the auth block.
+      }
+    }
+  }, []); // The empty array ensures this runs only once.
+  // --- END: DEDICATED DEEP LINKING ROUTER --- 
+
         markNotificationAsRead(notification.id);
       }
     });
@@ -324,11 +363,17 @@ function App() {
             });
             // --- End of listener initialization ---
 
-            if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
-              if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
-                setActiveScreen('CreatorDashboard');
-              } else {
-                setActiveScreen('Home');
+            // This logic now checks if the URL path is empty. It will only perform its default
+            // navigation if the user landed on the root domain, preventing it from
+            // overwriting a deep link handled by the new router.
+            const path = window.location.pathname;
+            if (path === '/' || path === '') {
+              if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
+                if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                  setActiveScreen('CreatorDashboard');
+                } else {
+                  setActiveScreen('Home');
+                }
               }
             }
 
