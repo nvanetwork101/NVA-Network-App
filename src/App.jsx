@@ -274,10 +274,23 @@ function App() {
             if (profileData.banned) {
                 setActiveScreen('Banned'); signOut(auth); setAuthLoading(false); return;
             }
-            if (profileData.suspendedUntil && typeof profileData.suspendedUntil.toDate === 'function' && profileData.suspendedUntil.toDate() > new Date()) {
-                setSuspensionDetails({ expiryDate: profileData.suspendedUntil.toDate().toLocaleString() });
-                setCurrentUser(user); setCreatorProfile(profileData); setActiveScreen('Suspended'); setAuthLoading(false); return;
+            // HYPER-DEFENSIVE SUSPENSION CHECK
+        if (profileData.suspendedUntil) {
+          // Only proceed if the field exists and is not null/undefined.
+          if (typeof profileData.suspendedUntil.toDate === 'function') {
+            // Now we are certain .toDate exists, so we can safely call it.
+            const suspensionDate = profileData.suspendedUntil.toDate();
+            if (suspensionDate > new Date()) {
+              // The user is actively suspended.
+              setSuspensionDetails({ expiryDate: suspensionDate.toLocaleString() });
+              setCurrentUser(user); 
+              setCreatorProfile(profileData); 
+              setActiveScreen('Suspended'); 
+              setAuthLoading(false); 
+              return;
             }
+          }
+        }
             await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
             unsubProfile = onSnapshot(userDocRef, (snap) => {
                 if (snap.exists()) {
