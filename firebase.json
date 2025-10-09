@@ -19,7 +19,7 @@
     "rewrites": [
       {
         "source": "/content/**",
-        "function": "generateSharePreview"
+        "function": "generateSharePreviewV2"
       },
       {
         "source": "**",

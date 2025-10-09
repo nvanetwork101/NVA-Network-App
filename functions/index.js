@@ -5325,49 +5325,39 @@ exports.markToastAsSeen = onCall(async (request) => {
     }
 });
 
-// --- START: Definitive Social Share Thumbnail Function (Correct Header Version) ---
-const functions = require("firebase-functions");
+// --- START: Definitive Social Share Thumbnail Function (V2 SDK) ---
 const axios = require("axios");
 
-const db = admin.firestore();
-const appId = "production-app-id";
+exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, response) => {
+    const db = admin.firestore();
+    const appId = "production-app-id";
 
-exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
     try {
-        // THE DEFINITIVE FIX: Firebase Hosting provides the original path in the 'x-original-url' header.
-        const path = req.headers['x-original-url'];
-        
-        // Fetch the base HTML from our live domain.
+        const path = request.headers['x-original-url'];
         const { data: indexHtml } = await axios.get("https://nvanetworkapp.com", { timeout: 5000 });
 
         if (!path) {
-            // If the header is missing, we cannot proceed.
             const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: x-original-url header was NOT found. Cannot determine content ID. --></head>`);
-            return res.status(200).send(debugHtml);
+            return response.status(200).send(debugHtml);
         }
 
-        const parts = path.split('/').filter(Boolean); // e.g., ['content', 'some-id']
+        const parts = path.split('/').filter(Boolean);
         
         if (parts.length < 2 || parts[0] !== 'content') {
-            // The path is not for a content item.
-            return res.status(200).send(indexHtml);
+            return response.status(200).send(indexHtml);
         }
         
         const contentId = parts[1];
-        
-        // --- Database Lookup ---
         const contentPath = `artifacts/${appId}/public/data/content_items/${contentId}`;
         const contentRef = db.doc(contentPath);
         const docSnap = await contentRef.get();
 
         if (!docSnap.exists) {
             const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Content ID '${contentId}' found in header, but NOT in database at '${contentPath}'. --></head>`);
-            return res.status(200).send(debugHtml);
+            return response.status(200).send(debugHtml);
         }
 
         const contentData = docSnap.data();
-
-        // --- Meta Tag Replacement ---
         const title = contentData.title ? contentData.title.replace(/"/g, '&quot;') : "NVA Network";
         const description = contentData.description ? contentData.description.substring(0, 150).replace(/"/g, '&quot;') + '...' : "The Nexus of Viral Ascent - Discover, Compete, Connect.";
         const imageUrl = contentData.customThumbnailUrl || contentData.thumbnailUrl || contentData.liveThumbnail || "https://firebasestorage.googleapis.com/v0/b/nvanetwork-33838.appspot.com/o/public_assets%2Fsocial_share_default.png?alt=media&token=3852c062-8173-4297-8a3a-23137d6e8779";
@@ -5379,18 +5369,18 @@ exports.generateSharePreview = functions.https.onRequest(async (req, res) => {
         finalHtml = finalHtml.replace(/<meta property="og:image" content=".*?"\/?>/, `<meta property="og:image" content="${imageUrl}" />`);
         finalHtml = finalHtml.replace(/<meta property="og:url" content=".*?"\/?>/, `<meta property="og:url" content="${url}" />`);
 
-        res.set('Cache-Control', 'public, max-age=300, s-maxage=600');
-        return res.status(200).send(finalHtml);
+        response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+        return response.status(200).send(finalHtml);
 
     } catch (error) {
-        console.error("FATAL Error in generateSharePreview:", { message: error.message, headers: req.headers });
+        logger.error("FATAL Error in generateSharePreviewV2:", { message: error.message, headers: request.headers });
         try {
             const { data: indexHtml } = await axios.get("https://nvanetworkapp.com");
             const errorHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Function crashed. Error: ${error.message} --></head>`);
-            return res.status(500).send(errorHtml);
+            return response.status(500).send(errorHtml);
         } catch (fallbackError) {
-            return res.status(500).send("<html><head><title>Error</title></head><body>A server error occurred.</body></html>");
+            return response.status(500).send("<html><head><title>Error</title></head><body>A server error occurred.</body></html>");
         }
     }
 });
-// --- END: Definitive Social Share Thumbnail Function (Correct Header Version) ---
+// --- END: Definitive Social Share Thumbnail Function (V2 SDK) ---
