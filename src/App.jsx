@@ -248,134 +248,100 @@ function App() {
     setShowVideoModal(true);
   };
 
-  // ========================== START: UNIFIED AUTH & ROUTING HANDLER ==========================
+  // ========================== START: STABLE AUTH FLOW (PRE-ROUTING FIX) ==========================
   useEffect(() => {
     let unsubProfile = () => {};
     let unsubFollowing = () => {};
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      // First, always clean up previous user's listeners to prevent data leaks or errors on logout.
       unsubProfile();
       unsubFollowing();
       setAuthLoading(true);
 
       if (user && !user.emailVerified) {
-        setCurrentUser(null); setCreatorProfile(null); setUnverifiedUser(user);
-        setActiveScreen('VerifyEmail'); setAuthLoading(false); return;
+        setCurrentUser(null);
+        setCreatorProfile(null);
+        setUnverifiedUser(user);
+        setActiveScreen('VerifyEmail');
+        setAuthLoading(false);
+        setIsInitialLoad(false);
+        return;
       }
+
       setUnverifiedUser(null);
 
-      // Handle the state for a logged-in user
       if (user) {
         const userDocRef = doc(db, "creators", user.uid);
-        const docSnap = await getDoc(userDocRef);
-        if (docSnap.exists()) {
+        try {
+          const docSnap = await getDoc(userDocRef);
+          if (docSnap.exists()) {
             const profileData = docSnap.data();
+
             if (profileData.banned) {
-                setActiveScreen('Banned'); signOut(auth); setAuthLoading(false); return;
+                setActiveScreen('Banned');
+                signOut(auth);
+                return;
             }
-            // HYPER-DEFENSIVE SUSPENSION CHECK
-        if (profileData.suspendedUntil) {
-          // Only proceed if the field exists and is not null/undefined.
-          if (typeof profileData.suspendedUntil.toDate === 'function') {
-            // Now we are certain .toDate exists, so we can safely call it.
-            const suspensionDate = profileData.suspendedUntil.toDate();
-            if (suspensionDate > new Date()) {
-              // The user is actively suspended.
-              setSuspensionDetails({ expiryDate: suspensionDate.toLocaleString() });
-              setCurrentUser(user); 
-              setCreatorProfile(profileData); 
-              setActiveScreen('Suspended'); 
-              setAuthLoading(false); 
-              return;
+
+            if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
+                const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
+                setSuspensionDetails({ email: profileData.email, expiryDate });
+                setCurrentUser(user);
+                setCreatorProfile(profileData);
+                setActiveScreen('Suspended');
+                return;
             }
-          }
-        }
+
             await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
+
             unsubProfile = onSnapshot(userDocRef, (snap) => {
                 if (snap.exists()) {
                     const data = snap.data();
-                    setCurrentUser(user); setCreatorProfile(data); setNotificationBadgeCount(data.unreadNotificationCount || 0);
+                    setCurrentUser(user);
+                    setCreatorProfile(data);
+                    setNotificationBadgeCount(data.unreadNotificationCount || 0);
                 } else { signOut(auth); }
             });
+
             const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
             unsubFollowing = onSnapshot(q, (snapshot) => { setHasNewFollowerContent(!snapshot.empty); });
-        } else { signOut(auth); }
-      } else {
-        // Handle the state for a logged-out user
-        setCurrentUser(null); setCreatorProfile(null); setHasNewFollowerContent(false); setNotificationBadgeCount(0);
-      }
 
-      // --- UNIFIED DEEP LINKING LOGIC ---
-      // This block now runs exactly once, AFTER we know the user's login status.
-      if (!routingDoneRef.current) {
-        routingDoneRef.current = true;
-        const path = window.location.pathname;
-        const parts = path.split('/').filter(Boolean);
-        let navigated = false;
-
-        if (parts.length > 0) {
-          const screen = parts[0];
-          const id = parts[1];
-          switch (screen) {
-            case 'opportunity':
-              if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); navigated = true; }
-              break;
-            case 'discover':
-              setActiveScreen('Discover'); navigated = true;
-              break;
-            case 'user':
-              if (id) { setSelectedUserId(id); setActiveScreen('UserProfile'); navigated = true; }
-              break;
-            case 'competition':
-              setActiveScreen('CompetitionScreen'); navigated = true;
-              break;
-            case 'content':
-              if (id) {
-                if (user) {
-                  (async () => {
-                    const appId = "production-app-id";
-                    const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
-                    const docSnap = await getDoc(contentRef);
-                    if (docSnap.exists()) {
-                      const contentData = { id: docSnap.id, ...docSnap.data() };
-                      setCurrentVideoUrl(contentData.embedUrl || contentData.mainUrl);
-                      setCurrentContentItem(contentData);
-                      setShowVideoModal(true);
-                    } else { showMessage("The shared content could not be found."); }
-                  })();
-                } else {
-                  showMessage("Please log in or sign up to view this content.");
-                  setActiveScreen('Login');
-                }
-                navigated = true;
+            if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
+              if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                setActiveScreen('CreatorDashboard');
+              } else {
+                setActiveScreen('Home');
               }
-              break;
-          }
+            }
+          } else { signOut(auth); }
+        } catch (error) {
+          console.error("Auth check failed:", error);
+          signOut(auth);
+        } finally {
+          setAuthLoading(false);
+          setIsInitialLoad(false);
         }
-
-        // If no deep link was handled, perform default navigation based on login status.
-        if (!navigated) {
-          const isAuthScreen = ['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen);
-          const isProtectedScreen = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'].includes(activeScreen);
-          if (user && isAuthScreen) {
-            const profileData = (await getDoc(doc(db, "creators", user.uid))).data();
-            if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
-              setActiveScreen('CreatorDashboard');
-            } else { setActiveScreen('Home'); }
-          } else if (!user && isProtectedScreen) { setActiveScreen('Home'); }
+      } else { // User is logged out
+        setCurrentUser(null);
+        setCreatorProfile(null);
+        setHasNewFollowerContent(false);
+        setNotificationBadgeCount(0);
+        const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
+        if (protectedScreens.includes(activeScreen)) {
+            setActiveScreen('Home');
         }
+        setAuthLoading(false);
+        setIsInitialLoad(false);
       }
-      
-      setAuthLoading(false);
-      setIsInitialLoad(false);
     });
 
     return () => {
-      unsubscribeAuth(); unsubProfile(); unsubFollowing();
+      unsubscribeAuth();
+      unsubProfile();
+      unsubFollowing();
     };
-  }, [activeScreen]);
-  // ========================== END: UNIFIED AUTH & ROUTING HANDLER ==========================
+   }, [activeScreen]);
+  // ========================== END: STABLE AUTH FLOW (PRE-ROUTING FIX) ==========================
  
         // ======================= START: PUSH NOTIFICATION SETUP =======================
 useEffect(() => {
