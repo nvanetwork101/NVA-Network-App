@@ -274,7 +274,7 @@ function App() {
             if (profileData.banned) {
                 setActiveScreen('Banned'); signOut(auth); setAuthLoading(false); return;
             }
-            if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
+            if (profileData.suspendedUntil && typeof profileData.suspendedUntil.toDate === 'function' && profileData.suspendedUntil.toDate() > new Date()) {
                 setSuspensionDetails({ expiryDate: profileData.suspendedUntil.toDate().toLocaleString() });
                 setCurrentUser(user); setCreatorProfile(profileData); setActiveScreen('Suspended'); setAuthLoading(false); return;
             }
