@@ -4,6 +4,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
 import { extractVideoInfo } from '../firebase';
+
+import Countdown from 'react-countdown';
+
 import ShareButton from './ShareButton';
 
 // --- Real Component Imports ---
@@ -22,6 +25,8 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
     const [showPrizesModal, setShowPrizesModal] = useState(false);
     const [showEntryForm, setShowEntryForm] = useState(false);
     const [selectedEntry, setSelectedEntry] = useState(null);
+
+    const [countdown, setCountdown] = useState(null);
 
     // --- DATA FETCHING ---
     useEffect(() => {
@@ -53,6 +58,31 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
         });
         return () => unsubscribeEntries();
     }, [competition]);
+
+    // --- REAL-TIME COUNTDOWN TIMER LOGIC ---
+    useEffect(() => {
+        if (!competition) return;
+
+        let targetDate = null;
+        if (competition.status === 'Accepting Entries' && competition.entryDeadline) {
+            targetDate = competition.entryDeadline.toDate();
+        } else if (competition.status === 'Live Voting' && competition.competitionEnd) {
+            targetDate = competition.competitionEnd.toDate();
+        }
+
+        if (targetDate) {
+            const renderer = ({ days, hours, minutes, seconds, completed }) => {
+                if (completed) {
+                    return <span style={{color: '#FF4136'}}>ENDED</span>;
+                } else {
+                    return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
+                }
+            };
+            setCountdown(<Countdown date={targetDate} renderer={renderer} />);
+        } else {
+            setCountdown(null);
+        }
+    }, [competition]); // This dependency ensures the timer restarts when the competition changes
 
     // --- DERIVED STATE ---
     const rankedEntries = useMemo(() => {
@@ -150,7 +180,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                         <ShareButton
                             title={competition.title}
                             text={`Join the "${competition.title}" competition on NVA Network!`}
-                            url="/competition"
+                            url={`/competition/${competition.id}`}
                             showMessage={showMessage}
                         />
                     </div>
@@ -182,7 +212,8 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                     )}
                     {competition.status === 'Live Voting' && (
                         <div className="dashboardItem" style={{flex: 1, textAlign: 'center', padding: '10px', border: '1px solid #00FFFF', borderRadius: '8px'}}>
-                            <p style={{margin: 0, color: '#00FFFF', fontWeight: 'bold'}}>Voting is now Live!</p>
+                            <p style={{margin: 0, color: '#00FFFF', fontWeight: 'bold'}}>Voting Ends In:</p>
+                            <p style={{margin: 0, color: '#FFF', fontWeight: 'normal', fontSize: '14px'}}>{countdown}</p>
                         </div>
                     )}
                     {(competition.status === 'Judging' || competition.status === 'Results Visible') && (

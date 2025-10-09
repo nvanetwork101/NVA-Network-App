@@ -5372,13 +5372,24 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                 debugMessage = `<!-- NVA DEBUG: Rendered user profile: ${id} -->`;
             }
         } else if (screen === 'competition') {
-            const querySnap = await db.collection("competitions").where("status", "in", ["Accepting Entries", "Live Voting"]).orderBy("createdAt", "desc").limit(1).get();
-            if (!querySnap.empty) {
-                const data = querySnap.docs[0].data();
+            let compDocSnap;
+            if (id) {
+                // If an ID is in the URL, fetch that specific competition
+                compDocSnap = await db.doc(`competitions/${id}`).get();
+                debugMessage = `<!-- NVA DEBUG: Attempting to render specific competition: ${id} -->`;
+            } else {
+                // If no ID, fall back to finding the latest active competition
+                const querySnap = await db.collection("competitions").where("status", "in", ["Accepting Entries", "Live Voting"]).orderBy("createdAt", "desc").limit(1).get();
+                if (!querySnap.empty) {
+                    compDocSnap = querySnap.docs[0];
+                    debugMessage = `<!-- NVA DEBUG: No ID found, rendered latest active competition: ${compDocSnap.id} -->`;
+                }
+            }
+            if (compDocSnap && compDocSnap.exists) {
+                const data = compDocSnap.data();
                 ogTitle = data.title;
                 ogDescription = data.description;
                 ogImage = data.flyerImageUrl || ogImage;
-                debugMessage = `<!-- NVA DEBUG: Rendered active competition: ${querySnap.docs[0].id} -->`;
             }
         } else if (screen === 'discover') {
             const docSnap = await db.doc("settings/liveEvent").get();

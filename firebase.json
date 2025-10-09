@@ -34,7 +34,7 @@
         "function": "generateSharePreviewV2"
       },
       {
-        "source": "/competition",
+        "source": "/competition/**",
         "function": "generateSharePreviewV2"
       },
       {
