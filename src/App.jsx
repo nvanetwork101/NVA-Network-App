@@ -176,50 +176,7 @@ function App() {
   const notificationSoundRef = useRef(null);
   const unreadCount = notifications.filter(n => !n.isBroadcast && !n.isRead).length;
   const [notificationBadgeCount, setNotificationBadgeCount] = useState(0);
-    
-    // --- START: DEEP LINKING FIX FOR INITIAL PAGE LOAD ---
-  useEffect(() => {
-    // This logic runs only ONCE when the app first loads to handle deep links.
-    if (routingDoneRef.current) return;
-    
-    const path = window.location.pathname;
-    const parts = path.split('/').filter(Boolean);
-
-    if (parts.length > 0) {
-      const screen = parts[0];
-      const id = parts[1];
-
-      // This logic only handles navigation for publicly accessible screens.
-      // The logic for '/content' links remains inside the onAuthStateChanged
-      // listener because it requires an authenticated user to open the video modal.
-      switch (screen) {
-        case 'user':
-          if (id) {
-            setSelectedUserId(id);
-            setActiveScreen('UserProfile');
-          }
-          break;
-        case 'competition':
-          setActiveScreen('CompetitionScreen');
-          break;
-        case 'opportunity':
-          if (id) {
-            setSelectedOpportunity({ id });
-            setActiveScreen('OpportunityDetailsScreen');
-          }
-          break;
-        case 'discover':
-          setActiveScreen('Discover');
-          break;
-        default:
-          // If the path is unknown (e.g., /content), do nothing.
-          // The auth listener will handle it if the user is logged in.
-          break;
-      }
-    }
-  }, []); // Empty dependency array ensures this runs only once on mount.
-  // --- END: DEEP LINKING FIX FOR INITIAL PAGE LOAD ---
-    
+       
     const markAllAsRead = () => {
     notifications.forEach(notification => {
       if (!notification.isBroadcast && !notification.isRead) {
@@ -378,83 +335,58 @@ function App() {
             // --- START: DEFINITIVE ROUTING & DEEP LINKING LOGIC ---
             if (!routingDoneRef.current) {
                 routingDoneRef.current = true; // Lock this logic so it only runs once per page load.
-
+                
                 const path = window.location.pathname;
                 const parts = path.split('/').filter(Boolean);
+                let navigated = false; // Flag to see if we handled the deep link
 
                 if (parts.length > 0) {
                     const screen = parts[0];
                     const id = parts[1];
 
-                    // This switch handles all possible deep links.
-                    // It runs with a fully authenticated user context.
                     switch (screen) {
+                        case 'opportunity':
+                            if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetailsScreen'); navigated = true; }
+                            break;
+                        case 'discover':
+                            setActiveScreen('Discover');
+                            navigated = true;
+                            break;
+                        case 'user':
+                            if (id) { setSelectedUserId(id); setActiveScreen('UserProfile'); navigated = true; }
+                            break;
+                        case 'competition':
+                            setActiveScreen('CompetitionScreen');
+                            navigated = true;
+                            break;
                         case 'content':
                             if (id) {
                                 (async () => {
-                                    let contentData = null;
-                                    let docSnap = null;
-                                    const appId = "production-app-id";
-
                                     try {
-                                        // Search 1: The main content_items collection (for creator uploads and published VODs)
+                                        const appId = "production-app-id";
                                         const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
-                                        docSnap = await getDoc(contentRef);
-
+                                        const docSnap = await getDoc(contentRef);
                                         if (docSnap.exists()) {
-                                            contentData = { id: docSnap.id, ...docSnap.data() };
-                                            // Ensure a playable URL is designated
-                                            contentData.videoUrl = contentData.embedUrl || contentData.mainUrl;
-                                        } else {
-                                            // Search 2: The events collection (for completed events that may not be published yet)
-                                            const eventRef = doc(db, "events", id);
-                                            docSnap = await getDoc(eventRef);
-                                            if (docSnap.exists()) {
-                                                const eventItem = { id: docSnap.id, ...docSnap.data() };
-                                                // Use the live stream URL as the playable video for VODs
-                                                contentData = { ...eventItem, videoUrl: eventItem.liveStreamUrl };
-                                            }
-                                        }
-
-                                        if (contentData) {
-                                            // DEFINITIVE FIX: Directly set state here to bypass the race condition.
-                                            // The handleVideoPress function checks the `currentUser` state, which has not yet been
-                                            // updated in this render cycle. By setting state directly, we open the modal
-                                            // immediately with the fetched data, as we know the user is authenticated at this point.
-                                            setCurrentVideoUrl(contentData.videoUrl);
+                                            const contentData = { id: docSnap.id, ...docSnap.data() };
+                                            const videoUrl = contentData.embedUrl || contentData.mainUrl;
+                                            setCurrentVideoUrl(videoUrl);
                                             setCurrentContentItem(contentData);
                                             setShowVideoModal(true);
-                                        } else {
-                                            showMessage("The shared content could not be found.");
-                                        }
-                                    } catch (error) {
-                                        console.error("Deep link fetch error:", error);
-                                        showMessage("Error loading shared content.");
-                                    }
+                                        } else { showMessage("The shared content could not be found."); }
+                                    } catch (error) { console.error("Deep link fetch error:", error); showMessage("Error loading shared content."); }
                                 })();
+                                navigated = true; // We handled it, even if it fails to load
                             }
                             break;
+                    }
+                }
 
-                        case 'user':
-                            if (id) {
-                                setSelectedUserId(id);
-                                handleNavigate('UserProfile');
-                            }
-                            break;
-
-                        case 'competition':
-                            handleNavigate('CompetitionScreen');
-                            break;
-                        
-                        case 'opportunity':
-                            if (id) {
-                                setSelectedOpportunity({ id: id });
-                                handleNavigate('OpportunityDetailsScreen');
-                            }
-                            break;
-
-                        default:
-                            break;
+                // If a deep link was NOT handled, proceed with default navigation.
+                if (!navigated && ['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
+                    if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                        setActiveScreen('CreatorDashboard');
+                    } else {
+                        setActiveScreen('Home');
                     }
                 }
             }
