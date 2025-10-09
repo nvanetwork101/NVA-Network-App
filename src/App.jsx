@@ -665,7 +665,7 @@ useEffect(() => {
                 clearInterval(timer);
             }
         };
-    }, [liveEvent]); // This effect is driven solely by the liveEvent object.
+    }, [liveEvent]);
     // ================== END: THE DEFINITIVE LIVE EVENT SYNC FIX V2 ==================
 
         // --- NATIVE BACK BUTTON LOGIC ---
