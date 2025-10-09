@@ -181,45 +181,7 @@ function App() {
     notifications.forEach(notification => {
       if (!notification.isBroadcast && !notification.isRead) {
         // We use the existing function from our hook to ensure consistency.
-        
-       // --- START: DEDICATED DEEP LINKING ROUTER ---
-  useEffect(() => {
-    // This block runs only once on initial page load.
-    if (routingDoneRef.current) return;
-    routingDoneRef.current = true; // Mark that routing has been handled.
-
-    const path = window.location.pathname;
-    const parts = path.split('/').filter(Boolean);
-
-    if (parts.length > 0) {
-      const screen = parts[0];
-      const id = parts[1];
-
-      switch (screen) {
-        case 'opportunity':
-          if (id) {
-            setSelectedOpportunity({ id });
-            setActiveScreen('OpportunityDetails');
-          }
-          break;
-        case 'discover':
-          setActiveScreen('Discover');
-          break;
-        case 'user':
-          if (id) {
-            setSelectedUserId(id);
-            setActiveScreen('UserProfile');
-          }
-          break;
-        case 'competition':
-          setActiveScreen('CompetitionScreen');
-          break;
-        // NOTE: 'content' links are correctly handled later, inside the auth block.
-      }
-    }
-  }, []); // The empty array ensures this runs only once.
-  // --- END: DEDICATED DEEP LINKING ROUTER --- 
-
+              
         markNotificationAsRead(notification.id);
       }
     });
@@ -391,7 +353,7 @@ function App() {
 
                     switch (screen) {
                         case 'opportunity':
-                            if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetailsScreen'); navigated = true; }
+                            if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); navigated = true; }
                             break;
                         case 'discover':
                             setActiveScreen('Discover');
