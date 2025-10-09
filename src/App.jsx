@@ -248,119 +248,184 @@ function App() {
     setShowVideoModal(true);
   };
 
-  // ========================== START: UNIFIED AUTH & ROUTING HANDLER V2 ==========================
+  // ========================== START: DEFINITIVE AUTH FLOW FIX ==========================
+    // ========================== START: LOGOUT RACE CONDITION FIX ==========================
   useEffect(() => {
+    // These 'unsubscribe' variables live in the useEffect's scope.
+    // They will be assigned when a user logs in and called when that user logs out.
     let unsubProfile = () => {};
     let unsubFollowing = () => {};
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      // --- THIS IS THE CORE FIX ---
+      // The very first step on ANY auth change is to tear down all existing user-specific listeners.
+      // This prevents race conditions on logout.
       unsubProfile();
       unsubFollowing();
+
       setAuthLoading(true);
 
       if (user && !user.emailVerified) {
-        setCurrentUser(null); setCreatorProfile(null); setUnverifiedUser(user);
-        setActiveScreen('VerifyEmail'); setAuthLoading(false); setIsInitialLoad(false); return;
+        setCurrentUser(null);
+        setCreatorProfile(null);
+        setUnverifiedUser(user);
+        setActiveScreen('VerifyEmail');
+        setAuthLoading(false);
+        setIsInitialLoad(false);
+        return;
       }
+
       setUnverifiedUser(null);
 
-      // --- DEEP LINKING LOGIC ---
-      // This runs ONCE per page load, BEFORE any user-specific logic.
-      if (!routingDoneRef.current) {
-        routingDoneRef.current = true;
-        const path = window.location.pathname;
-        const parts = path.split('/').filter(Boolean);
-        if (parts.length > 0) {
-          const screen = parts[0];
-          const id = parts[1];
-          switch (screen) {
-            case 'opportunity':
-              if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); }
-              break;
-            case 'discover':
-              setActiveScreen('Discover');
-              break;
-            case 'user':
-              if (id) { setSelectedUserId(id); setActiveScreen('UserProfile'); }
-              break;
-            case 'competition':
-              setActiveScreen('CompetitionScreen');
-              break;
-            case 'content':
-              // If the user is not logged in, we must prompt them before opening the modal.
-              if (!user && id) {
-                showMessage("Please log in or sign up to view this content.");
-                setActiveScreen('Login');
-              }
-              break;
-          }
-        }
-      }
-
-      if (user) {
+      if (user) { // This is now a fully verified and logged-in user
         const userDocRef = doc(db, "creators", user.uid);
-        const docSnap = await getDoc(userDocRef);
+        try {
+          const docSnap = await getDoc(userDocRef);
 
-        if (docSnap.exists()) {
-          const profileData = docSnap.data();
-          if (profileData.banned) {
-            setActiveScreen('Banned'); signOut(auth); setAuthLoading(false); return;
-          }
+          if (docSnap.exists()) {
+            const profileData = docSnap.data();
 
-          // --- THIS IS THE DEFINITIVE CRASH FIX ---
-          if (profileData.suspendedUntil && typeof profileData.suspendedUntil.toDate === 'function') {
-            const suspensionDate = profileData.suspendedUntil.toDate();
-            if (suspensionDate > new Date()) {
-              setSuspensionDetails({ expiryDate: suspensionDate.toLocaleString() });
-              setCurrentUser(user); setCreatorProfile(profileData); setActiveScreen('Suspended');
-              setAuthLoading(false); return;
+            if (profileData.banned) {
+                showMessage("This account is permanently banned.");
+                setActiveScreen('Banned');
+                signOut(auth); // Use internal signOut, no need for handleLogout
+                return;
             }
+
+            if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
+                const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
+                setCurrentUser(user);
+                setCreatorProfile(profileData);
+                setSuspensionDetails({ email: profileData.email, expiryDate });
+                setActiveScreen('Suspended');
+                return;
+            }
+
+            await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
+
+            // --- Re-initialize all user-specific listeners here ---
+            unsubProfile = onSnapshot(userDocRef, (snap) => {
+    if (snap.exists()) {
+        const profileData = snap.data();
+        setCurrentUser(user); // Keep currentUser in sync
+        setCreatorProfile(profileData);
+        // THIS IS THE FIX: Get the count directly from the user's document
+        setNotificationBadgeCount(profileData.unreadNotificationCount || 0);
+    } else {
+        // If the profile is deleted from under the user, log them out.
+        signOut(auth);
+    }
+  });
+
+            const followingRef = collection(db, "creators", user.uid, "following");
+            const q = query(followingRef, where("hasNewContent", "==", true));
+            unsubFollowing = onSnapshot(q, (snapshot) => {
+                setHasNewFollowerContent(!snapshot.empty);
+            });
+            // --- End of listener initialization ---
+
+            if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
+              if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                setActiveScreen('CreatorDashboard');
+              } else {
+                setActiveScreen('Home');
+              }
+            }
+
+            // --- START: DEFINITIVE ROUTING & DEEP LINKING LOGIC ---
+            if (!routingDoneRef.current) {
+                routingDoneRef.current = true; // Lock this logic so it only runs once per page load.
+                
+                const path = window.location.pathname;
+                const parts = path.split('/').filter(Boolean);
+                let navigated = false; // Flag to see if we handled the deep link
+
+                if (parts.length > 0) {
+                    const screen = parts[0];
+                    const id = parts[1];
+
+                    switch (screen) {
+                        case 'opportunity':
+                            if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetailsScreen'); navigated = true; }
+                            break;
+                        case 'discover':
+                            setActiveScreen('Discover');
+                            navigated = true;
+                            break;
+                        case 'user':
+                            if (id) { setSelectedUserId(id); setActiveScreen('UserProfile'); navigated = true; }
+                            break;
+                        case 'competition':
+                            setActiveScreen('CompetitionScreen');
+                            navigated = true;
+                            break;
+                        case 'content':
+                            if (id) {
+                                (async () => {
+                                    try {
+                                        const appId = "production-app-id";
+                                        const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
+                                        const docSnap = await getDoc(contentRef);
+                                        if (docSnap.exists()) {
+                                            const contentData = { id: docSnap.id, ...docSnap.data() };
+                                            const videoUrl = contentData.embedUrl || contentData.mainUrl;
+                                            setCurrentVideoUrl(videoUrl);
+                                            setCurrentContentItem(contentData);
+                                            setShowVideoModal(true);
+                                        } else { showMessage("The shared content could not be found."); }
+                                    } catch (error) { console.error("Deep link fetch error:", error); showMessage("Error loading shared content."); }
+                                })();
+                                navigated = true; // We handled it, even if it fails to load
+                            }
+                            break;
+                    }
+                }
+
+                // If a deep link was NOT handled, proceed with default navigation.
+                if (!navigated && ['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
+                    if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                        setActiveScreen('CreatorDashboard');
+                    } else {
+                        setActiveScreen('Home');
+                    }
+                }
+            }
+            // --- END: DEFINITIVE ROUTING & DEEP LINKING LOGIC ---
+
+          } else {
+            showMessage("User profile not found. Logging out.");
+            signOut(auth);
           }
-          // --- END OF CRASH FIX ---
-
-          await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
-          unsubProfile = onSnapshot(userDocRef, (snap) => {
-            if (snap.exists()) {
-              const data = snap.data();
-              setCurrentUser(user); setCreatorProfile(data); setNotificationBadgeCount(data.unreadNotificationCount || 0);
-            } else { signOut(auth); }
-          });
-          
-          const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
-          
-          unsubFollowing = onSnapshot(q, (snapshot) => { setHasNewFollowerContent(!snapshot.empty); });
-
-          // Handle content deep link for logged-in users
-          const path = window.location.pathname;
-          const parts = path.split('/').filter(Boolean);
-          if (parts[0] === 'content' && parts[1]) {
-            const contentId = parts[1];
-            // This async IIFE fetches the content and opens the modal
-            (async () => {
-              const appId = "production-app-id";
-              const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", contentId);
-              const contentSnap = await getDoc(contentRef);
-              if (contentSnap.exists()) {
-                const contentData = { id: contentSnap.id, ...contentSnap.data() };
-                setCurrentVideoUrl(contentData.embedUrl || contentData.mainUrl);
-                setCurrentContentItem(contentData);
-                setShowVideoModal(true);
-              } else { showMessage("The shared content could not be found."); }
-            })();
-          }
-
-        } else { signOut(auth); }
+        } catch (error) {
+          console.error("Auth check failed:", error);
+          showMessage("Could not verify account status.");
+          signOut(auth);
+        } finally {
+          setAuthLoading(false);
+          setIsInitialLoad(false);
+        }
+      } else { // This user is fully logged out.
+        setCurrentUser(null);
+        setCreatorProfile(null);
+        setHasNewFollowerContent(false); // Explicitly reset state related to listeners
+        setNotificationBadgeCount(0); // Reset badge count on logout
+        const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
+        if (protectedScreens.includes(activeScreen)) {
+            setActiveScreen('Home');
+        }
+        setAuthLoading(false);
+        setIsInitialLoad(false);
       }
-      
-      setAuthLoading(false);
-      setIsInitialLoad(false);
     });
 
     return () => {
-      unsubscribeAuth(); unsubProfile(); unsubFollowing();
+      // This cleanup runs when the App component unmounts entirely.
+      unsubscribeAuth();
+      unsubProfile();
+      unsubFollowing();
     };
-  }, []); // The dependency array is now empty to ensure this entire block runs ONLY ONCE.
-  // ========================== END: UNIFIED AUTH & ROUTING HANDLER V2 ==========================
+   }, [activeScreen]); // Dependency remains the same
+  // =========================== END: LOGOUT RACE CONDITION FIX ===========================
  
         // ======================= START: PUSH NOTIFICATION SETUP =======================
 useEffect(() => {
@@ -607,66 +672,61 @@ useEffect(() => {
         return () => unsubscribe();
     }, [authLoading]);
 
-        // ================= START: THE DEFINITIVE LIVE EVENT SYNC FIX V2 =================
+        // ================= START: THE DEFINITIVE LIVE EVENT SYNC FIX =================
     useEffect(() => {
         let timer;
-    
-        // This is the definitive safety check. It ensures every required piece of data
-        // exists and is valid before attempting to start the countdown.
-        if (
-            liveEvent &&
-            liveEvent.status === 'upcoming' &&
-            liveEvent.scheduledStartTime &&
-            typeof liveEvent.scheduledStartTime.toDate === 'function' // This prevents the crash.
-        ) {
-            const startSynchronizedCountdown = async () => {
-                try {
-                    const getServerTime = httpsCallable(functions, 'getServerTime');
-                    const result = await getServerTime();
-                    const serverNow = new Date(result.data.serverTime).getTime();
-                    const clientNow = new Date().getTime();
-                    const timeOffset = serverNow - clientNow;
-    
-                    timer = setInterval(() => {
-                        const now = new Date().getTime() + timeOffset;
-                        const startTime = liveEvent.scheduledStartTime.toDate().getTime();
-                        const distance = startTime - now;
-    
-                        if (distance < 0) {
-                            setIsLive(true);
-                            setCountdownText('LIVE NOW');
-                            clearInterval(timer);
-                        } else {
-                            setIsLive(false);
-                            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-                            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-                            setCountdownText(`${days}d ${hours}h ${minutes}m ${seconds}s`);
-                        }
-                    }, 1000);
-    
-                } catch (error) {
-                    console.error("Failed to synchronize with server time:", error);
-                    setCountdownText('Error syncing clock...');
+        // If there's no event or it's not upcoming, reset the state.
+        if (!liveEvent || liveEvent.status !== 'upcoming' || !liveEvent.scheduledStartTime) {
+        setIsLive(false);
+        setCountdownText('');
+        return;
+    }
+
+    const startSynchronizedCountdown = async () => {
+        try {
+            // Get the server's time once to calculate the offset.
+            const getServerTime = httpsCallable(functions, 'getServerTime');
+            const result = await getServerTime();
+            const serverNow = new Date(result.data.serverTime).getTime();
+            const clientNow = new Date().getTime();
+            const timeOffset = serverNow - clientNow;
+
+            // Start the single, authoritative timer.
+            timer = setInterval(() => {
+                const now = new Date().getTime() + timeOffset; // Apply offset for a synchronized "now"
+                const startTime = liveEvent.scheduledStartTime.toDate().getTime();
+                const distance = startTime - now;
+
+                if (distance < 0) {
+                    setIsLive(true);
+                    setCountdownText('LIVE NOW');
+                    clearInterval(timer); // Stop the timer once the event is live.
+                } else {
+                    setIsLive(false);
+                    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                    setCountdownText(`${days}d ${hours}h ${minutes}m ${seconds}s`);
                 }
-            };
-    
-            startSynchronizedCountdown();
-        } else {
-            // If the event is not in a valid state for a countdown, clear everything.
-            setIsLive(false);
-            setCountdownText('');
+            }, 1000);
+
+        } catch (error) {
+            console.error("Failed to synchronize with server time:", error);
+            setCountdownText('Error syncing clock...');
         }
-    
-        // Cleanup function to clear the interval when the component re-renders or unmounts.
-        return () => {
-            if (timer) {
-                clearInterval(timer);
-            }
-        };
-    }, [liveEvent]);
-    // ================== END: THE DEFINITIVE LIVE EVENT SYNC FIX V2 ==================
+    };
+
+    startSynchronizedCountdown();
+
+    // Cleanup function to clear the interval when the component unmounts or the event changes.
+    return () => {
+        if (timer) {
+            clearInterval(timer);
+        }
+    };
+}, [liveEvent]); // This entire effect is driven by the liveEvent object.
+// ================== END: THE DEFINITIVE LIVE EVENT SYNC FIX ==================
 
         // --- NATIVE BACK BUTTON LOGIC ---
   useEffect(() => {
