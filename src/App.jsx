@@ -622,61 +622,66 @@ useEffect(() => {
         return () => unsubscribe();
     }, [authLoading]);
 
-        // ================= START: THE DEFINITIVE LIVE EVENT SYNC FIX =================
+        // ================= START: THE DEFINITIVE LIVE EVENT SYNC FIX V2 =================
     useEffect(() => {
         let timer;
-        // If there's no event or it's not upcoming, reset the state.
-        if (!liveEvent || liveEvent.status !== 'upcoming' || !liveEvent.scheduledStartTime) {
-        setIsLive(false);
-        setCountdownText('');
-        return;
-    }
-
-    const startSynchronizedCountdown = async () => {
-        try {
-            // Get the server's time once to calculate the offset.
-            const getServerTime = httpsCallable(functions, 'getServerTime');
-            const result = await getServerTime();
-            const serverNow = new Date(result.data.serverTime).getTime();
-            const clientNow = new Date().getTime();
-            const timeOffset = serverNow - clientNow;
-
-            // Start the single, authoritative timer.
-            timer = setInterval(() => {
-                const now = new Date().getTime() + timeOffset; // Apply offset for a synchronized "now"
-                const startTime = liveEvent.scheduledStartTime.toDate().getTime();
-                const distance = startTime - now;
-
-                if (distance < 0) {
-                    setIsLive(true);
-                    setCountdownText('LIVE NOW');
-                    clearInterval(timer); // Stop the timer once the event is live.
-                } else {
-                    setIsLive(false);
-                    const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-                    const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                    const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                    const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-                    setCountdownText(`${days}d ${hours}h ${minutes}m ${seconds}s`);
+    
+        // This is the definitive safety check. It ensures every required piece of data
+        // exists and is valid before attempting to start the countdown.
+        if (
+            liveEvent &&
+            liveEvent.status === 'upcoming' &&
+            liveEvent.scheduledStartTime &&
+            typeof liveEvent.scheduledStartTime.toDate === 'function' // This prevents the crash.
+        ) {
+            const startSynchronizedCountdown = async () => {
+                try {
+                    const getServerTime = httpsCallable(functions, 'getServerTime');
+                    const result = await getServerTime();
+                    const serverNow = new Date(result.data.serverTime).getTime();
+                    const clientNow = new Date().getTime();
+                    const timeOffset = serverNow - clientNow;
+    
+                    timer = setInterval(() => {
+                        const now = new Date().getTime() + timeOffset;
+                        const startTime = liveEvent.scheduledStartTime.toDate().getTime();
+                        const distance = startTime - now;
+    
+                        if (distance < 0) {
+                            setIsLive(true);
+                            setCountdownText('LIVE NOW');
+                            clearInterval(timer);
+                        } else {
+                            setIsLive(false);
+                            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+                            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                            setCountdownText(`${days}d ${hours}h ${minutes}m ${seconds}s`);
+                        }
+                    }, 1000);
+    
+                } catch (error) {
+                    console.error("Failed to synchronize with server time:", error);
+                    setCountdownText('Error syncing clock...');
                 }
-            }, 1000);
-
-        } catch (error) {
-            console.error("Failed to synchronize with server time:", error);
-            setCountdownText('Error syncing clock...');
+            };
+    
+            startSynchronizedCountdown();
+        } else {
+            // If the event is not in a valid state for a countdown, clear everything.
+            setIsLive(false);
+            setCountdownText('');
         }
-    };
-
-    startSynchronizedCountdown();
-
-    // Cleanup function to clear the interval when the component unmounts or the event changes.
-    return () => {
-        if (timer) {
-            clearInterval(timer);
-        }
-    };
-}, [liveEvent]); // This entire effect is driven by the liveEvent object.
-// ================== END: THE DEFINITIVE LIVE EVENT SYNC FIX ==================
+    
+        // Cleanup function to clear the interval when the component re-renders or unmounts.
+        return () => {
+            if (timer) {
+                clearInterval(timer);
+            }
+        };
+    }, [liveEvent]); // This effect is driven solely by the liveEvent object.
+    // ================== END: THE DEFINITIVE LIVE EVENT SYNC FIX V2 ==================
 
         // --- NATIVE BACK BUTTON LOGIC ---
   useEffect(() => {
