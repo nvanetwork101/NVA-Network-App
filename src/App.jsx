@@ -346,7 +346,7 @@ function App() {
 
                     switch (screen) {
                         case 'opportunity':
-                            if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetailsScreen'); navigated = true; }
+                            if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); navigated = true; }
                             break;
                         case 'discover':
                             setActiveScreen('Discover');
