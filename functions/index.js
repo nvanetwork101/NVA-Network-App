@@ -5325,62 +5325,97 @@ exports.markToastAsSeen = onCall(async (request) => {
     }
 });
 
-// --- START: Definitive Social Share Thumbnail Function (V2 SDK) ---
-const axios = require("axios");
-
+// --- START: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---
 exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, response) => {
     const db = admin.firestore();
     const appId = "production-app-id";
 
+    // --- 1. Define Default Meta Tags ---
+    let ogTitle = "NVA Network";
+    let ogDescription = "The Nexus of Viral Ascent - Discover, Compete, Connect.";
+    let ogImage = "https://firebasestorage.googleapis.com/v0/b/nvanetwork-33838.appspot.com/o/public_assets%2Fsocial_share_default.png?alt=media&token=3852c062-8173-4297-8a3a-23137d6e8779";
+    let debugMessage = "<!-- NVA DEBUG: Default tags were served. Path did not match a dynamic route. -->";
+    
+    const path = request.headers['x-original-url'] || request.path;
+    const parts = path.split('/').filter(Boolean);
+    const finalUrl = `https://nvanetworkapp.com${path}`;
+
     try {
-        const path = request.headers['x-original-url'];
-        const { data: indexHtml } = await axios.get("https://nvanetworkapp.com", { timeout: 5000 });
+        const screen = parts[0];
+        const id = parts[1];
 
-        if (!path) {
-            const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: x-original-url header was NOT found. Cannot determine content ID. --></head>`);
-            return response.status(200).send(debugHtml);
+        if (screen === 'content' && id) {
+            const docSnap = await db.doc(`artifacts/${appId}/public/data/content_items/${id}`).get();
+            if (docSnap.exists) {
+                const data = docSnap.data();
+                ogTitle = data.title;
+                ogDescription = data.description;
+                ogImage = data.customThumbnailUrl || data.thumbnailUrl || ogImage;
+                debugMessage = `<!-- NVA DEBUG: Rendered content_item: ${id} -->`;
+            }
+        } else if (screen === 'opportunity' && id) {
+            const docSnap = await db.doc(`opportunities/${id}`).get();
+            if (docSnap.exists) {
+                const data = docSnap.data();
+                ogTitle = data.title;
+                ogDescription = data.description;
+                ogImage = data.flyerImageUrl || ogImage;
+                debugMessage = `<!-- NVA DEBUG: Rendered opportunity: ${id} -->`;
+            }
+        } else if (screen === 'user' && id) { // <-- NEW LOGIC
+            const docSnap = await db.doc(`creators/${id}`).get();
+            if (docSnap.exists) {
+                const data = docSnap.data();
+                ogTitle = data.creatorName || "NVA Network Profile";
+                ogDescription = data.bio || ogDescription;
+                ogImage = data.profilePictureUrl || ogImage;
+                debugMessage = `<!-- NVA DEBUG: Rendered user profile: ${id} -->`;
+            }
+        } else if (screen === 'competition') {
+            const querySnap = await db.collection("competitions").where("status", "in", ["Accepting Entries", "Live Voting"]).orderBy("createdAt", "desc").limit(1).get();
+            if (!querySnap.empty) {
+                const data = querySnap.docs[0].data();
+                ogTitle = data.title;
+                ogDescription = data.description;
+                ogImage = data.flyerImageUrl || ogImage;
+                debugMessage = `<!-- NVA DEBUG: Rendered active competition: ${querySnap.docs[0].id} -->`;
+            }
+        } else if (screen === 'discover') {
+            const docSnap = await db.doc("settings/liveEvent").get();
+            if (docSnap.exists) {
+                const data = docSnap.data();
+                ogTitle = data.eventTitle || "Live Premiere Event";
+                ogDescription = "Check out the latest live event on NVA Network!";
+                ogImage = data.eventImageUrl || ogImage;
+                debugMessage = `<!-- NVA DEBUG: Rendered live event: ${data.eventId} -->`;
+            }
         }
 
-        const parts = path.split('/').filter(Boolean);
-        
-        if (parts.length < 2 || parts[0] !== 'content') {
-            return response.status(200).send(indexHtml);
-        }
-        
-        const contentId = parts[1];
-        const contentPath = `artifacts/${appId}/public/data/content_items/${contentId}`;
-        const contentRef = db.doc(contentPath);
-        const docSnap = await contentRef.get();
-
-        if (!docSnap.exists) {
-            const debugHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Content ID '${contentId}' found in header, but NOT in database at '${contentPath}'. --></head>`);
-            return response.status(200).send(debugHtml);
-        }
-
-        const contentData = docSnap.data();
-        const title = contentData.title ? contentData.title.replace(/"/g, '&quot;') : "NVA Network";
-        const description = contentData.description ? contentData.description.substring(0, 150).replace(/"/g, '&quot;') + '...' : "The Nexus of Viral Ascent - Discover, Compete, Connect.";
-        const imageUrl = contentData.customThumbnailUrl || contentData.thumbnailUrl || contentData.liveThumbnail || "https://firebasestorage.googleapis.com/v0/b/nvanetwork-33838.appspot.com/o/public_assets%2Fsocial_share_default.png?alt=media&token=3852c062-8173-4297-8a3a-23137d6e8779";
-        const url = `https://nvanetworkapp.com/content/${contentId}`;
-
-        let finalHtml = indexHtml;
-        finalHtml = finalHtml.replace('__OG_TITLE__', title);
-        finalHtml = finalHtml.replace('__OG_DESCRIPTION__', description);
-        finalHtml = finalHtml.replace('__OG_IMAGE_URL__', imageUrl);
-        finalHtml = finalHtml.replace('__OG_URL__', url);
-
-        response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
-        return response.status(200).send(finalHtml);
+        ogTitle = ogTitle ? ogTitle.replace(/"/g, '&quot;') : "NVA Network";
+        ogDescription = ogDescription ? ogDescription.substring(0, 150).replace(/"/g, '&quot;') + '...' : "The Nexus of Viral Ascent - Discover, Compete, Connect.";
 
     } catch (error) {
-        logger.error("FATAL Error in generateSharePreviewV2:", { message: error.message, headers: request.headers });
-        try {
-            const { data: indexHtml } = await axios.get("https://nvanetworkapp.com");
-            const errorHtml = indexHtml.replace('</head>', `<!-- NVA DEBUG: Function crashed. Error: ${error.message} --></head>`);
-            return response.status(500).send(errorHtml);
-        } catch (fallbackError) {
-            return response.status(500).send("<html><head><title>Error</title></head><body>A server error occurred.</body></html>");
-        }
+        logger.error(`Error fetching social preview for path '${path}':`, error);
+        debugMessage = `<!-- NVA DEBUG: A database error occurred: ${error.message} -->`;
     }
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8"><title>${ogTitle}</title>${debugMessage}
+        <meta property="og:title" content="${ogTitle}" />
+        <meta property="og:description" content="${ogDescription}" />
+        <meta property="og:image" content="${ogImage}" />
+        <meta property="og:url" content="${finalUrl}" />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <script>window.location.href = "${finalUrl}";</script>
+      </head>
+      <body><p>${ogDescription}</p></body>
+      </html>`;
+
+    response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+    response.status(200).send(html);
 });
-// --- END: Definitive Social Share Thumbnail Function (V2 SDK) ---
+// --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---

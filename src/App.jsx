@@ -176,6 +176,50 @@ function App() {
   const notificationSoundRef = useRef(null);
   const unreadCount = notifications.filter(n => !n.isBroadcast && !n.isRead).length;
   const [notificationBadgeCount, setNotificationBadgeCount] = useState(0);
+    
+    // --- START: DEEP LINKING FIX FOR INITIAL PAGE LOAD ---
+  useEffect(() => {
+    // This logic runs only ONCE when the app first loads to handle deep links.
+    if (routingDoneRef.current) return;
+    
+    const path = window.location.pathname;
+    const parts = path.split('/').filter(Boolean);
+
+    if (parts.length > 0) {
+      const screen = parts[0];
+      const id = parts[1];
+
+      // This logic only handles navigation for publicly accessible screens.
+      // The logic for '/content' links remains inside the onAuthStateChanged
+      // listener because it requires an authenticated user to open the video modal.
+      switch (screen) {
+        case 'user':
+          if (id) {
+            setSelectedUserId(id);
+            setActiveScreen('UserProfile');
+          }
+          break;
+        case 'competition':
+          setActiveScreen('CompetitionScreen');
+          break;
+        case 'opportunity':
+          if (id) {
+            setSelectedOpportunity({ id });
+            setActiveScreen('OpportunityDetailsScreen');
+          }
+          break;
+        case 'discover':
+          setActiveScreen('Discover');
+          break;
+        default:
+          // If the path is unknown (e.g., /content), do nothing.
+          // The auth listener will handle it if the user is logged in.
+          break;
+      }
+    }
+  }, []); // Empty dependency array ensures this runs only once on mount.
+  // --- END: DEEP LINKING FIX FOR INITIAL PAGE LOAD ---
+    
     const markAllAsRead = () => {
     notifications.forEach(notification => {
       if (!notification.isBroadcast && !notification.isRead) {
