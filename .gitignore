@@ -25,3 +25,5 @@ dist-ssr
 functions/service-account-key.json
 UPDATING WEBSITE.txt
 node_modules/
+
+.firebase/hosting.*.cache

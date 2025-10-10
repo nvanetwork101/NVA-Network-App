@@ -12,19 +12,19 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
     // This effect ensures that if the modal is re-opened for a different competition,
     // the state is correctly reset to the new competition's data.
      useEffect(() => {
-        // This robust function handles both Firestore Timestamps and date strings
+        // This robustly converts a Firestore Timestamp into the local YYYY-MM-DDTHH:mm string
+        // required by the datetime-local input, preventing timezone corruption.
         const convertTimestamp = (ts) => {
-            if (!ts) return ''; // Handle null or undefined safely
-            // If it's a Firestore Timestamp, convert it
-            if (typeof ts.toDate === 'function') {
-                return new Date(ts.toDate()).toISOString().slice(0, 16);
-            }
-            // If it's already a string, just use it
-            if (typeof ts === 'string') {
-                return ts.slice(0, 16);
-            }
-            // Provide a safe fallback for any other unexpected type
-            return '';
+            if (!ts) return '';
+            const date = ts.toDate ? ts.toDate() : new Date(ts);
+
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0'); // padStart ensures "09" vs "9"
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
         };
 
         setEditableComp({

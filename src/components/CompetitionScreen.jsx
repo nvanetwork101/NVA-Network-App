@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db, functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
-import { collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, limit, doc } from "firebase/firestore";
 import { extractVideoInfo } from '../firebase';
 
 import Countdown from 'react-countdown';
@@ -18,137 +18,69 @@ import EnlargedPhotoViewer from './EnlargedPhotoViewer';
 
 function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorProfile }) {
     // --- STATE MANAGEMENT ---
-    const [competition, setCompetition] = useState(null);
-    const [loading, setLoading] = useState(true);
+       
     const [entries, setEntries] = useState([]);
     const [loadingEntries, setLoadingEntries] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [showPrizesModal, setShowPrizesModal] = useState(false);
     const [showEntryForm, setShowEntryForm] = useState(false);
-    const [selectedEntry, setSelectedEntry] = useState(null);
-
-    const [countdown, setCountdown] = useState(null);
+    const [selectedEntry, setSelectedEntry] = useState(null);   
+   
+    const [competition, setCompetition] = useState(null);
+    const [loading, setLoading] = useState(true);
     
-    const isMounted = useRef(true);
-
-    // This effect runs only once: when the component is first created.
-    // Its cleanup function runs only once: when the component is destroyed.
+    // --- AUTHORITATIVE DATA FETCHING ---
+    // This single effect now drives the entire component, ensuring it is always
+    // in sync with the server-authoritative display state.
     useEffect(() => {
-        // Set the flag to false when the component unmounts.
-        return () => {
-            isMounted.current = false;
-        };
-    }, []); // <-- The empty array is crucial.
-
-
-    // --- DATA FETCHING ---
-    useEffect(() => {
-        const compRef = collection(db, "competitions");
-        const q = query(compRef, where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]), orderBy("createdAt", "desc"), limit(1));
-        const unsubscribeComp = onSnapshot(q, (snapshot) => {
-            // THE FIX: Only perform state updates if the component is still mounted.
-            if (isMounted.current) {
-                if (!snapshot.empty) {
-                    setCompetition({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
-                } else {
-                    setCompetition(null);
-                }
-                setLoading(false);
+        const displayStateRef = doc(db, "settings", "competitionDisplayState");
+        const unsubscribe = onSnapshot(displayStateRef, (docSnap) => {
+            if (docSnap.exists() && docSnap.data().isActive) {
+                // We still call it 'competition' in this component's state for simplicity,
+                // but it's really the pre-calculated display state from the server.
+                setCompetition(docSnap.data());
+            } else {
+                setCompetition(null);
             }
+            setLoading(false);
         });
-        return () => unsubscribeComp();
-    }, []);
+        // Cleanup listener on component unmount.
+        return () => unsubscribe();
+    }, []); // Runs only once.
 
+    // Renders the countdown timer based on the authoritative target from the server.
+    const renderCountdown = () => {
+        if (!competition || !competition.countdownTarget) {
+            return <span style={{color: '#FF4136'}}>ENDED</span>;
+        }
+        
+        const targetTime = competition.countdownTarget.toDate();
+        const renderer = ({ days, hours, minutes, seconds, completed }) => {
+            if (completed) return <span style={{color: '#FF4136'}}>ENDED</span>;
+            return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
+        };
+
+        return <Countdown date={targetTime} renderer={renderer} />;
+    };
+    
     useEffect(() => {
-        if (!competition) {
+        if (!competition || !competition.competitionId) { // Check for the correct ID property
             setEntries([]);
             setLoadingEntries(false);
             return;
         }
         setLoadingEntries(true);
-        const entriesRef = collection(db, "competitions", competition.id, "entries");
+        // Use the correct ID property: competition.competitionId instead of competition.id
+        const entriesRef = collection(db, "competitions", competition.competitionId, "entries");
         const q = query(entriesRef, orderBy("createdAt", "desc"));
         const unsubscribeEntries = onSnapshot(q, (snapshot) => {
-            // THE FINAL FIX: Guard the state updates for the entries list.
-            if (isMounted.current) {
-                setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                setLoadingEntries(false);
-            }
+            // The isMounted check has been removed as it is no longer defined.
+            setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setLoadingEntries(false);
         });
         return () => unsubscribeEntries();
     }, [competition]);
-
-    // --- REAL-TIME COUNTDOWN TIMER LOGIC ---
-    useEffect(() => {
-        let timer; // Define timer here to be accessible in cleanup
-
-        // If there's no competition, or no valid status, clear the countdown and exit.
-        if (!competition || (competition.status !== 'Accepting Entries' && competition.status !== 'Live Voting')) {
-            setCountdown(null);
-            return;
-        }
-
-        const startSynchronizedCountdown = async () => {
-            let targetDate = null;
-            if (competition.status === 'Accepting Entries' && competition.entryDeadline) {
-                targetDate = competition.entryDeadline.toDate();
-            } else if (competition.status === 'Live Voting' && competition.competitionEnd) {
-                targetDate = competition.competitionEnd.toDate();
-            }
-
-            // If there's no valid target date for the current status, exit.
-            if (!targetDate) {
-                setCountdown(null);
-                return;
-            }
-
-            try {
-                // 1. Get the server's time once to calculate the offset.
-                const getServerTime = httpsCallable(functions, 'getServerTime');
-                const result = await getServerTime();
-                const serverNow = new Date(result.data.serverTime).getTime();
-                const clientNow = new Date().getTime();
-                const timeOffset = serverNow - clientNow;
-
-                // 2. Start the single, authoritative timer.
-                timer = setInterval(() => {
-                    const now = new Date().getTime() + timeOffset; // Apply offset for a synchronized "now"
-                    const distance = targetDate.getTime() - now;
-
-                    const renderer = ({ days, hours, minutes, seconds, completed }) => {
-                         if (completed) {
-                            return <span style={{color: '#FF4136'}}>ENDED</span>;
-                        } else {
-                            return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
-                        }
-                    };
-                    
-                    // The Countdown component handles the rendering logic.
-                    // We just need to give it the continuously adjusted target date.
-                    const adjustedTarget = new Date(new Date().getTime() + distance);
-                    setCountdown(<Countdown date={adjustedTarget} renderer={renderer} />);
-
-                    if (distance < 0) {
-                        clearInterval(timer); // Stop the timer once the event is over.
-                    }
-                }, 1000);
-
-            } catch (error) {
-                console.error("Failed to synchronize with server time:", error);
-                setCountdown(<span style={{color: '#FF4136'}}>Error syncing clock</span>);
-            }
-        };
-
-        startSynchronizedCountdown();
-
-        // 3. Cleanup function to clear the interval when the component unmounts or the competition changes.
-        return () => {
-            if (timer) {
-                clearInterval(timer);
-            }
-        };
-    }, [competition]); // This dependency ensures the timer restarts when the competition changes
-
+        
     // --- DERIVED STATE ---
     const rankedEntries = useMemo(() => {
         const calculateScore = (entry) => {
@@ -278,7 +210,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                     {competition.status === 'Live Voting' && (
                         <div className="dashboardItem" style={{flex: 1, textAlign: 'center', padding: '10px', border: '1px solid #00FFFF', borderRadius: '8px'}}>
                             <p style={{margin: 0, color: '#00FFFF', fontWeight: 'bold'}}>Voting Ends In:</p>
-                            <p style={{margin: 0, color: '#FFF', fontWeight: 'normal', fontSize: '14px'}}>{countdown}</p>
+                            <p style={{margin: 0, color: '#FFF', fontWeight: 'normal', fontSize: '14px'}}>{renderCountdown()}</p>
                         </div>
                     )}
                     {(competition.status === 'Judging' || competition.status === 'Results Visible') && (
