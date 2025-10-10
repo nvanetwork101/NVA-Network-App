@@ -49,9 +49,9 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
     }, [competitionId]); // This effect runs whenever a new competition ID is received.
 
 
-    // EFFECT 3: The server-synchronized timer logic.
+    // EFFECT 3: The DEFINITIVE server-synchronized timer logic using pure milliseconds.
     useEffect(() => {
-        let timer; // Define timer to be accessible in cleanup
+        let timer; 
 
         if (!activeCompetition) {
             setBannerText('');
@@ -64,28 +64,29 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
                 // 1. Get server time and calculate offset
                 const getServerTime = httpsCallable(functions, 'getServerTime');
                 const result = await getServerTime();
-                const serverNow = new Date(result.data.serverTime).getTime();
-                const clientNow = new Date().getTime();
-                const timeOffset = serverNow - clientNow;
+                const serverNowMs = new Date(result.data.serverTime).getTime();
+                const clientNowMs = new Date().getTime();
+                const timeOffset = serverNowMs - clientNowMs;
 
                 // 2. Start the authoritative timer
                 timer = setInterval(() => {
-                    // Use the synchronized 'now' for all calculations
-                    const now = new Date(new Date().getTime() + timeOffset); 
+                    // This is the synchronized "now" in pure, timezone-agnostic milliseconds.
+                    const nowMs = new Date().getTime() + timeOffset; 
                     
-                    const entryDeadline = activeCompetition.entryDeadline?.toDate();
-                    const competitionEnd = activeCompetition.competitionEnd?.toDate();
-                    const resultsRevealTime = activeCompetition.resultsRevealTime?.toDate();
+                    // Get all deadlines in pure, timezone-agnostic milliseconds.
+                    const entryDeadlineMs = activeCompetition.entryDeadline?.toDate().getTime();
+                    const competitionEndMs = activeCompetition.competitionEnd?.toDate().getTime();
+                    const resultsRevealTimeMs = activeCompetition.resultsRevealTime?.toDate().getTime();
                     
                     let nextBannerText = '';
                     let nextCountdownText = '';
-                    let deadline = null;
+                    let deadlineMs = null;
 
-                    // This switch logic remains the same, but now uses the correct 'now'
+                    // This logic now uses 100% reliable numerical comparisons.
                     switch (activeCompetition.status) {
                         case 'Accepting Entries':
-                            deadline = entryDeadline;
-                            if (deadline && now < deadline) {
+                            deadlineMs = entryDeadlineMs;
+                            if (deadlineMs && nowMs < deadlineMs) {
                                 nextBannerText = "Entries close in";
                             } else {
                                 nextBannerText = "Entries are closed";
@@ -93,8 +94,8 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
                             }
                             break;
                         case 'Live Voting':
-                            deadline = competitionEnd;
-                            if (deadline && now < deadline) {
+                            deadlineMs = competitionEndMs;
+                            if (deadlineMs && nowMs < deadlineMs) {
                                 nextBannerText = "Voting ends in";
                             } else {
                                 nextBannerText = "Voting has ended";
@@ -102,8 +103,8 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
                             }
                             break;
                         case 'Judging':
-                            deadline = resultsRevealTime;
-                            if (deadline && now < deadline) {
+                            deadlineMs = resultsRevealTimeMs;
+                            if (deadlineMs && nowMs < deadlineMs) {
                                 nextBannerText = "Results revealed in";
                             } else {
                                 nextBannerText = "Judging in Progress";
@@ -118,8 +119,8 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
                             break;
                     }
 
-                    if (deadline && now < deadline) {
-                        const distance = deadline - now;
+                    if (deadlineMs && nowMs < deadlineMs) {
+                        const distance = deadlineMs - nowMs; // Pure subtraction of numbers
                         const days = Math.floor(distance / (1000 * 60 * 60 * 24));
                         const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
                         const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
@@ -141,13 +142,13 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
 
         startSynchronizedCountdown();
 
-        // 3. Cleanup function to clear the interval
+        // 3. Cleanup
         return () => {
             if (timer) {
                 clearInterval(timer);
             }
         };
-    }, [activeCompetition]); // This dependency on the fresh data is the key.
+    }, [activeCompetition]);
 
     if (!activeCompetition) {
         return null;
