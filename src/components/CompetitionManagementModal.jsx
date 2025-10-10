@@ -44,23 +44,23 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
         setIsSaving(true);
         showMessage("Saving changes...");
 
-        // Prepare only the changed data to send to the function
-        const updates = {};
-        for (const key in editableComp) {
-            if (editableComp[key] !== competition[key]) {
-                updates[key] = editableComp[key];
-            }
-        }
-        
         try {
+            // THE FIX: Create a new object with corrected, timezone-aware date strings.
+            const updatesToSend = {
+                ...editableComp,
+                entryDeadline: editableComp.entryDeadline ? new Date(editableComp.entryDeadline).toISOString() : null,
+                competitionEnd: editableComp.competitionEnd ? new Date(editableComp.competitionEnd).toISOString() : null,
+                resultsRevealTime: editableComp.resultsRevealTime ? new Date(editableComp.resultsRevealTime).toISOString() : null,
+            };
+
             const updateFunction = httpsCallable(functions, 'updateCompetition');
             await updateFunction({
                 competitionId: competition.id,
-                updates: editableComp // Send the whole object for simplicity on the backend
+                updates: updatesToSend // Send the timezone-corrected object to the backend.
             });
             showMessage("Competition updated successfully!");
             onClose();
-        } catch (error) {
+        } catch (error)
             showMessage(`Error: ${error.message}`);
         } finally {
             setIsSaving(false);
