@@ -118,12 +118,15 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
                 finalFlyerUrl = flyerPreview; // Use the fetched preview from the URL
             }
 
+            // THE FIX: Convert local datetime strings to full ISO 8601 strings (UTC).
+            // This ensures the server interprets the time correctly, regardless of its timezone.
             const competitionData = {
                 title, competitionType, description, rules, prizesText,
                 flyerImageUrl: finalFlyerUrl,
                 flyerLinkUrl: flyerUrl,
-                entryDeadline, competitionEnd,
-                resultsRevealTime: resultsDate || null,
+                entryDeadline: entryDeadline ? new Date(entryDeadline).toISOString() : null,
+                competitionEnd: competitionEnd ? new Date(competitionEnd).toISOString() : null,
+                resultsRevealTime: resultsDate ? new Date(resultsDate).toISOString() : null,
             };
 
             const createCompFunction = httpsCallable(functions, 'createCompetition');
