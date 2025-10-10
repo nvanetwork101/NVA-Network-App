@@ -5,14 +5,14 @@ import React, { useState, useEffect } from 'react';
 // This is the final, synchronized version of the banner.
 function CompetitionHomeScreenBanner({ setActiveScreen }) {
     // This component now manages its own state, but it's populated by a global event, not a direct DB call.
-    const [activeCompetition, setActiveCompetition] = useState(null);
+    const [activeCompetition, setCompetition] = useState(null);
     const [countdown, setCountdown] = useState('');
     const [bannerText, setBannerText] = useState('');
 
     // EFFECT 1: Listens for the global event broadcast from App.jsx
     useEffect(() => {
         const handleCompetitionUpdate = (event) => {
-            setActiveCompetition(event.detail);
+            setCompetition(event.detail);
         };
         window.addEventListener('competitionUpdated', handleCompetitionUpdate);
 
@@ -27,12 +27,27 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
 
     // EFFECT 2: The corrected timer logic.
     useEffect(() => {
+        // Guard 1: If there's no competition object at all, clear text and exit.
         if (!activeCompetition) {
             setBannerText('');
             setCountdown('');
             return;
         }
 
+        // Guard 2: Before starting the timer, ensure the specific date we need for the current status actually exists.
+        // This prevents a crash if the competition object is incomplete.
+        const status = activeCompetition.status;
+        if (
+            (status === 'Accepting Entries' && !activeCompetition.entryDeadline) ||
+            (status === 'Live Voting' && !activeCompetition.competitionEnd) ||
+            (status === 'Judging' && !activeCompetition.resultsRevealTime)
+        ) {
+            setBannerText('Competition data is loading...');
+            setCountdown('');
+            return; // Exit and wait for a state update with the complete data.
+        }
+
+        // If we pass the guards, it's safe to start the timer.
         const interval = setInterval(() => {
             const now = new Date();
             const entryDeadline = activeCompetition.entryDeadline?.toDate();
