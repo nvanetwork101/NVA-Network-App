@@ -2,117 +2,49 @@
 
 import React, { useState, useEffect } from 'react';
 import Countdown from 'react-countdown';
-import { db, functions } from '../firebase';
-import { httpsCallable } from 'firebase/functions';
+import { db } from '../firebase';
 import { doc, onSnapshot } from "firebase/firestore";
 
 function CompetitionHomeScreenBanner({ setActiveScreen }) {
-    const [competitionId, setCompetitionId] = useState(null);
-    const [activeCompetition, setActiveCompetition] = useState(null);
-    const [countdown, setCountdown] = useState('');
-    const [bannerText, setBannerText] = useState('');
+    const [displayState, setDisplayState] = useState(null);
 
-    // EFFECT 1: Listens for the global event that carries ONLY the competition ID.
+    // This single effect listens to the server-authoritative state and does nothing else.
     useEffect(() => {
-        const handleCompetitionUpdate = (event) => {
-            // event.detail is now just the ID string (or null)
-            setCompetitionId(event.detail); 
-        };
-        window.addEventListener('competitionUpdated', handleCompetitionUpdate);
-        window.dispatchEvent(new CustomEvent('requestCompetitionState')); 
-        return () => {
-            window.removeEventListener('competitionUpdated', handleCompetitionUpdate);
-        };
-    }, []);
-
-    // EFFECT 2: Listens for changes to the ID and fetches authoritative data from Firestore.
-    useEffect(() => {
-        // If there's no ID, there's no competition. Reset everything.
-        if (!competitionId) {
-            setActiveCompetition(null);
-            return;
-        }
-
-        // Set up a direct listener to the competition document.
-        const unsub = onSnapshot(doc(db, "competitions", competitionId), (docSnap) => {
-            if (docSnap.exists()) {
-                // This guarantees we always have the freshest, most complete data.
-                setActiveCompetition({ id: docSnap.id, ...docSnap.data() });
+        const displayStateRef = doc(db, "settings", "competitionDisplayState");
+        const unsubscribe = onSnapshot(displayStateRef, (docSnap) => {
+            if (docSnap.exists() && docSnap.data().isActive) {
+                setDisplayState(docSnap.data());
             } else {
-                // If the competition is deleted, reset the state.
-                setActiveCompetition(null);
+                setDisplayState(null); // Hides banner if no active competition or error state.
             }
         });
+        // Cleanup listener on component unmount.
+        return () => unsubscribe();
+    }, []); // Runs only once.
 
-        // Clean up the listener when the ID changes or the component unmounts.
-        return () => unsub();
-
-    }, [competitionId]); // This effect runs whenever a new competition ID is received.
-
-
-   // EFFECT 3: The DEFINITIVE server-synchronized timer logic.
-    useEffect(() => {
-        let timer;
-        if (!activeCompetition) {
-            setBannerText('');
-            setCountdown('');
-            return;
+    // Renders the countdown timer based on the authoritative target from the server.
+    const renderCountdown = () => {
+        if (!displayState || !displayState.countdownTarget) {
+            // Handle statuses that do not have a countdown.
+            if (displayState?.status === 'Accepting Entries') return "Waiting for voting...";
+            if (displayState?.status === 'Live Voting') return "Waiting for judging...";
+            return null;
         }
 
-        const startSynchronizedCountdown = async () => {
-            try {
-                const getServerTime = httpsCallable(functions, 'getServerTime');
-                const result = await getServerTime();
-                const timeOffset = new Date(result.data.serverTime).getTime() - new Date().getTime();
-
-                timer = setInterval(() => {
-                    const nowMs = new Date().getTime() + timeOffset;
-                    const entryDeadlineMs = activeCompetition.entryDeadline?.toDate().getTime();
-                    const competitionEndMs = activeCompetition.competitionEnd?.toDate().getTime();
-                    
-                    let nextBannerText = '';
-                    let deadlineMs = null;
-
-                    switch (activeCompetition.status) {
-                        case 'Accepting Entries':
-                            deadlineMs = entryDeadlineMs;
-                            nextBannerText = nowMs < deadlineMs ? "Entries close in" : "Entries are closed";
-                            break;
-                        case 'Live Voting':
-                            deadlineMs = competitionEndMs;
-                            nextBannerText = nowMs < deadlineMs ? "Voting ends in" : "Voting has ended";
-                            break;
-                        case 'Judging':
-                            nextBannerText = "Judging in Progress";
-                            break;
-                        case 'Results Visible':
-                            nextBannerText = "Results Are In!";
-                            break;
-                        default:
-                            nextBannerText = "Competition status is pending.";
-                            break;
-                    }
-
-                    if (deadlineMs && nowMs < deadlineMs) {
-                        const distance = deadlineMs - nowMs;
-                        const renderer = ({ days, hours, minutes, seconds }) => `${days}d ${hours}h ${minutes}m ${seconds}s`;
-                        setCountdown(<Countdown date={Date.now() + distance} renderer={renderer} />);
-                    } else {
-                         setCountdown(activeCompetition.status === 'Accepting Entries' ? "Waiting for voting..." : "Waiting for judging...");
-                    }
-                    setBannerText(nextBannerText);
-                }, 1000);
-            } catch (error) {
-                console.error("Failed to synchronize with server time:", error);
-                setBannerText("Error syncing clock");
+        const targetTime = displayState.countdownTarget.toDate();
+        const renderer = ({ days, hours, minutes, seconds, completed }) => {
+            if (completed) {
+                // Fallback text while waiting for the next 1-minute server update.
+                return displayState.status === 'Accepting Entries' ? "Entries are closed" : "Voting has ended";
             }
+            return `${days}d ${hours}h ${minutes}m ${seconds}s`;
         };
 
-        startSynchronizedCountdown();
-        return () => { if (timer) clearInterval(timer); };
-    }, [activeCompetition]);
+        return <Countdown date={targetTime} renderer={renderer} />;
+    };
 
-    if (!activeCompetition) {
+    // If there is no active competition state, render nothing.
+    if (!displayState) {
         return null;
     }
 
@@ -131,7 +63,8 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
             }}
         >
             <span>🏆</span>
-            <span>{activeCompetition.title}: {bannerText} {countdown}</span>
+            {/* The entire display is now driven by the pre-calculated server state */}
+            <span>{displayState.title}: {displayState.displayMessage} {renderCountdown()}</span>
         </div>
     );
 }

@@ -12,19 +12,21 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
     // This effect ensures that if the modal is re-opened for a different competition,
     // the state is correctly reset to the new competition's data.
      useEffect(() => {
-        // This robust function handles both Firestore Timestamps and date strings
+        // This function correctly converts a UTC Firestore Timestamp into the user's local time
+        // for accurate display and editing in a datetime-local input field.
         const convertTimestamp = (ts) => {
             if (!ts) return ''; // Handle null or undefined safely
-            // If it's a Firestore Timestamp, convert it
-            if (typeof ts.toDate === 'function') {
-                return new Date(ts.toDate()).toISOString().slice(0, 16);
-            }
-            // If it's already a string, just use it
-            if (typeof ts === 'string') {
-                return ts.slice(0, 16);
-            }
-            // Provide a safe fallback for any other unexpected type
-            return '';
+
+            // Ensure we are working with a JavaScript Date object.
+            const date = ts.toDate ? ts.toDate() : new Date(ts);
+
+            // Create a new Date object that is adjusted for the local timezone offset.
+            // This effectively "tricks" the toISOString method into outputting a string
+            // that represents the local time, which is what datetime-local input expects.
+            const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+            
+            // Convert to an ISO string and slice to the 'YYYY-MM-DDTHH:mm' format.
+            return localDate.toISOString().slice(0, 16);
         };
 
         setEditableComp({

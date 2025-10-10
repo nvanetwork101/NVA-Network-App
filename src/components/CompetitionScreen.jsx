@@ -18,47 +18,51 @@ import EnlargedPhotoViewer from './EnlargedPhotoViewer';
 
 function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorProfile }) {
     // --- STATE MANAGEMENT ---
-    const [competition, setCompetition] = useState(null);
-    const [loading, setLoading] = useState(true);
+       
     const [entries, setEntries] = useState([]);
     const [loadingEntries, setLoadingEntries] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [showPrizesModal, setShowPrizesModal] = useState(false);
     const [showEntryForm, setShowEntryForm] = useState(false);
-    const [selectedEntry, setSelectedEntry] = useState(null);
-
-    const [countdown, setCountdown] = useState(null);
+    const [selectedEntry, setSelectedEntry] = useState(null);   
+   
+    const [competition, setCompetition] = useState(null);
+    const [loading, setLoading] = useState(true);
     
-    const isMounted = useRef(true);
-
-    // This effect runs only once: when the component is first created.
-    // Its cleanup function runs only once: when the component is destroyed.
+    // --- AUTHORITATIVE DATA FETCHING ---
+    // This single effect now drives the entire component, ensuring it is always
+    // in sync with the server-authoritative display state.
     useEffect(() => {
-        // Set the flag to false when the component unmounts.
-        return () => {
-            isMounted.current = false;
-        };
-    }, []); // <-- The empty array is crucial.
-
-
-    // --- DATA FETCHING ---
-    useEffect(() => {
-        const compRef = collection(db, "competitions");
-        const q = query(compRef, where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]), orderBy("createdAt", "desc"), limit(1));
-        const unsubscribeComp = onSnapshot(q, (snapshot) => {
-            // THE FIX: Only perform state updates if the component is still mounted.
-            if (isMounted.current) {
-                if (!snapshot.empty) {
-                    setCompetition({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
-                } else {
-                    setCompetition(null);
-                }
-                setLoading(false);
+        const displayStateRef = doc(db, "settings", "competitionDisplayState");
+        const unsubscribe = onSnapshot(displayStateRef, (docSnap) => {
+            if (docSnap.exists() && docSnap.data().isActive) {
+                // We still call it 'competition' in this component's state for simplicity,
+                // but it's really the pre-calculated display state from the server.
+                setCompetition(docSnap.data());
+            } else {
+                setCompetition(null);
             }
+            setLoading(false);
         });
-        return () => unsubscribeComp();
-    }, []);
+        // Cleanup listener on component unmount.
+        return () => unsubscribe();
+    }, []); // Runs only once.
 
+    // Renders the countdown timer based on the authoritative target from the server.
+    const renderCountdown = () => {
+        if (!competition || !competition.countdownTarget) {
+            return <span style={{color: '#FF4136'}}>ENDED</span>;
+        }
+        
+        const targetTime = competition.countdownTarget.toDate();
+        const renderer = ({ days, hours, minutes, seconds, completed }) => {
+            if (completed) return <span style={{color: '#FF4136'}}>ENDED</span>;
+            return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
+        };
+
+        return <Countdown date={targetTime} renderer={renderer} />;
+    };
+    
     useEffect(() => {
         if (!competition) {
             setEntries([]);
@@ -77,55 +81,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
         });
         return () => unsubscribeEntries();
     }, [competition]);
-
-    // --- REAL-TIME COUNTDOWN TIMER LOGIC ---
-    useEffect(() => {
-        let timer;
-        if (!competition) {
-            setCountdown(null);
-            return;
-        }
-
-        const startSynchronizedCountdown = async () => {
-            try {
-                const getServerTime = httpsCallable(functions, 'getServerTime');
-                const result = await getServerTime();
-                const timeOffset = new Date(result.data.serverTime).getTime() - new Date().getTime();
-
-                timer = setInterval(() => {
-                    const nowMs = new Date().getTime() + timeOffset;
-                    const entryDeadlineMs = competition.entryDeadline?.toDate().getTime();
-                    const competitionEndMs = competition.competitionEnd?.toDate().getTime();
-                    
-                    let deadlineMs = null;
-
-                    if (competition.status === 'Accepting Entries') {
-                        deadlineMs = entryDeadlineMs;
-                    } else if (competition.status === 'Live Voting') {
-                        deadlineMs = competitionEndMs;
-                    }
-
-                    if (deadlineMs && nowMs < deadlineMs) {
-                        const distance = deadlineMs - nowMs;
-                        const renderer = ({ days, hours, minutes, seconds, completed }) => {
-                            if (completed) return <span style={{color: '#FF4136'}}>ENDED</span>;
-                            return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
-                        };
-                        setCountdown(<Countdown date={Date.now() + distance} renderer={renderer} />);
-                    } else {
-                        setCountdown(<span style={{color: '#FF4136'}}>ENDED</span>);
-                    }
-                }, 1000);
-
-            } catch (error) {
-                console.error("Failed to synchronize with server time:", error);
-                setCountdown(<span style={{color: '#FF4136'}}>Error syncing clock</span>);
-            }
-        };
-
-        startSynchronizedCountdown();
-        return () => { if (timer) clearInterval(timer); };
-    }, [competition]);
+        
     // --- DERIVED STATE ---
     const rankedEntries = useMemo(() => {
         const calculateScore = (entry) => {
@@ -255,7 +211,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                     {competition.status === 'Live Voting' && (
                         <div className="dashboardItem" style={{flex: 1, textAlign: 'center', padding: '10px', border: '1px solid #00FFFF', borderRadius: '8px'}}>
                             <p style={{margin: 0, color: '#00FFFF', fontWeight: 'bold'}}>Voting Ends In:</p>
-                            <p style={{margin: 0, color: '#FFF', fontWeight: 'normal', fontSize: '14px'}}>{countdown}</p>
+                            <p style={{margin: 0, color: '#FFF', fontWeight: 'normal', fontSize: '14px'}}>{renderCountdown()}</p>
                         </div>
                     )}
                     {(competition.status === 'Judging' || competition.status === 'Results Visible') && (

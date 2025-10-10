@@ -3603,15 +3603,10 @@ exports.submitCompetitionEntry = onCall(async (request) => {
         if (competitionData.status !== 'Accepting Entries') {
             throw new HttpsError("failed-precondition", "This competition is not currently accepting entries.");
         }
-         if (competitionData.entryDeadline) {
-            // This is the fix. It correctly converts the stored data (whether it's a Timestamp or a string)
-            // into a Firestore Timestamp object for a reliable, direct comparison.
-            const deadlineTimestamp = competitionData.entryDeadline.toDate ? competitionData.entryDeadline : admin.firestore.Timestamp.fromDate(new Date(competitionData.entryDeadline));
-            
-            // This comparison is timezone-safe.
-            if (deadlineTimestamp < admin.firestore.Timestamp.now()) {
-                throw new HttpsError("failed-precondition", "The entry deadline for this competition has passed.");
-            }
+         // With the frontend now sending correct data, this check is simplified and hardened.
+        // It operates purely on server-authoritative Timestamps.
+        if (competitionData.entryDeadline && competitionData.entryDeadline.toMillis() < Date.now()) {
+            throw new HttpsError("failed-precondition", "The entry deadline for this competition has passed.");
         }
 
         const entryRef = competitionRef.collection("entries").doc(uid);
@@ -3880,6 +3875,80 @@ exports.checkCompetitionStatusTransitions = onSchedule("every 10 minutes", async
         return null;
     }
 });
+
+        // =====================================================================
+// =========== START: SERVER-AUTHORITATIVE COMPETITION TIMER ===========
+// =====================================================================
+exports.updateCompetitionDisplayState = onSchedule("every 1 minutes", async (event) => {
+    logger.info("Running scheduled job: updateCompetitionDisplayState.");
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+    const displayStateRef = db.collection("settings").doc("competitionDisplayState");
+
+    try {
+        const activeQuery = db.collection("competitions")
+            .where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"])
+            .orderBy("createdAt", "desc")
+            .limit(1);
+        
+        const snapshot = await activeQuery.get();
+
+        if (snapshot.empty) {
+            await displayStateRef.set({ isActive: false, status: 'no_active_competition' });
+            return null;
+        }
+
+        const competitionDoc = snapshot.docs[0];
+        const competitionData = competitionDoc.data();
+        const nowMs = now.toMillis();
+
+        let displayMessage = "";
+        let countdownTarget = null;
+        const status = competitionData.status;
+
+        if (status === 'Accepting Entries') {
+            const deadlineMs = competitionData.entryDeadline?.toMillis();
+            if (deadlineMs && nowMs < deadlineMs) {
+                displayMessage = "Entries close in";
+                countdownTarget = competitionData.entryDeadline;
+            } else {
+                displayMessage = "Entries are closed";
+            }
+        } else if (status === 'Live Voting') {
+            const deadlineMs = competitionData.competitionEnd?.toMillis();
+            if (deadlineMs && nowMs < deadlineMs) {
+                displayMessage = "Voting ends in";
+                countdownTarget = competitionData.competitionEnd;
+            } else {
+                displayMessage = "Voting has ended";
+            }
+        } else if (status === 'Judging') {
+            displayMessage = "Judging in Progress";
+        } else if (status === 'Results Visible') {
+            displayMessage = "Results Are In!";
+        }
+
+        const displayState = {
+            isActive: true,
+            competitionId: competitionDoc.id,
+            title: competitionData.title,
+            status: status,
+            displayMessage: displayMessage,
+            countdownTarget: countdownTarget
+        };
+
+        await displayStateRef.set(displayState);
+        logger.info(`Updated competitionDisplayState for '${competitionData.title}' to status '${status}'.`);
+
+    } catch (error) {
+        logger.error("Error in updateCompetitionDisplayState scheduled job:", { error });
+        await displayStateRef.set({ isActive: false, status: 'error' }); // Write error state
+    }
+    return null;
+});
+// =====================================================================
+// ============= END: SERVER-AUTHORITATIVE COMPETITION TIMER =============
+// =====================================================================
 
         // =====================================================================
 // ============ START: AUTOMATED EVENT LIFECYCLE SYSTEM ================
