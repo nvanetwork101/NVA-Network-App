@@ -1,7 +1,8 @@
 // src/components/CompetitionScreen.jsx
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { db } from '../firebase';
+import { db, functions } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
 import { collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
 import { extractVideoInfo } from '../firebase';
 
@@ -79,27 +80,73 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
 
     // --- REAL-TIME COUNTDOWN TIMER LOGIC ---
     useEffect(() => {
-        if (!competition) return;
+        let timer; // Define timer here to be accessible in cleanup
 
-        let targetDate = null;
-        if (competition.status === 'Accepting Entries' && competition.entryDeadline) {
-            targetDate = competition.entryDeadline.toDate();
-        } else if (competition.status === 'Live Voting' && competition.competitionEnd) {
-            targetDate = competition.competitionEnd.toDate();
-        }
-
-        if (targetDate) {
-            const renderer = ({ days, hours, minutes, seconds, completed }) => {
-                if (completed) {
-                    return <span style={{color: '#FF4136'}}>ENDED</span>;
-                } else {
-                    return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
-                }
-            };
-            setCountdown(<Countdown date={targetDate} renderer={renderer} />);
-        } else {
+        // If there's no competition, or no valid status, clear the countdown and exit.
+        if (!competition || (competition.status !== 'Accepting Entries' && competition.status !== 'Live Voting')) {
             setCountdown(null);
+            return;
         }
+
+        const startSynchronizedCountdown = async () => {
+            let targetDate = null;
+            if (competition.status === 'Accepting Entries' && competition.entryDeadline) {
+                targetDate = competition.entryDeadline.toDate();
+            } else if (competition.status === 'Live Voting' && competition.competitionEnd) {
+                targetDate = competition.competitionEnd.toDate();
+            }
+
+            // If there's no valid target date for the current status, exit.
+            if (!targetDate) {
+                setCountdown(null);
+                return;
+            }
+
+            try {
+                // 1. Get the server's time once to calculate the offset.
+                const getServerTime = httpsCallable(functions, 'getServerTime');
+                const result = await getServerTime();
+                const serverNow = new Date(result.data.serverTime).getTime();
+                const clientNow = new Date().getTime();
+                const timeOffset = serverNow - clientNow;
+
+                // 2. Start the single, authoritative timer.
+                timer = setInterval(() => {
+                    const now = new Date().getTime() + timeOffset; // Apply offset for a synchronized "now"
+                    const distance = targetDate.getTime() - now;
+
+                    const renderer = ({ days, hours, minutes, seconds, completed }) => {
+                         if (completed) {
+                            return <span style={{color: '#FF4136'}}>ENDED</span>;
+                        } else {
+                            return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
+                        }
+                    };
+                    
+                    // The Countdown component handles the rendering logic.
+                    // We just need to give it the continuously adjusted target date.
+                    const adjustedTarget = new Date(new Date().getTime() + distance);
+                    setCountdown(<Countdown date={adjustedTarget} renderer={renderer} />);
+
+                    if (distance < 0) {
+                        clearInterval(timer); // Stop the timer once the event is over.
+                    }
+                }, 1000);
+
+            } catch (error) {
+                console.error("Failed to synchronize with server time:", error);
+                setCountdown(<span style={{color: '#FF4136'}}>Error syncing clock</span>);
+            }
+        };
+
+        startSynchronizedCountdown();
+
+        // 3. Cleanup function to clear the interval when the component unmounts or the competition changes.
+        return () => {
+            if (timer) {
+                clearInterval(timer);
+            }
+        };
     }, [competition]); // This dependency ensures the timer restarts when the competition changes
 
     // --- DERIVED STATE ---
