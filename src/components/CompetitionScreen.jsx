@@ -68,8 +68,11 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
         const entriesRef = collection(db, "competitions", competition.id, "entries");
         const q = query(entriesRef, orderBy("createdAt", "desc"));
         const unsubscribeEntries = onSnapshot(q, (snapshot) => {
-            setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-            setLoadingEntries(false);
+            // THE FINAL FIX: Guard the state updates for the entries list.
+            if (isMounted.current) {
+                setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                setLoadingEntries(false);
+            }
         });
         return () => unsubscribeEntries();
     }, [competition]);
