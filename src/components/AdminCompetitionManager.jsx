@@ -130,7 +130,7 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
             };
 
             const createCompFunction = httpsCallable(functions, 'createCompetition');
-            const result = await createCompFunction({ competitionData });
+            const result = await createCompFunction(competitionData);
 
             showMessage(result.data.message);
             clearForm();

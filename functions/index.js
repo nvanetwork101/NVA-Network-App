@@ -3471,7 +3471,8 @@ exports.createCompetition = onCall(async (request) => {
       throw new HttpsError("permission-denied", "You must be an admin to create a competition.");
     }
     
-    const { competitionData } = request.data;
+    // THE FIX: The data is now the request.data object itself, not nested.
+    const competitionData = request.data;
     if (!competitionData || !competitionData.title) {
         throw new HttpsError("invalid-argument", "Missing competition data or title.");
     }
