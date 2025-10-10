@@ -1,86 +1,59 @@
 // src/components/CompetitionScreen.jsx
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { db, functions } from '../firebase';
-import { httpsCallable } from 'firebase/functions';
-import { collection, query, where, orderBy, onSnapshot, limit, doc } from "firebase/firestore";
+import React, { useState, useEffect, useMemo } from 'react';
+import { db } from '../firebase';
+import { collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
 import { extractVideoInfo } from '../firebase';
-
-import Countdown from 'react-countdown';
-
 import ShareButton from './ShareButton';
 
 // --- Real Component Imports ---
 import PrizesModal from './PrizesModal';
-import CompetitionEntryForm from './CompetitionEntryForm';
+import CompetitionEntryForm from './CompetitionEntryForm.jsx';
 import CompetitionLikeButton from './CompetitionLikeButton';
 import EnlargedPhotoViewer from './EnlargedPhotoViewer';
 
 function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorProfile }) {
     // --- STATE MANAGEMENT ---
-       
+    const [competition, setCompetition] = useState(null);
+    const [loading, setLoading] = useState(true);
     const [entries, setEntries] = useState([]);
     const [loadingEntries, setLoadingEntries] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [showPrizesModal, setShowPrizesModal] = useState(false);
     const [showEntryForm, setShowEntryForm] = useState(false);
-    const [selectedEntry, setSelectedEntry] = useState(null);   
-   
-    const [competition, setCompetition] = useState(null);
-    const [loading, setLoading] = useState(true);
-    
-    // --- AUTHORITATIVE DATA FETCHING ---
-    // This single effect now drives the entire component, ensuring it is always
-    // in sync with the server-authoritative display state.
+    const [selectedEntry, setSelectedEntry] = useState(null);
+
+    // --- DATA FETCHING ---
     useEffect(() => {
-        const displayStateRef = doc(db, "settings", "competitionDisplayState");
-        const unsubscribe = onSnapshot(displayStateRef, (docSnap) => {
-            if (docSnap.exists() && docSnap.data().isActive) {
-                // We still call it 'competition' in this component's state for simplicity,
-                // but it's really the pre-calculated display state from the server.
-                setCompetition(docSnap.data());
+        const compRef = collection(db, "competitions");
+        const q = query(compRef, where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]), orderBy("createdAt", "desc"), limit(1));
+        const unsubscribeComp = onSnapshot(q, (snapshot) => {
+            if (!snapshot.empty) {
+                setCompetition({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
             } else {
                 setCompetition(null);
             }
             setLoading(false);
         });
-        // Cleanup listener on component unmount.
-        return () => unsubscribe();
-    }, []); // Runs only once.
+        return () => unsubscribeComp();
+    }, []);
 
-    // Renders the countdown timer based on the authoritative target from the server.
-    const renderCountdown = () => {
-        if (!competition || !competition.countdownTarget) {
-            return <span style={{color: '#FF4136'}}>ENDED</span>;
-        }
-        
-        const targetTime = competition.countdownTarget.toDate();
-        const renderer = ({ days, hours, minutes, seconds, completed }) => {
-            if (completed) return <span style={{color: '#FF4136'}}>ENDED</span>;
-            return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
-        };
-
-        return <Countdown date={targetTime} renderer={renderer} />;
-    };
-    
     useEffect(() => {
-        if (!competition || !competition.competitionId) { // Check for the correct ID property
+        if (!competition) {
             setEntries([]);
             setLoadingEntries(false);
             return;
         }
         setLoadingEntries(true);
-        // Use the correct ID property: competition.competitionId instead of competition.id
-        const entriesRef = collection(db, "competitions", competition.competitionId, "entries");
+        const entriesRef = collection(db, "competitions", competition.id, "entries");
         const q = query(entriesRef, orderBy("createdAt", "desc"));
         const unsubscribeEntries = onSnapshot(q, (snapshot) => {
-            // The isMounted check has been removed as it is no longer defined.
             setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             setLoadingEntries(false);
         });
         return () => unsubscribeEntries();
     }, [competition]);
-        
+
     // --- DERIVED STATE ---
     const rankedEntries = useMemo(() => {
         const calculateScore = (entry) => {
@@ -177,7 +150,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                         <ShareButton
                             title={competition.title}
                             text={`Join the "${competition.title}" competition on NVA Network!`}
-                            url={`/competition/${competition.id}`}
+                            url="/competition"
                             showMessage={showMessage}
                         />
                     </div>
@@ -209,8 +182,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                     )}
                     {competition.status === 'Live Voting' && (
                         <div className="dashboardItem" style={{flex: 1, textAlign: 'center', padding: '10px', border: '1px solid #00FFFF', borderRadius: '8px'}}>
-                            <p style={{margin: 0, color: '#00FFFF', fontWeight: 'bold'}}>Voting Ends In:</p>
-                            <p style={{margin: 0, color: '#FFF', fontWeight: 'normal', fontSize: '14px'}}>{renderCountdown()}</p>
+                            <p style={{margin: 0, color: '#00FFFF', fontWeight: 'bold'}}>Voting is now Live!</p>
                         </div>
                     )}
                     {(competition.status === 'Judging' || competition.status === 'Results Visible') && (
