@@ -90,7 +90,7 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
         if (imageBlob) {
             const croppedFile = new File([imageBlob], 'cropped_flyer.png', { type: 'image/png' });
             setFlyerFile(croppedFile);
-            setFlyerUrl(''); // Clear URL if a file is being used
+            // The line clearing the flyerUrl has been removed.
         }
         setShowCropModal(false);
         setImageToCrop(null);
@@ -177,7 +177,7 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
                     <div className="formGroup"><label className="formLabel">Prizes (Simple Text)</label><textarea className="formTextarea" value={prizesText} onChange={e => setPrizesText(e.target.value)} placeholder="e.g., 1st Place: $500, 2nd Place: Gift Basket..." /></div>
                     
                     <div className="formGroup"><label className="formLabel">Promotional Flyer Image</label><input type="file" ref={flyerInputRef} className="formInput" accept="image/*" onChange={handleFileSelect} style={{display: 'none'}} /><button type="button" className="button" style={{ width: '100%', backgroundColor: '#3A3A3A' }} onClick={() => flyerInputRef.current.click()}><span className="buttonText light">Upload Custom Flyer</span></button></div>
-                    <div className="formGroup"><label className="formLabel">Flyer Click-Through URL</label><input type="url" className="formInput" value={flyerUrl} onChange={e => { setFlyerUrl(e.target.value); setFlyerFile(null); }} placeholder="https://www.sponsor-site.com" /></div>
+                    <div className="formGroup"><label className="formLabel">Flyer Click-Through URL</label><input type="url" className="formInput" value={flyerUrl} onChange={e => { setFlyerUrl(e.target.value); }} placeholder="https://www.sponsor-site.com" /></div>
                     
                     {flyerPreview && (
                         <div className="formGroup">
