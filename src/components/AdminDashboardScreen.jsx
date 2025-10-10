@@ -10,6 +10,9 @@ import AdminCategoryManagerScreen from './AdminCategoryManagerScreen';
 import AdminPayoutRequestScreen from './AdminPayoutRequestScreen';
 
 import AdminEventManagerScreen from './AdminEventManagerScreen';
+
+import AdminBoxOfficeScreen from './AdminBoxOfficeScreen'; // <-- ADD THIS LINE
+
 import AdminSiteManagerScreen from './AdminSiteManagerScreen';
 import SetVerificationExpiryModal from './SetVerificationExpiryModal';
 import SuspensionModal from './SuspensionModal';
@@ -388,6 +391,12 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                     {creatorProfile.role === 'admin' && (
                         <button className={`admin-nav-button ${selectedAdminSubScreen === 'CategoryManager' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('CategoryManager')}>Category Manager</button>
                     )}
+                    
+                    {/* Admins-only button for the new Box Office screen */}
+                    {creatorProfile.role === 'admin' && (
+                        <button className={`admin-nav-button ${selectedAdminSubScreen === 'BoxOffice' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('BoxOffice')}>Box Office</button>
+                    )}
+
                     <button className={`admin-nav-button ${selectedAdminSubScreen === 'SiteManagement' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('SiteManagement')}>Settings</button>
                     <button className="admin-nav-button" onClick={() => setActiveScreen('AnalyticsDashboard')}>Analytics</button>
                 </div>
@@ -667,6 +676,8 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                 {selectedAdminSubScreen === 'EventManager' && <AdminEventManagerScreen {...{showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction}} />} 
                 {selectedAdminSubScreen === 'CategoryManager' && <AdminCategoryManagerScreen {...{showMessage}} />}
                 
+                {selectedAdminSubScreen === 'BoxOffice' && <AdminBoxOfficeScreen {...{showMessage}} />}
+
                 {selectedAdminSubScreen === 'SiteManagement' && (
             <AdminSiteManagerScreen 
                 {...{showMessage, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile}} 
