@@ -650,8 +650,9 @@ useEffect(() => {
                 // Set the state for components that still use the prop
                 setActiveCompetition(competitionData);
                 
-                // Broadcast the change to any component that is listening
-                window.dispatchEvent(new CustomEvent('competitionUpdated', { detail: competitionData }));
+                // THIS IS THE FIX: Broadcast ONLY the ID (or null if no competition exists).
+                // This forces the banner to fetch its own, fresh data.
+                window.dispatchEvent(new CustomEvent('competitionUpdated', { detail: competitionData ? competitionData.id : null }));
             });
         }
         return () => unsubscribe();

@@ -1,53 +1,62 @@
 // src/components/CompetitionHomeScreenBanner.jsx
 
 import React, { useState, useEffect } from 'react';
+import { db } from '../firebase';
+import { doc, onSnapshot } from "firebase/firestore";
 
-// This is the final, synchronized version of the banner.
 function CompetitionHomeScreenBanner({ setActiveScreen }) {
-    // This component now manages its own state, but it's populated by a global event, not a direct DB call.
-    const [activeCompetition, setCompetition] = useState(null);
+    const [competitionId, setCompetitionId] = useState(null);
+    const [activeCompetition, setActiveCompetition] = useState(null);
     const [countdown, setCountdown] = useState('');
     const [bannerText, setBannerText] = useState('');
 
-    // EFFECT 1: Listens for the global event broadcast from App.jsx
+    // EFFECT 1: Listens for the global event that carries ONLY the competition ID.
     useEffect(() => {
         const handleCompetitionUpdate = (event) => {
-            setCompetition(event.detail);
+            // event.detail is now just the ID string (or null)
+            setCompetitionId(event.detail); 
         };
         window.addEventListener('competitionUpdated', handleCompetitionUpdate);
-
-        // Request initial state on mount in case the event was missed
-        // This is a robust way to handle component mounting after the initial event has fired
         window.dispatchEvent(new CustomEvent('requestCompetitionState')); 
-
         return () => {
             window.removeEventListener('competitionUpdated', handleCompetitionUpdate);
         };
     }, []);
 
-    // EFFECT 2: The corrected timer logic.
+    // EFFECT 2: Listens for changes to the ID and fetches authoritative data from Firestore.
     useEffect(() => {
-        // Guard 1: If there's no competition object at all, clear text and exit.
+        // If there's no ID, there's no competition. Reset everything.
+        if (!competitionId) {
+            setActiveCompetition(null);
+            return;
+        }
+
+        // Set up a direct listener to the competition document.
+        const unsub = onSnapshot(doc(db, "competitions", competitionId), (docSnap) => {
+            if (docSnap.exists()) {
+                // This guarantees we always have the freshest, most complete data.
+                setActiveCompetition({ id: docSnap.id, ...docSnap.data() });
+            } else {
+                // If the competition is deleted, reset the state.
+                setActiveCompetition(null);
+            }
+        });
+
+        // Clean up the listener when the ID changes or the component unmounts.
+        return () => unsub();
+
+    }, [competitionId]); // This effect runs whenever a new competition ID is received.
+
+
+    // EFFECT 3: The timer logic. This is now 100% reliable because it's driven by fresh data.
+    useEffect(() => {
         if (!activeCompetition) {
             setBannerText('');
             setCountdown('');
             return;
         }
 
-        // Guard 2: Before starting the timer, ensure the specific date we need for the current status actually exists.
-        // This prevents a crash if the competition object is incomplete.
-        const status = activeCompetition.status;
-        if (
-            (status === 'Accepting Entries' && !activeCompetition.entryDeadline) ||
-            (status === 'Live Voting' && !activeCompetition.competitionEnd) ||
-            (status === 'Judging' && !activeCompetition.resultsRevealTime)
-        ) {
-            setBannerText('Competition data is loading...');
-            setCountdown('');
-            return; // Exit and wait for a state update with the complete data.
-        }
-
-        // If we pass the guards, it's safe to start the timer.
+        // The timer will now automatically restart and correct itself whenever activeCompetition changes.
         const interval = setInterval(() => {
             const now = new Date();
             const entryDeadline = activeCompetition.entryDeadline?.toDate();
@@ -109,9 +118,8 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [activeCompetition]);
+    }, [activeCompetition]); // This dependency on the fresh data is the key.
 
-    // If there is no competition, the component renders nothing.
     if (!activeCompetition) {
         return null;
     }
