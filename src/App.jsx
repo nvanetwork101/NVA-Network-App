@@ -135,6 +135,9 @@ function App() {
 
   // State for navigating to specific content
   const [selectedCampaignId, setSelectedCampaignId] = useState(null);
+  
+  const [deepLinkedReplayId, setDeepLinkedReplayId] = useState(null); // <-- ADD THIS LINE
+  
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [selectedOpportunity, setSelectedOpportunity] = useState(null);
   
@@ -370,19 +373,34 @@ function App() {
                             if (id) {
                                 (async () => {
                                     try {
+                                        // First, check for a standard VOD content item
                                         const appId = "production-app-id";
                                         const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
-                                        const docSnap = await getDoc(contentRef);
+                                        let docSnap = await getDoc(contentRef);
+
                                         if (docSnap.exists()) {
+                                            // It's a standard VOD item, play it in the modal directly
                                             const contentData = { id: docSnap.id, ...docSnap.data() };
-                                            const videoUrl = contentData.embedUrl || contentData.mainUrl;
-                                            setCurrentVideoUrl(videoUrl);
-                                            setCurrentContentItem(contentData);
-                                            setShowVideoModal(true);
-                                        } else { showMessage("The shared content could not be found."); }
-                                    } catch (error) { console.error("Deep link fetch error:", error); showMessage("Error loading shared content."); }
+                                            handleVideoPress(contentData.embedUrl || contentData.mainUrl, contentData);
+                                        } else {
+                                            // If not found, check if it's a replay from the events collection
+                                            const eventRef = doc(db, "events", id);
+                                            docSnap = await getDoc(eventRef);
+                                            if (docSnap.exists() && docSnap.data().status === 'completed') {
+                                                // It IS a replay. Set the ID and navigate to the Discover screen.
+                                                setDeepLinkedReplayId(id);
+                                                setActiveScreen('Discover');
+                                            } else {
+                                                // It was not found in either location.
+                                                showMessage("The shared content could not be found.");
+                                            }
+                                        }
+                                    } catch (error) {
+                                        console.error("Deep link fetch error:", error);
+                                        showMessage("Error loading shared content.");
+                                    }
                                 })();
-                                navigated = true; // We handled it, even if it fails to load
+                                navigated = true; // Mark as handled
                             }
                             break;
                     }
@@ -931,7 +949,7 @@ useEffect(() => {
       case 'AdminReportReview': return <AdminReportReviewScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} selectedReportGroup={selectedReportGroup} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
       case 'AdminStatusReview': return <AdminStatusReviewScreen showMessage={showMessage} setActiveScreen={handleNavigate} selectedStatus={selectedStatus} />;
       case 'CompetitionScreen': return <CompetitionScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} activeCompetition={activeCompetition} />;
-      case 'Discover': return <DiscoverScreen showMessage={showMessage} currentUser={currentUser} creatorProfile={creatorProfile} setActiveScreen={handleNavigate} handleVideoPress={handleVideoPress} liveEvent={liveEvent} setPledgeContext={setPledgeContext} isLive={isLive} countdownText={countdownText} />;
+      case 'Discover': return <DiscoverScreen showMessage={showMessage} currentUser={currentUser} creatorProfile={creatorProfile} setActiveScreen={handleNavigate} handleVideoPress={handleVideoPress} liveEvent={liveEvent} setPledgeContext={setPledgeContext} isLive={isLive} countdownText={countdownText} deepLinkedReplayId={deepLinkedReplayId} />;
       case 'DiscoverUsers': return <DiscoverUsersScreen showMessage={showMessage} setActiveScreen={handleNavigate} setSelectedUserId={setSelectedUserId} currentUser={currentUser} creatorProfile={creatorProfile} />;
       case 'PromotedStatus': return <PromotedStatusScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
       case 'BookStatus': return <BookStatusScreen showMessage={showMessage} setActiveScreen={handleNavigate} setPledgeIdForConfirmation={setPledgeIdForConfirmation} currentUser={currentUser} creatorProfile={creatorProfile} opportunityToPromote={opportunityToPromote} setOpportunityToPromote={setOpportunityToPromote} previousScreen={activeScreen} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
