@@ -71,7 +71,7 @@ const handleSubmit = useCallback(async (e) => {
             showMessage("You must agree to the competition rules.");
             return;
         }
-        if (competition.competitionType === 'Photo' && !photoFile) {
+        if (competition.competitionType?.toLowerCase().trim() === 'photo' && !photoFile) {
             showMessage("You must select a photo to submit for this competition.");
             return;
         }
@@ -80,7 +80,7 @@ const handleSubmit = useCallback(async (e) => {
         try {
             let finalPhotoUrl = '';
             let finalThumbnailUrl = ''; // Initialize as empty
-            if (competition.competitionType === 'Photo' && photoFile) {
+            if (competition.competitionType?.toLowerCase().trim() === 'photo' && photoFile) {
                 const photoPath = `competition_entries/${competition.id}/${currentUser.uid}/submission_${Date.now()}`;
                 const photoStorageRef = ref(storage, photoPath);
                 const photoSnapshot = await uploadBytes(photoStorageRef, photoFile);
@@ -98,12 +98,12 @@ const handleSubmit = useCallback(async (e) => {
                 title: entryTitle,
                 contactNumber,
                 bio,
-                submissionUrl: competition.competitionType !== 'Photo' ? submissionUrl : '',
+                submissionUrl: competition.competitionType?.toLowerCase().trim() !== 'photo' ? submissionUrl : '',
                 photoUrl: finalPhotoUrl,
                 customThumbnailUrl: finalThumbnailUrl, // Will be empty if no custom thumb was uploaded
             };
             const submitEntryFunction = httpsCallable(functions, 'submitCompetitionEntry');
-            await submitEntryFunction(entryData);
+            await submitEntryFunction({ entryData });
             showMessage("Your entry has been submitted successfully!");
             onClose();
         } catch (error) {
@@ -126,29 +126,27 @@ const handleSubmit = useCallback(async (e) => {
                     <form onSubmit={handleSubmit}>
                         <p className="subHeading" style={{ textAlign: 'left', fontSize: '14px', margin: '0 0 15px 0' }}>Your entry will be publicly visible.</p>
                         
-                        {/* --- THE FIX: Robust conditional rendering for form fields --- */}
-                        {competition.competitionType === 'Photo' && (
+                        {competition.competitionType?.toLowerCase().trim() === 'photo' ? (
                             <div className="formGroup">
                                 <label className="formLabel">Your Photo Submission (Required)</label>
                                 <input type="file" ref={photoInputRef} className="formInput" accept="image/*" required onChange={handlePhotoSelect} />
                                 {photoPreview && <img src={photoPreview} alt="Photo preview" style={{ maxWidth: '150px', borderRadius: '8px', marginTop: '10px' }} />}
                             </div>
+                        ) : (
+                            <div className="formGroup">
+                                <label className="formLabel">Submission URL (Required)</label>
+                                <input type="url" className="formInput" value={submissionUrl} onChange={e => setSubmissionUrl(e.target.value)} placeholder="https://youtube.com/your-video" required />
+                            </div>
                         )}
                         
-                        {competition.competitionType !== 'Photo' && (
-                            <>
-                                <div className="formGroup">
-                                    <label className="formLabel">Submission URL (Required)</label>
-                                    <input type="url" className="formInput" value={submissionUrl} onChange={e => setSubmissionUrl(e.target.value)} placeholder="https://youtube.com/your-video" required />
-                                </div>
-                                <div className="formGroup">
-                                    <label className="formLabel">Custom Thumbnail (Optional)</label>
-                                    <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>Upload a custom 16:9 image to represent your entry.</p>
-                                    <input type="file" ref={thumbnailInputRef} className="formInput" accept="image/*" onChange={handleThumbnailSelect} style={{display: 'none'}} />
-                                    <button type="button" className="button" style={{ width: '100%', backgroundColor: '#3A3A3A' }} onClick={() => thumbnailInputRef.current.click()}><span className="buttonText light">Upload Custom Thumbnail</span></button>
-                                    {thumbnailPreview && <img src={thumbnailPreview} alt="Thumbnail preview" style={{ maxWidth: '150px', borderRadius: '8px', marginTop: '10px' }} />}
-                                </div>
-                            </>
+                        {competition.competitionType?.toLowerCase().trim() !== 'photo' && (
+                             <div className="formGroup">
+                                <label className="formLabel">Custom Thumbnail (Optional)</label>
+                                <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>Upload a custom 16:9 image to represent your entry.</p>
+                                <input type="file" ref={thumbnailInputRef} className="formInput" accept="image/*" onChange={handleThumbnailSelect} style={{display: 'none'}} />
+                                <button type="button" className="button" style={{ width: '100%', backgroundColor: '#3A3A3A' }} onClick={() => thumbnailInputRef.current.click()}><span className="buttonText light">Upload Custom Thumbnail</span></button>
+                                {thumbnailPreview && <img src={thumbnailPreview} alt="Thumbnail preview" style={{ maxWidth: '150px', borderRadius: '8px', marginTop: '10px' }} />}
+                            </div>
                         )}
                       
                         <div className="formGroup"><label className="formLabel">Entry Title (Public)</label><input type="text" className="formInput" value={entryTitle} onChange={e => setEntryTitle(e.target.value)} placeholder="e.g., Sunset Over the Demerara" required /></div>
