@@ -1,6 +1,7 @@
 // src/components/CompetitionHomeScreenBanner.jsx
 
 import React, { useState, useEffect } from 'react';
+import Countdown from 'react-countdown';
 import { db, functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
 import { doc, onSnapshot } from "firebase/firestore";
@@ -49,10 +50,9 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
     }, [competitionId]); // This effect runs whenever a new competition ID is received.
 
 
-    // EFFECT 3: The DEFINITIVE server-synchronized timer logic using pure milliseconds.
+   // EFFECT 3: The DEFINITIVE server-synchronized timer logic.
     useEffect(() => {
-        let timer; 
-
+        let timer;
         if (!activeCompetition) {
             setBannerText('');
             setCountdown('');
@@ -61,93 +61,55 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
 
         const startSynchronizedCountdown = async () => {
             try {
-                // 1. Get server time and calculate offset
                 const getServerTime = httpsCallable(functions, 'getServerTime');
                 const result = await getServerTime();
-                const serverNowMs = new Date(result.data.serverTime).getTime();
-                const clientNowMs = new Date().getTime();
-                const timeOffset = serverNowMs - clientNowMs;
+                const timeOffset = new Date(result.data.serverTime).getTime() - new Date().getTime();
 
-                // 2. Start the authoritative timer
                 timer = setInterval(() => {
-                    // This is the synchronized "now" in pure, timezone-agnostic milliseconds.
-                    const nowMs = new Date().getTime() + timeOffset; 
-                    
-                    // Get all deadlines in pure, timezone-agnostic milliseconds.
+                    const nowMs = new Date().getTime() + timeOffset;
                     const entryDeadlineMs = activeCompetition.entryDeadline?.toDate().getTime();
                     const competitionEndMs = activeCompetition.competitionEnd?.toDate().getTime();
-                    const resultsRevealTimeMs = activeCompetition.resultsRevealTime?.toDate().getTime();
                     
                     let nextBannerText = '';
-                    let nextCountdownText = '';
                     let deadlineMs = null;
 
-                    // This logic now uses 100% reliable numerical comparisons.
                     switch (activeCompetition.status) {
                         case 'Accepting Entries':
                             deadlineMs = entryDeadlineMs;
-                            if (deadlineMs && nowMs < deadlineMs) {
-                                nextBannerText = "Entries close in";
-                            } else {
-                                nextBannerText = "Entries are closed";
-                                nextCountdownText = "Waiting for voting...";
-                            }
+                            nextBannerText = nowMs < deadlineMs ? "Entries close in" : "Entries are closed";
                             break;
                         case 'Live Voting':
                             deadlineMs = competitionEndMs;
-                            if (deadlineMs && nowMs < deadlineMs) {
-                                nextBannerText = "Voting ends in";
-                            } else {
-                                nextBannerText = "Voting has ended";
-                                nextCountdownText = "Waiting for judging...";
-                            }
+                            nextBannerText = nowMs < deadlineMs ? "Voting ends in" : "Voting has ended";
                             break;
                         case 'Judging':
-                            deadlineMs = resultsRevealTimeMs;
-                            if (deadlineMs && nowMs < deadlineMs) {
-                                nextBannerText = "Results revealed in";
-                            } else {
-                                nextBannerText = "Judging in Progress";
-                                nextCountdownText = "Results Soon!";
-                            }
+                            nextBannerText = "Judging in Progress";
                             break;
                         case 'Results Visible':
                             nextBannerText = "Results Are In!";
-                            nextCountdownText = "View Now!";
                             break;
                         default:
+                            nextBannerText = "Competition status is pending.";
                             break;
                     }
 
                     if (deadlineMs && nowMs < deadlineMs) {
-                        const distance = deadlineMs - nowMs; // Pure subtraction of numbers
-                        const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-                        const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                        const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-                        const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-                        nextCountdownText = `${days}d ${hours}h ${minutes}m ${seconds}s`;
+                        const distance = deadlineMs - nowMs;
+                        const renderer = ({ days, hours, minutes, seconds }) => `${days}d ${hours}h ${minutes}m ${seconds}s`;
+                        setCountdown(<Countdown date={Date.now() + distance} renderer={renderer} />);
+                    } else {
+                         setCountdown(activeCompetition.status === 'Accepting Entries' ? "Waiting for voting..." : "Waiting for judging...");
                     }
-
                     setBannerText(nextBannerText);
-                    setCountdown(nextCountdownText);
-
                 }, 1000);
-
             } catch (error) {
                 console.error("Failed to synchronize with server time:", error);
                 setBannerText("Error syncing clock");
-                setCountdown("");
             }
         };
 
         startSynchronizedCountdown();
-
-        // 3. Cleanup
-        return () => {
-            if (timer) {
-                clearInterval(timer);
-            }
-        };
+        return () => { if (timer) clearInterval(timer); };
     }, [activeCompetition]);
 
     if (!activeCompetition) {

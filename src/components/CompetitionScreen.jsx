@@ -80,56 +80,40 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
 
     // --- REAL-TIME COUNTDOWN TIMER LOGIC ---
     useEffect(() => {
-        let timer; // Define timer here to be accessible in cleanup
-
-        // If there's no competition, or no valid status, clear the countdown and exit.
-        if (!competition || (competition.status !== 'Accepting Entries' && competition.status !== 'Live Voting')) {
+        let timer;
+        if (!competition) {
             setCountdown(null);
             return;
         }
 
         const startSynchronizedCountdown = async () => {
-            let targetDate = null;
-            if (competition.status === 'Accepting Entries' && competition.entryDeadline) {
-                targetDate = competition.entryDeadline.toDate();
-            } else if (competition.status === 'Live Voting' && competition.competitionEnd) {
-                targetDate = competition.competitionEnd.toDate();
-            }
-
-            // If there's no valid target date for the current status, exit.
-            if (!targetDate) {
-                setCountdown(null);
-                return;
-            }
-
             try {
-                // 1. Get the server's time once to calculate the offset.
                 const getServerTime = httpsCallable(functions, 'getServerTime');
                 const result = await getServerTime();
-                const serverNow = new Date(result.data.serverTime).getTime();
-                const clientNow = new Date().getTime();
-                const timeOffset = serverNow - clientNow;
+                const timeOffset = new Date(result.data.serverTime).getTime() - new Date().getTime();
 
-                // 2. Start the single, authoritative timer.
                 timer = setInterval(() => {
-                    const now = new Date().getTime() + timeOffset; // Apply offset for a synchronized "now"
-                    const distance = targetDate.getTime() - now;
-
-                    const renderer = ({ days, hours, minutes, seconds, completed }) => {
-                         if (completed) {
-                            return <span style={{color: '#FF4136'}}>ENDED</span>;
-                        } else {
-                            return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
-                        }
-                    };
+                    const nowMs = new Date().getTime() + timeOffset;
+                    const entryDeadlineMs = competition.entryDeadline?.toDate().getTime();
+                    const competitionEndMs = competition.competitionEnd?.toDate().getTime();
                     
-                    // The Countdown component handles the rendering logic.
-                    // We just need to give it the continuously adjusted target date.
-                    const adjustedTarget = new Date(new Date().getTime() + distance);
-                    setCountdown(<Countdown date={adjustedTarget} renderer={renderer} />);
+                    let deadlineMs = null;
 
-                    if (distance < 0) {
-                        clearInterval(timer); // Stop the timer once the event is over.
+                    if (competition.status === 'Accepting Entries') {
+                        deadlineMs = entryDeadlineMs;
+                    } else if (competition.status === 'Live Voting') {
+                        deadlineMs = competitionEndMs;
+                    }
+
+                    if (deadlineMs && nowMs < deadlineMs) {
+                        const distance = deadlineMs - nowMs;
+                        const renderer = ({ days, hours, minutes, seconds, completed }) => {
+                            if (completed) return <span style={{color: '#FF4136'}}>ENDED</span>;
+                            return <span>{days}d {hours}h {minutes}m {seconds}s</span>;
+                        };
+                        setCountdown(<Countdown date={Date.now() + distance} renderer={renderer} />);
+                    } else {
+                        setCountdown(<span style={{color: '#FF4136'}}>ENDED</span>);
                     }
                 }, 1000);
 
@@ -140,15 +124,8 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
         };
 
         startSynchronizedCountdown();
-
-        // 3. Cleanup function to clear the interval when the component unmounts or the competition changes.
-        return () => {
-            if (timer) {
-                clearInterval(timer);
-            }
-        };
-    }, [competition]); // This dependency ensures the timer restarts when the competition changes
-
+        return () => { if (timer) clearInterval(timer); };
+    }, [competition]);
     // --- DERIVED STATE ---
     const rankedEntries = useMemo(() => {
         const calculateScore = (entry) => {
