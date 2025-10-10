@@ -15,10 +15,12 @@ const ReplayEventCard = ({ event, onClick }) => {
     };
     return (
         <div className="replay-card" onClick={onClick}>
-            {event.isTicketed && <div className="ticket-icon">🎟️</div>}
             <img src={thumbnailUrl} alt={event.eventTitle} className="replay-card-image" />
             <div className="replay-card-info">
-                <p className="replay-card-title">{event.eventTitle}</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <p className="replay-card-title">{event.eventTitle}</p>
+                    {event.isTicketed && <span style={{ fontSize: '16px' }}>🎟️</span>}
+                </div>
                 <p className="replay-card-details">Aired: {formatDate(event.scheduledStartTime)}</p>
             </div>
             <div className="replay-card-play-button">

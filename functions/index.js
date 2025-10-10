@@ -5345,13 +5345,24 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
         const id = parts[1];
 
         if (screen === 'content' && id) {
-            const docSnap = await db.doc(`artifacts/${appId}/public/data/content_items/${id}`).get();
+            // First, try to find it as a standard VOD content item.
+            let docSnap = await db.doc(`artifacts/${appId}/public/data/content_items/${id}`).get();
             if (docSnap.exists) {
                 const data = docSnap.data();
                 ogTitle = data.title;
                 ogDescription = data.description;
                 ogImage = data.customThumbnailUrl || data.thumbnailUrl || ogImage;
-                debugMessage = `<!-- NVA DEBUG: Rendered content_item: ${id} -->`;
+                debugMessage = `<!-- NVA DEBUG: Rendered VOD content_item: ${id} -->`;
+            } else {
+                // If not found, check if it's a replay from the events collection.
+                docSnap = await db.doc(`events/${id}`).get();
+                if (docSnap.exists && docSnap.data().status === 'completed') {
+                    const data = docSnap.data();
+                    ogTitle = data.eventTitle;
+                    ogDescription = data.eventDescription;
+                    ogImage = data.thumbnailUrl || ogImage; // Use the event's specific thumbnail
+                    debugMessage = `<!-- NVA DEBUG: Rendered event replay: ${id} -->`;
+                }
             }
         } else if (screen === 'opportunity' && id) {
             const docSnap = await db.doc(`opportunities/${id}`).get();
