@@ -60,7 +60,8 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
             });
             showMessage("Competition updated successfully!");
             onClose();
-        } catch (error)
+        } catch (error) {
+            // THE SYNTAX FIX: Added the required curly braces.
             showMessage(`Error: ${error.message}`);
         } finally {
             setIsSaving(false);
