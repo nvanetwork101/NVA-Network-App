@@ -64,20 +64,33 @@ const AdminBoxOfficeScreen = ({ showMessage }) => {
             <div className="admin-box-office-list">
                 {filteredEvents.length > 0 ? (
                     filteredEvents.map(event => (
-                        <div key={event.id} className="adminDashboardItem" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                            <p className="adminDashboardItemTitle" style={{ marginBottom: '10px' }}>{event.eventTitle}</p>
-                            <div className="grid-3-col" style={{ gap: '15px', fontSize: '14px', color: '#CCC' }}>
-                                <div>
-                                    <p style={{ margin: 0, color: '#888', fontSize: '12px' }}>Date Aired</p>
-                                    <p style={{ margin: 0, fontWeight: 'bold' }}>{formatDate(event.scheduledStartTime)}</p>
-                                </div>
-                                <div>
-                                    <p style={{ margin: 0, color: '#888', fontSize: '12px' }}>Tickets Sold</p>
-                                    <p style={{ margin: 0, fontWeight: 'bold' }}>{event.ticketsSold || 0}</p>
-                                </div>
-                                <div>
-                                    <p style={{ margin: 0, color: '#888', fontSize: '12px' }}>Total Revenue</p>
-                                    <p style={{ margin: 0, fontWeight: 'bold', color: '#00FF00' }}>${(event.totalRevenue || 0).toFixed(2)} USD</p>
+                        <div key={event.id} className="adminDashboardItem" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <img 
+                                src={event.thumbnailUrl || 'https://placehold.co/128x72/2A2A2A/FFF?text=N/A'} 
+                                alt={event.eventTitle}
+                                style={{
+                                    width: '128px',
+                                    height: '72px',
+                                    borderRadius: '8px',
+                                    objectFit: 'cover',
+                                    flexShrink: 0
+                                }}
+                            />
+                            <div style={{ flexGrow: 1 }}>
+                                <p className="adminDashboardItemTitle" style={{ marginBottom: '10px' }}>{event.eventTitle}</p>
+                                <div className="grid-3-col" style={{ gap: '15px', fontSize: '14px', color: '#CCC' }}>
+                                    <div>
+                                        <p style={{ margin: 0, color: '#888', fontSize: '12px' }}>Date Aired</p>
+                                        <p style={{ margin: 0, fontWeight: 'bold' }}>{formatDate(event.scheduledStartTime)}</p>
+                                    </div>
+                                    <div>
+                                        <p style={{ margin: 0, color: '#888', fontSize: '12px' }}>Tickets Sold</p>
+                                        <p style={{ margin: 0, fontWeight: 'bold' }}>{event.ticketsSold || 0}</p>
+                                    </div>
+                                    <div>
+                                        <p style={{ margin: 0, color: '#888', fontSize: '12px' }}>Total Revenue</p>
+                                        <p style={{ margin: 0, fontWeight: 'bold', color: '#00FF00' }}>${(event.totalRevenue || 0).toFixed(2)} USD</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
