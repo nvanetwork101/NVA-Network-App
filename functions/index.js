@@ -3812,7 +3812,7 @@ exports.deleteCompetition = onCall(async (request) => {
     }
 });
 
-exports.checkCompetitionStatusTransitions = onSchedule("every 10 minutes", async (event) => {
+exports.checkCompetitionStatusTransitions = onSchedule("every 1 minutes", async (event) => {
     logger.info("Running scheduled job: Checking for competition status transitions...");
     const db = admin.firestore();
     const now = new Date();
