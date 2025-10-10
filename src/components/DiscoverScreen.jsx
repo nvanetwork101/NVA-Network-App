@@ -1,7 +1,7 @@
 // src/components/DiscoverScreen.jsx
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, onSnapshot, doc } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
 import { db, functions, httpsCallable, extractVideoInfo } from '../firebase.js';
 import LiveEventChat from './LiveEventChat';
 
@@ -15,6 +15,7 @@ const ReplayEventCard = ({ event, onClick }) => {
     };
     return (
         <div className="replay-card" onClick={onClick}>
+            {event.isTicketed && <div className="ticket-icon">🎟️</div>}
             <img src={thumbnailUrl} alt={event.eventTitle} className="replay-card-image" />
             <div className="replay-card-info">
                 <p className="replay-card-title">{event.eventTitle}</p>
@@ -45,8 +46,9 @@ function DiscoverScreen({
     handleVideoPress,
     liveEvent,
     setPledgeContext,
-    isLive, // New prop from App.jsx
-    countdownText // New prop from App.jsx
+    isLive, 
+    countdownText,
+    deepLinkedReplayId // <-- NEW PROP
 }) {
     // --- STATE MANAGEMENT ---
     const [masterEventDetails, setMasterEventDetails] = useState(null);
@@ -65,6 +67,39 @@ function DiscoverScreen({
     const [countdownDistance, setCountdownDistance] = useState(null); // Milliseconds remaining until start
     
     // --- DATA FETCHING LOGIC ---
+    
+    // --- DEEP LINK HANDLING EFFECT (NEW) ---
+    useEffect(() => {
+        if (deepLinkedReplayId && currentUser !== undefined) { // Wait for auth check to complete
+            const fetchAndPlayReplay = async () => {
+                showMessage("Loading shared replay...");
+                const replayRef = doc(db, "events", deepLinkedReplayId);
+                const replaySnap = await getDoc(replayRef);
+
+                if (replaySnap.exists() && replaySnap.data().status === 'completed') {
+                    const replayData = { id: replaySnap.id, ...replaySnap.data() };
+                    // Use the new, more flexible hasAccess function
+                    if (hasAccess(replayData)) {
+                        handleVideoPress(replayData.liveStreamUrl || replayData.embedUrl || replayData.mainUrl, replayData);
+                    } else {
+                        // If access is denied, show the correct reason.
+                        if (!currentUser) {
+                            showMessage("This is an exclusive replay. Please log in to see if you have access.");
+                            setActiveScreen('Login');
+                        } else if (replayData.isTicketed) {
+                             showMessage("You need a valid ticket for this event to watch the replay.");
+                        } else {
+                            showMessage("You do not have permission to view this replay.");
+                        }
+                    }
+                } else {
+                    showMessage("The shared replay could not be found.");
+                }
+            };
+            fetchAndPlayReplay();
+        }
+    }, [deepLinkedReplayId, currentUser, creatorProfile]); // Re-run if user/profile changes
+    
     useEffect(() => {
         if (liveEvent && liveEvent.eventId) {
             const masterEventRef = doc(db, "events", liveEvent.eventId);
@@ -209,8 +244,20 @@ function DiscoverScreen({
     };
 
     const handleContentItemClick = (item) => {
-        if (!currentUser) { showMessage("Please log in to view content."); return; }
-        handleVideoPress(item.liveStreamUrl || item.embedUrl || item.mainUrl, item);
+        if (hasAccess(item)) {
+            handleVideoPress(item.liveStreamUrl || item.embedUrl || item.mainUrl, item);
+        } else {
+            // If access is denied, show the appropriate message.
+            if (!currentUser) {
+                showMessage("Please log in to see if you have access to this content.");
+                setActiveScreen('Login');
+            } else if (item.isTicketed) {
+                const message = item.status === 'completed' ? "You need a ticket for this event to watch the replay." : "You need a ticket to join this live event.";
+                showMessage(message);
+            } else {
+                showMessage("You do not have the required permissions to view this content.");
+            }
+        }
     };
 
     // --- PREMIERE RENDER LOGIC (REBUILT WITH CORRECT STRUCTURE) ---
@@ -379,27 +426,26 @@ function DiscoverScreen({
 
     const isEventLive = masterEventDetails?.status === 'live';
     
-     // --- THIS IS THE CORRECTED hasAccess FUNCTION, ACCESSIBLE IN THE MAIN SCOPE ---
-    const hasAccess = () => {
-        // Rule 1: Moderators always have access.
-        if (creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority') {
-            return true;
-        }
+     // --- UNIFIED ACCESS CONTROL FUNCTION ---
+    const hasAccess = (eventToCheck) => {
+        if (!eventToCheck) return false; // Cannot check access for a null event
+
+        // Rule 1: Moderators and Premium members always have access.
+        if (creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority') return true;
+        if (creatorProfile?.premiumExpiresAt?.toDate() > new Date()) return true;
 
         // Rule 2: For a FREE event, the only requirement is to be logged in.
-        if (masterEventDetails && !masterEventDetails.isTicketed) {
-            return !!currentUser; // This will be true if logged in, false if not.
+        if (!eventToCheck.isTicketed) {
+            return !!currentUser;
         }
 
-        // Rule 3: For a TICKETED event, you must be logged in AND have a valid perk (Premium or a ticket).
-        if (masterEventDetails && masterEventDetails.isTicketed) {
-            if (!currentUser) return false; // Must be logged in.
-            if (creatorProfile.premiumExpiresAt?.toDate() > new Date()) return true; // Premium access.
-            return !!creatorProfile.purchasedTickets?.[masterEventDetails.id]; // Specific ticket access.
+        // Rule 3: For a TICKETED event, you must be logged in AND have a specific ticket.
+        if (eventToCheck.isTicketed) {
+            if (!currentUser) return false;
+            return !!creatorProfile.purchasedTickets?.[eventToCheck.id];
         }
 
-        // Default case: If none of the above conditions are met, deny access.
-        return false;
+        return false; // Default to no access
     };
 
     // --- MAIN RENDER ---
