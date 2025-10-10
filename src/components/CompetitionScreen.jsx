@@ -1,6 +1,6 @@
 // src/components/CompetitionScreen.jsx
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
 import { extractVideoInfo } from '../firebase';
@@ -27,18 +27,33 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
     const [selectedEntry, setSelectedEntry] = useState(null);
 
     const [countdown, setCountdown] = useState(null);
+    
+    const isMounted = useRef(true);
+
+    // This effect runs only once: when the component is first created.
+    // Its cleanup function runs only once: when the component is destroyed.
+    useEffect(() => {
+        // Set the flag to false when the component unmounts.
+        return () => {
+            isMounted.current = false;
+        };
+    }, []); // <-- The empty array is crucial.
+
 
     // --- DATA FETCHING ---
     useEffect(() => {
         const compRef = collection(db, "competitions");
         const q = query(compRef, where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]), orderBy("createdAt", "desc"), limit(1));
         const unsubscribeComp = onSnapshot(q, (snapshot) => {
-            if (!snapshot.empty) {
-                setCompetition({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
-            } else {
-                setCompetition(null);
+            // THE FIX: Only perform state updates if the component is still mounted.
+            if (isMounted.current) {
+                if (!snapshot.empty) {
+                    setCompetition({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+                } else {
+                    setCompetition(null);
+                }
+                setLoading(false);
             }
-            setLoading(false);
         });
         return () => unsubscribeComp();
     }, []);
