@@ -126,27 +126,29 @@ const handleSubmit = useCallback(async (e) => {
                     <form onSubmit={handleSubmit}>
                         <p className="subHeading" style={{ textAlign: 'left', fontSize: '14px', margin: '0 0 15px 0' }}>Your entry will be publicly visible.</p>
                         
-                        {competition.competitionType === 'Photo' ? (
+                        {/* --- THE FIX: Robust conditional rendering for form fields --- */}
+                        {competition.competitionType === 'Photo' && (
                             <div className="formGroup">
                                 <label className="formLabel">Your Photo Submission (Required)</label>
                                 <input type="file" ref={photoInputRef} className="formInput" accept="image/*" required onChange={handlePhotoSelect} />
                                 {photoPreview && <img src={photoPreview} alt="Photo preview" style={{ maxWidth: '150px', borderRadius: '8px', marginTop: '10px' }} />}
                             </div>
-                        ) : (
-                            <div className="formGroup">
-                                <label className="formLabel">Submission URL (Required)</label>
-                                <input type="url" className="formInput" value={submissionUrl} onChange={e => setSubmissionUrl(e.target.value)} placeholder="https://youtube.com/your-video" required />
-                            </div>
                         )}
                         
                         {competition.competitionType !== 'Photo' && (
-                             <div className="formGroup">
-                                <label className="formLabel">Custom Thumbnail (Optional)</label>
-                                <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>Upload a custom 16:9 image to represent your entry.</p>
-                                <input type="file" ref={thumbnailInputRef} className="formInput" accept="image/*" onChange={handleThumbnailSelect} style={{display: 'none'}} />
-                                <button type="button" className="button" style={{ width: '100%', backgroundColor: '#3A3A3A' }} onClick={() => thumbnailInputRef.current.click()}><span className="buttonText light">Upload Custom Thumbnail</span></button>
-                                {thumbnailPreview && <img src={thumbnailPreview} alt="Thumbnail preview" style={{ maxWidth: '150px', borderRadius: '8px', marginTop: '10px' }} />}
-                            </div>
+                            <>
+                                <div className="formGroup">
+                                    <label className="formLabel">Submission URL (Required)</label>
+                                    <input type="url" className="formInput" value={submissionUrl} onChange={e => setSubmissionUrl(e.target.value)} placeholder="https://youtube.com/your-video" required />
+                                </div>
+                                <div className="formGroup">
+                                    <label className="formLabel">Custom Thumbnail (Optional)</label>
+                                    <p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>Upload a custom 16:9 image to represent your entry.</p>
+                                    <input type="file" ref={thumbnailInputRef} className="formInput" accept="image/*" onChange={handleThumbnailSelect} style={{display: 'none'}} />
+                                    <button type="button" className="button" style={{ width: '100%', backgroundColor: '#3A3A3A' }} onClick={() => thumbnailInputRef.current.click()}><span className="buttonText light">Upload Custom Thumbnail</span></button>
+                                    {thumbnailPreview && <img src={thumbnailPreview} alt="Thumbnail preview" style={{ maxWidth: '150px', borderRadius: '8px', marginTop: '10px' }} />}
+                                </div>
+                            </>
                         )}
                       
                         <div className="formGroup"><label className="formLabel">Entry Title (Public)</label><input type="text" className="formInput" value={entryTitle} onChange={e => setEntryTitle(e.target.value)} placeholder="e.g., Sunset Over the Demerara" required /></div>

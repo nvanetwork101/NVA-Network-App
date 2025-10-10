@@ -3573,7 +3573,8 @@ exports.submitCompetitionEntry = onCall(async (request) => {
         throw new HttpsError("unauthenticated", "You must be logged in to enter a competition.");
     }
 
-    const { entryData } = request.data;
+    // THE FIX: The data is now the request.data object itself, not nested.
+    const entryData = request.data;
     const { competitionId, contactNumber } = entryData;
 
     if (!competitionId || !contactNumber) {
