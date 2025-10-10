@@ -243,10 +243,9 @@ function App() {
   };
 
   const handleVideoPress = (url, item) => {
-    if (!currentUser) {
-        showMessage("Please sign up or log in to engage with content!");
-        return;
-    }
+    // THE FIX: Remove the faulty currentUser check.
+    // The VideoPlayerModal itself will handle what a non-logged-in user can or cannot do (e.g., comment).
+    // This function's only job is to open the modal.
     setCurrentVideoUrl(url);
     setCurrentContentItem(item);
     setShowVideoModal(true);
