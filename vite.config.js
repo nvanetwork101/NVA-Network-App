@@ -1,6 +1,10 @@
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
+
 export default defineConfig({
   build: {
-    sourcemap: true, // THIS IS THE FIX: Enable source maps for debugging
+    sourcemap: true, // Enable source maps for debugging
   },
   plugins: [
     react(),
@@ -13,7 +17,7 @@ export default defineConfig({
       },
       manifest: {
         name: 'NVA Network',
-        short_name: 'NVA Network', // As requested, full name for the home screen icon
+        short_name: 'NVA Network',
         description: 'Caribbean Content to a Global Stage.',
         theme_color: '#121212',
         background_color: '#121212',
