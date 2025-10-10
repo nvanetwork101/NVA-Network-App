@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db, functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
-import { collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, limit, doc } from "firebase/firestore";
 import { extractVideoInfo } from '../firebase';
 
 import Countdown from 'react-countdown';
@@ -64,20 +64,19 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
     };
     
     useEffect(() => {
-        if (!competition) {
+        if (!competition || !competition.competitionId) { // Check for the correct ID property
             setEntries([]);
             setLoadingEntries(false);
             return;
         }
         setLoadingEntries(true);
-        const entriesRef = collection(db, "competitions", competition.id, "entries");
+        // Use the correct ID property: competition.competitionId instead of competition.id
+        const entriesRef = collection(db, "competitions", competition.competitionId, "entries");
         const q = query(entriesRef, orderBy("createdAt", "desc"));
         const unsubscribeEntries = onSnapshot(q, (snapshot) => {
-            // THE FINAL FIX: Guard the state updates for the entries list.
-            if (isMounted.current) {
-                setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                setLoadingEntries(false);
-            }
+            // The isMounted check has been removed as it is no longer defined.
+            setEntries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            setLoadingEntries(false);
         });
         return () => unsubscribeEntries();
     }, [competition]);
