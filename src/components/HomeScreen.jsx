@@ -111,7 +111,12 @@ import PromotedSlot from './PromotedSlot';
 
     // EFFECT 3: Processes the layout with the latest real-time data.
     useEffect(() => {
-        if (!rawLayout || !rawAutomatedSlots || !realtimeContent) return;
+        // THE DEFINITIVE FIX: Add a strict guard to ensure rawLayout is not null and has items.
+        // This prevents the component from crashing during a re-render on navigation.
+        if (!rawLayout || !rawLayout.trendingItems || !rawAutomatedSlots || !realtimeContent) {
+            // If the essential data isn't here yet, do nothing and wait for the next effect run.
+            return;
+        }
         setIsLayoutLoading(true);
 
         const enrich = (items) => items.map(item => {
