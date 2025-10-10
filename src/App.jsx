@@ -539,8 +539,11 @@ useEffect(() => {
 
 	useEffect(() => {
         const requestHandler = () => {
-            // When a component requests the state, re-dispatch the last known state.
-            window.dispatchEvent(new CustomEvent('competitionUpdated', { detail: activeCompetition }));
+            // THE DEFINITIVE FIX: When a component requests the state, dispatch ONLY the ID
+            // from the activeCompetition object, or null if it doesn't exist.
+            // This makes it consistent with the main data listener.
+            const competitionId = activeCompetition ? activeCompetition.id : null;
+            window.dispatchEvent(new CustomEvent('competitionUpdated', { detail: competitionId }));
         };
         window.addEventListener('requestCompetitionState', requestHandler);
         return () => {
