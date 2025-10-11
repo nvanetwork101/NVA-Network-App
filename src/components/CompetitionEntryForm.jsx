@@ -103,7 +103,7 @@ const handleSubmit = useCallback(async (e) => {
                 customThumbnailUrl: finalThumbnailUrl, // Will be empty if no custom thumb was uploaded
             };
             const submitEntryFunction = httpsCallable(functions, 'submitCompetitionEntry');
-            await submitEntryFunction({ entryData });
+            await submitEntryFunction(entryData);
             showMessage("Your entry has been submitted successfully!");
             onClose();
         } catch (error) {
