@@ -3612,15 +3612,27 @@ exports.submitCompetitionEntry = onCall(async (request) => {
         }
 
         const entryRef = competitionRef.collection("entries").doc(uid);
-        transaction.set(entryRef, {
-            ...entryData,
-            userId: uid,
-            userName: creatorData.creatorName || creatorData.email,
-            userProfilePicture: creatorData.profilePictureUrl || '',
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            likeCount: 0,
-            viewCount: 0
-        });
+
+// Explicitly construct the entry document from the received data.
+// This prevents unwanted fields and ensures all required fields are saved.
+transaction.set(entryRef, {
+    // Core data from the user's submission
+    competitionId: entryData.competitionId,
+    title: entryData.title || '',
+    contactNumber: entryData.contactNumber,
+    bio: entryData.bio || '',
+    submissionUrl: entryData.submissionUrl || '',
+    photoUrl: entryData.photoUrl || '',
+    customThumbnailUrl: entryData.customThumbnailUrl || '',
+
+    // Server-added authoritative data
+    userId: uid,
+    userName: creatorData.creatorName || creatorData.email,
+    userProfilePicture: creatorData.profilePictureUrl || '',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    likeCount: 0,
+    viewCount: 0
+});
 
         transaction.update(competitionRef, {
             entryCount: admin.firestore.FieldValue.increment(1)

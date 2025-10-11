@@ -65,3 +65,73 @@
 .status-completed {
     background-color: #6c757d; /* Grey */
 }
+
+/* ===================================================================== */
+/* ===== STYLES FOR CLICKABLE COMPETITION FLYER (MOBILE & DESKTOP) ===== */
+/* ===================================================================== */
+.clickable-flyer-container {
+  position: relative;
+  display: block;
+  text-decoration: none;
+  cursor: pointer;
+  width: 100%;
+  max-width: 800px;
+  margin-bottom: 15px; /* This addition completes the container's styling */
+}
+
+.clickable-flyer-image {
+  display: block;
+  width: 100%; /* This is now the image's only job */
+  border-radius: 8px;
+  object-fit: cover;
+  transition: filter 0.2s ease-in-out;
+}
+
+/* This is the desktop-only hover effect */
+.clickable-flyer-container:hover .clickable-flyer-image {
+  filter: brightness(1.15);
+}
+
+.flyer-link-icon {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* Ensures the icon doesn't interfere with the click */
+}
+
+.flyer-link-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ===================================================================== */
+/* ========= STYLES FOR COMPETITION VIDEO VIEWER CLOSE BUTTON ========== */
+/* ===================================================================== */
+.closeButton {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    background-color: rgba(26, 26, 26, 0.8);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 50%;
+    font-size: 24px;
+    line-height: 32px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 10;
+    transition: background-color 0.2s ease;
+}
+
+.closeButton:hover {
+    background-color: rgba(40, 40, 40, 0.9);
+}

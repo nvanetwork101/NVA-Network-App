@@ -10,6 +10,7 @@ import ShareButton from './ShareButton';
 import PrizesModal from './PrizesModal';
 import CompetitionEntryForm from './CompetitionEntryForm.jsx';
 import CompetitionLikeButton from './CompetitionLikeButton';
+import CompetitionVideoViewer from './CompetitionVideoViewer';
 import EnlargedPhotoViewer from './EnlargedPhotoViewer';
 
 function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorProfile }) {
@@ -111,7 +112,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
 
         // Priority 3: Auto-generate a thumbnail from a YouTube link
         if (entry.submissionUrl && (entry.submissionUrl.includes('youtu.be') || entry.submissionUrl.includes('youtube.com'))) {
-            const videoIdMatch = entry.submissionUrl.match(/(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/);
+            const videoIdMatch = entry.submissionUrl.match(/(?:youtube\.com\/(?:shorts\/|watch\?v=)|youtu\.be\/)([^#\&\?]{11})/);
             if (videoIdMatch && videoIdMatch[1].length === 11) {
                 return `https://img.youtube.com/vi/${videoIdMatch[1]}/mqdefault.jpg`;
             }
@@ -150,24 +151,40 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                         <ShareButton
                             title={competition.title}
                             text={`Join the "${competition.title}" competition on NVA Network!`}
-                            url="/competition"
+                            url={`/competition/${competition.id}`}
                             showMessage={showMessage}
                         />
                     </div>
                 </div>
                 
-                {competition.flyerImageUrl && (
-                    <img 
-                        src={competition.flyerImageUrl} 
-                        alt={competition.title}
-                        style={{
-                            width: '100%',
-                            borderRadius: '8px',
-                            marginBottom: '15px',
-                            objectFit: 'cover'
-                        }}
-                    />
-                )}
+                {/* Centering container for the flyer */}
+                <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
+                    {competition.flyerImageUrl && (
+                        competition.flyerLinkUrl ? (
+                            <a href={competition.flyerLinkUrl} target="_blank" rel="noopener noreferrer" className="clickable-flyer-container" style={{ display: 'block', width: '100%' }}>
+    <img 
+        src={competition.flyerImageUrl} 
+        alt={competition.title}
+        className="clickable-flyer-image"
+        style={{ width: '100%', display: 'block' }}
+    />
+    <div className="flyer-link-icon">
+<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" fill="#FFFFFF">
+    <path d="M0 0h24v24H0z" fill="none"/>
+    <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+</svg>
+</div>
+</a>
+                        ) : (
+                            <img 
+                                src={competition.flyerImageUrl} 
+                                alt={competition.title}
+                                className="clickable-flyer-image"
+                                style={{ width: '100%', display: 'block' }}
+                            />
+                        )
+                    )}
+                </div>
                 
                 {competition.noticeText && (
                     <div className="dashboardSection" style={{padding: '10px', border: '1px solid #FFD700', margin: '0 0 10px 0'}}>
@@ -248,7 +265,30 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
             {/* Modals are still functional but will now only be opened by logged-in users */}
             {showPrizesModal && <PrizesModal competition={competition} onClose={() => setShowPrizesModal(false)} />}
             {showEntryForm && <CompetitionEntryForm competition={competition} onClose={() => setShowEntryForm(false)} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />}
-            {selectedEntry && <EnlargedPhotoViewer competition={competition} entry={selectedEntry} currentUser={currentUser} showMessage={showMessage} onClose={() => setSelectedEntry(null)} />}
+{/* 
+  This is the definitive fix. 
+  It checks the competition type from the *parent* competition object, which is reliable.
+  It then renders the correct, specialized viewer for each media type.
+*/}
+{selectedEntry && (
+    competition.competitionType === 'Photo' ? (
+        <EnlargedPhotoViewer
+            competition={competition}
+            entry={selectedEntry}
+            currentUser={currentUser}
+            showMessage={showMessage}
+            onClose={() => setSelectedEntry(null)}
+        />
+    ) : (
+        <CompetitionVideoViewer
+            competition={competition}
+            entry={selectedEntry}
+            currentUser={currentUser}
+            showMessage={showMessage}
+            onClose={() => setSelectedEntry(null)}
+        />
+    )
+)}
         </div>
     );
 }

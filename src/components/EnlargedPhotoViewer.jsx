@@ -52,7 +52,7 @@ function EnlargedPhotoViewer({ competition, entry, currentUser, showMessage, onC
     // THE FIX: A complete replacement of the render logic with a robust, proven structure.
     return (
         <div className="videoModalOverlay flex justify-center items-center" onClick={handleOverlayClick}>
-            <div className={`bg-[#1A1A1A] w-full h-full md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col ${isVertical ? 'md:h-[90vh]' : 'md:w-[90vw]'}`}>
+            <div className={`bg-[#1A1A1A] w-full h-full md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col ${isVertical ? 'is-vertical' : ''}`}>
                 <button className="closeButton" onClick={onClose}>×</button>
                 
                 {/* Main content area that centers the media */}
@@ -66,7 +66,7 @@ function EnlargedPhotoViewer({ competition, entry, currentUser, showMessage, onC
                         />
                     ) : (
                         // High-quality video viewer with correct aspect ratio
-                        <div className={`w-full h-full md:w-auto md:h-auto ${isVertical ? 'aspect-[9/16]' : 'aspect-video'}`}>
+                        <div className={`max-w-full max-h-full ${isVertical ? 'aspect-[9/16]' : 'aspect-video'}`}>
                             <iframe
                                 src={embedUrl}
                                 className="w-full h-full border-none"
