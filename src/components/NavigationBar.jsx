@@ -108,6 +108,15 @@ const NavigationBar = (props) => {
                     <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('Contact'); setShowMoreMenu(false); }}>
                         <span className="navButtonText">Contact</span>
                     </button>
+                
+                    <div style={{ borderTop: '1px solid #333', margin: '5px 0' }}></div>
+                    <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('PrivacyPolicy'); setShowMoreMenu(false); }}>
+                        <span className="navButtonText">Privacy Policy</span>
+                    </button>
+                    <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('TermsOfService'); setShowMoreMenu(false); }}>
+                        <span className="navButtonText">Terms of Service</span>
+                    </button>
+                
                 </div>
             )}
         </div>

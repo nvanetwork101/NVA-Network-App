@@ -103,9 +103,12 @@ const CreatorSignUpScreen = ({ showMessage, setActiveScreen }) => {
                 <div className="formGroup">
                     <div className="checkboxItem">
                         <input type="checkbox" id="agreeTerms" checked={agreedToTerms} onChange={(e) => setAgreedToTerms(e.target.checked)} required />
-                        <label htmlFor="agreeTerms" style={{cursor: 'pointer'}}>
-                            I agree to the <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); showMessage('Simulating opening Creator Terms...'); }}>Creator Terms & Conditions</a>.
-                        </label>
+                        <label htmlFor="agreeTerms" style={{cursor: 'pointer', lineHeight: 1.5}}>
+                        I agree to the{' '}
+                        <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('TermsOfService'); }}>Terms of Service</a>
+                        {' and '}
+                        <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('PrivacyPolicy'); }}>Privacy Policy</a>.
+                    </label>
                     </div>
                 </div>
                 <button type="submit" className="button">

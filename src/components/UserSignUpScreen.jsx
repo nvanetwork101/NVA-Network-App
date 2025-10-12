@@ -99,8 +99,11 @@ const UserSignUpScreen = ({ showMessage, setActiveScreen }) => {
                             onChange={(e) => setAgreedToTerms(e.target.checked)}
                             required
                         />
-                        <label htmlFor="agreeUserTerms" style={{cursor: 'pointer'}}>
-                            I agree to the <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); showMessage('Simulating opening User Terms & Conditions...'); }}>Terms & Conditions</a>.
+                        <label htmlFor="agreeUserTerms" style={{cursor: 'pointer', lineHeight: 1.5}}>
+                        I agree to the{' '}
+                        <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('TermsOfService'); }}>Terms of Service</a>
+                        {' and '}
+                        <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('PrivacyPolicy'); }}>Privacy Policy</a>.
                         </label>
                     </div>
                 </div>

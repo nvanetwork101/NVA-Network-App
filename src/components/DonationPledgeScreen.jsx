@@ -101,6 +101,13 @@ const DonationPledgeScreen = ({ showMessage, setActiveScreen, currentUser, creat
                             <strong>Creator Receives:</strong>
                             <strong style={{color: '#00FF00'}}>{formatCurrency(parseFloat(amount) * 0.93, selectedCurrency, currencyRates)}</strong>
                         </div>
+                   
+                        <hr style={{borderColor: '#444', margin: '10px 0'}} />
+                        <div className="invoice-row" style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', paddingTop: '5px'}}>
+                            <strong>Refund Policy:</strong>
+                            <strong style={{color: '#FFD700'}}>All Pledges Are Final / No Refunds</strong>
+                        </div>
+                   
                     </div>
                 )}
                 {/* --- END OF NEW TRANSPARENCY BLOCK --- */}

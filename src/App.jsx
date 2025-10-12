@@ -35,6 +35,9 @@ import NvaNetworkChartsScreen from './components/NvaNetworkChartsScreen';
 import ContactScreen from './components/ContactScreen';
 import CompetitionScreen from './components/CompetitionScreen';
 
+import PrivacyPolicyScreen from './components/PrivacyPolicyScreen';
+import TermsOfServiceScreen from './components/TermsOfServiceScreen';
+
 import DiscoverScreen from './components/DiscoverScreen';
 import DiscoverUsersScreen from './components/DiscoverUsersScreen';
 
@@ -958,6 +961,10 @@ useEffect(() => {
       case 'NvaNetworkCharts': return <NvaNetworkChartsScreen setActiveScreen={handleNavigate} />;
       case 'NotificationInbox': return <NotificationInboxScreen setActiveScreen={handleNavigate} currentUser={currentUser} dismissNotification={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
       case 'Home': default: return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
+    
+      case 'PrivacyPolicy': return <PrivacyPolicyScreen setActiveScreen={handleNavigate} />;
+      case 'TermsOfService': return <TermsOfServiceScreen setActiveScreen={handleNavigate} />;
+
     }
   };
 

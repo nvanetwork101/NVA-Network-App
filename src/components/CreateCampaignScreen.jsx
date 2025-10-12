@@ -192,8 +192,11 @@ const CreateCampaignScreen = ({ showMessage, setActiveScreen, currentUser, creat
                     
                     <div className="formGroup" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                         <input type="checkbox" id="termsAgreed" checked={termsAgreed} onChange={(e) => setTermsAgreed(e.target.checked)} required style={{ transform: 'scale(1.5)' }} />
-                        <label htmlFor="termsAgreed" className="formLabel" style={{ margin: 0, fontSize: '14px' }}>
-                            By checking, you agree to the NVA Network Terms & Services.
+                        <label htmlFor="termsAgreed" className="formLabel" style={{ margin: 0, fontSize: '14px', lineHeight: 1.5 }}>
+                        By checking, you agree to the{' '}
+                        <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('TermsOfService'); }}>Terms of Service</a>
+                        {' and '}
+                        <a href="#" className="termsLink" onClick={(e) => { e.preventDefault(); setActiveScreen('PrivacyPolicy'); }}>Privacy Policy</a>.
                         </label>
                     </div>
                     

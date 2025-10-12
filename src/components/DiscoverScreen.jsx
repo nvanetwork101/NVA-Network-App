@@ -1,7 +1,7 @@
 // src/components/DiscoverScreen.jsx
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc, getDocs, limit, startAfter } from "firebase/firestore";
 import { db, functions, httpsCallable, extractVideoInfo } from '../firebase.js';
 import LiveEventChat from './LiveEventChat';
 
@@ -59,10 +59,17 @@ function DiscoverScreen({
     const [content, setContent] = useState([]);
     const [loadingCategories, setLoadingCategories] = useState(true);
     const [loadingContent, setLoadingContent] = useState(false);
-    const [pastEvents, setPastEvents] = useState([]);
-    const [countdown, setCountdown] = useState('');
     const [showMore, setShowMore] = useState(false);
+    
+    // State for original "Past Events" (Replays) functionality
+    const [pastEvents, setPastEvents] = useState([]);
     const [replaySearchTerm, setReplaySearchTerm] = useState('');
+
+    // State for NEW VOD pagination and search functionality
+    const [lastDoc, setLastDoc] = useState(null); 
+    const [hasMore, setHasMore] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [searchInput, setSearchInput] = useState('');
     const [hasLiked, setHasLiked] = useState(false);
     const [isLiking, setIsLiking] = useState(false);
     const viewCounted = React.useRef(false);
@@ -130,28 +137,87 @@ function DiscoverScreen({
 
         
     
+    // --- ORIGINAL LOGIC FOR "PAST EVENTS" (REPLAYS) ---
     useEffect(() => {
-        if (!activeCategory || activeCategory === 'Live Premieres') { setContent([]); return; }
-        setLoadingContent(true);
-        const contentRef = collection(db, `artifacts/production-app-id/public/data/content_items`);
-        const q = query(contentRef, where('contentType', '==', activeCategory), where('isActive', '==', true), orderBy('createdAt', 'desc'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            setContent(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-            setLoadingContent(false);
-        });
-        return () => unsubscribe();
-    }, [activeCategory]);
-
-    useEffect(() => {
+        // This listener fetches ALL completed events for the client-side search.
         const eventsRef = collection(db, "events");
         const q = query(eventsRef, where("status", "==", "completed"), orderBy("scheduledEndTime", "desc"));
-        
-        // This effect synchronizes the client's clock with the server's clock.        
         const unsubscribe = onSnapshot(q, (snapshot) => {
             setPastEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }, (error) => {
+            console.error("Error fetching past events: ", error);
+            showMessage("Failed to load past events.");
         });
         return () => unsubscribe();
     }, []);
+
+
+    // --- NEW SCALABLE LOGIC FOR VOD CATEGORIES ---
+    const [isFetching, setIsFetching] = useState(false);
+    const PAGE_SIZE = 12;
+
+    const fetchVODData = async (loadMore = false) => {
+        if (isFetching) return;
+        setIsFetching(true);
+        if (!loadMore) {
+            setLoadingContent(true);
+            setContent([]);
+            setLastDoc(null);
+        }
+
+        try {
+            const collectionRef = collection(db, 'artifacts/production-app-id/public/data/content_items');
+            const constraints = [
+                where('contentType', '==', activeCategory),
+                where('isActive', '==', true)
+            ];
+
+            if (searchTerm) {
+                const searchTermLower = searchTerm.toLowerCase();
+                constraints.push(where("title_lowercase", ">=", searchTermLower));
+                constraints.push(where("title_lowercase", "<=", searchTermLower + '\uf8ff'));
+            }
+            
+            constraints.push(orderBy("title_lowercase", "asc"));
+            
+            if (loadMore && lastDoc) {
+                constraints.push(startAfter(lastDoc));
+            }
+            constraints.push(limit(PAGE_SIZE));
+
+            const q = query(collectionRef, ...constraints);
+            const snapshot = await getDocs(q);
+            const newData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            setContent(prev => loadMore ? [...prev, ...newData] : newData);
+            setHasMore(newData.length === PAGE_SIZE);
+            if (snapshot.docs.length > 0) {
+                setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+            }
+        } catch (error) {
+            console.error("Error fetching VOD data:", error);
+            showMessage("Failed to load content.");
+        } finally {
+            setLoadingContent(false);
+            setIsFetching(false);
+        }
+    };
+    
+    useEffect(() => {
+        // This effect now ONLY runs for VOD categories.
+        if (activeCategory && activeCategory !== 'Live Premieres') {
+            fetchVODData(false);
+        }
+    }, [activeCategory, searchTerm]);
+
+    const handleSearch = () => {
+        setSearchTerm(searchInput);
+    };
+
+    const handleClearSearch = () => {
+        setSearchInput('');
+        setSearchTerm('');
+    };
 
         // --- New Effect to Increment View Count ---
     useEffect(() => {
@@ -494,44 +560,69 @@ function DiscoverScreen({
             
             <div className="categoryContent">{activeCategory === 'Live Premieres' && renderPremiereContent()}</div>     
             
-            {/* --- CHAT RENDER LOGIC WITH MODERATOR CONTROLS --- */}
+           {/* --- HYBRID CONTENT DISPLAY --- */}
+            {activeCategory !== 'Live Premieres' && !isEventLive && (
+                <div className="dashboardSection" style={{ marginTop: '30px' }}>
+                    {/* Scalable Search Bar for VOD */}
+                    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                        <input type="text" className="formInput" placeholder={`Search in ${activeCategory}...`} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSearch()} />
+                        <button className="button" onClick={handleSearch} style={{margin: 0, minWidth: '80px'}}><span className="buttonText">Search</span></button>
+                        {searchTerm && <button className="button" onClick={handleClearSearch} style={{margin: 0, backgroundColor: '#555'}}><span className="buttonText light">Clear</span></button>}
+                    </div>
+                    {/* VOD Content Display */}
+                    {loadingContent ? <p style={{textAlign: 'center'}}>Loading content...</p> : content.length === 0 ? <p style={{textAlign: 'center'}}>{searchTerm ? `No results found for "${searchTerm}".` : "No content here yet."}</p> : (
+                        <>
+                            <div className="contentGrid">
+                                {content.map((item) => (<div key={item.id} className="contentCard" onClick={() => handleContentItemClick(item)}><DynamicThumbnail item={item} /><p className="contentTitle">{item.title}</p></div>))}
+                            </div>
+                            {hasMore && (
+                                <div style={{ textAlign: 'center', marginTop: '30px' }}>
+                                    <button className="button" onClick={() => fetchVODData(true)} disabled={isFetching}><span className="buttonText light">{isFetching ? 'Loading...' : 'Load More'}</span></button>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
+
+            {activeCategory === 'Live Premieres' && !isEventLive && (
+                <div className="dashboardSection" style={{ marginTop: '30px' }}>
+                    {/* Original Client-Side Search for Replays */}
+                    <div className="flex justify-between items-center mb-4">
+                        <p className="dashboardSectionTitle mb-0">Past Events & Replays</p>
+                        <input type="text" className="formInput" placeholder="Search replays by title or date..." value={replaySearchTerm} onChange={(e) => setReplaySearchTerm(e.target.value)} style={{width: '300px'}}/>
+                    </div>
+                    {/* Replays Content Display */}
+                    {pastEvents.length > 0 ? (
+                        <div className="replay-grid-container">
+                            {pastEvents
+                                .filter(event => 
+                                    event.eventTitle.toLowerCase().includes(replaySearchTerm.toLowerCase()) ||
+                                    (event.scheduledStartTime?.toDate().toLocaleDateString() || '').includes(replaySearchTerm)
+                                )
+                                .map((event) => (<ReplayEventCard key={event.id} event={event} onClick={() => handleContentItemClick(event)} />
+                            ))}
+                        </div>
+                    ) : (
+                        <p style={{textAlign: 'center'}}>No past events found.</p>
+                    )}
+                </div>
+            )}
+
+            {/* --- CHAT RENDER LOGIC (Unchanged) --- */}
             {activeCategory === 'Live Premieres' && isEventLive && hasAccess() && (
                 <div className="dashboardSection" style={{ marginTop: '30px', maxWidth: '900px', margin: '30px auto 0 auto' }}>
-                    
-                    {/* --- MODERATOR-ONLY TOGGLE SWITCH --- */}
                     {(creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority') && (
-                        <div style={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center', 
-                            backgroundColor: '#2A2A2A', 
-                            padding: '10px', 
-                            borderRadius: '8px', 
-                            marginBottom: '15px',
-                            border: '1px solid #444'
-                        }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#2A2A2A', padding: '10px', borderRadius: '8px', marginBottom: '15px', border: '1px solid #444' }}>
                             <span style={{ fontWeight: 'bold', color: '#FFF' }}>Moderator Control:</span>
                             <div className="checkboxItem">
-                                <input 
-                                    type="checkbox" 
-                                    id="chatToggle" 
-                                    checked={masterEventDetails.isChatEnabled !== false} // Default to checked if undefined
-                                    onChange={handleToggleChat} 
-                                />
+                                <input type="checkbox" id="chatToggle" checked={masterEventDetails.isChatEnabled !== false} onChange={handleToggleChat} />
                                 <label htmlFor="chatToggle">Live Chat Enabled</label>
                             </div>
                         </div>
                     )}
-
-                    {/* --- CONDITIONAL CHAT COMPONENT --- */}
                     {masterEventDetails?.isChatEnabled !== false ? (
-                        <LiveEventChat
-                            eventId={masterEventDetails.id}
-                            eventDetails={masterEventDetails}
-                            currentUser={currentUser}
-                            creatorProfile={creatorProfile}
-                            showMessage={showMessage}
-                        />
+                        <LiveEventChat eventId={masterEventDetails.id} eventDetails={masterEventDetails} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />
                     ) : (
                         <div style={{ textAlign: 'center', padding: '20px', backgroundColor: '#1A1A1A', borderRadius: '8px' }}>
                             <p className="subHeading">Live chat is currently disabled by a moderator.</p>
@@ -539,39 +630,7 @@ function DiscoverScreen({
                     )}
                 </div>
             )}
-                    
-            {/* --- VOD RENDER LOGIC --- */}
-            {activeCategory !== 'Live Premieres' || !isEventLive ? (
-                <>
-                    {pastEvents.length > 0 && activeCategory === 'Live Premieres' && (
-                         <div className="dashboardSection" style={{ marginTop: '30px' }}>
-                            <div className="flex justify-between items-center mb-4">
-                                <p className="dashboardSectionTitle mb-0">Past Events & Replays</p>
-                                <input type="text" className="formInput" placeholder="Search replays by title or date..." value={replaySearchTerm} onChange={(e) => setReplaySearchTerm(e.target.value)} style={{width: '300px'}}/>
-                            </div>
-                            <div className="replay-grid-container">
-                                {pastEvents
-                                    .filter(event => 
-                                        event.eventTitle.toLowerCase().includes(replaySearchTerm.toLowerCase()) ||
-                                        (event.scheduledStartTime?.toDate().toLocaleDateString() || '').includes(replaySearchTerm)
-                                    )
-                                    .map((event) => (<ReplayEventCard key={event.id} event={event} onClick={() => handleContentItemClick(event)} />
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                    
-                    {activeCategory !== 'Live Premieres' && (
-                        <div className="categoryContent">
-                            {loadingContent ? <p>Loading...</p> : content.length === 0 ? <p>No content here yet.</p> : (
-                                <div className="contentGrid">
-                                    {content.map((item) => (<div key={item.id} className="contentCard" onClick={() => handleContentItemClick(item)}><DynamicThumbnail item={item} /><p className="contentTitle">{item.title}</p></div>))}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </>
-            ) : null}
+
         </div>
     );
 }

@@ -81,8 +81,10 @@ const AdminDashboardScreen = ({
     const [pendingReportsCount, setPendingReportsCount] = useState(0);
     const [pendingAppealsCount, setPendingAppealsCount] = useState(0);
 
-    // --- DATA FETCHING EFFECTS ---
+    const [newSubmissionsCount, setNewSubmissionsCount] = useState(0);
 
+    // --- DATA FETCHING EFFECTS ---
+    
     // Hook for the Live Billboard Status
     useEffect(() => {
         const statusesRef = collection(db, "promotedStatuses");
@@ -132,6 +134,8 @@ const AdminDashboardScreen = ({
             unsubscribers.push(onSnapshot(query(collection(db, "paymentPledges"), where('status', '==', 'pending')), (s) => setPendingPledges(s.docs.map(d=>({id:d.id,...d.data()})))));
             unsubscribers.push(onSnapshot(query(collection(db, "payoutRequests"), where("status", "==", "pending"), orderBy("requestedAt", "desc")), (s) => setPayoutRequests(s.docs.map(d=>({id:d.id,...d.data()})))));
         }
+
+        unsubscribers.push(onSnapshot(query(collection(db, "contactSubmissions"), where("status", "==", "New")), (s) => setNewSubmissionsCount(s.size)));
 
         return () => unsubscribers.forEach(unsub => unsub());
     }, [creatorProfile.role]);
@@ -397,7 +401,9 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                         <button className={`admin-nav-button ${selectedAdminSubScreen === 'BoxOffice' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('BoxOffice')}>Box Office</button>
                     )}
 
-                    <button className={`admin-nav-button ${selectedAdminSubScreen === 'SiteManagement' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('SiteManagement')}>Settings</button>
+                    <button className={`admin-nav-button ${selectedAdminSubScreen === 'SiteManagement' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('SiteManagement')}>
+                    Settings {newSubmissionsCount > 0 && <span style={{color: '#DC3545', fontWeight: 'bold'}}>({newSubmissionsCount})</span>}
+                    </button>
                     <button className="admin-nav-button" onClick={() => setActiveScreen('AnalyticsDashboard')}>Analytics</button>
                 </div>
 

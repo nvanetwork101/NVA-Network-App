@@ -2,14 +2,58 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { doc, getDoc, addDoc, collection, updateDoc } from 'firebase/firestore';
 
-// A small helper component for rendering social media icons
-const SocialIcon = ({ url, svgPath, name }) => (
-    <a href={url} target="_blank" rel="noopener noreferrer" title={name} style={{ color: '#FFD700' }}>
-        <svg viewBox="0 0 24 24" style={{ width: '40px', height: '40px', fill: 'currentColor' }}>
-            <path d={svgPath}></path>
-        </svg>
-    </a>
-);
+// --- START: NEW REACT-ICONS IMPLEMENTATION ---
+// Import the specific, high-quality icons we need from the library
+import { 
+    FaDiscord, 
+    FaFacebook, 
+    FaInstagram, 
+    FaLinkedin, 
+    FaTelegramPlane, 
+    FaTiktok, 
+    FaWhatsapp, 
+    FaYoutube,
+    FaQuestionCircle // A default icon for any unrecognized links
+} from 'react-icons/fa';
+import { FaXTwitter } from 'react-icons/fa6'; // The new, official "X" logo
+import { BsThreads } from 'react-icons/bs';   // A high-quality icon for Threads
+
+const SocialIcon = ({ url, name }) => {
+    const lowerName = name ? name.toLowerCase() : '';
+    let IconComponent;
+
+    // This "smarter" lookup logic finds the right icon even if the name isn't an exact match
+    if (lowerName.includes('discord')) IconComponent = FaDiscord;
+    else if (lowerName.includes('facebook')) IconComponent = FaFacebook;
+    else if (lowerName.includes('instagram')) IconComponent = FaInstagram;
+    else if (lowerName.includes('linkedin')) IconComponent = FaLinkedin;
+    else if (lowerName.includes('telegram')) IconComponent = FaTelegramPlane;
+    else if (lowerName.includes('threads')) IconComponent = BsThreads;
+    else if (lowerName.includes('tiktok')) IconComponent = FaTiktok;
+    else if (lowerName.includes('whatsapp')) IconComponent = FaWhatsapp;
+    else if (lowerName.includes('twitter')) IconComponent = FaXTwitter; // This correctly handles "X / Twitter"
+    else if (lowerName.includes('youtube')) IconComponent = FaYoutube;
+    else IconComponent = FaQuestionCircle; // Fallback for safety
+
+    return (
+        <a 
+            href={url} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            title={name} 
+            style={{ 
+                color: '#FFD700', 
+                transition: 'transform 0.2s',
+                fontSize: '36px' // Controls the size of the icons
+            }}
+            onMouseOver={e => e.currentTarget.style.transform = 'scale(1.15)'}
+            onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
+        >
+            <IconComponent />
+        </a>
+    );
+};
+// --- END: NEW REACT-ICONS IMPLEMENTATION ---
 
 const ContactScreen = ({ setActiveScreen, showMessage, currentUser }) => {
     const [socialLinks, setSocialLinks] = useState([]);
@@ -21,7 +65,6 @@ const ContactScreen = ({ setActiveScreen, showMessage, currentUser }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        // Pre-fill form if user is logged in
         if (currentUser) {
             const userDocRef = doc(db, "creators", currentUser.uid);
             getDoc(userDocRef).then(docSnap => {
@@ -32,7 +75,6 @@ const ContactScreen = ({ setActiveScreen, showMessage, currentUser }) => {
             setUserEmail(currentUser.email);
         }
 
-        // Fetch social links from settings
         const socialLinksDocRef = doc(db, "settings", "socialLinks");
         getDoc(socialLinksDocRef).then(docSnap => {
             if (docSnap.exists()) {
@@ -103,9 +145,9 @@ const ContactScreen = ({ setActiveScreen, showMessage, currentUser }) => {
             <div className="dashboardSection">
                 <p className="dashboardSectionTitle" style={{ textAlign: 'center' }}>Follow Us</p>
                 {isLoading ? ( <p style={{ textAlign: 'center' }}>Loading social links...</p> ) : (
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap', marginTop: '20px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '25px', flexWrap: 'wrap', marginTop: '20px' }}>
                         {socialLinks.map(link => (
-                            <SocialIcon key={link.name} url={link.url} svgPath={link.iconSvgPath} name={link.name} />
+                            <SocialIcon key={link.name} url={link.url} name={link.name} />
                         ))}
                     </div>
                 )}

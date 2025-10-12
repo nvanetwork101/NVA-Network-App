@@ -890,6 +890,68 @@ exports.aggregateContentViewsAndLikes = onDocumentUpdated("artifacts/{appId}/pub
     });
 });
 
+        // =====================================================================
+// =========== START: DATA SYNC FOR SEARCH FIELDS ======================
+// =====================================================================
+
+// Syncs the lowercase title when a new content_item is created.
+exports.onContentItemCreateSyncLowerCase = onDocumentCreated("artifacts/{appId}/public/data/content_items/{contentId}", (event) => {
+    const data = event.data.data();
+    if (data.title && typeof data.title === 'string') {
+        logger.info(`Syncing lowercase title for new content item '${event.params.contentId}'.`);
+        return event.data.ref.set({
+            title_lowercase: data.title.toLowerCase()
+        }, { merge: true });
+    }
+    return null;
+});
+
+// Syncs the lowercase title when a content_item is updated.
+exports.onContentItemUpdateSyncLowerCase = onDocumentUpdated("artifacts/{appId}/public/data/content_items/{contentId}", (event) => {
+    const dataBefore = event.data.before.data();
+    const dataAfter = event.data.after.data();
+
+    // Only run if the title has actually changed and is a string.
+    if (dataAfter.title && typeof dataAfter.title === 'string' && dataAfter.title !== dataBefore.title) {
+        logger.info(`Syncing lowercase title for updated content item '${event.params.contentId}'.`);
+        return event.data.after.ref.update({
+            title_lowercase: dataAfter.title.toLowerCase()
+        });
+    }
+    return null;
+});
+
+// Syncs the lowercase title when a new event is created.
+exports.onEventCreateSyncLowerCase = onDocumentCreated("events/{eventId}", (event) => {
+    const data = event.data.data();
+    if (data.eventTitle && typeof data.eventTitle === 'string') {
+        logger.info(`Syncing lowercase title for new event '${event.params.eventId}'.`);
+        return event.data.ref.set({
+            eventTitle_lowercase: data.eventTitle.toLowerCase()
+        }, { merge: true });
+    }
+    return null;
+});
+
+// Syncs the lowercase title when an event is updated.
+exports.onEventUpdateSyncLowerCase = onDocumentUpdated("events/{eventId}", (event) => {
+    const dataBefore = event.data.before.data();
+    const dataAfter = event.data.after.data();
+
+    // Only run if the eventTitle has actually changed and is a string.
+    if (dataAfter.eventTitle && typeof dataAfter.eventTitle === 'string' && dataAfter.eventTitle !== dataBefore.eventTitle) {
+        logger.info(`Syncing lowercase title for updated event '${event.params.eventId}'.`);
+        return event.data.after.ref.update({
+            eventTitle_lowercase: dataAfter.eventTitle.toLowerCase()
+        });
+    }
+    return null;
+});
+
+// =====================================================================
+// ============ END: DATA SYNC FOR SEARCH FIELDS =======================
+// =====================================================================
+
 exports.resetDailyStats = onSchedule("every 24 hours", async (event) => {
     logger.info("Running scheduled job: Resetting daily analytics stats.");
     const db = admin.firestore();
