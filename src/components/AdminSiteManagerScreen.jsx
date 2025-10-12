@@ -253,9 +253,11 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     const handleRunAudit = async () => { setIsAuditing(true); setAuditResults("Starting data integrity audit..."); showMessage("Starting data integrity audit..."); try { const auditFunction = httpsCallable(functions, 'runDataIntegrityAudit'); const result = await auditFunction(); setAuditResults(result.data.summary); showMessage("Audit complete! See results below."); } catch (error) { const errorMessage = `Audit failed: ${error.message}`; setAuditResults({ error: errorMessage }); showMessage(errorMessage); } finally { setIsAuditing(false); } };
     
      const handleResetAllData = () => {
-        const performReset = async () => {
-            if (resetConfirmationText !== 'DELETE ALL') {
-                showMessage("You must type 'DELETE ALL' to confirm.");
+        // This function's only job is to open the modal.
+        // It passes a function to the modal that will be executed on confirm.
+        const confirmAction = async (inputValue) => {
+            if (inputValue !== 'DELETE ALL') {
+                showMessage("Confirmation text did not match. Aborting reset.");
                 return;
             }
             setIsResetting(true);
@@ -268,34 +270,50 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
                 showMessage(`CRITICAL ERROR: ${error.message}`);
             } finally {
                 setIsResetting(false);
-                setResetConfirmationText(''); // Clear input after action
             }
         };
 
-        const confirmationMessageComponent = (
-            <div>
-                <p>This will permanently delete ALL users, content, campaigns, events, competitions, pledges, reports, and submissions. Only the admin settings will remain.</p>
-                <p style={{ color: '#DC3545', fontWeight: 'bold' }}>THIS ACTION CANNOT BE UNDONE.</p>
-                <div className="formGroup" style={{marginTop: '20px'}}>
-                    <label className="formLabel">To confirm, please type 'DELETE ALL' in the box below:</label>
-                    <input 
-                        type="text" 
-                        className="formInput" 
-                        value={resetConfirmationText}
-                        onChange={(e) => setResetConfirmationText(e.target.value)}
-                        placeholder="DELETE ALL"
-                        style={{borderColor: '#DC3545', textAlign: 'center'}}
-                    />
+        // We now need a more advanced confirmation modal that can accept text input.
+        // For now, we will use the existing modal and a local state variable.
+        // This is the definitive fix for the text input issue.
+        const ConfirmationComponent = () => {
+            const [inputText, setInputText] = useState('');
+            return (
+                <div>
+                    <p>This will permanently delete ALL users, content, campaigns, events, competitions, pledges, reports, and submissions. Only the admin settings will remain.</p>
+                    <p style={{ color: '#DC3545', fontWeight: 'bold' }}>THIS ACTION CANNOT BE UNDONE.</p>
+                    <div className="formGroup" style={{marginTop: '20px'}}>
+                        <label className="formLabel">To confirm, please type 'DELETE ALL' in the box below:</label>
+                        <input 
+                            type="text" 
+                            className="formInput" 
+                            value={inputText}
+                            onChange={(e) => setInputText(e.target.value)}
+                            placeholder="DELETE ALL"
+                            style={{borderColor: '#DC3545', textAlign: 'center'}}
+                        />
+                    </div>
+                    {/* This passes the local input text up to the confirmation action */}
+                    <button 
+                        className="button" 
+                        style={{backgroundColor: '#DC3545', marginTop: '10px'}}
+                        onClick={() => {
+                            setShowConfirmationModal(false);
+                            confirmAction(inputText);
+                        }}
+                    >
+                        <span className="buttonText">PERMANENTLY DELETE ALL DATA</span>
+                    </button>
                 </div>
-            </div>
-        );
-
+            );
+        };
+        
+        // This bypasses the simple setOnConfirmationAction for our custom component
         setConfirmationTitle("⚠️ CONFIRM FULL DATABASE RESET ⚠️");
-        setConfirmationMessage(confirmationMessageComponent);
-        setOnConfirmationAction(() => () => performReset());
+        setConfirmationMessage(<ConfirmationComponent />);
+        setOnConfirmationAction(() => () => {}); // Set a dummy action, as the button inside the component handles it
         setShowConfirmationModal(true);
-    };
-    
+        };
     const handleUpdateField = (fieldName, value) => {
         if (fieldName === 'showNvaCharts') {
             setShowNvaCharts(value);
@@ -392,7 +410,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
            {/* --- ADMIN ONLY SECTIONS --- */}
             {creatorProfile.role === 'admin' && (
                 <>
-                    <div className="dashboardSection"><p className="dashboardSectionTitle">Monetization Settings</p><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p><input type="number" className="formInput" value={premiumPrice} onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Promoted Status Price (USD)</p><input type="number" className="formInput" value={promotedStatusPrice} onChange={(e) => { setPromotedStatusPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div>{currentUserRole === 'admin' && (<div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p><input type="text" className="formInput" value={mmgNumber} onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }} placeholder="Enter MMG number..." style={{width: '200px', textAlign: 'right'}} /></div>)}</div>
+                    <div className="dashboardSection"><p className="dashboardSectionTitle">Monetization Settings</p><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p><input type="number" className="formInput" value={premiumPrice || ''} onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Promoted Status Price (USD)</p><input type="number" className="formInput" value={promotedStatusPrice || ''} onChange={(e) => { setPromotedStatusPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div>{currentUserRole === 'admin' && (<div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p><input type="text" className="formInput" value={mmgNumber} onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }} placeholder="Enter MMG number..." style={{width: '200px', textAlign: 'right'}} /></div>)}</div>
                     
                     <div className="dashboardSection" style={{marginTop: '20px'}}>
                         <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}>
