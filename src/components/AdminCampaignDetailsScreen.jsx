@@ -85,6 +85,19 @@ const AdminCampaignDetailsScreen = ({
             {/* Add the admin-specific action panel */}
             <div className="dashboardSection" style={{ border: '2px solid #FFD700', marginTop: '20px' }}>
                 <p className="dashboardSectionTitle">Admin Actions</p>
+                
+                {campaign.fullName && campaign.mmgNumber && (
+                    <div style={{ margin: '15px 0', borderTop: '1px solid #444', borderBottom: '1px solid #444', paddingTop: '15px', paddingBottom: '10px' }}>
+                        <p className="dashboardSectionTitle" style={{ fontSize: '16px', color: '#FFF', marginBottom: '10px' }}>Payout Information</p>
+                        <p className="dashboardItem" style={{ margin: '5px 0', fontSize: '14px' }}>
+                            <span style={{ fontWeight: 'bold', color: '#AAA' }}>Full Legal Name: </span>{campaign.fullName}
+                        </p>
+                        <p className="dashboardItem" style={{ margin: '5px 0', fontSize: '14px' }}>
+                            <span style={{ fontWeight: 'bold', color: '#AAA' }}>MMG Number: </span>{campaign.mmgNumber}
+                        </p>
+                    </div>
+                )}
+                
                 <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '20px' }}>
                     <button className="adminActionButton approve" onClick={() => confirmAction('active')}>Approve Campaign</button>
                     <button className="adminActionButton reject" onClick={() => confirmAction('rejected')}>Reject Campaign</button>

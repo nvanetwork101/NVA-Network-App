@@ -11,6 +11,11 @@ const CreateCampaignScreen = ({ showMessage, setActiveScreen, currentUser, creat
     const [description, setDescription] = useState('');
     const [goal, setGoal] = useState('');
     const [duration, setDuration] = useState(30);
+    
+    const [fullName, setFullName] = useState('');
+    const [mmgNumber, setMmgNumber] = useState('');
+    const [termsAgreed, setTermsAgreed] = useState(false);
+    
     const [projectLink, setProjectLink] = useState('');
     const [customThumbnailFile, setCustomThumbnailFile] = useState(null);
     const [customThumbnailPreview, setCustomThumbnailPreview] = useState('');
@@ -83,12 +88,16 @@ const CreateCampaignScreen = ({ showMessage, setActiveScreen, currentUser, creat
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!title || !description || !goal) {
-            showMessage('Please fill in all required fields: Title, Description, and Funding Goal.');
+        if (!title || !description || !goal || !fullName || !mmgNumber) {
+            showMessage('Please fill in all required fields.');
             return;
         }
         if (isNaN(goal) || parseFloat(goal) <= 0) {
             showMessage('Funding Goal must be a positive number.');
+            return;
+        }
+        if (!termsAgreed) {
+            showMessage('You must agree to the Terms & Services before submitting.');
             return;
         }
         setIsUploading(true);
@@ -130,7 +139,10 @@ const CreateCampaignScreen = ({ showMessage, setActiveScreen, currentUser, creat
                 title, description, goal: parseFloat(goal), raised: 0,
                 projectLink: projectLink, imageUrl: finalImageUrl,
                 createdAt: createdAt.toISOString(), endDate: endDate.toISOString(),
-                status: 'pending'
+                status: 'pending',
+                // --- NEW FIELDS ---
+                fullName: fullName,
+                mmgNumber: mmgNumber
             });
             showMessage(`Campaign "${title}" submitted for review!`);
             setActiveScreen('CreatorDashboard');
@@ -153,6 +165,22 @@ const CreateCampaignScreen = ({ showMessage, setActiveScreen, currentUser, creat
                     <div className="formGroup"><label htmlFor="campaignTitle" className="formLabel">Campaign Title:</label><input type="text" id="campaignTitle" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} required /></div>
                     <div className="formGroup"><label htmlFor="campaignDescription" className="formLabel">Description:</label><textarea id="campaignDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe your project, what you need funding for, etc." required></textarea></div>
                     <div className="formGroup"><label htmlFor="campaignGoal" className="formLabel">Funding Goal (USD):</label><input type="number" id="campaignGoal" className="formInput" value={goal} onChange={(e) => setGoal(e.target.value)} min="1" step="any" placeholder="e.g., 500" required /></div>
+                    
+                    <div style={{border: '1px solid #FFD700', borderRadius: '8px', padding: '15px', margin: '20px 0', backgroundColor: '#2A2A2A'}}>
+                        <p className="formLabel" style={{color: '#FFD700', marginBottom: '10px'}}>MMG Payout Information</p>
+                        <div className="formGroup">
+                            <label htmlFor="fullName" className="formLabel">Full Legal Name:</label>
+                            <input type="text" id="fullName" className="formInput" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+                        </div>
+                        <div className="formGroup">
+                            <label htmlFor="mmgNumber" className="formLabel">GTT MMG Number:</label>
+                            <input type="text" pattern="\d*" id="mmgNumber" className="formInput" value={mmgNumber} onChange={(e) => setMmgNumber(e.target.value)} required />
+                        </div>
+                        <p className="smallText" style={{textAlign: 'center', color: '#FFF', backgroundColor: '#A80000', padding: '8px', borderRadius: '4px', lineHeight: 1.4}}>
+                            You must be the owner of the MMG account. If the name does not match, your campaign will be rejected.
+                        </p>
+                    </div>
+                    
                     <div className="formGroup"><label htmlFor="campaignDuration" className="formLabel">Campaign Duration:</label><select id="campaignDuration" className="formInput" value={duration} onChange={(e) => setDuration(e.target.value)}><option value="7">1 Week</option><option value="14">2 Weeks</option><option value="21">3 Weeks</option><option value="30">30 Days (Max)</option></select></div>
                     <div className="formGroup"><label htmlFor="projectLink" className="formLabel">Project Link (Optional):</label><input type="url" id="projectLink" className="formInput" value={projectLink} onChange={(e) => setProjectLink(e.target.value)} placeholder="e.g., YouTube, Facebook video link" /><p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>We'll try to generate a thumbnail from this link.</p></div>
                     <div className="formGroup"><label className="formLabel">Campaign Thumbnail:</label>{currentPreview && ( <div style={{ marginBottom: '15px' }}><img src={currentPreview} alt="Thumbnail Preview" style={{ maxWidth: '100%', borderRadius: '8px', border: '2px solid #FFD700' }} /></div>)}
@@ -161,6 +189,14 @@ const CreateCampaignScreen = ({ showMessage, setActiveScreen, currentUser, creat
                          <p className="smallText" style={{textAlign: 'center', color: '#AAA', marginTop: '5px'}}>Recommended size: 1280x720 pixels.</p>
                     </div>
                     <div className="formGroup"><p className="smallText" style={{textAlign: 'center', color: '#FFD700', lineHeight: 1.5}}>Please note: Upon successful completion or expiration of a campaign, a 30-day cooldown will apply before you can create a new one.</p></div>
+                    
+                    <div className="formGroup" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                        <input type="checkbox" id="termsAgreed" checked={termsAgreed} onChange={(e) => setTermsAgreed(e.target.checked)} required style={{ transform: 'scale(1.5)' }} />
+                        <label htmlFor="termsAgreed" className="formLabel" style={{ margin: 0, fontSize: '14px' }}>
+                            By checking, you agree to the NVA Network Terms & Services.
+                        </label>
+                    </div>
+                    
                     <button type="submit" className="button" disabled={isUploading}><span className="buttonText">{isUploading ? 'Submitting...' : 'Submit for Review'}</span></button>
                 </form>
                 <button className="button" onClick={() => setActiveScreen('CreatorDashboard')} style={{ backgroundColor: '#555', marginTop: '20px' }}><span className="buttonText light">Back to Dashboard</span></button>
