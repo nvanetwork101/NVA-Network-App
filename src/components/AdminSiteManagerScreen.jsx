@@ -33,6 +33,11 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
 
     // --- STATE FOR PAYOUT HISTORY ---
     const [payoutHistory, setPayoutHistory] = useState([]);
+    
+    // --- STATE FOR DESTRUCTIVE ACTIONS ---
+    const [isResetting, setIsResetting] = useState(false);
+    const [resetConfirmationText, setResetConfirmationText] = useState('');
+    
     const [isLoadingHistory, setIsLoadingHistory] = useState(true);
     const [isHistoryExpanded, setIsHistoryExpanded] = useState(false); // Start collapsed
 
@@ -44,6 +49,12 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
         card3Title: '', card3Desc: '',
         premiumPerks: [], advertiserPerks: []
     });
+    
+     // --- STATE FOR LEGAL CONTENT ---
+    const [legalContent, setLegalContent] = useState({ privacyPolicy: '', termsOfService: '' });
+    const [isLoadingLegalContent, setIsLoadingLegalContent] = useState(true);
+    const [hasLegalContentChanges, setHasLegalContentChanges] = useState(false);
+    
     const [newPremiumPerk, setNewPremiumPerk] = useState('');
     const [newAdvertiserPerk, setNewAdvertiserPerk] = useState('');
     const [isLoadingSupportContent, setIsLoadingSupportContent] = useState(true);
@@ -55,10 +66,13 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
 
         const homeLayoutDocRef = doc(db, "settings", "homeScreenLayout");
 
+        const legalContentDocRef = doc(db, "settings", "legalContent");
+
         const unsubSocial = onSnapshot(socialLinksDocRef, (docSnap) => {
            if (docSnap.exists()) {
                 const data = docSnap.data();
                 setSocialLinks(Array.isArray(data.links) ? [...data.links].sort((a, b) => a.name.localeCompare(b.name)) : []);
+                const legalContentDocRef = doc(db, "settings", "legalContent");
                 setIsLeaderboardEnabled(data.isLeaderboardEnabled ?? false);
                 setPremiumPrice(data.premiumPrice ?? 1.99);
                 setTicketPrice(data.ticketPrice ?? 5.00);
@@ -82,10 +96,18 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
             }
         });
 
+        const unsubLegal = onSnapshot(legalContentDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setLegalContent(docSnap.data());
+            }
+            setIsLoadingLegalContent(false);
+        });
+
         return () => {
             unsubSocial();
             unsubSupport();
             unsubLayout();
+            unsubLegal();
         };
     }, []);
 
@@ -117,6 +139,11 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
         setHasSupportContentChanges(true);
     };
 
+        const handleLegalContentChange = (field, value) => {
+        setLegalContent(prev => ({ ...prev, [field]: value }));
+        setHasLegalContentChanges(true);
+    };
+
     const handleAddPerk = (type) => {
         setHasSupportContentChanges(true);
         if (type === 'premium') {
@@ -140,19 +167,28 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     };
     
     const handleSaveChanges = async (section) => {
+        setIsSaving(true);
         if (section === 'supportHub') {
-            if (!hasSupportContentChanges) return;
-            setIsSaving(true); showMessage("Saving Support Hub content...");
+            if (!hasSupportContentChanges) { setIsSaving(false); return; }
+            showMessage("Saving Support Hub content...");
             try {
                 const supportHubDocRef = doc(db, "settings", "supportHubContent");
                 await setDoc(supportHubDocRef, supportHubContent, { merge: true });
                 showMessage("Support Hub content saved successfully!");
                 setHasSupportContentChanges(false);
             } catch (error) { showMessage(`Error: ${error.message}`); }
-            finally { setIsSaving(false); }
+        } else if (section === 'legalContent') {
+            if (!hasLegalContentChanges) { setIsSaving(false); return; }
+            showMessage("Saving legal documents...");
+            try {
+                const legalContentDocRef = doc(db, "settings", "legalContent");
+                await setDoc(legalContentDocRef, { ...legalContent, lastUpdatedAt: new Date().toISOString() }, { merge: true });
+                showMessage("Legal documents saved successfully!");
+                setHasLegalContentChanges(false);
+            } catch (error) { showMessage(`Error: ${error.message}`); }
         } else {
-             if (!hasChanges) return;
-            setIsSaving(true); showMessage("Saving site settings...");
+            if (!hasChanges) { setIsSaving(false); return; }
+            showMessage("Saving site settings...");
             try {
                 const socialLinksDocRef = doc(db, "settings", "socialLinks");
                 const homeLayoutDocRef = doc(db, "settings", "homeScreenLayout");
@@ -163,8 +199,8 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
                 showMessage("Site settings saved successfully!");
                 setHasChanges(false);
             } catch (error) { showMessage(`Error saving changes: ${error.message}`); }
-            finally { setIsSaving(false); }
         }
+        setIsSaving(false);
     };
 
     useEffect(() => { setIsLoadingSubmissions(true); const submissionsRef = collection(db, "contactSubmissions"); const q = query(submissionsRef, orderBy("submittedAt", "desc")); const unsubscribe = onSnapshot(q, (snapshot) => { setSubmissions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setIsLoadingSubmissions(false); }, (error) => { showMessage("Failed to load submissions."); setIsLoadingSubmissions(false); }); return () => unsubscribe(); }, []);
@@ -215,6 +251,51 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
         }
     };
     const handleRunAudit = async () => { setIsAuditing(true); setAuditResults("Starting data integrity audit..."); showMessage("Starting data integrity audit..."); try { const auditFunction = httpsCallable(functions, 'runDataIntegrityAudit'); const result = await auditFunction(); setAuditResults(result.data.summary); showMessage("Audit complete! See results below."); } catch (error) { const errorMessage = `Audit failed: ${error.message}`; setAuditResults({ error: errorMessage }); showMessage(errorMessage); } finally { setIsAuditing(false); } };
+    
+     const handleResetAllData = () => {
+        const performReset = async () => {
+            if (resetConfirmationText !== 'DELETE ALL') {
+                showMessage("You must type 'DELETE ALL' to confirm.");
+                return;
+            }
+            setIsResetting(true);
+            showMessage("Initiating full data reset...");
+            try {
+                const resetFunction = httpsCallable(functions, 'deleteAllUserDataAndContent');
+                const result = await resetFunction();
+                showMessage(result.data.message);
+            } catch (error) {
+                showMessage(`CRITICAL ERROR: ${error.message}`);
+            } finally {
+                setIsResetting(false);
+                setResetConfirmationText(''); // Clear input after action
+            }
+        };
+
+        const confirmationMessageComponent = (
+            <div>
+                <p>This will permanently delete ALL users, content, campaigns, events, competitions, pledges, reports, and submissions. Only the admin settings will remain.</p>
+                <p style={{ color: '#DC3545', fontWeight: 'bold' }}>THIS ACTION CANNOT BE UNDONE.</p>
+                <div className="formGroup" style={{marginTop: '20px'}}>
+                    <label className="formLabel">To confirm, please type 'DELETE ALL' in the box below:</label>
+                    <input 
+                        type="text" 
+                        className="formInput" 
+                        value={resetConfirmationText}
+                        onChange={(e) => setResetConfirmationText(e.target.value)}
+                        placeholder="DELETE ALL"
+                        style={{borderColor: '#DC3545', textAlign: 'center'}}
+                    />
+                </div>
+            </div>
+        );
+
+        setConfirmationTitle("⚠️ CONFIRM FULL DATABASE RESET ⚠️");
+        setConfirmationMessage(confirmationMessageComponent);
+        setOnConfirmationAction(() => () => performReset());
+        setShowConfirmationModal(true);
+    };
+    
     const handleUpdateField = (fieldName, value) => {
         if (fieldName === 'showNvaCharts') {
             setShowNvaCharts(value);
@@ -271,6 +352,42 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
             </div>
 
             <div className="dashboardSection"><div className="flex justify-between items-center mb-4"><p className="dashboardSectionTitle" style={{marginBottom: 0}}>Social Links Manager</p><button className="button" onClick={() => handleSaveChanges('siteSettings')} disabled={!hasChanges || isSaving}><span className="buttonText">{isSaving ? 'Saving...' : 'Save Changes'}</span></button></div><div className="dashboardContentList">{socialLinks.map((link, index) => (<div key={link.name || index} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}><div className="flex justify-between items-center"><p className="adminDashboardItemTitle">{link.name}</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{link.isEnabled ? 'Visible' : 'Hidden'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={link.isEnabled} onChange={(e) => handleUpdateField(`${index}-isEnabled`, e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${link.isEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${link.isEnabled ? 'transform translate-x-6' : ''}`}></div></div></label></div><div className="formGroup" style={{marginBottom: 0}}><label className="formLabel" style={{fontSize: '12px', color: '#AAA'}}>URL:</label><input type="url" className="formInput" value={link.url} onChange={(e) => handleUpdateField(`${index}-url`, e.target.value)} placeholder={`Enter full URL for ${link.name}`} /></div></div>))}</div></div>
+            
+            <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}>
+                <div className="flex justify-between items-center mb-4">
+                    <p className="dashboardSectionTitle" style={{marginBottom: 0, color: '#00FFFF'}}>Legal Content Manager</p>
+                    <button className="button" onClick={() => handleSaveChanges('legalContent')} disabled={!hasLegalContentChanges || isSaving}>
+                        <span className="buttonText">{isSaving ? 'Saving...' : 'Save Legal Content'}</span>
+                    </button>
+                </div>
+                {isLoadingLegalContent ? <p>Loading legal content...</p> : (
+                    <>
+                        {legalContent.lastUpdatedAt && <p className="smallText" style={{textAlign: 'right', color: '#AAA'}}>Last Updated: {new Date(legalContent.lastUpdatedAt).toLocaleString()}</p>}
+                        <div className="formGroup">
+                            <label className="formLabel">Privacy Policy:</label>
+                            <textarea 
+                                className="formTextarea" 
+                                value={legalContent.privacyPolicy} 
+                                onChange={(e) => handleLegalContentChange('privacyPolicy', e.target.value)}
+                                rows="15"
+                                placeholder="Enter the full text of your Privacy Policy here."
+                            />
+                        </div>
+                        <hr style={{borderColor: '#444', margin: '20px 0'}}/>
+                        <div className="formGroup">
+                            <label className="formLabel">Terms of Service:</label>
+                            <textarea 
+                                className="formTextarea" 
+                                value={legalContent.termsOfService} 
+                                onChange={(e) => handleLegalContentChange('termsOfService', e.target.value)}
+                                rows="15"
+                                placeholder="Enter the full text of your Terms of Service here."
+                            />
+                        </div>
+                    </>
+                )}
+            </div>
+            
             <div className="dashboardSection"><p className="dashboardSectionTitle">Feature Toggles</p><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Show NVA Network Charts on Home Screen</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{showNvaCharts ? 'Enabled' : 'Disabled'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={showNvaCharts} onChange={(e) => handleUpdateField('showNvaCharts', e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${showNvaCharts ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${showNvaCharts ? 'transform translate-x-6' : ''}`}></div></div></label></div></div>
            {/* --- ADMIN ONLY SECTIONS --- */}
             {creatorProfile.role === 'admin' && (
@@ -333,6 +450,20 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
             <div className="dashboardSection" style={{marginTop: '20px'}}><p className="dashboardSectionTitle">Contact Form Submissions</p>{isLoadingSubmissions ? <p>Loading submissions...</p> : (<div className="dashboardContentList">{submissions.length === 0 ? <p className="dashboardItem">No submissions yet.</p> : (submissions.map(sub => (<div key={sub.id} className="adminDashboardItem" onClick={() => handleViewSubmission(sub)} style={{cursor: 'pointer', borderLeft: sub.status === 'New' ? '4px solid #FFD700' : '4px solid transparent'}}><div style={{flexGrow: 1}}><p className="adminDashboardItemTitle">{sub.queryType} - <span style={{fontWeight: 'normal'}}>{sub.userName}</span></p><p style={{fontSize: '12px', color: '#AAA'}}>{new Date(sub.submittedAt).toLocaleString()}</p></div><span className="adminDashboardItemStatus">{sub.status}</span></div>)))}</div>)}{selectedSubmission && (<div className="confirmationModalOverlay" style={{zIndex: 2500}}><div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '500px'}}><p className="confirmationModalTitle">{selectedSubmission.queryType}</p><div className="dashboardItem"><strong>From:</strong> {selectedSubmission.userName}</div><div className="dashboardItem"><strong>Email:</strong> <a href={`mailto:${selectedSubmission.userEmail}`} className="termsLink">{selectedSubmission.userEmail}</a></div><div className="dashboardItem"><strong>Date:</strong> {new Date(selectedSubmission.submittedAt).toLocaleString()}</div><hr style={{borderColor: '#333', margin: '15px 0'}}/><p className="paragraph" style={{backgroundColor: '#0A0A0A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap'}}>{selectedSubmission.message}</p><div className="confirmationModalButtons"><button className="confirmationButton cancel" onClick={() => confirmDeleteSubmission(selectedSubmission)}>Delete</button><button className="confirmationButton confirm" onClick={() => setSelectedSubmission(null)}>Close</button></div></div></div>)}</div>
             <div className="dashboardSection" style={{ border: '2px solid #FF8C00', marginTop: '20px' }}>
     <p className="dashboardSectionTitle">Data Integrity Tools</p>
+    
+    <div className="dashboardSection" style={{ border: '4px solid #DC3545', marginTop: '20px' }}>
+                        <p className="dashboardSectionTitle" style={{color: '#DC3545'}}>Destructive Actions</p>
+                        <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
+                            <p className="adminDashboardItemTitle">Reset All User and Content Data</p>
+                            <p className="paragraph" style={{color: '#AAA', fontSize: '14px'}}>
+                                This will permanently delete all user-generated data (accounts, content, campaigns, etc.) to prepare the site for public launch. System settings will be preserved.
+                            </p>
+                            <button className="button" onClick={handleResetAllData} style={{ backgroundColor: '#B22222', marginTop: '10px' }} disabled={isResetting}>
+                                <span className="buttonText">{isResetting ? 'DELETING...' : 'Initiate Full Data Reset'}</span>
+                            </button>
+                        </div>
+                    </div>
+    
     <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '20px' }}>Use these tools to perform database maintenance. These are powerful actions. Use with caution.</p>
     
     {/* --- THIS IS THE NEW SECTION FOR OUR GHOST ACCOUNT BUTTON --- */}

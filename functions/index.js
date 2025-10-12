@@ -5118,6 +5118,108 @@ exports.deleteUserAccount = onCall(async (request) => {
         throw new HttpsError("internal", `An error occurred during core deletion: ${error.message}`);
     }
 });
+
+    // =====================================================================
+// =========== START: DESTRUCTIVE FULL DATA RESET FUNCTION =============
+// =====================================================================
+exports.deleteAllUserDataAndContent = onCall(async (request) => {
+    // SECURITY: Only a verified admin can run this function.
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "CRITICAL: You must be an admin to perform this action.");
+    }
+    const adminUid = request.auth.uid;
+    logger.warn(`[!!! DESTRUCTIVE ACTION !!!] Admin '${adminUid}' has initiated a full database reset.`);
+
+    const db = admin.firestore();
+    const bucket = admin.storage().bucket();
+    const auth = admin.auth();
+    const batchSize = 400; // Number of documents to delete per batch.
+
+    // --- Helper function to recursively delete collections ---
+    async function deleteCollection(collectionRef) {
+        const query = collectionRef.orderBy('__name__').limit(batchSize);
+        return new Promise((resolve, reject) => {
+            deleteQueryBatch(query, resolve).catch(reject);
+        });
+    }
+    async function deleteQueryBatch(query, resolve) {
+        const snapshot = await query.get();
+        if (snapshot.size === 0) { return resolve(); }
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => { batch.delete(doc.ref); });
+        await batch.commit();
+        process.nextTick(() => { deleteQueryBatch(query, resolve); });
+    }
+    
+    // --- Helper function to recursively delete storage folders ---
+    async function deleteStorageFolder(path) {
+        try {
+            await bucket.deleteFiles({ prefix: path });
+            logger.info(`Successfully deleted all files in storage path: ${path}`);
+        } catch (error) {
+            logger.error(`Error deleting storage folder ${path}:`, error.message);
+        }
+    }
+    
+    try {
+        // --- STEP 1: Define all user-generated data locations ---
+        const collectionsToDelete = [
+            'competitions', 'opportunities', 'events', 'promotedStatuses', 
+            'paymentPledges', 'payoutRequests', 'reports', 'appeals', 
+            'contactSubmissions', 'notifications', 'broadcast_notifications'
+        ];
+        const artifactSubcollectionsToDelete = ['campaigns', 'content_items'];
+        const storagePrefixesToDelete = [
+            'profile_pictures/', 'content_thumbnails/', 'campaign_thumbnails/', 
+            'opportunity_flyers/', 'promo_flyers/', 'creator_uploads/', 'competition_entries/'
+        ];
+
+        // --- STEP 2: Delete all specified collections and subcollections ---
+        for (const colPath of collectionsToDelete) {
+            logger.info(`Deleting collection: '${colPath}'...`);
+            await deleteCollection(db.collection(colPath));
+        }
+        for (const subColPath of artifactSubcollectionsToDelete) {
+            const fullPath = `artifacts/production-app-id/public/data/${subColPath}`;
+            logger.info(`Deleting artifact subcollection: '${fullPath}'...`);
+            await deleteCollection(db.collection(fullPath));
+        }
+
+        // --- STEP 3: Delete all user-uploaded files from Storage ---
+        for (const prefix of storagePrefixesToDelete) {
+            logger.info(`Deleting storage prefix: '${prefix}'...`);
+            await deleteStorageFolder(prefix);
+        }
+        
+        // --- STEP 4: Delete all users (Firestore Docs & Auth accounts), EXCEPT the calling admin ---
+        logger.info("Deleting all user accounts (except the calling admin)...");
+        const usersSnapshot = await db.collection('creators').get();
+        const userDeletionPromises = [];
+        
+        usersSnapshot.forEach(doc => {
+            if (doc.id !== adminUid) {
+                // Delete the Auth user, which will trigger the Firestore document deletion via the extension.
+                userDeletionPromises.push(auth.deleteUser(doc.id).catch(err => logger.error(`Failed to delete auth user ${doc.id}`, err)));
+                // Also delete the firestore doc directly for immediate cleanup.
+                userDeletionPromises.push(doc.ref.delete().catch(err => logger.error(`Failed to delete firestore doc for user ${doc.id}`, err)));
+            }
+        });
+        await Promise.all(userDeletionPromises);
+        logger.info(`Deleted ${userDeletionPromises.length / 2} user accounts.`);
+
+        const successMessage = "Full data reset complete. All user and content data has been wiped. Your admin account remains.";
+        logger.info(successMessage);
+        return { success: true, message: successMessage };
+
+    } catch (error) {
+        logger.error(`[FATAL RESET ERROR] An error occurred during the full data reset:`, error);
+        throw new HttpsError("internal", `An error occurred during the reset: ${error.message}`);
+    }
+});
+// =====================================================================
+// ============ END: DESTRUCTIVE FULL DATA RESET FUNCTION ==============
+// =====================================================================
+
 // =====================================================================
 // ============= END: NEW DESTRUCTIVE DELETE USER FUNCTION =============
 // =====================================================================

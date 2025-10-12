@@ -1,0 +1,23 @@
+Part 1: How to Back Up (Export) Your Database
+This process creates a complete snapshot of your database at a specific moment in time and saves it to a secure location in Google Cloud Storage.
+Step-by-Step Instructions:
+Go to the Google Cloud Console: This is different from the Firebase console. Use this specific URL: https://console.cloud.google.com/firestore/import-export (You may need to select your nvanetworkapp project if you have multiple projects).
+Click "Export": You will see buttons for "Import" and "Export". Click the Export button.
+Choose "Export entire database": This option will be pre-selected.
+Choose a Destination: The console will ask you to specify a Cloud Storage "bucket". Your project already has a default one. Click "Browse", select the bucket that looks like nvanetworkapp.appspot.com, and then click "Export".
+The process will now begin. It might take a few minutes depending on the size of your database. You can monitor its progress on that same page. Once it's complete, you have a full backup of every piece of data.
+
+
+
+Part 2: How to Restore (Import) Your Database
+If something ever goes wrong, you can use the backup you just created to restore your database to the exact state it was in when you exported it.
+Step-by-Step Instructions:
+Go back to the same page: https://console.cloud.google.com/firestore/import-export
+Click "Import": This time, click the Import button.
+Find Your Backup: Click "Browse" and navigate to the folder that was created by your export process. It will have a timestamped name (e.g., 2025-10-12T20:00:00_12345). Select the file that ends in .overall_export_metadata.
+Confirm the Import: The console will show you what you are about to import. Click "Import" to begin the restoration process.
+CRITICAL WARNING: When you import, it will overwrite any data currently in your database that has the same document ID as the data in your backup. This is why it's a perfect "restore" tool—it puts things back exactly as they were, erasing any changes made since the backup.
+My Strong Recommendation
+Do a Manual Export NOW: Follow the "Part 1" steps right now, before you do anything else. This will be your safety net.
+Run the Reset Function: Once the export is complete, you can safely proceed with running the deleteAllUserDataAndContent function we've built.
+Enable Automated Backups for the Future: For long-term safety, you can also enable Firebase's "Point-in-Time Recovery" (PITR) feature. This is like a time machine for your database, automatically saving versions of your data so you can restore to any single minute in the past week. It's a paid feature, but it's very inexpensive and provides incredible peace of mind once your app is live with real users. You can find it in your Firestore database settings.
