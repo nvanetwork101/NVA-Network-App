@@ -5220,6 +5220,53 @@ exports.deleteAllUserDataAndContent = onCall(async (request) => {
 // ============ END: DESTRUCTIVE FULL DATA RESET FUNCTION ==============
 // =====================================================================
 
+    // =====================================================================
+// =========== START: ADMIN FEED CLEAR UTILITY =========================
+// =====================================================================
+exports.clearAdminFeed = onCall(async (request) => {
+    // SECURITY: Only an admin can run this function.
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+    const adminUid = request.auth.uid;
+    logger.info(`Admin '${adminUid}' has initiated a wipe of their personal feed subcollection.`);
+
+    const db = admin.firestore();
+    const batchSize = 400;
+
+    // --- Helper function to recursively delete a collection ---
+    async function deleteCollection(collectionRef) {
+        const query = collectionRef.orderBy('__name__').limit(batchSize);
+        return new Promise((resolve, reject) => {
+            deleteQueryBatch(query, resolve).catch(reject);
+        });
+    }
+    async function deleteQueryBatch(query, resolve) {
+        const snapshot = await query.get();
+        if (snapshot.size === 0) { return resolve(); }
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => { batch.delete(doc.ref); });
+        await batch.commit();
+        process.nextTick(() => { deleteQueryBatch(query, resolve); });
+    }
+
+    try {
+        const feedRef = db.collection('creators').doc(adminUid).collection('feed');
+        await deleteCollection(feedRef);
+
+        const successMessage = "Your personal feed has been successfully cleared of all items.";
+        logger.info(successMessage);
+        return { success: true, message: successMessage };
+
+    } catch (error) {
+        logger.error(`[FEED CLEAR ERROR] for admin ${adminUid}:`, error);
+        throw new HttpsError("internal", `An error occurred while clearing the feed: ${error.message}`);
+    }
+});
+// =====================================================================
+// ============ END: ADMIN FEED CLEAR UTILITY ==========================
+// =====================================================================
+
 // =====================================================================
 // ============= END: NEW DESTRUCTIVE DELETE USER FUNCTION =============
 // =====================================================================

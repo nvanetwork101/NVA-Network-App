@@ -314,6 +314,23 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
         setOnConfirmationAction(() => () => {}); // Set a dummy action, as the button inside the component handles it
         setShowConfirmationModal(true);
         };
+    
+        const handleClearOwnFeed = () => {
+        setConfirmationTitle("Clear Your Personal Feed?");
+        setConfirmationMessage("This will delete all items from your 'My Feed' screen, which is useful for clearing test data after a reset. Are you sure?");
+        setOnConfirmationAction(() => async () => {
+            showMessage("Clearing your feed...");
+            try {
+                const clearFeedFunction = httpsCallable(functions, 'clearAdminFeed');
+                const result = await clearFeedFunction();
+                showMessage(result.data.message);
+            } catch (error) {
+                showMessage(`Error: ${error.message}`);
+            }
+        });
+        setShowConfirmationModal(true);
+    };
+    
     const handleUpdateField = (fieldName, value) => {
         if (fieldName === 'showNvaCharts') {
             setShowNvaCharts(value);
@@ -465,7 +482,19 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
             )}
             {/* --- END: PAYOUT HISTORY SECTION --- */}
 
-            <div className="dashboardSection" style={{marginTop: '20px'}}><p className="dashboardSectionTitle">Contact Form Submissions</p>{isLoadingSubmissions ? <p>Loading submissions...</p> : (<div className="dashboardContentList">{submissions.length === 0 ? <p className="dashboardItem">No submissions yet.</p> : (submissions.map(sub => (<div key={sub.id} className="adminDashboardItem" onClick={() => handleViewSubmission(sub)} style={{cursor: 'pointer', borderLeft: sub.status === 'New' ? '4px solid #FFD700' : '4px solid transparent'}}><div style={{flexGrow: 1}}><p className="adminDashboardItemTitle">{sub.queryType} - <span style={{fontWeight: 'normal'}}>{sub.userName}</span></p><p style={{fontSize: '12px', color: '#AAA'}}>{new Date(sub.submittedAt).toLocaleString()}</p></div><span className="adminDashboardItemStatus">{sub.status}</span></div>)))}</div>)}{selectedSubmission && (<div className="confirmationModalOverlay" style={{zIndex: 2500}}><div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '500px'}}><p className="confirmationModalTitle">{selectedSubmission.queryType}</p><div className="dashboardItem"><strong>From:</strong> {selectedSubmission.userName}</div><div className="dashboardItem"><strong>Email:</strong> <a href={`mailto:${selectedSubmission.userEmail}`} className="termsLink">{selectedSubmission.userEmail}</a></div><div className="dashboardItem"><strong>Date:</strong> {new Date(selectedSubmission.submittedAt).toLocaleString()}</div><hr style={{borderColor: '#333', margin: '15px 0'}}/><p className="paragraph" style={{backgroundColor: '#0A0A0A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap'}}>{selectedSubmission.message}</p><div className="confirmationModalButtons"><button className="confirmationButton cancel" onClick={() => confirmDeleteSubmission(selectedSubmission)}>Delete</button><button className="confirmationButton confirm" onClick={() => setSelectedSubmission(null)}>Close</button></div></div></div>)}</div>
+            <div className="dashboardSection" style={{marginTop: '20px'}}><p className="dashboardSectionTitle">Contact Form Submissions</p>{isLoadingSubmissions ? <p>Loading submissions...</p> : (<div className="dashboardContentList">{submissions.length === 0 ? <p className="dashboardItem">No submissions yet.</p> : (submissions.map(sub => (<div key={sub.id} className="adminDashboardItem" onClick={() => handleViewSubmission(sub)} style={{cursor: 'pointer', borderLeft: sub.status === 'New' ? '4px solid #FFD700' : '4px solid transparent'}}><div style={{flexGrow: 1}}><p className="adminDashboardItemTitle">{sub.queryType} - <span style={{fontWeight: 'normal'}}>{sub.userName}</span></p><p style={{fontSize: '12px', color: '#AAA'}}>{new Date(sub.submittedAt).toLocaleString()}</p></div><span className="adminDashboardItemStatus">{sub.status}</span></div>)))}</div>)}
+            
+            <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', borderTop: '1px solid #555', marginTop: '20px', paddingTop: '20px'}}>
+                        <p className="adminDashboardItemTitle">Clear My Own Feed</p>
+                        <p className="paragraph" style={{color: '#AAA', fontSize: '14px'}}>
+                            Use this utility after a full data reset to clear any lingering test items from your personal "My Feed" screen.
+                        </p>
+                        <button className="button" onClick={handleClearOwnFeed} style={{ backgroundColor: '#FF8C00', marginTop: '10px' }}>
+                            <span className="buttonText">Clear My Feed</span>
+                        </button>
+                    </div>
+
+            {selectedSubmission && (<div className="confirmationModalOverlay" style={{zIndex: 2500}}><div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '500px'}}><p className="confirmationModalTitle">{selectedSubmission.queryType}</p><div className="dashboardItem"><strong>From:</strong> {selectedSubmission.userName}</div><div className="dashboardItem"><strong>Email:</strong> <a href={`mailto:${selectedSubmission.userEmail}`} className="termsLink">{selectedSubmission.userEmail}</a></div><div className="dashboardItem"><strong>Date:</strong> {new Date(selectedSubmission.submittedAt).toLocaleString()}</div><hr style={{borderColor: '#333', margin: '15px 0'}}/><p className="paragraph" style={{backgroundColor: '#0A0A0A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap'}}>{selectedSubmission.message}</p><div className="confirmationModalButtons"><button className="confirmationButton cancel" onClick={() => confirmDeleteSubmission(selectedSubmission)}>Delete</button><button className="confirmationButton confirm" onClick={() => setSelectedSubmission(null)}>Close</button></div></div></div>)}</div>
             <div className="dashboardSection" style={{ border: '2px solid #FF8C00', marginTop: '20px' }}>
     <p className="dashboardSectionTitle">Data Integrity Tools</p>
     
