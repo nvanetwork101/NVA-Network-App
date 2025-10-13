@@ -422,6 +422,35 @@ const CreatorDashboardScreen = ({
             border-color: rgba(0, 255, 255, 0.8);
             transform: scale(0.98);
         }
+
+        /* --- NEW STYLES FOR PROFILE EDIT BUTTONS --- */
+        .profile-edit-button {
+            background-color: transparent;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            margin-left: 10px;
+        }
+        .profile-edit-button.save {
+            border: 1px solid #FFD700;
+            color: #FFD700;
+        }
+        .profile-edit-button.save:hover {
+            background-color: rgba(255, 215, 0, 0.1);
+            box-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+        }
+        .profile-edit-button.cancel {
+            border: 1px solid #555;
+            color: #AAA;
+        }
+        .profile-edit-button.cancel:hover {
+            background-color: #333;
+            border-color: #777;
+            color: #FFF;
+        }
     `;
 
     return (
@@ -433,7 +462,17 @@ const CreatorDashboardScreen = ({
                 <p className="heading">Dashboard</p>
                 <p className="subHeading">Welcome, {creatorProfile.creatorName || currentUser.email}!</p>
                  <div className="dashboardSection">
-                    <div className="flex justify-between items-center"><p className="dashboardSectionTitle" style={{marginBottom: 0}}>Your Profile</p>{!isEditingProfile ? (<button className="dashboardButton" onClick={() => setIsEditingProfile(true)}>Edit Profile</button>) : (<div><button className="dashboardButton" onClick={handleSaveProfile} style={{backgroundColor: '#008000'}}>Save</button><button className="dashboardButton" onClick={handleCancelEdit} style={{backgroundColor: '#555', color: '#FFF'}}>Cancel</button></div>)}</div>
+                    <div className="flex justify-between items-center">
+                    <p className="dashboardSectionTitle" style={{marginBottom: 0}}>Your Profile</p>
+                        {!isEditingProfile ? (
+                        <button className="dashboardButton" onClick={() => setIsEditingProfile(true)}>Edit Profile</button>
+                        ) : (
+                        <div>
+                        <button className="profile-edit-button cancel" onClick={handleCancelEdit}>Cancel</button>
+                        <button className="profile-edit-button save" onClick={handleSaveProfile}>Save</button>
+                        </div>
+                        )}
+                    </div>
                     <div className="pt-4 border-t" style={{borderColor: '#3A3A3A', marginTop: '1rem'}}>
                          {isEditingProfile ? (
                              <>
