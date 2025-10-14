@@ -113,7 +113,7 @@ function App() {
   const [unverifiedUser, setUnverifiedUser] = useState(null); // <-- NEW STATE for the "limbo" user
   const [isInitialLoad, setIsInitialLoad] = useState(true); // <-- FIX: New state for one-time video
   const [installPromptEvent, setInstallPromptEvent] = useState(null); // <-- PWA FIX: Stores the install event
-  const [showInstallModal, setShowInstallModal] = useState(false); // <-- PWA FIX: Controls our custom modal
+
   const [isStandalone, setIsStandalone] = useState(false); // <-- PWA FIX: Checks if app is already installed
   const [activeScreen, setActiveScreen] = useState('Home');
   const [activeCompetition, setActiveCompetition] = useState(null);
@@ -252,6 +252,34 @@ function App() {
     setCurrentVideoUrl(url);
     setCurrentContentItem(item);
     setShowVideoModal(true);
+  };
+
+    const handleInstallClick = () => {
+    // If the app is already installed, do nothing.
+    if (isStandalone) {
+      showMessage("The app is already installed on your device.");
+      return;
+    }
+
+    // --- Standard PWA Install (Android/Desktop Chrome) ---
+    // If we have a saved install event, trigger the browser's native prompt.
+    if (installPromptEvent) {
+      installPromptEvent.prompt();
+      // The browser handles the rest. Our 'appinstalled' event listener will hide the button later.
+      return;
+    }
+
+    // --- iOS Manual Install Instructions ---
+    // If there's no event, check if the user is on iOS and show our instruction modal.
+    const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+    if (isIos) {
+      setShowIosInstallPrompt(true);
+      return;
+    }
+    
+    // --- Fallback for other browsers (e.g., Firefox) ---
+    // For browsers that don't support the PWA install event, show a generic message.
+    showMessage("To install, use the 'Add to Home Screen' option in your browser's menu.");
   };
 
   // ========================== START: DEFINITIVE AUTH FLOW FIX ==========================
@@ -815,44 +843,25 @@ useEffect(() => {
         };
     }, [isAudioPrimed]); // Dependency ensures the effect doesn't re-run unnecessarily.
 
-        // --- PWA FIX: Listen for browser's install prompt event ---
+        // --- PWA Installation Logic ---
     useEffect(() => {
-        // Check if the app is already running in standalone (installed) mode
-        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+        // First, check if the app is already running in standalone (installed) mode
+        if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
             setIsStandalone(true);
-            return; // Don't show any prompts if already installed.
+            return; // Don't set up listeners if already installed.
         }
 
-        // --- iOS PWA FIX: Detection logic ---
-        const isIos = () => {
-            const userAgent = window.navigator.userAgent.toLowerCase();
-            return /iphone|ipad|ipod/.test(userAgent);
-        };
-        const isInStandaloneMode = () => ('standalone' in window.navigator) && (window.navigator.standalone);
-
-        if (isIos() && !isInStandaloneMode()) {
-            // Check if we've shown the prompt before in this session
-            if (!sessionStorage.getItem('iosInstallPromptShown')) {
-                setShowIosInstallPrompt(true);
-                sessionStorage.setItem('iosInstallPromptShown', 'true');
-            }
-        }
-        // --- END iOS PWA FIX ---
-
+        // Listen for the browser's install prompt event (for Android/Desktop)
         const handleBeforeInstallPrompt = (event) => {
-            event.preventDefault();
-            setInstallPromptEvent(event);
-            if (!isStandalone) { // Only show for Android/Desktop if not installed
-                setShowInstallModal(true);
-            }
+            event.preventDefault(); // Prevent the default browser prompt
+            setInstallPromptEvent(event); // Save the event so our button can trigger it
         };
-
         window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
 
+        // Listen for when the app has been successfully installed
         const handleAppInstalled = () => {
-            setIsStandalone(true);
-            setInstallPromptEvent(null);
-            setShowInstallModal(false);
+            setIsStandalone(true); // This will cause the install button to disappear
+            setInstallPromptEvent(null); // Clear the saved event
         };
         window.addEventListener('appinstalled', handleAppInstalled);
 
@@ -860,7 +869,7 @@ useEffect(() => {
             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
             window.removeEventListener('appinstalled', handleAppInstalled);
         };
-    }, [isStandalone]); // Added isStandalone dependency
+    }, []); // This effect should only run once on mount.
 
         // New Code to Add
   // --- Notification Toast System Logic ---
@@ -998,6 +1007,9 @@ return (
             onCurrencyChange={setSelectedCurrency}
             isLive={isLive}
             countdownText={countdownText}
+            // --- PWA Install Button Props ---
+            onInstallClick={handleInstallClick}
+            showInstallButton={!isStandalone}
           />
           <div className="container">
             {/* Step 3: Use the original authLoading for the quick, text-based loader during navigation. */}
@@ -1093,29 +1105,7 @@ return (
               onClose={() => setShowLikesModal(false)}
           />
       )}
-
-      {/* --- PWA FIX: The new, styled install banner --- */}
-      {showInstallModal && installPromptEvent && !isStandalone && (
-        <div className="pwa-install-banner">
-          <div className="pwa-install-text">
-            <p style={{margin: 0, fontWeight: 'bold'}}>Install NVA Network</p>
-            <p style={{margin: 0, fontSize: '14px', color: '#AAA'}}>For the best experience, add NVA Network to your home screen!</p>
-          </div>
-          <div className="pwa-install-buttons">
-            <button className="navButton" onClick={() => {
-             setShowInstallModal(false); // <<< CHANGED: Only this line remains
-             }}>
-              <span className="navButtonText">Later</span>
-            </button>
-            <button className="navButton active" onClick={() => {
-              setShowInstallModal(false);
-              installPromptEvent.prompt();
-            }}>
-              <span className="activeNavButtonText navButtonText">Install App</span>
-            </button>
-          </div>
-        </div>
-      )}
+      
       {/* --- iOS PWA FIX: The new, styled install prompt for iPhones/iPads --- */}
       {showIosInstallPrompt && (
         <IosInstallPrompt onClose={() => setShowIosInstallPrompt(false)} />
