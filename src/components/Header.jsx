@@ -1,11 +1,16 @@
-import React, { useState } from 'react'; // <-- Import useState
+import React, { useState } from 'react';
 import HeaderLiveButton from './HeaderLiveButton';
 
+// --- THIS IS THE FIX ---
+// The component is now defined to accept the necessary props from App.jsx
 const CurrencySelector = ({ currencyRates, selectedCurrency, onCurrencyChange }) => {
     if (!currencyRates) {
-        return null;
+        return null; // Don't render if the rates haven't loaded yet.
     }
+
+    // A curated list of currencies to offer the user.
     const supportedCurrencies = ['USD', 'GYD', 'CAD', 'GBP', 'EUR'];
+    // Filter the list to only show currencies that the API actually provided rates for.
     const availableCurrencies = supportedCurrencies.filter(c => currencyRates[c]);
 
     return (
@@ -32,7 +37,7 @@ function Header({ setActiveScreen, currencyRates, selectedCurrency, onCurrencyCh
   // --- State for hover effect ---
   const [isInstallHovered, setIsInstallHovered] = useState(false);
 
-  // --- Styles for the glowing button ---
+  // --- Styles for the glowing button (THIS IS THE MISSING CODE) ---
   const installButtonStyle = {
     backgroundColor: '#FFD700',
     color: '#0A0A0A',
@@ -59,7 +64,7 @@ function Header({ setActiveScreen, currencyRates, selectedCurrency, onCurrencyCh
       <div className="header-content-left">
         <p className="tagline">Caribbean Content to a Global Stage.</p>
         <p className="headerTitle">NVA Network</p>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
           <HeaderLiveButton 
               setActiveScreen={setActiveScreen} 
               isLive={isLive} 
