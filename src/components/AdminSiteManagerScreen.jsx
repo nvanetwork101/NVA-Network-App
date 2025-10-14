@@ -31,6 +31,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     const [isCleaningGhostAccounts, setIsCleaningGhostAccounts] = useState(false);
     const [ghostAccountCleanupResults, setGhostAccountCleanupResults] = useState(null);
 
+    
     // --- STATE FOR PAYOUT HISTORY ---
     const [payoutHistory, setPayoutHistory] = useState([]);
     
@@ -251,7 +252,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
         }
     };
     const handleRunAudit = async () => { setIsAuditing(true); setAuditResults("Starting data integrity audit..."); showMessage("Starting data integrity audit..."); try { const auditFunction = httpsCallable(functions, 'runDataIntegrityAudit'); const result = await auditFunction(); setAuditResults(result.data.summary); showMessage("Audit complete! See results below."); } catch (error) { const errorMessage = `Audit failed: ${error.message}`; setAuditResults({ error: errorMessage }); showMessage(errorMessage); } finally { setIsAuditing(false); } };
-    
+     
      const handleResetAllData = () => {
         // This function's only job is to open the modal.
         // It passes a function to the modal that will be executed on confirm.
@@ -546,6 +547,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     <div style={{ borderTop: '1px solid #444', paddingTop: '20px' }}>
         <button className="button" onClick={handleRunAudit} style={{ backgroundColor: '#FFD700' }} disabled={isAuditing}>
             <span className="buttonText" style={{color: '#0A0A1A'}}>{isAuditing ? 'Auditing...' : 'Run Full Data Integrity Audit'}</span>
+                      
         </button>
         {auditResults && (
             <div style={{marginTop: '15px'}}>

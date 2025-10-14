@@ -996,79 +996,82 @@ async function runTopPerformersUpdate() {
     const slotsData = settingsDoc.exists ? settingsDoc.data() : {};
 
     const lockedSlots = new Set();
-    const featuredCreatorIds = new Set();
+    const featuredContentIds = new Set(); // Now tracks content IDs to prevent duplicates
+
+    // Identify locked slots and the content within them
     for (let i = 1; i <= 6; i++) {
         const slotKey = `slot_${i}`;
         const slot = slotsData[slotKey];
-        // THE FIX: Explicitly check if the slot data is a valid object before accessing properties.
         if (slot && typeof slot === 'object' && slot.isLocked) {
             lockedSlots.add(slotKey);
-            // Also ensure content exists and has a creatorId before adding to the set.
-            if (slot.content && typeof slot.content === 'object' && slot.content.creatorId) {
-                featuredCreatorIds.add(slot.content.creatorId);
+            if (slot.content && slot.content.id) {
+                featuredContentIds.add(slot.content.id);
             }
         }
     }
 
-    const creatorsSnapshot = await db.collection("creators")
-        .orderBy("weeklyViews", "desc")
-        .limit(20)
+    // NEW LOGIC: Query for trending *videos* directly
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const trendingContentSnapshot = await db.collection(`artifacts/${appId}/public/data/content_items`)
+        .where("isActive", "==", true)
+        .where("createdAt", ">=", sevenDaysAgo.toISOString())
+        .orderBy("createdAt", "desc") // First order by creation date
+        .orderBy("viewCount", "desc") // Then by view count
+        .limit(50) // Get a pool of 50 recent, high-performing videos to choose from
         .get();
 
-    if (creatorsSnapshot.empty) {
-        logger.info("No creators found to update top performers.");
+    if (trendingContentSnapshot.empty) {
+        logger.info("No trending content found in the last 7 days to update slots.");
         return;
     }
 
     const updates = {};
     let slotIndex = 1;
 
-    for (const creatorDoc of creatorsSnapshot.docs) {
-        if (slotIndex > 6) break;
-        const creatorId = creatorDoc.id;
+    // Iterate through the top videos we found
+    for (const contentDoc of trendingContentSnapshot.docs) {
+        if (slotIndex > 6) break; // Stop once all 6 slots are considered
         const slotKey = `slot_${slotIndex}`;
-        
+
         if (lockedSlots.has(slotKey)) {
-            slotIndex++;
+            slotIndex++; // Skip this locked slot
             continue;
         }
 
-        if (featuredCreatorIds.has(creatorId)) {
+        const contentId = contentDoc.id;
+        const topContent = contentDoc.data();
+
+        // If this video is already featured in a locked slot, skip it
+        if (featuredContentIds.has(contentId)) {
             continue;
         }
+
+        // Populate the slot with this trending video
+        updates[slotKey] = {
+            isLocked: false,
+            content: {
+                id: contentId,
+                title: topContent.title || '',
+                creatorId: topContent.creatorId || '',
+                creatorName: topContent.creatorName || '',
+                creatorProfilePictureUrl: topContent.creatorProfilePictureUrl || '',
+                customThumbnailUrl: topContent.customThumbnailUrl || '',
+                embedUrl: topContent.embedUrl || '',
+                mainUrl: topContent.mainUrl || '',
+                viewCount: topContent.viewCount || 0,
+                likeCount: topContent.likeCount || 0
+            }
+        };
         
-        const contentSnapshot = await db.collection(`artifacts/${appId}/public/data/content_items`)
-            .where("creatorId", "==", creatorId)
-            .where("isActive", "==", true)
-            .orderBy("viewCount", "desc")
-            .limit(1)
-            .get();
-
-        if (!contentSnapshot.empty) {
-            const topContent = contentSnapshot.docs[0].data();
-            updates[slotKey] = {
-                isLocked: false,
-                content: {
-                    id: contentSnapshot.docs[0].id,
-                    title: topContent.title,
-                    creatorId: topContent.creatorId,
-                    creatorName: topContent.creatorName,
-                    creatorProfilePictureUrl: topContent.creatorProfilePictureUrl || '',
-                    customThumbnailUrl: topContent.customThumbnailUrl,
-                    embedUrl: topContent.embedUrl,
-                    mainUrl: topContent.mainUrl,
-                    viewCount: topContent.viewCount || 0,
-                    likeCount: topContent.likeCount || 0
-                }
-            };
-            featuredCreatorIds.add(creatorId);
-            slotIndex++;
-        }
+        featuredContentIds.add(contentId); // Add to our set to prevent it from being added again
+        slotIndex++;
     }
     
     if (Object.keys(updates).length > 0) {
         await settingsRef.set(updates, { merge: true });
-        logger.info(`Successfully updated ${Object.keys(updates).length} top performer slots.`);
+        logger.info(`Successfully updated ${Object.keys(updates).length} trending video slots.`);
     }
 }
 
@@ -1840,15 +1843,17 @@ exports.onNewContentPublished = onDocumentCreated("artifacts/{appId}/public/data
         const feedItem = {
             originalContentId: event.params.contentId,
             creatorId: newContent.creatorId,
-            creatorName: newContent.creatorName,
+            creatorName: newContent.creatorName || '',
             creatorProfilePictureUrl: newContent.creatorProfilePictureUrl || '',
-            title: newContent.title,
+            title: newContent.title || '',
             embedUrl: newContent.embedUrl || '',
             mainUrl: newContent.mainUrl || '',
             customThumbnailUrl: newContent.customThumbnailUrl || '',
-            createdAt: newContent.createdAt,
+            // THE FIX: Use the original content's creation date, but fall back to a server timestamp.
+            createdAt: newContent.createdAt ? admin.firestore.Timestamp.fromDate(new Date(newContent.createdAt)) : admin.firestore.FieldValue.serverTimestamp(),
             likeCount: 0,
         };
+
         const batch = db.batch();
         followersSnapshot.forEach(doc => {
             const followerId = doc.id;
@@ -5414,6 +5419,91 @@ exports.backfillFollowerData = onCall(async (request) => {
 // =====================================================================
 // ============ END: NEW DATA MIGRATION FUNCTION =======================
 // =====================================================================
+
+   // =====================================================================
+// =========== START: AUTOMATED FEED PRUNING SYSTEM ====================
+// =====================================================================
+
+const FEED_LIMIT = 200; // The number of feed items to keep.
+
+// This is the reusable core logic for the pruning process.
+async function runFeedPruning() {
+    const db = admin.firestore();
+    logger.info(`Starting feed pruning process. Keeping the latest ${FEED_LIMIT} items per user.`);
+    let usersProcessed = 0;
+    let itemsPruned = 0;
+
+    const usersSnapshot = await db.collection("creators").get();
+    if (usersSnapshot.empty) {
+        return "No users found to process.";
+    }
+
+    for (const userDoc of usersSnapshot.docs) {
+        usersProcessed++;
+        const feedRef = userDoc.ref.collection("feed");
+        const feedSnapshot = await feedRef.get();
+
+        if (feedSnapshot.size > FEED_LIMIT) {
+            // THIS IS THE DEFINITIVE FIX: A "smarter" sorting function that handles both Timestamps and Strings.
+            const sortedDocs = feedSnapshot.docs.sort((a, b) => {
+                const getTime = (doc) => {
+                    const createdAt = doc.data().createdAt;
+                    if (!createdAt) return 0; // Handles missing date
+                    if (typeof createdAt.toMillis === 'function') { // It's a Firestore Timestamp
+                        return createdAt.toMillis();
+                    }
+                    if (typeof createdAt === 'string') { // It's an ISO string from older data
+                        return new Date(createdAt).getTime();
+                    }
+                    return 0; // Fallback for any other unexpected type
+                };
+                return getTime(b) - getTime(a); // Sort newest first
+            });
+
+            const batch = db.batch();
+            const itemsToDelete = sortedDocs.slice(FEED_LIMIT);
+            itemsToDelete.forEach(doc => {
+                batch.delete(doc.ref);
+                itemsPruned++;
+            });
+            await batch.commit();
+            logger.info(`Pruned ${itemsToDelete.length} old feed items for user '${userDoc.id}'.`);
+        }
+    }
+    const message = `Feed pruning complete. Processed ${usersProcessed} users and pruned a total of ${itemsPruned} items.`;
+    logger.info(message);
+    return message;
+}
+
+// 1. THE AUTOMATED, SCHEDULED FUNCTION (e.g., runs once a day)
+exports.pruneUserFeeds = onSchedule("every 24 hours", async (event) => {
+    logger.info("Running scheduled job: Prune User Feeds.");
+    try {
+        await runFeedPruning();
+    } catch (error) {
+        logger.error("Error during scheduled feed pruning:", { error });
+    }
+    return null;
+});
+
+// 2. THE MANUAL TRIGGER FUNCTION FOR THE ADMIN PANEL
+exports.triggerFeedPrune = onCall(async (request) => {
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+    logger.info(`Admin '${request.auth.uid}' manually triggered feed pruning.`);
+    try {
+        const resultMessage = await runFeedPruning();
+        return { success: true, message: resultMessage };
+    } catch (error) {
+        logger.error("Error in manually triggered feed pruning:", { error });
+        throw new HttpsError("internal", "An error occurred during the pruning process.", error.message);
+    }
+});
+
+// =====================================================================
+// ============ END: AUTOMATED FEED PRUNING SYSTEM =====================
+// ===================================================================== 
 
 // =====================================================================
 // =========== UTILITY FUNCTION TO SET ADMIN CUSTOM CLAIM ==============
