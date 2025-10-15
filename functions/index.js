@@ -5615,12 +5615,13 @@ const sendPushNotification = async (userId, payload) => {
             return; // No tokens, nothing to do.
         }
 
-        // THIS IS THE FIX: Construct a "data-only" message.
-        // This gives the client-side service worker full control over displaying the notification.
+        // Use sendEachForMulticast which is robust and provides detailed results.
         const message = {
-            data: {
+            notification: {
                 title: payload.title,
                 body: payload.body,
+            },
+            data: {
                 link: payload.link || '/',
             },
             tokens: tokens,
@@ -5628,6 +5629,7 @@ const sendPushNotification = async (userId, payload) => {
 
         const response = await admin.messaging().sendEachForMulticast(message);
         
+        // --- THIS IS THE FIX: Cleanup logic for stale/invalid tokens ---
         const tokensToDelete = [];
         response.responses.forEach((result, index) => {
             if (!result.success) {
@@ -5635,12 +5637,14 @@ const sendPushNotification = async (userId, payload) => {
                 logger.warn(`Failed to send notification to a token for user ${userId}`, { errorCode: error.code });
                 if (error.code === 'messaging/registration-token-not-registered' ||
                     error.code === 'messaging/invalid-registration-token') {
+                    // This token is invalid, so we schedule it for deletion.
                     tokensToDelete.push(tokens[index]);
                 }
             }
         });
 
         if (tokensToDelete.length > 0) {
+            // Remove the invalid tokens from the user's document.
             await userRef.update({
                 fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToDelete)
             });
@@ -5648,6 +5652,7 @@ const sendPushNotification = async (userId, payload) => {
         }
 
     } catch (error) {
+        // This log will now only catch fatal errors, not individual token failures.
         logger.error(`A fatal error occurred while sending push notifications to user ${userId}`, {
             errorMessage: error.message,
             errorCode: error.code,
@@ -5655,6 +5660,74 @@ const sendPushNotification = async (userId, payload) => {
         });
     }
 };
+
+// Called by the frontend to save a device's push notification token.
+exports.saveFCMToken = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    const { token } = request.data;
+    if (!token) {
+        throw new HttpsError("invalid-argument", "Missing FCM token.");
+    }
+    const userRef = admin.firestore().collection("creators").doc(uid);
+    await userRef.update({
+        fcmTokens: admin.firestore.FieldValue.arrayUnion(token)
+    });
+    return { success: true, message: "Token saved." };
+});
+
+// Called when a user wants to clear their badge and mark all notifications as read.
+exports.markAllNotificationsAsRead = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    const db = admin.firestore();
+    const userRef = db.collection("creators").doc(uid);
+    const notificationsRef = db.collection("notifications");
+
+    // Reset the counter first for immediate UI feedback.
+    await userRef.update({ unreadNotificationCount: 0 });
+
+    // In the background, mark all the documents as read.
+    const query = notificationsRef.where("userId", "==", uid).where("isRead", "==", false);
+    const snapshot = await query.get();
+    if (snapshot.empty) {
+        return { success: true, message: "No unread notifications to mark." };
+    }
+    const batch = db.batch();
+    snapshot.forEach(doc => {
+        batch.update(doc.ref, { isRead: true });
+    });
+    await batch.commit();
+
+    return { success: true, message: `Marked ${snapshot.size} notifications as read.` };
+});
+
+// Utility function for users to delete their old, read notifications.
+exports.deleteReadNotifications = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    const db = admin.firestore();
+    const notificationsRef = db.collection("notifications");
+    const query = notificationsRef.where("userId", "==", uid).where("isRead", "==", true);
+    const snapshot = await query.get();
+
+    if (snapshot.empty) {
+        return { success: true, message: "No read notifications to delete." };
+    }
+    const batch = db.batch();
+    snapshot.forEach(doc => {
+        batch.delete(doc.ref);
+    });
+    await batch.commit();
+
+    return { success: true, message: `Deleted ${snapshot.size} read notifications.` };
+});
 
 // =====================================================================
 // ============ END: NOTIFICATION BADGE & PUSH SYSTEM ===================
