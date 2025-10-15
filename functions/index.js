@@ -5615,13 +5615,12 @@ const sendPushNotification = async (userId, payload) => {
             return; // No tokens, nothing to do.
         }
 
-        // Use sendEachForMulticast which is robust and provides detailed results.
+        // THIS IS THE FIX: Construct a "data-only" message.
+        // This gives the client-side service worker full control over displaying the notification.
         const message = {
-            notification: {
+            data: {
                 title: payload.title,
                 body: payload.body,
-            },
-            data: {
                 link: payload.link || '/',
             },
             tokens: tokens,
@@ -5629,7 +5628,6 @@ const sendPushNotification = async (userId, payload) => {
 
         const response = await admin.messaging().sendEachForMulticast(message);
         
-        // --- THIS IS THE FIX: Cleanup logic for stale/invalid tokens ---
         const tokensToDelete = [];
         response.responses.forEach((result, index) => {
             if (!result.success) {
@@ -5637,14 +5635,12 @@ const sendPushNotification = async (userId, payload) => {
                 logger.warn(`Failed to send notification to a token for user ${userId}`, { errorCode: error.code });
                 if (error.code === 'messaging/registration-token-not-registered' ||
                     error.code === 'messaging/invalid-registration-token') {
-                    // This token is invalid, so we schedule it for deletion.
                     tokensToDelete.push(tokens[index]);
                 }
             }
         });
 
         if (tokensToDelete.length > 0) {
-            // Remove the invalid tokens from the user's document.
             await userRef.update({
                 fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToDelete)
             });
@@ -5652,7 +5648,6 @@ const sendPushNotification = async (userId, payload) => {
         }
 
     } catch (error) {
-        // This log will now only catch fatal errors, not individual token failures.
         logger.error(`A fatal error occurred while sending push notifications to user ${userId}`, {
             errorMessage: error.message,
             errorCode: error.code,

@@ -19,17 +19,18 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const messaging = firebase.messaging();
 
-// HANDLER 1: SHOW THE NOTIFICATION (This was the part that was accidentally deleted)
-// Intercept background messages to construct and display the notification.
+// HANDLER 1: Receive data-only messages and display the notification.
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message: ', payload);
+  console.log('[firebase-messaging-sw.js] Received data-only background message: ', payload);
 
-  const notificationTitle = payload.notification.title;
+  // THE FIX: Extract title and body from the `data` payload, not the `notification` payload.
+  const notificationTitle = payload.data.title;
   const notificationOptions = {
-    body: payload.notification.body,
-    icon: '/icons/icon-192x192.png', // Default icon
+    body: payload.data.body,
+    icon: '/icons/icon-192x192.png', // A default icon for the notification
+    badge: '/icons/badge-72x72.png', // THE FIX: Add a monochrome badge for the status bar and app icon
     data: {
-      link: payload.data.link // CRITICAL: Pass the link data through
+      link: payload.data.link // Pass the link data through
     }
   };
 
