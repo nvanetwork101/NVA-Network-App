@@ -6,7 +6,10 @@ import { functions, httpsCallable } from '../firebase';
 function CompetitionManagementModal({ competition, onClose, showMessage }) {
     // --- STATE MANAGEMENT ---
     // Use local state to manage edits without affecting the main list until save.
-    const [editableComp, setEditableComp] = useState({ ...competition });
+    const [editableComp, setEditableComp] = useState({ 
+        ...competition,
+        winnerIds: Array.isArray(competition.winnerIds) ? competition.winnerIds.join('\n') : '' // Convert array to string for textarea
+    });
     const [isSaving, setIsSaving] = useState(false);
 
     // This effect ensures that if the modal is re-opened for a different competition,
@@ -51,6 +54,9 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
                 entryDeadline: editableComp.entryDeadline ? new Date(editableComp.entryDeadline).toISOString() : null,
                 competitionEnd: editableComp.competitionEnd ? new Date(editableComp.competitionEnd).toISOString() : null,
                 resultsRevealTime: editableComp.resultsRevealTime ? new Date(editableComp.resultsRevealTime).toISOString() : null,
+                // Convert winnersToNotify to a number and winnerIds string to an array of strings
+                winnersToNotify: editableComp.winnersToNotify ? parseInt(editableComp.winnersToNotify, 10) : 0,
+                winnerIds: editableComp.winnerIds ? editableComp.winnerIds.split('\n').map(id => id.trim()).filter(id => id) : []
             };
 
             const updateFunction = httpsCallable(functions, 'updateCompetition');
@@ -99,6 +105,34 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
                     <div className="formGroup"><label className="formLabel">Entry Deadline</label><input type="datetime-local" name="entryDeadline" className="formInput" value={editableComp.entryDeadline || ''} onChange={handleInputChange} /></div>
                     <div className="formGroup"><label className="formLabel">Competition End (Voting Ends)</label><input type="datetime-local" name="competitionEnd" className="formInput" value={editableComp.competitionEnd || ''} onChange={handleInputChange} /></div>
                     <div className="formGroup"><label className="formLabel">Results Reveal Time (Optional)</label><input type="datetime-local" name="resultsRevealTime" className="formInput" value={editableComp.resultsRevealTime || ''} onChange={handleInputChange} /></div>
+                
+                    {/* --- NEW WINNERS SECTION --- */}
+                    <hr style={{borderColor: '#333', margin: '20px 0'}}/>
+                    <p className="formLabel" style={{marginBottom: '10px'}}>Manage Winners</p>
+                    <div className="formGroup">
+                        <label className="formLabel">Number of Top Winners to Notify</label>
+                        <input 
+                            type="number" 
+                            name="winnersToNotify" 
+                            className="formInput" 
+                            value={editableComp.winnersToNotify || ''} 
+                            onChange={handleInputChange} 
+                            placeholder="e.g., 3" 
+                        />
+                    </div>
+                    <div className="formGroup">
+                        <label className="formLabel">Winner User IDs (In order, 1st place first, one ID per line)</label>
+                        <textarea 
+                            name="winnerIds" 
+                            className="formTextarea" 
+                            value={editableComp.winnerIds || ''} 
+                            onChange={handleInputChange} 
+                            rows="5"
+                            placeholder="Paste User ID for 1st Place...&#10;Paste User ID for 2nd Place...&#10;..."
+                        />
+                    </div>
+                    {/* --- END NEW WINNERS SECTION --- */}
+
                 </div>
 
                 <div className="confirmationModalButtons" style={{marginTop: '20px'}}>

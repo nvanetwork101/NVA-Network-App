@@ -165,6 +165,8 @@ const CreatorDashboardScreen = ({
     const [showPayoutModal, setShowPayoutModal] = useState(false);
     const [payoutCampaign, setPayoutCampaign] = useState(null);
 
+    const [isDeletingCampaign, setIsDeletingCampaign] = useState(null);
+
     // --- NEW STATE for Account Deletion ---
     const [isDeleting, setIsDeleting] = useState(false);
     const [deleteConfirmationText, setDeleteConfirmationText] = useState("");
@@ -249,7 +251,18 @@ const CreatorDashboardScreen = ({
     const endCampaignEarlyLogic = async (campaignId) => { try { const endCampaignCallable = httpsCallable(functions, 'endCampaignEarly'); await endCampaignCallable({ campaignId, appId }); showMessage("Campaign ended successfully!"); } catch (error) { showMessage(`Error: ${error.message}`); } };
     const confirmEndCampaignEarly = (campaign) => { setConfirmationTitle("End Campaign Early?"); setConfirmationMessage(`This will end your campaign "${campaign.title}" and start your 30-day cooldown. Are you sure?`); setOnConfirmationAction(() => () => endCampaignEarlyLogic(campaign.id)); setShowConfirmationModal(true); };
     
-    const deleteCampaignLogic = async (campaignId) => { try { const deleteCallable = httpsCallable(functions, 'deleteCampaign'); await deleteCallable({ campaignId, appId }); showMessage("Campaign deleted successfully."); } catch (error) { showMessage(`Error: ${error.message}`); } };
+    const deleteCampaignLogic = async (campaignId) => {
+        setIsDeletingCampaign(campaignId); // Set the ID of the campaign being deleted
+        try {
+            const deleteCallable = httpsCallable(functions, 'deleteCampaign');
+            await deleteCallable({ campaignId, appId });
+            showMessage("Campaign deleted successfully.");
+        } catch (error) {
+            showMessage(`Error: ${error.message}`);
+        } finally {
+            setIsDeletingCampaign(null); // Reset the state after completion
+        }
+    };
     const confirmDeleteCampaign = (campaign) => { setConfirmationTitle("Delete Campaign?"); setConfirmationMessage(`Are you sure you want to permanently delete "${campaign.title}"? This cannot be undone.`); setOnConfirmationAction(() => () => deleteCampaignLogic(campaign.id)); setShowConfirmationModal(true); };
 
     // --- NEW HANDLER for user account deletion ---
@@ -574,7 +587,9 @@ const CreatorDashboardScreen = ({
                                                     <p className="smallText" style={{color: '#DC3545'}}>Dismissed</p>
                                                 )}
                                                 {campaign.status !== 'active' && (
-                                                    <button className="modern-button delete" onClick={(e) => { e.stopPropagation(); confirmDeleteCampaign(campaign); }}>Delete</button>
+                                                    <button className="modern-button delete" onClick={(e) => { e.stopPropagation(); confirmDeleteCampaign(campaign); }} disabled={isDeletingCampaign === campaign.id}>
+                                                    {isDeletingCampaign === campaign.id ? 'Deleting...' : 'Delete'}
+                                                </button>
                                                 )}
                                             </div>
                                         </div>

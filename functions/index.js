@@ -1264,6 +1264,7 @@ exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/dat
     let notification;
     let pushPayload;
 
+    // Condition 1: Pending to Active
     if (dataBefore.status === 'pending' && dataAfter.status === 'active') {
         logger.info(`Campaign '${event.params.campaignId}' approved. Notifying creator.`);
         notification = {
@@ -1279,6 +1280,7 @@ exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/dat
             body: `Your campaign "${dataAfter.title}" is now live.`,
             link: '/CreatorDashboard'
         };
+    // Condition 2: Pending to Rejected
     } else if (dataBefore.status === 'pending' && dataAfter.status === 'rejected') {
         logger.info(`Campaign '${event.params.campaignId}' rejected. Notifying creator.`);
         notification = {
@@ -1294,12 +1296,27 @@ exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/dat
             body: `Your campaign "${dataAfter.title}" was not approved.`,
             link: '/CreatorDashboard'
         };
+    // Condition 3 (THE FIX): Active to Rejected
+    } else if (dataBefore.status === 'active' && dataAfter.status === 'rejected') {
+        logger.info(`Active campaign '${event.params.campaignId}' was rejected by a moderator. Notifying creator.`);
+        notification = {
+            userId: creatorId,
+            type: 'CAMPAIGN_REJECTED',
+            message: `Your active campaign "${dataAfter.title}" was reviewed and has been taken down.`,
+            link: '/CreatorDashboard',
+            isRead: false,
+            timestamp: new Date()
+        };
+        pushPayload = {
+            title: 'Campaign Update',
+            body: `Your campaign "${dataAfter.title}" has been taken down.`,
+            link: '/CreatorDashboard'
+        };
     }
 
-     if (notification && pushPayload) {
+    if (notification && pushPayload) {
         await db.collection("notifications").add(notification);
         await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
-        // THE FIX: Pass the complete pushPayload object
         await sendPushNotification(creatorId, pushPayload);
     }
 
@@ -3855,15 +3872,18 @@ exports.checkResultsRevelations = onSchedule("every 1 minutes", async (event) =>
     try {
         const snapshot = await competitionsToRevealQuery.get();
         if (snapshot.empty) {
-            return null;
+            return null; // No competitions are ready.
         }
 
-        const batch = db.batch();
-        snapshot.forEach(doc => {
+        for (const doc of snapshot.docs) {
             const competitionData = doc.data();
+            const competitionRef = doc.ref;
+            const batch = db.batch();
+
             logger.info(`Competition '${doc.id}' timer has expired. Setting status to 'Results Visible'.`);
-            batch.update(doc.ref, { status: "Results Visible" });
-            
+            batch.update(competitionRef, { status: "Results Visible" });
+
+            // Public broadcast notification
             const broadcast = {
                 broadcastType: "COMPETITION_RESULTS",
                 message: `The results for the competition "${competitionData.title}" are in! See who won.`,
@@ -3871,10 +3891,78 @@ exports.checkResultsRevelations = onSchedule("every 1 minutes", async (event) =>
                 timestamp: new Date()
             };
             batch.set(db.collection("broadcast_notifications").doc(), broadcast);
-        });
 
-        await batch.commit();
-        logger.info(`Successfully revealed and notified results for ${snapshot.size} competitions.`);
+            // --- START: NEW AUTOMATED WINNER NOTIFICATION LOGIC ---
+            const winnersToNotify = competitionData.winnersToNotify;
+
+            if (winnersToNotify > 0) {
+                logger.info(`Querying top ${winnersToNotify} winners for competition '${doc.id}'.`);
+
+                const entriesQuery = competitionRef.collection("entries")
+                    .orderBy("likeCount", "desc")
+                    .limit(winnersToNotify);
+                
+                const winnersSnapshot = await entriesQuery.get();
+
+                if (!winnersSnapshot.empty) {
+                    const pushNotificationsToSend = []; // Holds push notifications for this specific competition
+                    let rank = 1;
+
+                    winnersSnapshot.forEach(winnerDoc => {
+                        const winnerData = winnerDoc.data();
+                        const winnerId = winnerData.userId;
+
+                        if (!winnerId) return; // Skip if an entry somehow has no user ID
+
+                        let rankString = `${rank}th`;
+                        if (rank === 1) rankString = "1st";
+                        if (rank === 2) rankString = "2nd";
+                        if (rank === 3) rankString = "3rd";
+
+                        // Create private inbox notification
+                        const winnerNotification = {
+                            userId: winnerId,
+                            type: 'COMPETITION_WINNER',
+                            message: `Congratulations! You won ${rankString} place in the "${competitionData.title}" competition!`,
+                            link: '/CompetitionScreen',
+                            isRead: false,
+                            timestamp: new Date()
+                        };
+                        batch.set(db.collection("notifications").doc(), winnerNotification);
+
+                        // Increment winner's notification badge count
+                        const winnerRef = db.collection("creators").doc(winnerId);
+                        batch.update(winnerRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+
+                        // Prepare push notification
+                        pushNotificationsToSend.push({
+                            userId: winnerId,
+                            payload: {
+                                title: 'You Won!',
+                                body: `Congratulations! You placed ${rankString} in "${competitionData.title}"!`,
+                                link: '/CompetitionScreen'
+                            }
+                        });
+                        rank++;
+                    });
+
+                    // Commit all Firestore writes for this competition
+                    await batch.commit();
+
+                    // Send all push notifications for this competition
+                    for (const push of pushNotificationsToSend) {
+                        await sendPushNotification(push.userId, push.payload);
+                    }
+                } else {
+                    await batch.commit(); // Commit the status change even if no entries were found
+                }
+            } else {
+                await batch.commit(); // Commit the status change even if winnersToNotify is 0
+            }
+            // --- END: NEW AUTOMATED WINNER NOTIFICATION LOGIC ---
+        }
+
+        logger.info(`Successfully processed and revealed results for ${snapshot.size} competitions.`);
         return null;
 
     } catch (error) {
