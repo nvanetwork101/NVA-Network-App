@@ -599,6 +599,41 @@ exports.togglePinStatus = onCall(async (request) => {
     }
 });
 
+    exports.clearPinnedContent = onCall(async (request) => {
+    // Security Check: Only an admin can run this operation.
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+
+    const { targetUserId } = request.data;
+    if (!targetUserId) {
+        throw new HttpsError("invalid-argument", "The function must be called with a 'targetUserId'.");
+    }
+
+    const db = admin.firestore();
+    const creatorRef = db.collection("creators").doc(targetUserId);
+
+    try {
+        const creatorDoc = await creatorRef.get();
+        if (!creatorDoc.exists) {
+            throw new HttpsError("not-found", "The specified user profile could not be found.");
+        }
+
+        // This is the core fix: it forcefully resets the pinnedContent array to be empty.
+        await creatorRef.update({
+            pinnedContent: []
+        });
+
+        logger.info(`Admin '${request.auth.uid}' successfully cleared pinned content for user '${targetUserId}'.`);
+        return { success: true, message: `Pinned content for user ${targetUserId} has been cleared.` };
+
+    } catch (error) {
+        logger.error(`Error clearing pinned content for user '${targetUserId}':`, { error });
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred during the cleanup process.");
+    }
+});
+
 exports.deleteContentItem = onCall(async (request) => {
     const uid = request.auth.uid;
     if (!uid) {
@@ -4335,6 +4370,8 @@ await db.runTransaction(async (transaction) => {
     
     const contentOwnerId = itemData.creatorId || itemData.postedByUid;
 
+    logger.info(`[Comment Push Debug] Commenter UID: ${uid}, Content Owner UID: ${contentOwnerId}`);
+
     if (contentOwnerId && contentOwnerId !== uid) {
         const ownerNotification = {
             userId: contentOwnerId,
@@ -5600,6 +5637,7 @@ exports.setAdminClaim = onCall(async (request) => {
 
 // Internal helper function to handle sending push notifications.
 const sendPushNotification = async (userId, payload) => {
+    logger.info(`[Push Send Debug] Initiating push notification for User ID: ${userId}`); // <-- ADD THIS LINE
     const db = admin.firestore();
     const userRef = db.collection("creators").doc(userId);
 
@@ -5611,6 +5649,7 @@ const sendPushNotification = async (userId, payload) => {
         }
 
         const tokens = userDoc.data().fcmTokens || [];
+        logger.info(`[Push Send Debug] Found ${tokens.length} tokens for User ID: ${userId}`, { tokens }); // <-- ADD THIS LINE
         if (tokens.length === 0) {
             return; // No tokens, nothing to do.
         }
@@ -5628,9 +5667,10 @@ const sendPushNotification = async (userId, payload) => {
         };
 
         const response = await admin.messaging().sendEachForMulticast(message);
+        logger.info(`[Push Send Debug] FCM response for User ID: ${userId}`, { response: JSON.stringify(response) }); // <-- ADD THIS LINE
         
         // --- THIS IS THE FIX: Cleanup logic for stale/invalid tokens ---
-        const tokensToDelete = [];
+        const tokensToDelete = []
         response.responses.forEach((result, index) => {
             if (!result.success) {
                 const error = result.error;

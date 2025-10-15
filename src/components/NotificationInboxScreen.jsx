@@ -52,7 +52,7 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
 
         // Mark as read when clicked to navigate
         if (!notification.isRead) {
-            markNotificationAsRead(notification.id); // <-- This is the specific fix
+            markNotificationAsRead(notification.id);
         }
 
         const path = notification.link;
@@ -66,25 +66,34 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
         const screen = parts[0];
         const id = parts[1];
 
-        // This logic mimics the routing in App.jsx
+        // This is the new, robust routing logic
         switch (screen) {
-            case 'competition':
-                setActiveScreen('CompetitionScreen');
-                break;
-            case 'opportunity':
-                if (id) {
-                    // We need a way to pass the selected ID back up to App.jsx
-                    // The best way is to fire a custom event that App.jsx can listen for.
-                    window.dispatchEvent(new CustomEvent('navigateToOpportunity', { detail: { id: id } }));
-                }
-                break;
             case 'user':
                 if (id) {
                     window.dispatchEvent(new CustomEvent('navigateToUser', { detail: { id: id } }));
                 }
                 break;
+            
+            case 'opportunity':
+                if (id) {
+                    window.dispatchEvent(new CustomEvent('navigateToOpportunity', { detail: { id: id } }));
+                }
+                break;
+
+            case 'content':
+                if (id) {
+                    // Fire a new custom event that App.jsx will listen for to open the video modal.
+                    window.dispatchEvent(new CustomEvent('navigateToContent', { detail: { id: id } }));
+                }
+                break;
+                
+            case 'competition':
+                // For a link to /competition, we just need to change the screen.
+                setActiveScreen('CompetitionScreen');
+                break;
+
             default:
-                // For simple, non-dynamic links like /CreatorDashboard
+                // This handles simple, non-dynamic links like /CreatorDashboard, /MyListings, etc.
                 const screenName = screen.charAt(0).toUpperCase() + screen.slice(1);
                 setActiveScreen(screenName);
                 break;

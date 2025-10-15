@@ -28,6 +28,8 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     const [isAuditing, setIsAuditing] = useState(false);
     const [auditResults, setAuditResults] = useState(null);
 
+    const [isClearingPins, setIsClearingPins] = useState(false);
+
     const [isCleaningGhostAccounts, setIsCleaningGhostAccounts] = useState(false);
     const [ghostAccountCleanupResults, setGhostAccountCleanupResults] = useState(null);
 
@@ -253,6 +255,66 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     };
     const handleRunAudit = async () => { setIsAuditing(true); setAuditResults("Starting data integrity audit..."); showMessage("Starting data integrity audit..."); try { const auditFunction = httpsCallable(functions, 'runDataIntegrityAudit'); const result = await auditFunction(); setAuditResults(result.data.summary); showMessage("Audit complete! See results below."); } catch (error) { const errorMessage = `Audit failed: ${error.message}`; setAuditResults({ error: errorMessage }); showMessage(errorMessage); } finally { setIsAuditing(false); } };
      
+       const handleClearPinnedContent = () => {
+        // This component will be rendered inside the confirmation modal
+        const ConfirmationComponent = () => {
+            const [targetUserId, setTargetUserId] = useState('');
+
+            return (
+                <div>
+                    <p>This will permanently reset the pinned content array for a specific user. This is useful for correcting data corruption where a user cannot pin new content despite having fewer than 3 visible pins.</p>
+                    <div className="formGroup" style={{marginTop: '20px'}}>
+                        <label className="formLabel">Enter the User ID to clear:</label>
+                        <input 
+                            type="text" 
+                            className="formInput" 
+                            value={targetUserId}
+                            onChange={(e) => setTargetUserId(e.target.value)}
+                            placeholder="User ID"
+                            style={{borderColor: '#FFD700', textAlign: 'center'}}
+                        />
+                    </div>
+                    {/* This button is now inside the modal and handles the final action */}
+                    <button 
+                        className="button" 
+                        style={{backgroundColor: '#DC3545', marginTop: '10px'}}
+                        onClick={() => {
+                            if (!targetUserId.trim()) {
+                                showMessage("User ID cannot be empty.");
+                                return;
+                            }
+                            setShowConfirmationModal(false); // Close the modal first
+                            
+                            // Define and immediately call the async action
+                            (async () => {
+                                setIsClearingPins(true);
+                                showMessage("Attempting to clear pinned content...");
+                                try {
+                                    const clearPinsFunction = httpsCallable(functions, 'clearPinnedContent');
+                                    const result = await clearPinsFunction({ targetUserId: targetUserId.trim() });
+                                    showMessage(result.data.message);
+                                } catch (error) {
+                                    showMessage(`Error: ${error.message}`);
+                                } finally {
+                                    setIsClearingPins(false);
+                                }
+                            })();
+                        }}
+                    >
+                        <span className="buttonText">Clear Pinned Content</span>
+                    </button>
+                </div>
+            );
+        };
+
+        // Configure and show the main confirmation modal
+        setConfirmationTitle("Clear User's Pinned Content");
+        setConfirmationMessage(<ConfirmationComponent />);
+        // Set a dummy action for the modal's default "Confirm" button, as our custom component handles the logic.
+        setOnConfirmationAction(() => () => {}); 
+        setShowConfirmationModal(true);
+    };
+
      const handleResetAllData = () => {
         // This function's only job is to open the modal.
         // It passes a function to the modal that will be executed on confirm.
@@ -541,6 +603,12 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
         <button className="button" onClick={handleBackfill} style={{ backgroundColor: '#008000' }} disabled={isCleaning}>
             <span className="buttonText">{isCleaning ? 'Processing...' : 'Backfill Follower Data'}</span>
+        </button>
+    </div>
+
+        <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
+        <button className="button" onClick={handleClearPinnedContent} style={{ backgroundColor: '#4F46E5' }} disabled={isClearingPins}>
+            <span className="buttonText">{isClearingPins ? 'Clearing...' : 'Clear User Pinned Content'}</span>
         </button>
     </div>
 

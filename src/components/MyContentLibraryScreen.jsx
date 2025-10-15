@@ -332,7 +332,7 @@ function MyContentLibraryScreen({
                                     return (
                                         <div key={item.id} className="library-item-card">
                                             <button className={`pin-icon-button ${isPinned ? 'pinned' : ''}`} onClick={() => handleTogglePin(item)} disabled={isUpdatingPin === item.id} title={isPinned ? 'Unpin from profile' : 'Pin to profile'}>
-                                                <svg className="pin-svg" viewBox="0 0 24 24"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"></path></svg>
+                                            {isUpdatingPin === item.id ? '...' : <svg className="pin-svg" viewBox="0 0 24 24"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"></path></svg>}
                                             </button>
                                             <div className="library-item-content">
                                                 <img src={item.customThumbnailUrl} alt={item.title} className="library-item-thumbnail" onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)} />
@@ -347,19 +347,19 @@ function MyContentLibraryScreen({
                                             </div>
                                             <div className="videoActions" style={{marginTop: '10px'}}>
                                                 {isFeatured ? (
-                                                    <button className="actionButton" onClick={handleRemoveFeatured} disabled={isUpdatingFeature === item.id} style={{backgroundColor: '#FF8C00'}}>Remove Featured</button>
+                                                    <button className="actionButton" onClick={handleRemoveFeatured} disabled={isUpdatingFeature === item.id} style={{backgroundColor: '#FF8C00'}}>{isUpdatingFeature === item.id ? 'Removing...' : 'Remove Featured'}</button>
                                                 ) : (
                                                     <button 
                                                         className="actionButton" 
                                                         onClick={() => handleSetFeatured(item)} 
                                                         disabled={isUpdatingFeature === item.id} 
                                                         style={{
-                                                            backgroundColor: '#4F46E5', // Indigo color
-                                                            color: '#FFFFFF',
-                                                            boxShadow: '0 0 8px rgba(79, 70, 229, 0.8)', // Glow effect
-                                                            border: '1px solid #6366F1'
+                                                        backgroundColor: '#4F46E5', // Indigo color
+                                                        color: '#FFFFFF',
+                                                        boxShadow: '0 0 8px rgba(79, 70, 229, 0.8)', // Glow effect
+                                                        border: '1px solid #6366F1'
                                                         }}>
-                                                        Set as Featured
+                                                        {isUpdatingFeature === item.id ? 'Setting...' : 'Set as Featured'}
                                                     </button>
                                                 )}
                                                 <button className="actionButton" onClick={() => handleOpenManageModal(item)}>Manage</button>
