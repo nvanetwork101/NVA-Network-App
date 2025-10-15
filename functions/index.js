@@ -3694,6 +3694,9 @@ exports.updateCompetition = onCall(async (request) => {
     if (updates.status) allowedUpdates.status = updates.status;
     if (updates.noticeText !== undefined) allowedUpdates.noticeText = updates.noticeText;
 
+    // --- SURGICAL FIX: ADD THIS LINE ---
+    if (updates.winnersToNotify !== undefined) allowedUpdates.winnersToNotify = updates.winnersToNotify;
+
     // Convert date strings from the form back into Firestore Timestamps
     if (updates.entryDeadline !== undefined) {
         allowedUpdates.entryDeadline = updates.entryDeadline ? admin.firestore.Timestamp.fromDate(new Date(updates.entryDeadline)) : null;

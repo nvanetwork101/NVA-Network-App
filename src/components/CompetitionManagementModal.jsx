@@ -111,7 +111,7 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
                             type="number" 
                             name="winnersToNotify" 
                             className="formInput" 
-                            value={editableComp.winnersToNotify || ''} 
+                            
                             onChange={handleInputChange} 
                             placeholder="e.g., 3" 
                         />
