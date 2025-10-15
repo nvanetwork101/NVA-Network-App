@@ -201,6 +201,17 @@ function App() {
     setTimeout(() => setMessage(''), 3000);
   };
 
+        const dismissNotification = async (notificationId) => {
+    try {
+        const deleteNotificationFunction = httpsCallable(functions, 'deleteNotification');
+        await deleteNotificationFunction({ notificationId: notificationId });
+        // The UI updates optimistically, so no success message is needed.
+    } catch (error) {
+        console.error("Error dismissing notification:", error);
+        showMessage("Failed to dismiss. Please try again.");
+    }
+  };
+
     useEffect(() => {
         // This now efficiently listens for the server-updated currency rates from Firestore.
         // This makes zero calls to the external currency API.
@@ -968,7 +979,7 @@ useEffect(() => {
       case 'AnalyticsDashboard': return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'Contact': return <ContactScreen setActiveScreen={handleNavigate} showMessage={showMessage} currentUser={currentUser} />;
       case 'NvaNetworkCharts': return <NvaNetworkChartsScreen setActiveScreen={handleNavigate} />;
-      case 'NotificationInbox': return <NotificationInboxScreen setActiveScreen={handleNavigate} currentUser={currentUser} dismissNotification={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
+      case 'NotificationInbox': return <NotificationInboxScreen setActiveScreen={handleNavigate} currentUser={currentUser} dismissNotification={dismissNotification} markNotificationAsRead={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
       case 'Home': default: return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
     
       case 'PrivacyPolicy': return <PrivacyPolicyScreen setActiveScreen={handleNavigate} />;

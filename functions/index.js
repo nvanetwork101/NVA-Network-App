@@ -5672,9 +5672,11 @@ exports.saveFCMToken = onCall(async (request) => {
         throw new HttpsError("invalid-argument", "Missing FCM token.");
     }
     const userRef = admin.firestore().collection("creators").doc(uid);
-    await userRef.update({
+    // This is the fix: .set({ merge: true }) will create the document if it's missing,
+    // or update the fcmTokens field if the document already exists.
+    await userRef.set({
         fcmTokens: admin.firestore.FieldValue.arrayUnion(token)
-    });
+    }, { merge: true }); // The critical merge option
     return { success: true, message: "Token saved." };
 });
 

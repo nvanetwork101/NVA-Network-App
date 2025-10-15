@@ -31,6 +31,8 @@ const CommentsModal = ({ item, itemType, currentUser, creatorProfile, showMessag
     const [replyingTo, setReplyingTo] = useState(null);
     const [expandedReplies, setExpandedReplies] = useState(new Set());
 
+    const [deletingCommentId, setDeletingCommentId] = useState(null);
+
     // --- FIX: CORRECTLY HANDLE 'event' ITEM TYPE FOR VODs ---
     const collectionPath = useMemo(() => {
         if (!item || !item.id) return null;
@@ -138,12 +140,16 @@ const CommentsModal = ({ item, itemType, currentUser, creatorProfile, showMessag
     const emojis = ['👍', '👎', '❤️', '😂', '🔥', '😢', '😡'];
 
     const handleDelete = async (comment) => {
+        if (deletingCommentId) return; // Prevent multiple deletions
+        setDeletingCommentId(comment.id);
         try {
             const deleteCommentFunction = httpsCallable(functions, 'deleteComment');
             await deleteCommentFunction({ itemId: item.id, itemType: itemType, commentId: comment.id });
             showMessage("Comment deleted.");
         } catch (error) {
             showMessage(`Error: ${error.message}`);
+        } finally {
+            setDeletingCommentId(null); // Reset after completion
         }
     };
 
@@ -171,7 +177,16 @@ const CommentsModal = ({ item, itemType, currentUser, creatorProfile, showMessag
                     <p className="commentText">{comment.text}</p>
                     <div className="commentActions">
                         <button className="replyButton" onClick={() => setReplyingTo(comment)}>Reply</button>
-                        {canDelete && <button className="replyButton" style={{ color: '#DC3545', marginLeft: '10px' }} onClick={() => handleDelete(comment)}>Delete</button>}
+                        {canDelete && (
+                            <button 
+                                className="replyButton" 
+                                style={{ color: '#DC3545', marginLeft: '10px' }} 
+                                onClick={() => handleDelete(comment)}
+                                disabled={deletingCommentId === comment.id}
+                            >
+                                {deletingCommentId === comment.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>

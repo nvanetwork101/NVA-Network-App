@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, collection, query, where, orderBy, onSnapshot, limit } from '../firebase.js';
 
-const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotification, markAllAsRead }) => {
+const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotification, markNotificationAsRead, markAllAsRead }) => {
     // This component now manages its own state completely.
     const [inboxNotifications, setInboxNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -52,7 +52,7 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
 
         // Mark as read when clicked to navigate
         if (!notification.isRead) {
-            dismissNotification(notification.id);
+            markNotificationAsRead(notification.id); // <-- This is the specific fix
         }
 
         const path = notification.link;
