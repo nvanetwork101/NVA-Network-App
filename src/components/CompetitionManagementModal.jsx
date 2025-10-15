@@ -5,28 +5,19 @@ import { functions, httpsCallable } from '../firebase';
 
 function CompetitionManagementModal({ competition, onClose, showMessage }) {
     // --- STATE MANAGEMENT ---
-    // Use local state to manage edits without affecting the main list until save.
-    const [editableComp, setEditableComp] = useState({ 
-        ...competition,
-        winnerIds: Array.isArray(competition.winnerIds) ? competition.winnerIds.join('\n') : '' // Convert array to string for textarea
-    });
+    const [editableComp, setEditableComp] = useState({ ...competition });
     const [isSaving, setIsSaving] = useState(false);
 
-    // This effect ensures that if the modal is re-opened for a different competition,
-    // the state is correctly reset to the new competition's data.
+    // This effect ensures the form state is correct when the modal opens or the competition prop changes.
      useEffect(() => {
-        // This robustly converts a Firestore Timestamp into the local YYYY-MM-DDTHH:mm string
-        // required by the datetime-local input, preventing timezone corruption.
         const convertTimestamp = (ts) => {
             if (!ts) return '';
             const date = ts.toDate ? ts.toDate() : new Date(ts);
-
             const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0'); // padStart ensures "09" vs "9"
+            const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
             const hours = String(date.getHours()).padStart(2, '0');
             const minutes = String(date.getMinutes()).padStart(2, '0');
-
             return `${year}-${month}-${day}T${hours}:${minutes}`;
         };
 
@@ -35,6 +26,9 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
             entryDeadline: convertTimestamp(competition.entryDeadline),
             competitionEnd: convertTimestamp(competition.competitionEnd),
             resultsRevealTime: convertTimestamp(competition.resultsRevealTime),
+            // THIS IS THE DEFINITIVE FIX:
+            // It ensures that even if the value is 0, it is still displayed in the input.
+            winnersToNotify: competition.winnersToNotify !== undefined ? competition.winnersToNotify : '',
         });
     }, [competition]);
 
@@ -48,26 +42,28 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
         showMessage("Saving changes...");
 
         try {
-            // THE FIX: Create a new object with corrected, timezone-aware date strings.
-            const updatesToSend = {
-                ...editableComp,
-                entryDeadline: editableComp.entryDeadline ? new Date(editableComp.entryDeadline).toISOString() : null,
-                competitionEnd: editableComp.competitionEnd ? new Date(editableComp.competitionEnd).toISOString() : null,
-                resultsRevealTime: editableComp.resultsRevealTime ? new Date(editableComp.resultsRevealTime).toISOString() : null,
-                // Convert winnersToNotify to a number and winnerIds string to an array of strings
-                winnersToNotify: editableComp.winnersToNotify ? parseInt(editableComp.winnersToNotify, 10) : 0,
-                winnerIds: editableComp.winnerIds ? editableComp.winnerIds.split('\n').map(id => id.trim()).filter(id => id) : []
-            };
+            // Create a mutable copy of the state to prepare for sending
+            const updatesToSend = { ...editableComp };
+
+            // Convert date strings to full ISO 8601 strings for the backend
+            updatesToSend.entryDeadline = updatesToSend.entryDeadline ? new Date(updatesToSend.entryDeadline).toISOString() : null;
+            updatesToSend.competitionEnd = updatesToSend.competitionEnd ? new Date(updatesToSend.competitionEnd).toISOString() : null;
+            updatesToSend.resultsRevealTime = updatesToSend.resultsRevealTime ? new Date(updatesToSend.resultsRevealTime).toISOString() : null;
+            
+            // Convert winnersToNotify to a number, defaulting to 0
+            updatesToSend.winnersToNotify = updatesToSend.winnersToNotify ? parseInt(updatesToSend.winnersToNotify, 10) : 0;
+            
+            // Explicitly delete the winnerIds string property so it's not sent to the backend
+            delete updatesToSend.winnerIds;
 
             const updateFunction = httpsCallable(functions, 'updateCompetition');
             await updateFunction({
                 competitionId: competition.id,
-                updates: updatesToSend // Send the timezone-corrected object to the backend.
+                updates: updatesToSend 
             });
             showMessage("Competition updated successfully!");
             onClose();
         } catch (error) {
-            // THE SYNTAX FIX: Added the required curly braces.
             showMessage(`Error: ${error.message}`);
         } finally {
             setIsSaving(false);
@@ -118,17 +114,6 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
                             value={editableComp.winnersToNotify || ''} 
                             onChange={handleInputChange} 
                             placeholder="e.g., 3" 
-                        />
-                    </div>
-                    <div className="formGroup">
-                        <label className="formLabel">Winner User IDs (In order, 1st place first, one ID per line)</label>
-                        <textarea 
-                            name="winnerIds" 
-                            className="formTextarea" 
-                            value={editableComp.winnerIds || ''} 
-                            onChange={handleInputChange} 
-                            rows="5"
-                            placeholder="Paste User ID for 1st Place...&#10;Paste User ID for 2nd Place...&#10;..."
                         />
                     </div>
                     {/* --- END NEW WINNERS SECTION --- */}
