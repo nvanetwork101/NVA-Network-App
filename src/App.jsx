@@ -596,6 +596,39 @@ useEffect(() => {
 }, [handleNavigate]); // Dependency on handleNavigate is correct
 // ======================== END: NOTIFICATION INBOX HANDLERS ========================
 
+    // ======================= START: CONTENT NOTIFICATION HANDLER =======================
+  useEffect(() => {
+    const handleNavToContent = async (event) => {
+        const { id } = event.detail;
+        if (!id) return;
+
+        try {
+            // Fetch the content item directly from Firestore to ensure we have the latest data
+            const appId = "production-app-id";
+            const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
+            const docSnap = await getDoc(contentRef);
+
+            if (docSnap.exists()) {
+                const contentData = { id: docSnap.id, ...docSnap.data() };
+                // Use the existing handleVideoPress function to open the modal
+                handleVideoPress(contentData.embedUrl || contentData.mainUrl, contentData);
+            } else {
+                showMessage("The content you are looking for could not be found.");
+            }
+        } catch (error) {
+            console.error("Error fetching content for navigation:", error);
+            showMessage("Error loading content.");
+        }
+    };
+
+    window.addEventListener('navigateToContent', handleNavToContent);
+
+    return () => {
+        window.removeEventListener('navigateToContent', handleNavToContent);
+    };
+  }, []); // Empty dependency array means this runs once on mount.
+  // ======================== END: CONTENT NOTIFICATION HANDLER ========================
+
 	useEffect(() => {
         const requestHandler = () => {
             // THE DEFINITIVE FIX: When a component requests the state, dispatch ONLY the ID

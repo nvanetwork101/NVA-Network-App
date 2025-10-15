@@ -3065,11 +3065,12 @@ exports.approveOpportunity = onCall(async (request) => {
     await opportunityRef.update({ status: 'active' });
 
     const posterId = opportunityDoc.data().postedByUid;
-    const notification = {
+    // Inside endOpportunityByAdmin
+        const notification = {
         userId: posterId,
-        type: 'OPPORTUNITY_APPROVED',
+        type: 'OPPORTUNITY_ENDED_BY_ADMIN',
         message: `Congratulations! Your opportunity "${opportunityDoc.data().title}" is now live.`,
-        link: '/CreatorDashboard',
+        link: '/MyListings', // <-- THIS IS THE CORRECT DESTINATION
         isRead: false,
         timestamp: new Date()
     };
@@ -3102,7 +3103,7 @@ exports.rejectOpportunity = onCall(async (request) => {
         userId: posterId,
         type: 'OPPORTUNITY_REJECTED',
         message: `Your opportunity "${opportunityDoc.data().title}" was not approved.`,
-        link: '/CreatorDashboard',
+        link: '/MyListings',
         isRead: false,
         timestamp: new Date()
     };
@@ -4370,14 +4371,14 @@ await db.runTransaction(async (transaction) => {
     
     const contentOwnerId = itemData.creatorId || itemData.postedByUid;
 
-    logger.info(`[Comment Push Debug] Commenter UID: ${uid}, Content Owner UID: ${contentOwnerId}`);
-
     if (contentOwnerId && contentOwnerId !== uid) {
         const ownerNotification = {
             userId: contentOwnerId,
             type: 'NEW_COMMENT',
             message: `${creatorData.creatorName} commented on ${itemTitle}`,
-            link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings',
+            // --- THIS IS THE FIX ---
+            link: itemType === 'content' ? `/content/${itemId}` : '/MyListings',
+            // --- END OF FIX ---
             isRead: false,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         };
@@ -4400,7 +4401,9 @@ await db.runTransaction(async (transaction) => {
             userId: replyTo.userId,
             type: 'COMMENT_REPLY',
             message: `${creatorData.creatorName} replied to your comment on ${itemTitle}`,
-            link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings',
+            // --- THIS IS THE FIX ---
+            link: itemType === 'content' ? `/content/${itemId}` : '/MyListings',
+            // --- END OF FIX ---
             isRead: false,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         };
@@ -4413,7 +4416,6 @@ await db.runTransaction(async (transaction) => {
             userId: replyTo.userId,
             title: 'New Reply',
             body: `${creatorData.creatorName} replied to your comment on "${itemTitle}"`,
-            // THE FIX: Use the new content-specific deep link structure
             link: itemType === 'content' ? `/content/${itemId}` : '/MyListings'
         };
     }
