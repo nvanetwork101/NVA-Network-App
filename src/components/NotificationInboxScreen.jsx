@@ -82,8 +82,8 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
 
             case 'content':
                 if (id) {
-                    // Fire a new custom event that App.jsx will listen for to open the video modal.
-                    window.dispatchEvent(new CustomEvent('navigateToContent', { detail: { id: id } }));
+                    // Fire the event with an added flag to signal that the comments modal should be opened.
+                    window.dispatchEvent(new CustomEvent('navigateToContent', { detail: { id: id, openComments: true } }));
                 }
                 break;
                 

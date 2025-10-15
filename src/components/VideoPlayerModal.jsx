@@ -24,7 +24,7 @@ const extractVideoInfo = (url) => {
     return { embedUrl: url, isVertical: false, platform: 'unknown' };
 };
 
-const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMessage }) => {
+const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMessage, openCommentsProp }) => {
     const [liveContentItem, setLiveContentItem] = useState(contentItem);
     const [creatorProfile, setCreatorProfile] = useState(null);
     const [descriptionExpanded, setDescriptionExpanded] = useState(false);
@@ -63,6 +63,17 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
         }, 10000);
         return () => clearTimeout(timer);
     }, [liveContentItem, currentUser, itemType]);
+
+    useEffect(() => {
+        // This effect runs when the modal opens and checks the 'openCommentsProp'.
+        // It's in a timeout to ensure the modal's animation completes and the liveContentItem state is set.
+        if (openCommentsProp && liveContentItem?.id) {
+            const timer = setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('openCommentsModal', { detail: { item: liveContentItem, itemType: itemType } }));
+            }, 500); // A short delay for a smoother user experience
+            return () => clearTimeout(timer);
+        }
+    }, [openCommentsProp, liveContentItem, itemType]);
 
     if (!videoUrl) return null;
 
