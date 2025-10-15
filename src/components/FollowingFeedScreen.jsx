@@ -100,13 +100,19 @@ function FollowingFeedScreen({ currentUser, setActiveScreen, handleVideoPress, s
           <div style={{ display: 'flex', flexDirection: 'column', gap: '30px', maxWidth: '800px', margin: '0 auto' }}>
             {feedItems.map(item => (
               <div key={item.id || item.originalContentId} style={styles.contentCard}>
-                <div style={styles.cardHeader}>
-                  <img src={item.creatorProfilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} alt={item.creatorName} style={styles.profilePic} />
-                  <div style={styles.creatorInfo}>
-                    <span style={styles.creatorName}>{item.creatorName}</span>
-                    <span style={styles.timestamp}>{timeSince(item.createdAt)}</span>
-                  </div>
-                </div>
+                <div 
+                    style={{...styles.cardHeader, cursor: 'pointer'}} 
+                        onClick={() => {
+                        // This is a global event that App.jsx listens for to navigate.
+                     window.dispatchEvent(new CustomEvent('navigateToUserProfile', { detail: { userId: item.creatorId } }));
+                    }}
+                    >
+                    <img src={item.creatorProfilePictureUrl || 'https://placehold.co/40x40/555/FFF?text=P'} alt={item.creatorName} style={styles.profilePic} />
+                <div style={styles.creatorInfo}>
+                <span style={styles.creatorName}>{item.creatorName}</span>
+                <span style={styles.timestamp}>{timeSince(item.createdAt)}</span>
+            </div>
+        </div>
                 <div style={styles.thumbnailContainer} onClick={() => handleVideoPress(item.mainUrl || item.embedUrl, item)}>
                    <img src={item.customThumbnailUrl} alt={item.title} style={styles.thumbnail} />
                    <div style={styles.playIcon}>▶</div>

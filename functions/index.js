@@ -986,23 +986,47 @@ exports.resetDailyStats = onSchedule("every 24 hours", async (event) => {
     }
 });
 
-// This is the reusable core logic for updating top performers.
 async function runTopPerformersUpdate() {
     const db = admin.firestore();
     const appId = "production-app-id";
-
     const settingsRef = db.collection("settings").doc("featuredContentSlots");
+
     const settingsDoc = await settingsRef.get();
-    const slotsData = settingsDoc.exists ? settingsDoc.data() : {};
-
-    const lockedSlots = new Set();
-    const featuredContentIds = new Set(); // Now tracks content IDs to prevent duplicates
-
-    // Identify locked slots and the content within them
+    let slotsData = settingsDoc.exists ? settingsDoc.data() : {};
+    
+    // --- START: NEW SANITIZATION STEP ---
+    const sanitizationUpdates = {};
+    let wasSanitized = false;
     for (let i = 1; i <= 6; i++) {
         const slotKey = `slot_${i}`;
         const slot = slotsData[slotKey];
-        if (slot && typeof slot === 'object' && slot.isLocked) {
+        if (slot && slot.content && slot.content.id) {
+            const contentRef = db.collection(`artifacts/${appId}/public/data/content_items`).doc(slot.content.id);
+            const contentDoc = await contentRef.get();
+            if (!contentDoc.exists) {
+                logger.warn(`Stale content found in ${slotKey}. Clearing slot.`);
+                // If content is gone, mark the slot as empty and automatic (unlocked)
+                sanitizationUpdates[slotKey] = { isLocked: false, content: null };
+                wasSanitized = true;
+            }
+        }
+    }
+    // If we found any stale content, save the cleanup changes immediately
+    if (wasSanitized) {
+        await settingsRef.update(sanitizationUpdates);
+        // Re-read the now-clean data
+        const updatedSettingsDoc = await settingsRef.get();
+        slotsData = updatedSettingsDoc.data();
+    }
+    // --- END: NEW SANITIZATION STEP ---
+
+    const lockedSlots = new Set();
+    const featuredContentIds = new Set();
+
+    for (let i = 1; i <= 6; i++) {
+        const slotKey = `slot_${i}`;
+        const slot = slotsData[slotKey];
+        if (slot && slot.isLocked) {
             lockedSlots.add(slotKey);
             if (slot.content && slot.content.id) {
                 featuredContentIds.add(slot.content.id);
@@ -1010,72 +1034,65 @@ async function runTopPerformersUpdate() {
         }
     }
 
-    // NEW LOGIC: Query for trending *videos* directly
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const trendingContentSnapshot = await db.collection(`artifacts/${appId}/public/data/content_items`)
         .where("isActive", "==", true)
         .where("createdAt", ">=", sevenDaysAgo.toISOString())
-        .orderBy("createdAt", "desc") // First order by creation date
-        .orderBy("viewCount", "desc") // Then by view count
-        .limit(50) // Get a pool of 50 recent, high-performing videos to choose from
+        .orderBy("createdAt", "desc")
+        .orderBy("viewCount", "desc")
+        .limit(50)
         .get();
 
     if (trendingContentSnapshot.empty) {
-        logger.info("No trending content found in the last 7 days to update slots.");
+        logger.info("No trending content found in the last 7 days to fill empty slots.");
         return;
     }
 
     const updates = {};
     let slotIndex = 1;
 
-    // Iterate through the top videos we found
     for (const contentDoc of trendingContentSnapshot.docs) {
-        if (slotIndex > 6) break; // Stop once all 6 slots are considered
-        const slotKey = `slot_${slotIndex}`;
-
-        if (lockedSlots.has(slotKey)) {
-            slotIndex++; // Skip this locked slot
-            continue;
+        if (slotIndex > 6) break;
+        let slotKey = `slot_${slotIndex}`;
+        
+        // Find the next available unlocked slot
+        while (lockedSlots.has(slotKey) && slotIndex <= 6) {
+            slotIndex++;
+            slotKey = `slot_${slotIndex}`;
         }
+        if (slotIndex > 6) break;
 
         const contentId = contentDoc.id;
-        const topContent = contentDoc.data();
-
-        // If this video is already featured in a locked slot, skip it
         if (featuredContentIds.has(contentId)) {
-            continue;
+            continue; // Skip if this content is already in a locked slot
         }
 
-        // Populate the slot with this trending video
+        const topContent = contentDoc.data();
         updates[slotKey] = {
             isLocked: false,
             content: {
                 id: contentId,
-                title: topContent.title || '',
-                creatorId: topContent.creatorId || '',
-                creatorName: topContent.creatorName || '',
-                creatorProfilePictureUrl: topContent.creatorProfilePictureUrl || '',
-                customThumbnailUrl: topContent.customThumbnailUrl || '',
-                embedUrl: topContent.embedUrl || '',
-                mainUrl: topContent.mainUrl || '',
-                viewCount: topContent.viewCount || 0,
+                title: topContent.title || '', creatorId: topContent.creatorId || '',
+                creatorName: topContent.creatorName || '', creatorProfilePictureUrl: topContent.creatorProfilePictureUrl || '',
+                customThumbnailUrl: topContent.customThumbnailUrl || '', embedUrl: topContent.embedUrl || '',
+                mainUrl: topContent.mainUrl || '', viewCount: topContent.viewCount || 0,
                 likeCount: topContent.likeCount || 0
             }
         };
         
-        featuredContentIds.add(contentId); // Add to our set to prevent it from being added again
+        featuredContentIds.add(contentId);
         slotIndex++;
     }
     
     if (Object.keys(updates).length > 0) {
         await settingsRef.set(updates, { merge: true });
-        logger.info(`Successfully updated ${Object.keys(updates).length} trending video slots.`);
+        logger.info(`Successfully updated ${Object.keys(updates).length} automatic trending video slots.`);
     }
 }
 
-// The original scheduled function now simply calls our reusable logic.
+    // The original scheduled function now simply calls our reusable logic.
 exports.updateTopPerformers = onSchedule("every 24 hours", async (event) => {
     logger.info("Running scheduled job: updateTopPerformers.");
     try {
@@ -1244,9 +1261,10 @@ exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/dat
         };
     }
 
-    if (notification && pushPayload) {
+     if (notification && pushPayload) {
         await db.collection("notifications").add(notification);
         await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        // THE FIX: Pass the complete pushPayload object
         await sendPushNotification(creatorId, pushPayload);
     }
 
@@ -1438,7 +1456,8 @@ exports.onNewFollower = onDocumentCreated("creators/{creatorId}/followers/{follo
         const pushPayload = {
             title: 'New Follower!',
             body: `${followerName} is now following you!`,
-            link: '/Followers'
+            // THE FIX: Link directly to the new follower's profile.
+            link: `/user/${followerId}`
         };
 
         await db.collection("notifications").add(newFollowerNotification);
@@ -1484,10 +1503,31 @@ exports.onNewFollower = onDocumentCreated("creators/{creatorId}/followers/{follo
         };
     }
 
-    if (notification && pushPayload) {
-        await db.collection("notifications").add(notification);
-        await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
-        await sendPushNotification(creatorId, pushPayload);
+    // THE FIX: This entire block was missing the push notification logic.
+    if (notification) {
+        const db = admin.firestore();
+        const userRef = db.collection("creators").doc(creatorId);
+        let pushPayload;
+
+        if (dataAfter.status === 'paid') {
+            pushPayload = {
+                title: 'Payout Processed',
+                body: `Your payout for "${dataAfter.campaignTitle}" has been paid.`,
+                link: '/CreatorDashboard'
+            };
+        } else if (dataAfter.status === 'dismissed') {
+            pushPayload = {
+                title: 'Payout Update',
+                body: `Your payout request for "${dataAfter.campaignTitle}" was dismissed.`,
+                link: '/Contact'
+            };
+        }
+
+        if (pushPayload) {
+            await db.collection("notifications").add(notification);
+            await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+            await sendPushNotification(creatorId, pushPayload);
+        }
     }
 
     return null;
@@ -2658,8 +2698,9 @@ exports.removeReportedContent = onCall(async (request) => {
     if (contentCreatorId) {
         await sendPushNotification(contentCreatorId, {
             title: 'Content Removed',
-            body: `Your content "${contentData.title}" was removed.`,
-            link: `/AppealContent/${contentId}`
+            body: `Your content "${contentData.title}" was removed for violating community guidelines.`,
+            // THE FIX: The notification should link to the user's content library where they can see the status.
+            link: `/MyContentLibrary`
         });
     }
         
@@ -4310,10 +4351,11 @@ await db.runTransaction(async (transaction) => {
 
         ownerPushPayload = { // Prepare the push payload
             userId: contentOwnerId,
+            
             title: 'New Comment',
-            body: `${creatorData.creatorName} commented on ${itemTitle}`,
-            link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings'
-        };
+            body: `${creatorData.creatorName} commented on "${itemTitle}"`,
+            link: itemType === 'content' ? `/content/${itemId}` : '/MyListings'
+      };
     }
 
     if (replyTo && replyTo.userId && replyTo.userId !== uid && replyTo.userId !== contentOwnerId) {
@@ -4333,8 +4375,9 @@ await db.runTransaction(async (transaction) => {
         replyPushPayload = { // Prepare the push payload
             userId: replyTo.userId,
             title: 'New Reply',
-            body: `${creatorData.creatorName} replied to your comment on ${itemTitle}`,
-            link: itemType === 'content' ? '/MyContentLibrary' : '/MyListings'
+            body: `${creatorData.creatorName} replied to your comment on "${itemTitle}"`,
+            // THE FIX: Use the new content-specific deep link structure
+            link: itemType === 'content' ? `/content/${itemId}` : '/MyListings'
         };
     }
 });

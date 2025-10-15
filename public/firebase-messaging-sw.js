@@ -19,6 +19,24 @@ const messaging = firebase.messaging();
 // The onBackgroundMessage handler is no longer needed. 
 // Firebase automatically displays notifications. This prevents duplicates.
 
+// Intercept background messages to attach the correct data payload
+messaging.onBackgroundMessage((payload) => {
+  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+
+  // Extract the notification details from the payload
+  const notificationTitle = payload.notification.title;
+  const notificationOptions = {
+    body: payload.notification.body,
+    icon: '/icons/icon-192x192.png', // A default icon for the notification
+    data: {
+      link: payload.data.link // CRITICAL: Pass the link data through
+    }
+  };
+
+  // Display the notification, ensuring our data is included
+  return self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
 // --- THIS IS THE FIX ---
 // Add an event listener for when a user clicks on a notification.
 self.addEventListener('notificationclick', (event) => {
