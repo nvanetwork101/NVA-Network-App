@@ -1,31 +1,12 @@
-// Add an event listener for when a user clicks on a notification.
+// Add a simpler, more reliable event listener for notification clicks.
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
+  event.notification.close(); // Close the notification
 
+  // Get the link from the data payload, with a fallback to the home page.
   const link = event.notification.data.link || '/';
   const fullUrl = new URL(link, self.location.origin).href;
 
-  // This more robust logic attempts to find an existing window,
-  // but guarantees opening a new one if focusing fails.
-  event.waitUntil(
-    clients.matchAll({
-      type: 'window',
-      includeUncontrolled: true,
-    }).then((windowClients) => {
-      let matchingClient = null;
-      for (const client of windowClients) {
-        const clientUrl = new URL(client.url);
-        if (clientUrl.href === fullUrl || clientUrl.pathname === link) {
-          matchingClient = client;
-          break;
-        }
-      }
-
-      if (matchingClient) {
-        return matchingClient.focus();
-      } else {
-        return clients.openWindow(fullUrl);
-      }
-    })
-  );
+  // This is the most reliable action: unconditionally open a new window.
+  // This avoids the complexities of trying to find and focus an existing tab.
+  event.waitUntil(clients.openWindow(fullUrl));
 });
