@@ -1,24 +1,38 @@
 // src/components/NotificationToast.jsx
 import React, { useEffect, useState } from 'react';
 
-const NotificationToast = ({ notification, onClose }) => {
+// FIX 1: Accept setActiveScreen as a prop for navigation
+const NotificationToast = ({ notification, onClose, setActiveScreen }) => {
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
-        // Mount animation
         setIsVisible(true);
-
-        // Set timer to close
         const timer = setTimeout(() => {
             setIsVisible(false);
-            // Allow animation to finish before calling onClose
             setTimeout(onClose, 500);
-        }, 6000); // Stays on screen for 6 seconds
-
+        }, 6000);
         return () => clearTimeout(timer);
     }, [onClose]);
 
-    // Style for the toast container with animation
+    // FIX 2: Create a new handler for clicks that checks for a link
+    const handleToastClick = () => {
+        // Check if there's a link and a navigation function
+        if (notification.link && setActiveScreen) {
+            // Parse the link to get the screen name (e.g., "/MyListings" -> "MyListings")
+            const screenName = notification.link.startsWith('/')
+                ? notification.link.substring(1)
+                : notification.link;
+            
+            // Perform navigation if a valid screen name is found
+            if (screenName) {
+                setActiveScreen(screenName);
+            }
+        }
+        // Close the toast regardless of navigation
+        setIsVisible(false);
+        setTimeout(onClose, 500);
+    };
+
     const toastStyle = {
         position: 'fixed',
         bottom: '20px',
@@ -38,7 +52,6 @@ const NotificationToast = ({ notification, onClose }) => {
         transition: 'transform 0.5s ease-out, opacity 0.5s ease-out',
     };
 
-    // Style for the checkmark icon
     const iconStyle = {
         color: '#FFD700',
         marginRight: '15px',
@@ -46,10 +59,8 @@ const NotificationToast = ({ notification, onClose }) => {
         flexShrink: 0,
     };
 
-    // Helper to render the message with highlighted parts
     const renderMessage = () => {
         if (notification.broadcastType === 'DONATION') {
-            // Special formatting for donation tickers
             return (
                 <span>
                     <strong style={{ color: '#FFD700' }}>{notification.userName}</strong>
@@ -61,18 +72,14 @@ const NotificationToast = ({ notification, onClose }) => {
                 </span>
             );
         }
-        // Default message rendering
-        return <span>{notification.message}</span>;
+        return <span>{notification.message || notification.title}</span>;
     };
 
     return (
         <div 
             style={{...toastStyle, cursor: 'pointer'}} 
-            onClick={() => {
-                setIsVisible(false);
-                setTimeout(onClose, 500); // Allow fade-out animation before removing
-            }}
-            title="Click to dismiss"
+            onClick={handleToastClick} // FIX 3: Use the new, smarter handler
+            title={notification.link ? "Click to view" : "Click to dismiss"} // Dynamic title
         >
             <div style={iconStyle}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
