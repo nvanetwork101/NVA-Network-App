@@ -29,6 +29,7 @@ const BookStatusScreen = ({
 
     // Form state for manual booking
     const [title, setTitle] = useState('');
+    const [description, setDescription] = useState('');
     const [mainUrl, setMainUrl] = useState('');
     const [flyerFile, setFlyerFile] = useState(null);
     const [flyerPreview, setFlyerPreview] = useState('');
@@ -144,6 +145,7 @@ const BookStatusScreen = ({
             }
             contentDetails = { 
                 title: title.trim(), 
+                description: description.trim(),
                 mainUrl: mainUrl.trim(), 
                 flyerImageUrl: uploadedFlyerUrl 
             };
@@ -196,6 +198,14 @@ const BookStatusScreen = ({
                         <div className="dashboardSection" style={{marginTop: '20px'}}>
                             <p className="dashboardSectionTitle">Step 2: Provide Ad Content</p>
                             <div className="formGroup"><label className="formLabel">Ad Title</label><input type="text" className="formInput" value={title} onChange={e => setTitle(e.target.value)} required /></div>
+                            
+                             {/* --- SURGICAL FIX: ADD THIS BLOCK --- */}
+                            <div className="formGroup">
+                                <label className="formLabel">Ad Text / Description (Optional)</label>
+                                <textarea className="formTextarea" value={description} onChange={e => setDescription(e.target.value)} placeholder="Add a short description for your ad..." />
+                            </div>
+                            {/* --- END OF FIX --- */}
+                            
                             <div className="formGroup"><label className="formLabel">URL (Video or External Link) (Optional)</label><input type="url" className="formInput" value={mainUrl} onChange={e => setMainUrl(e.target.value)} placeholder="Paste your ad's main link here" /></div>
                             <div className="formGroup">
                                 <label className="formLabel">Thumbnail / Flyer (Optional)</label>

@@ -30,6 +30,9 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
 
     const [isClearingPins, setIsClearingPins] = useState(false);
 
+    const [isRecounting, setIsRecounting] = useState(false);
+    const [recountResults, setRecountResults] = useState(null);
+
     const [isCleaningGhostAccounts, setIsCleaningGhostAccounts] = useState(false);
     const [ghostAccountCleanupResults, setGhostAccountCleanupResults] = useState(null);
 
@@ -255,9 +258,30 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     };
     const handleRunAudit = async () => { setIsAuditing(true); setAuditResults("Starting data integrity audit..."); showMessage("Starting data integrity audit..."); try { const auditFunction = httpsCallable(functions, 'runDataIntegrityAudit'); const result = await auditFunction(); setAuditResults(result.data.summary); showMessage("Audit complete! See results below."); } catch (error) { const errorMessage = `Audit failed: ${error.message}`; setAuditResults({ error: errorMessage }); showMessage(errorMessage); } finally { setIsAuditing(false); } };
      
+
+
        const handleClearPinnedContent = () => {
         // This component will be rendered inside the confirmation modal
         const ConfirmationComponent = () => {
+            
+            const handleRecountAndUpdateCounts = async () => {
+        setIsRecounting(true);
+        setRecountResults("Starting recount process...");
+        showMessage("Starting recount and correction of likes/comments...");
+        try {
+            const recountFunction = httpsCallable(functions, 'recountAndUpdateCounts');
+            const result = await recountFunction();
+            setRecountResults(result.data.summary);
+            showMessage("Recount complete! All counts are now accurate.");
+        } catch (error) {
+            const errorMessage = `Recount failed: ${error.message}`;
+            setRecountResults({ error: errorMessage });
+            showMessage(errorMessage);
+        } finally {
+            setIsRecounting(false);
+        }
+    };
+            
             const [targetUserId, setTargetUserId] = useState('');
 
             return (
@@ -613,6 +637,25 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     </div>
 
     <div style={{ borderTop: '1px solid #444', paddingTop: '20px' }}>
+        
+        <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
+        <p className="adminDashboardItemTitle" style={{marginBottom: '5px'}}>Fix Inflated/Negative Counts</p>
+        <p className="paragraph" style={{color: '#AAA', fontSize: '14px', marginBottom: '10px'}}>
+            Use this tool to correct any mismatched like and comment counts on content items caused by past bugs.
+        </p>
+        <button className="button" onClick={handleRecountAndUpdateCounts} style={{ backgroundColor: '#6A0DAD' }} disabled={isRecounting}>
+            <span className="buttonText">{isRecounting ? 'Recounting...' : 'Recount Likes & Comments'}</span>
+        </button>
+        {recountResults && (
+            <div style={{marginTop: '15px'}}>
+                <p className="dashboardSectionTitle" style={{fontSize: '16px'}}>Recount Results:</p>
+                <pre className="paragraph" style={{ backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap', color: '#00FF00', fontSize: '12px' }}>
+                    {JSON.stringify(recountResults, null, 2)}
+                </pre>
+            </div>
+        )}
+    </div>
+        
         <button className="button" onClick={handleRunAudit} style={{ backgroundColor: '#FFD700' }} disabled={isAuditing}>
             <span className="buttonText" style={{color: '#0A0A1A'}}>{isAuditing ? 'Auditing...' : 'Run Full Data Integrity Audit'}</span>
                       

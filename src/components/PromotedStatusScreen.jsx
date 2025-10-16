@@ -34,6 +34,8 @@ const PromotedStatusScreen = ({
     const [loading, setLoading] = useState(true);
     const [selectedBooking, setSelectedBooking] = useState(null);
 
+    const [deletingId, setDeletingId] = useState(null);
+
     // State for the content submission modal form
     const [title, setTitle] = useState('');
     const [mainUrl, setMainUrl] = useState('');
@@ -125,6 +127,9 @@ const PromotedStatusScreen = ({
         setConfirmationTitle("Delete Booking?");
         setConfirmationMessage(`Are you sure you want to permanently delete your booking for ${new Date(booking.startTime.toDate()).toLocaleDateString()}? This action cannot be undone.`);
         setOnConfirmationAction(() => async () => {
+            
+            setDeletingId(booking.id);
+
             try {
                 const deleteFunction = httpsCallable(functions, 'deleteBooking');
                 await deleteFunction({ bookingId: booking.id });
@@ -142,6 +147,9 @@ const PromotedStatusScreen = ({
             case 'content_review_pending': return { color: '#FFD700', text: 'Content Review Pending' };
             case 'content_pending': return { color: '#FFA500', text: 'Awaiting Content Submission' };
             case 'expired': return { color: '#888', text: 'Expired' };
+            
+            case 'content_rejected': return { color: '#DC3545', text: 'Content Rejected' };
+
             case 'cancelled': return { color: '#AAA', text: 'Cancelled' };
             case 'rejected': return { color: '#DC3545', text: 'Content Rejected' };
             default: return { color: '#CCC', text: status.replace(/_/g, ' ').toUpperCase() };
@@ -170,7 +178,7 @@ const PromotedStatusScreen = ({
                             {myBookings.map(booking => {
                                 const statusInfo = getStatusStyle(booking.status);
                                 const isActionable = booking.status === 'content_pending' || booking.status === 'rejected';
-                                const isDeletable = booking.status !== 'expired' && booking.status !== 'cancelled';
+                               
                                 return (
                                     <div key={booking.id} className="allCampaignsListItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
                                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
@@ -192,11 +200,10 @@ const PromotedStatusScreen = ({
                                                     <span className="buttonText">{booking.status === 'rejected' ? 'Re-Submit Content' : 'Submit Content'}</span>
                                                 </button>
                                             )}
-                                            {isDeletable && (
-                                                <button className="button" style={{flex: 1, margin: 0, backgroundColor: '#555'}} onClick={() => handleDeleteBooking(booking)}>
-                                                    <span className="buttonText light">Delete</span>
-                                                </button>
-                                            )}
+                                                                                        
+                                            <button className="button" style={{flex: 1, margin: 0, backgroundColor: '#555'}} onClick={() => handleDeleteBooking(booking)} disabled={deletingId === booking.id}>
+                                                <span className="buttonText light">{deletingId === booking.id ? 'Deleting...' : 'Delete'}</span>
+                                            </button>
                                         </div>
                                     </div>
                                 );

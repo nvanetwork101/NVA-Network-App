@@ -452,22 +452,37 @@ function DiscoverScreen({
                             showMessage={showMessage}
                         />
                     </div>
-                    {masterEventDetails.isTicketed && !hasAccess() && (
-                        <button 
-                            className="button" 
-                            style={{ backgroundColor: '#B91C1C', color: 'white', display: 'block', margin: '20px auto 0 auto' }} 
-                            onClick={() => {
-                                setPledgeContext({
-                                    type: 'eventTicket',
-                                    amount: masterEventDetails.ticketPrice,
-                                    targetEventId: masterEventDetails.id,
-                                    targetEventTitle: masterEventDetails.eventTitle
-                                });
-                                setActiveScreen('SupportUsScreen');
-                            }}
-                        >
-                            Purchase Ticket (${(masterEventDetails.ticketPrice || 0).toFixed(2)})
-                        </button>
+                    {masterEventDetails.isTicketed && (
+                        creatorProfile?.purchasedTickets?.[masterEventDetails.id] ? (
+                            <button 
+                                className="button" 
+                                style={{ backgroundColor: '#555', color: '#AAA', display: 'block', margin: '20px auto 0 auto', cursor: 'default' }} 
+                                disabled
+                            >
+                                Ticket Owned
+                            </button>
+                        ) : (
+                            <button 
+                                className="button" 
+                                style={{ backgroundColor: '#B91C1C', color: 'white', display: 'block', margin: '20px auto 0 auto' }} 
+                                onClick={() => {
+                                    if (!currentUser) {
+                                        showMessage("Please log in to purchase a ticket.");
+                                        setActiveScreen('Login');
+                                        return;
+                                    }
+                                    setPledgeContext({
+                                        type: 'eventTicket',
+                                        amount: masterEventDetails.ticketPrice,
+                                        targetEventId: masterEventDetails.id,
+                                        targetEventTitle: masterEventDetails.eventTitle
+                                    });
+                                    setActiveScreen('SupportUsScreen');
+                                }}
+                            >
+                                Purchase Ticket (${(masterEventDetails.ticketPrice || 0).toFixed(2)})
+                            </button>
+                        )
                     )}
                 </div>
             );

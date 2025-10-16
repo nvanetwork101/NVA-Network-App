@@ -26,6 +26,9 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
             entryDeadline: convertTimestamp(competition.entryDeadline),
             competitionEnd: convertTimestamp(competition.competitionEnd),
             resultsRevealTime: convertTimestamp(competition.resultsRevealTime),
+            
+            winnersToNotify: competition.winnersToNotify !== undefined ? String(competition.winnersToNotify) : '',
+
             // THIS IS THE DEFINITIVE FIX:
             // It ensures that even if the value is 0, it is still displayed in the input.
             winnersToNotify: competition.winnersToNotify !== undefined ? competition.winnersToNotify : '',

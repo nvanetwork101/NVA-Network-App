@@ -584,7 +584,7 @@ useEffect(() => {
     const handleNavToUser = (event) => {
         const { id } = event.detail;
         setSelectedUserId(id);
-        handleNavigate('UserProfileScreen');
+        handleNavigate('UserProfile');
     };
 
     window.addEventListener('navigateToOpportunity', handleNavToOpp);

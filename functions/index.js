@@ -156,6 +156,7 @@ exports.approvePledge = onCall(async (request) => {
         premiumExpiresAt.setMonth(premiumExpiresAt.getMonth() + 1);
         transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
         transaction.update(userRef, { totalApproved: admin.firestore.FieldValue.increment(1), updatedAt: approvalTimestamp.toISOString(), premiumExpiresAt: premiumExpiresAt });
+        
         const userNotification = {
             userId: pledgeData.userId, type: 'PREMIUM_APPROVED',
             message: `Your NVA Premium subscription is now active!`,
@@ -208,7 +209,7 @@ exports.approvePledge = onCall(async (request) => {
         const userNotification = {
             userId: pledgeData.userId, type: 'TICKET_APPROVED',
             message: `Your ticket purchase for "${pledgeData.targetEventTitle || 'the Live Premiere'}" is confirmed!`,
-            link: '/Discover',
+            link: `/user/${pledgeData.userId}`,
             isRead: false, timestamp: approvalTimestamp
         };
         transaction.set(notificationsRef.doc(), userNotification);
@@ -285,7 +286,7 @@ exports.approvePledge = onCall(async (request) => {
         await sendPushNotification(finalPledgeData.userId, {
             title: 'Ticket Purchase Confirmed!',
             body: `Your ticket for "${finalPledgeData.targetEventTitle || 'the Live Premiere'}" is confirmed!`,
-            link: '/Discover'
+            link: `/user/${finalPledgeData.userId}`
         });
     }
     // --- END: PUSH NOTIFICATION LOGIC ---
@@ -3516,6 +3517,8 @@ exports.createBookingAndPledge = onCall(async (request) => {
             finalTitle = title;
             finalMainUrl = mainUrl || ''; // Provide a fallback to prevent 'undefined'
             finalFlyerImageUrl = flyerImageUrl || ''; // Provide a fallback to prevent 'undefined'
+        const finalDescription = contentDetails.description || ''; // Extract description
+
         }
 
         const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;
@@ -3548,6 +3551,9 @@ exports.createBookingAndPledge = onCall(async (request) => {
                 pledgeId: pledgeId,
                 content: {
                     title: finalTitle,
+                    
+                    description: finalDescription,
+
                     destinationUrl: isVideoUrl ? '' : finalMainUrl,
                     adVideoUrl: isVideoUrl ? finalMainUrl : '',
                     flyerImageUrl: finalFlyerImageUrl
@@ -3899,6 +3905,9 @@ exports.checkResultsRevelations = onSchedule("every 1 minutes", async (event) =>
             const winnersToNotify = competitionData.winnersToNotify;
 
             if (winnersToNotify > 0) {
+                
+                try {
+
                 logger.info(`Querying top ${winnersToNotify} winners for competition '${doc.id}'.`);
 
                 const entriesQuery = competitionRef.collection("entries")
@@ -3959,6 +3968,15 @@ exports.checkResultsRevelations = onSchedule("every 1 minutes", async (event) =>
                 } else {
                     await batch.commit(); // Commit the status change even if no entries were found
                 }
+            
+                 // --- SURGICAL ADDITION: ADD THIS BLOCK ---
+                } catch (queryError) {
+                    logger.error(`CRITICAL FAILURE: Could not query winners for competition '${doc.id}'. This is likely a missing index. See details:`, queryError);
+                    // This is crucial: we still commit the batch so the competition status is updated to 'Results Visible'.
+                    // This prevents the function from attempting to process this failing competition again every minute.
+                    await batch.commit(); 
+                }
+            
             } else {
                 await batch.commit(); // Commit the status change even if winnersToNotify is 0
             }
@@ -4541,7 +4559,9 @@ exports.submitStatusContent = onCall(async (request) => {
         throw new HttpsError("unauthenticated", "You must be logged in.");
     }
 
-    const { bookingId, title, destinationUrl, adVideoUrl, flyerImageUrl } = request.data;
+    // --- FIX #1: 'description' is added to the line below ---
+    const { bookingId, title, description, destinationUrl, adVideoUrl, flyerImageUrl } = request.data;
+    
     if (!bookingId || !title) {
         throw new HttpsError("invalid-argument", "Missing bookingId or title.");
     }
@@ -4559,13 +4579,17 @@ exports.submitStatusContent = onCall(async (request) => {
         if (bookingData.postedByUid !== uid) {
             throw new HttpsError("permission-denied", "You do not own this booking.");
         }
-        if (bookingData.status !== 'content_pending') {
-            throw new HttpsError("failed-precondition", "Content has already been submitted for this booking.");
+        // This check is updated to allow resubmission for rejected content
+        if (bookingData.status !== 'content_pending' && bookingData.status !== 'content_rejected') {
+            throw new HttpsError("failed-precondition", "Content has already been submitted and is pending review or approved.");
         }
 
         transaction.update(bookingRef, {
             status: 'content_review_pending',
-            content: { title, destinationUrl, adVideoUrl, flyerImageUrl },
+            
+            // --- FIX #2: The 'content' object below is updated with the description ---
+            content: { title, description: description || '', destinationUrl, adVideoUrl, flyerImageUrl },
+            
             contentSubmittedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
@@ -5756,6 +5780,18 @@ const sendPushNotification = async (userId, payload) => {
             data: {
                 link: payload.link || '/',
             },
+            
+             // --- SURGICAL FIX: ADD THIS BLOCK ---
+            android: {
+                ttl: 48 * 3600 * 1000, // 48 hours in milliseconds
+            },
+            apns: {
+                headers: {
+                    // Set APNS expiration to 48 hours from now
+                    'apns-expiration': String(Math.floor(Date.now() / 1000) + (48 * 3600)),
+                },
+            },
+            
             tokens: tokens,
         };
 
