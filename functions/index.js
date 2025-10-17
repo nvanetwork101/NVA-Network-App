@@ -268,7 +268,7 @@ exports.approvePledge = onCall(async (request) => {
         await sendPushNotification(finalPledgeData.userId, {
             title: 'Donation Confirmed',
             body: `Your donation of $${finalPledgeData.amount.toFixed(2)} to "${finalPledgeData.targetCampaignTitle}" was approved. Thank you!`,
-            link: '/Home'
+            link: '/AllCampaigns'
         });
     } else if (finalPledgeData.paymentType === 'premium') {
         await sendPushNotification(finalPledgeData.userId, {
@@ -1406,14 +1406,14 @@ exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/dat
             userId: creatorId,
             type: 'CAMPAIGN_APPROVED',
             message: `Congratulations! Your campaign "${dataAfter.title}" has been approved and is now live.`,
-            link: '/CreatorDashboard',
+            link: `/user/${creatorId}`,
             isRead: false,
             timestamp: new Date()
         };
         pushPayload = {
             title: 'Campaign Approved!',
             body: `Your campaign "${dataAfter.title}" is now live.`,
-            link: '/CreatorDashboard'
+            link: `/user/${creatorId}`
         };
     // Condition 2: Pending to Rejected
     } else if (dataBefore.status === 'pending' && dataAfter.status === 'rejected') {
@@ -1422,30 +1422,14 @@ exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/dat
             userId: creatorId,
             type: 'CAMPAIGN_REJECTED',
             message: `Your campaign "${dataAfter.title}" was reviewed but could not be approved.`,
-            link: '/CreatorDashboard',
+            link: `/user/${creatorId}`,
             isRead: false,
             timestamp: new Date()
         };
         pushPayload = {
             title: 'Campaign Update',
             body: `Your campaign "${dataAfter.title}" was not approved.`,
-            link: '/CreatorDashboard'
-        };
-    // Condition 3 (THE FIX): Active to Rejected
-    } else if (dataBefore.status === 'active' && dataAfter.status === 'rejected') {
-        logger.info(`Active campaign '${event.params.campaignId}' was rejected by a moderator. Notifying creator.`);
-        notification = {
-            userId: creatorId,
-            type: 'CAMPAIGN_REJECTED',
-            message: `Your active campaign "${dataAfter.title}" was reviewed and has been taken down.`,
-            link: '/CreatorDashboard',
-            isRead: false,
-            timestamp: new Date()
-        };
-        pushPayload = {
-            title: 'Campaign Update',
-            body: `Your campaign "${dataAfter.title}" has been taken down.`,
-            link: '/CreatorDashboard'
+            link: `/user/${creatorId}`
         };
     }
 
