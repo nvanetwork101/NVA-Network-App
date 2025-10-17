@@ -156,7 +156,8 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                             </div>
                         </div>
 
-                        {currentUser && liveContentItem?.id && (
+                        {/* THE FIX: This block now checks for the 'isPromotion' flag before rendering */}
+                        {currentUser && liveContentItem?.id && !liveContentItem.isPromotion && (
                             <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
                                 <LikeButton contentItem={liveContentItem} currentUser={currentUser} showMessage={showMessage} itemType={itemType} />
                                 <button
@@ -166,7 +167,6 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                                     <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"></path></svg>
                                     <span>{(liveContentItem?.commentCount || 0).toLocaleString()}</span>
                                 </button>
-                                                                                                
                             </div>
                         )}
                     </div>
@@ -176,15 +176,21 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                             className="bg-[#2A2A2A] p-3 rounded-xl cursor-pointer"
                             onClick={() => setDescriptionExpanded(!descriptionExpanded)}
                         >
-                            <p className="m-0 mb-2 text-sm text-white font-bold">
-                                {(displayViewCount || 0).toLocaleString()} Views
-                            </p>
+                            {/* THE FIX: The View Count is now also hidden for promotions */}
+                            {!liveContentItem.isPromotion && (
+                                <p className="m-0 mb-2 text-sm text-white font-bold">
+                                    {(displayViewCount || 0).toLocaleString()} Views
+                                </p>
+                            )}
                             <p className={`m-0 text-sm text-[#DDDDDD] leading-normal whitespace-pre-wrap ${!descriptionExpanded && 'line-clamp-2'}`}>
                                 {liveContentItem.description}
                             </p>
-                            <span className="text-[#AAAAAA] text-xs font-bold mt-1 inline-block">
-                                {descriptionExpanded ? 'Show less' : '...more'}
-                            </span>
+                            {/* Only show 'more' if the description is actually long enough to be clamped */}
+                            {(liveContentItem.description.length > 100) && (
+                                <span className="text-[#AAAAAA] text-xs font-bold mt-1 inline-block">
+                                    {descriptionExpanded ? 'Show less' : '...more'}
+                                </span>
+                            )}
                         </div>
                     )}
                 </div>

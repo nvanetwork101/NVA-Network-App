@@ -1584,22 +1584,28 @@ exports.onPledgeDelete = onDocumentDeleted("paymentPledges/{pledgeId}", async (e
         const userId = deletedPledge.userId;
         const userRef = db.collection("creators").doc(userId);
 
+        let messageBody = `Your payment pledge of $${deletedPledge.amount.toFixed(2)} was not approved.`;
+        if (deletedPledge.paymentType === 'promotedStatus') {
+            messageBody = `Your Promoted Status booking was cancelled. Please contact support for details.`;
+        }
+
         const denialNotification = {
             userId: userId,
             type: 'PLEDGE_DENIED',
-            message: `Your payment pledge of $${deletedPledge.amount.toFixed(2)} was not approved.`,
+            message: messageBody,
             link: '/Contact',
             isRead: false,
             timestamp: new Date()
         };
         const pushPayload = {
-            title: 'Payment Update',
-            body: `Your payment pledge of $${deletedPledge.amount.toFixed(2)} was not approved.`,
+            title: 'Booking Denied',
+            body: messageBody,
             link: '/Contact'
         };
 
         await db.collection("notifications").add(denialNotification);
         await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        // CRITICAL: Ensure push notification is sent
         await sendPushNotification(userId, pushPayload);
     }
     return null;
@@ -3733,6 +3739,71 @@ exports.cleanupOldBookings = onSchedule("every 24 hours", async (event) => {
         return null;
     }
 });
+
+    // =====================================================================
+// =========== START: PROMOTED STATUS EXPIRATION LOGIC =================
+// =====================================================================
+exports.checkPromotedStatusExpirations = onSchedule("every 1 hours", async (event) => {
+    logger.info("Running scheduled job: Checking for expired promoted status slots...");
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+
+    // Query for slots that are approved but whose expiration time has passed
+    const expiredQuery = db.collection("promotedStatuses")
+        .where("status", "in", ["approved_and_scheduled", "content_review_pending", "content_pending"])
+        .where("expiresAt", "<=", now);
+
+    try {
+        const snapshot = await expiredQuery.get();
+        if (snapshot.empty) return null;
+        
+        const batch = db.batch();
+        let notificationsSent = 0;
+
+        for (const doc of snapshot.docs) {
+            const bookingData = doc.data();
+            
+            // 1. Update the booking status to expired
+            batch.update(doc.ref, { status: "expired" });
+
+            // 2. Create the in-app notification for the user
+            const notification = {
+                userId: bookingData.postedByUid,
+                type: 'PROMO_SLOT_EXPIRED',
+                message: `Your Promoted Status slot for ${bookingData.startTime.toDate().toLocaleDateString()} has expired.`,
+                link: '/PromotedStatus',
+                isRead: false,
+                timestamp: new Date()
+            };
+            batch.set(db.collection("notifications").doc(), notification);
+
+            // 3. Increment the user's unread count
+            const userRef = db.collection("creators").doc(bookingData.postedByUid);
+            batch.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+            
+            // 4. Prepare Push Notification (to be sent after the batch)
+            const pushPayload = {
+                userId: bookingData.postedByUid,
+                title: 'Ad Slot Expired',
+                body: `Your Promoted Status slot has finished running.`,
+                link: '/PromotedStatus'
+            };
+            await sendPushNotification(bookingData.postedByUid, pushPayload);
+            notificationsSent++;
+        }
+
+        await batch.commit();
+        logger.info(`Processed ${snapshot.size} expired status slots and sent ${notificationsSent} notifications.`);
+        return null;
+
+    } catch (error) {
+        logger.error("Error during scheduled status expiration check", { error });
+        return null;
+    }
+});
+// =====================================================================
+// =========== END: PROMOTED STATUS EXPIRATION LOGIC ===================
+// =====================================================================
 
 exports.deleteBooking = onCall(async (request) => {
     const uid = request.auth.uid;

@@ -50,11 +50,12 @@ function PromotedSlot({ showMessage, handleVideoPress, currentUser }) {
         if (content.adVideoUrl) {
             const { embedUrl } = extractVideoInfo(content.adVideoUrl);
             
-            // THE DEFINITIVE FIX: Create a minimal object with ONLY the data you want to display.
+            // THE DEFINITIVE FIX: Create a minimal object with an explicit 'isPromotion' flag.
             const promoContentItem = {
                 id: livePromo.id,
                 title: content.title,
-                description: content.description // This is the only new field
+                description: content.description,
+                isPromotion: true // This is the new, critical flag
             };
 
             handleVideoPress(embedUrl || content.adVideoUrl, promoContentItem);
@@ -63,7 +64,7 @@ function PromotedSlot({ showMessage, handleVideoPress, currentUser }) {
         } else if (content.destinationUrl) {
             window.open(content.destinationUrl, '_blank');
         
-        // Priority 3: Handle Image-Only promotions
+        // Priority 3: Handle Image-Only promotions (remains the same)
         } else if (content.flyerImageUrl) {
             window.dispatchEvent(new CustomEvent('openImageViewer', { 
                 detail: { 
