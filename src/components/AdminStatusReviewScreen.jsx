@@ -1,9 +1,30 @@
 // src/components/AdminStatusReviewScreen.jsx
 
-import React from 'react';
-import { functions, httpsCallable } from '../firebase';
+import React, { useState, useEffect } from 'react';
+import { db, functions, httpsCallable, doc, getDoc } from '../firebase';
 
 const AdminStatusReviewScreen = ({ showMessage, setActiveScreen, selectedStatus }) => {
+    const [submitter, setSubmitter] = useState(null);
+    
+    useEffect(() => {
+        const fetchSubmitter = async () => {
+            if (selectedStatus && selectedStatus.postedByUid) {
+                try {
+                    const userRef = doc(db, "creators", selectedStatus.postedByUid);
+                    const userSnap = await getDoc(userRef);
+                    if (userSnap.exists()) {
+                        setSubmitter(userSnap.data());
+                    } else {
+                        showMessage("Could not find the profile of the submitter.");
+                    }
+                } catch (error) {
+                    showMessage("Error fetching submitter's profile.");
+                }
+            }
+        };
+        fetchSubmitter();
+    }, [selectedStatus]); // This effect runs when the component mounts or selectedStatus changes
+
     // Safety check: If a user navigates here directly without a selection, redirect them.
     if (!selectedStatus) {
         // Use a useEffect to avoid state update during render warnings
@@ -38,6 +59,9 @@ const AdminStatusReviewScreen = ({ showMessage, setActiveScreen, selectedStatus 
             <div className="dashboardSection">
                 <p className="dashboardSectionTitle">Submitted Ad Details</p>
                 <p className="dashboardItem"><strong>Ad Title:</strong> {content.title}</p>
+                
+                <p className="dashboardItem"><strong>Submitted By:</strong> {submitter ? submitter.creatorName : 'Loading user...'}</p>
+                
                 <p className="dashboardItem"><strong>Destination URL:</strong> {content.destinationUrl ? <a href={content.destinationUrl} target="_blank" rel="noopener noreferrer" className="termsLink">{content.destinationUrl}</a> : "Not Provided"}</p>
                 <p className="dashboardItem"><strong>Ad Video URL:</strong> {content.adVideoUrl ? <a href={content.adVideoUrl} target="_blank" rel="noopener noreferrer" className="termsLink">{content.adVideoUrl}</a> : "Not Provided"}</p>
                 
