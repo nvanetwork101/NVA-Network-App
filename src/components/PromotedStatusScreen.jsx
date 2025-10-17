@@ -177,7 +177,7 @@ const PromotedStatusScreen = ({
                         <div className="allCampaignsList">
                             {myBookings.map(booking => {
                                 const statusInfo = getStatusStyle(booking.status);
-                                const isActionable = booking.status === 'content_pending' || booking.status === 'rejected';
+                                const isActionable = booking.status === 'content_pending' || booking.status === 'content_rejected'
                                
                                 return (
                                     <div key={booking.id} className="allCampaignsListItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
@@ -197,7 +197,7 @@ const PromotedStatusScreen = ({
                                         <div style={{display: 'flex', gap: '10px', marginTop: '10px', justifyContent: 'flex-end'}}>
                                             {isActionable && (
                                                 <button className="button" style={{flex: 1, margin: 0}} onClick={() => handleSelectBooking(booking)}>
-                                                    <span className="buttonText">{booking.status === 'rejected' ? 'Re-Submit Content' : 'Submit Content'}</span>
+                                                    <span className="buttonText">{booking.status === 'content_rejected' ? 'Re-Submit Content' : 'Submit Content'}</span>
                                                 </button>
                                             )}
                                                                                         
