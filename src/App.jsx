@@ -173,6 +173,9 @@ function App() {
   const [contentForLikes, setContentForLikes] = useState(null);
   const [openCommentsOnLoad, setOpenCommentsOnLoad] = useState(false); // <-- Add this line
 
+   const [showImageViewerModal, setShowImageViewerModal] = useState(false);
+  const [imageViewerData, setImageViewerData] = useState({ imageUrl: '', description: '' }); 
+
     const [hasNewFollowerContent, setHasNewFollowerContent] = useState(false);
 
     // --- Notification Toast System State ---
@@ -695,6 +698,17 @@ useEffect(() => {
     };
   }, []);
 
+        useEffect(() => {
+        const openImageViewerHandler = (event) => {
+            setImageViewerData(event.detail);
+            setShowImageViewerModal(true);
+        };
+        window.addEventListener('openImageViewer', openImageViewerHandler);
+        return () => {
+            window.removeEventListener('openImageViewer', openImageViewerHandler);
+        };
+    }, []);
+
       // --- VIDEO MODAL BACK BUTTON HANDLING ---
     useEffect(() => {
         const handleModalCloseOnBack = () => {
@@ -1157,6 +1171,14 @@ return (
           />
       )}
       
+        {showImageViewerModal && (
+        <ImageViewerModal
+          imageUrl={imageViewerData.imageUrl}
+          description={imageViewerData.description}
+          onClose={() => setShowImageViewerModal(false)}
+        />
+      )}
+
       {/* --- iOS PWA FIX: The new, styled install prompt for iPhones/iPads --- */}
       {showIosInstallPrompt && (
         <IosInstallPrompt onClose={() => setShowIosInstallPrompt(false)} />

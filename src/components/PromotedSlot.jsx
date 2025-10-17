@@ -46,13 +46,35 @@ function PromotedSlot({ showMessage, handleVideoPress, currentUser }) {
         if (!livePromo || !livePromo.content) return;
         const { content } = livePromo;
 
+        // Priority 1: Handle Video Content
         if (content.adVideoUrl) {
             const { embedUrl } = extractVideoInfo(content.adVideoUrl);
-            handleVideoPress(embedUrl || content.adVideoUrl, { id: livePromo.id, title: content.title });
+            
+            // THE DEFINITIVE FIX: Create a minimal object with ONLY the data you want to display.
+            const promoContentItem = {
+                id: livePromo.id,
+                title: content.title,
+                description: content.description // This is the only new field
+            };
+
+            handleVideoPress(embedUrl || content.adVideoUrl, promoContentItem);
+        
+        // Priority 2: Handle External Links
         } else if (content.destinationUrl) {
             window.open(content.destinationUrl, '_blank');
+        
+        // Priority 3: Handle Image-Only promotions
+        } else if (content.flyerImageUrl) {
+            window.dispatchEvent(new CustomEvent('openImageViewer', { 
+                detail: { 
+                    imageUrl: content.flyerImageUrl,
+                    description: content.description 
+                } 
+            }));
+        
+        // Fallback
         } else {
-            showMessage("This promotion has no link attached.");
+            showMessage("This promotion has no content attached.");
         }
     };
 
