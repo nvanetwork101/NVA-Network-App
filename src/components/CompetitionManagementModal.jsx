@@ -28,10 +28,7 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
             resultsRevealTime: convertTimestamp(competition.resultsRevealTime),
             
             winnersToNotify: competition.winnersToNotify !== undefined ? String(competition.winnersToNotify) : '',
-
-            // THIS IS THE DEFINITIVE FIX:
-            // It ensures that even if the value is 0, it is still displayed in the input.
-            winnersToNotify: competition.winnersToNotify !== undefined ? competition.winnersToNotify : '',
+            
         });
     }, [competition]);
 
@@ -110,13 +107,13 @@ function CompetitionManagementModal({ competition, onClose, showMessage }) {
                     <p className="formLabel" style={{marginBottom: '10px'}}>Manage Winners</p>
                     <div className="formGroup">
                         <label className="formLabel">Number of Top Winners to Notify</label>
-                        <input 
-                            type="number" 
-                            name="winnersToNotify" 
-                            className="formInput" 
-                            
-                            onChange={handleInputChange} 
-                            placeholder="e.g., 3" 
+                        <input
+                            type="number"
+                            name="winnersToNotify"
+                            className="formInput"
+                            value={editableComp.winnersToNotify || ''}
+                            onChange={handleInputChange}
+                            placeholder="e.g., 3"
                         />
                     </div>
                     {/* --- END NEW WINNERS SECTION --- */}

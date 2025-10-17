@@ -33,6 +33,9 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     const [isCleaningGhostAccounts, setIsCleaningGhostAccounts] = useState(false);
     const [ghostAccountCleanupResults, setGhostAccountCleanupResults] = useState(null);
 
+    const [isRecalibrating, setIsRecalibrating] = useState(false);
+    const [isCleaningTokens, setIsCleaningTokens] = useState(false);
+
     
     // --- STATE FOR PAYOUT HISTORY ---
     const [payoutHistory, setPayoutHistory] = useState([]);
@@ -236,6 +239,21 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
         setShowConfirmationModal(true);
     };
     
+   
+    const handleFcmTokenCleanup = async () => {
+        setIsCleaningTokens(true);
+        showMessage("Cleaning up duplicate push notification tokens...");
+        try {
+            const cleanupFunction = httpsCallable(functions, 'cleanupDuplicateFCMTokens');
+            const result = await cleanupFunction();
+            showMessage(result.data.message);
+        } catch (error) {
+            showMessage(`Token cleanup failed: ${error.message}`);
+        } finally {
+            setIsCleaningTokens(false);
+        }
+    };
+
     const handleBackfill = async () => {
         setIsCleaning(true); // Reuse existing loading state
         setCleanupResults("Initiating follower data backfill...");
@@ -605,6 +623,15 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
             <span className="buttonText">{isCleaning ? 'Processing...' : 'Backfill Follower Data'}</span>
         </button>
     </div>
+         
+    <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
+        <button className="button" onClick={handleFcmTokenCleanup} style={{ backgroundColor: '#1E90FF' }} disabled={isCleaningTokens}>
+            <span className="buttonText">{isCleaningTokens ? 'Cleaning...' : 'Clean Up FCM Tokens'}</span>
+        </button>
+        <p className="paragraph" style={{color: '#AAA', fontSize: '14px', marginTop: '10px'}}>
+            Removes duplicate push notification tokens from all user profiles for better performance.
+        </p>
+    </div>
 
         <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
         <button className="button" onClick={handleClearPinnedContent} style={{ backgroundColor: '#4F46E5' }} disabled={isClearingPins}>
@@ -618,6 +645,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
                       
         </button>
         {auditResults && (
+            
             <div style={{marginTop: '15px'}}>
                 <p className="dashboardSectionTitle" style={{fontSize: '16px'}}>Audit Results:</p>
                 <pre className="paragraph" style={{ backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap', color: '#00FF00', fontSize: '12px' }}>

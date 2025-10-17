@@ -86,17 +86,32 @@ const CommentsModal = ({ item, itemType, currentUser, creatorProfile, showMessag
     const { topLevelComments, repliesMap } = useMemo(() => {
         const topLevel = [];
         const replies = new Map();
+        // Create a Set of all available comment IDs for a fast O(1) lookup.
+        const allCommentIds = new Set(comments.map(c => c.id));
+
         comments.forEach(comment => {
-            if (comment.replyTo && comment.replyTo.id) {
+            const isOrphanedReply = comment.replyTo && comment.replyTo.id && !allCommentIds.has(comment.replyTo.id);
+            const isStandardTopLevel = !comment.replyTo || !comment.replyTo.id;
+
+            // THE FIX: If a comment is a standard top-level comment OR it is an orphaned reply,
+            // promote it to be a visible, top-level comment.
+            if (isStandardTopLevel || isOrphanedReply) {
+                topLevel.push(comment);
+            }
+            // If it's a valid reply (its parent exists), add it to the map.
+            else {
                 const parentId = comment.replyTo.id;
                 if (!replies.has(parentId)) {
                     replies.set(parentId, []);
                 }
                 replies.get(parentId).push(comment);
-            } else {
-                topLevel.push(comment);
             }
         });
+
+        // The initial query already sorts by descending date. This sort is no longer necessary here.
+        // topLevel.sort((a, b) => b.createdAt?.toDate() - a.createdAt?.toDate());
+
+        // Sort each individual reply thread by ascending date (oldest first).
         replies.forEach(replyList => replyList.sort((a, b) => a.createdAt?.toDate() - b.createdAt?.toDate()));
         return { topLevelComments: topLevel, repliesMap: replies };
     }, [comments]);

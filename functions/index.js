@@ -326,35 +326,44 @@ exports.runDataIntegrityAudit = onCall(async (request) => {
 
         // Step 2: Clean up ALL orphaned documents from various collections
         const collectionsToAudit = {
-            'content_items': 'creatorId',
-            'campaigns': 'creatorId',
-            'opportunities': 'postedByUid',
-            'promotedStatuses': 'postedByUid',
-            'paymentPledges': 'userId',
-            'reports': 'reporterId',
-            'likes': 'userId',
-            'comments': 'userId'
+            'content_items': { field: 'creatorId', check: 'field' },
+            'campaigns': { field: 'creatorId', check: 'field' },
+            'opportunities': { field: 'postedByUid', check: 'field' },
+            'promotedStatuses': { field: 'postedByUid', check: 'field' },
+            'paymentPledges': { field: 'userId', check: 'field' },
+            'reports': { field: 'reporterId', check: 'field' },
+            'comments': { field: 'userId', check: 'field' },
+            // THE FIX: For the 'likes' collection, we specify to check the document ID.
+            'likes': { field: null, check: 'document_id' }
         };
 
-        for (const [col, field] of Object.entries(collectionsToAudit)) {
+        for (const [col, auditRule] of Object.entries(collectionsToAudit)) {
             const q = db.collectionGroup(col);
             const snapshot = await q.get();
             if (snapshot.empty) continue;
 
-            const batch = db.batch();
+            let batch = db.batch();
             let writeCount = 0;
-            snapshot.forEach(doc => {
-                if (!validUserIds.has(doc.data()[field])) {
+
+            for (const doc of snapshot.docs) {
+                let idToCheck = null;
+                if (auditRule.check === 'document_id') {
+                    idToCheck = doc.id; // Check the document's ID
+                } else {
+                    idToCheck = doc.data()[auditRule.field]; // Check the specified field
+                }
+
+                if (idToCheck && !validUserIds.has(idToCheck)) {
                     summary.orphanedDocumentsDeleted++;
                     batch.delete(doc.ref);
                     writeCount++;
                     if (writeCount >= 499) {
-                        batch.commit();
+                        await batch.commit();
                         batch = db.batch();
                         writeCount = 0;
                     }
                 }
-            });
+            }
             if (writeCount > 0) await batch.commit();
             logger.info(`Audit Step 2: Cleaned up collection group '${col}'.`);
         }
@@ -477,6 +486,131 @@ exports.runDataIntegrityAudit = onCall(async (request) => {
     }
     // ...to here, at the end of the function before the 'catch' block.
 });
+
+    // =====================================================================
+// =========== ONE-TIME DATA REPAIR AND RECALIBRATION TOOL =============
+// =====================================================================
+exports.recalibrateAllCounts = onCall(async (request) => {
+    // Security Check: Only an admin can run this destructive/reparative operation.
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to run this function.");
+    }
+
+    const uid = request.auth.uid;
+    logger.info(`Admin '${uid}' initiated a full recalibration of all content interaction counts.`);
+    const db = admin.firestore();
+    const appId = "production-app-id";
+
+    const summary = {
+        contentItemsScanned: 0,
+        likeCountsCorrected: 0,
+        commentCountsCorrected: 0,
+        ghostLikesRemoved: 0,
+        ghostCommentsRemoved: 0, // In case any exist
+    };
+
+    try {
+        // Step 1: Get all valid user IDs for efficient checking.
+        const creatorsSnapshot = await db.collection("creators").get();
+        const validUserIds = new Set(creatorsSnapshot.docs.map(doc => doc.id));
+        logger.info(`Recalibration Step 1: Found ${validUserIds.size} valid user documents.`);
+
+        // Step 2: Get all content items to process.
+        const contentSnapshot = await db.collection(`artifacts/${appId}/public/data/content_items`).get();
+        if (contentSnapshot.empty) {
+            return { success: true, message: "No content items found to process.", summary };
+        }
+        logger.info(`Recalibration Step 2: Found ${contentSnapshot.size} content items to scan.`);
+
+        // Step 3: Iterate through each content item and verify/recount its subcollections.
+        for (const contentDoc of contentSnapshot.docs) {
+            summary.contentItemsScanned++;
+            const contentRef = contentDoc.ref;
+            const contentData = contentDoc.data();
+            let needsUpdate = false;
+            const updates = {};
+
+            // --- Recalibrate Comments ---
+            const commentsRef = contentRef.collection("comments");
+            const commentsSnapshot = await commentsRef.get();
+            let actualCommentCount = 0;
+            if (!commentsSnapshot.empty) {
+                let batch = db.batch();
+                let writeCount = 0;
+                for (const commentDoc of commentsSnapshot.docs) {
+                    const commentData = commentDoc.data();
+                    // THE FIX: Check for essential data fields (text/userName) in addition to a valid user.
+                    if (validUserIds.has(commentData.userId) && commentData.text != null && commentData.userName != null) {
+                        actualCommentCount++;
+                    } else {
+                        // This is a ghost or corrupt comment. Delete it.
+                        batch.delete(commentDoc.ref);
+                        summary.ghostCommentsRemoved++;
+                        writeCount++;
+                        // Commit the batch if it's full to avoid exceeding limits
+                        if (writeCount >= 499) {
+                            await batch.commit();
+                            batch = db.batch();
+                            writeCount = 0;
+                        }
+                    }
+                }
+                // Commit any remaining writes in the last batch
+                if (writeCount > 0) {
+                    await batch.commit();
+                }
+            }
+
+            // If the actual count is different from the stored count (including negative numbers), update it.
+            if (contentData.commentCount !== actualCommentCount) {
+                updates.commentCount = actualCommentCount;
+                summary.commentCountsCorrected++;
+                needsUpdate = true;
+            }
+
+            // --- Recalibrate Likes ---
+            const likesRef = contentRef.collection("likes");
+            const likesSnapshot = await likesRef.get();
+            let actualLikeCount = 0;
+            if (!likesSnapshot.empty) {
+                const batch = db.batch();
+                likesSnapshot.forEach(likeDoc => {
+                    // Likes use the document ID as the userId.
+                    if (validUserIds.has(likeDoc.id)) {
+                        actualLikeCount++;
+                    } else {
+                        // This is a ghost like from a deleted user.
+                        batch.delete(likeDoc.ref);
+                        summary.ghostLikesRemoved++;
+                    }
+                });
+                await batch.commit();
+            }
+
+            // If the actual count is different, update it.
+            if (contentData.likeCount !== actualLikeCount) {
+                updates.likeCount = actualLikeCount;
+                summary.likeCountsCorrected++;
+                needsUpdate = true;
+            }
+
+            // If any corrections are needed for this content item, apply them.
+            if (needsUpdate) {
+                await contentRef.update(updates);
+            }
+        }
+
+        logger.info("Full interaction count recalibration completed successfully.", summary);
+        return { success: true, message: "Recalibration process finished.", summary };
+
+    } catch (error) {
+        logger.error("Error during interaction count recalibration:", error);
+        throw new HttpsError("internal", "An error occurred during the recalibration process.", error.message);
+    }
+});
+
+    // =========== END: ONE-TIME DATA REPAIR AND RECALIBRATION TOOL =============
+// =====================================================================
 
   exports.cleanupDuplicateFCMTokens = onCall(async (request) => {
     if (request.auth.token.admin !== true) {
@@ -3083,16 +3217,24 @@ exports.approveOpportunity = onCall(async (request) => {
     await opportunityRef.update({ status: 'active' });
 
     const posterId = opportunityDoc.data().postedByUid;
-    // Inside endOpportunityByAdmin
-        const notification = {
+    const posterRef = db.collection("creators").doc(posterId);
+    const notification = {
         userId: posterId,
-        type: 'OPPORTUNITY_ENDED_BY_ADMIN',
+        type: 'OPPORTUNITY_APPROVED', // Corrected type
         message: `Congratulations! Your opportunity "${opportunityDoc.data().title}" is now live.`,
-        link: '/MyListings', // <-- THIS IS THE CORRECT DESTINATION
+        link: '/MyListings',
         isRead: false,
         timestamp: new Date()
     };
+    const pushPayload = {
+        title: 'Opportunity Approved!',
+        body: `Your opportunity "${opportunityDoc.data().title}" is now live.`,
+        link: '/MyListings'
+    };
+
     await db.collection("notifications").add(notification);
+    await posterRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+    await sendPushNotification(posterId, pushPayload);
 
     return { success: true, message: "Opportunity approved and is now live." };
 });
@@ -3402,7 +3544,7 @@ exports.rejectStatusContent = onCall(async (request) => {
         throw new HttpsError("not-found", "Booking not found.");
     }
     
-    await bookingRef.update({ status: 'content_pending' });
+    await bookingRef.update({ status: 'content_rejected' });
 
 const posterId = bookingDoc.data().postedByUid;
 const posterRef = db.collection("creators").doc(posterId);
@@ -3510,15 +3652,17 @@ exports.createBookingAndPledge = onCall(async (request) => {
             if (!contentDetails) {
                 throw new HttpsError("invalid-argument", "Missing content details for a new booking.");
             }
-            const { title, mainUrl, flyerImageUrl } = contentDetails;
-            if (!title) {
-                throw new HttpsError("invalid-argument", "Content details are incomplete. An Ad Title is required.");
-            }
-            finalTitle = title;
-            finalMainUrl = mainUrl || ''; // Provide a fallback to prevent 'undefined'
-            finalFlyerImageUrl = flyerImageUrl || ''; // Provide a fallback to prevent 'undefined'
-        const finalDescription = contentDetails.description || ''; // Extract description
+            const { title, mainUrl, flyerImageUrl, description } = contentDetails; 
 
+            // Implement the resilient validation logic to check Title OR Description
+            if (!title && !description) {
+                throw new HttpsError("invalid-argument", "Content details are incomplete. An Ad Title or Description is required.");
+            }
+            
+            finalTitle = title || description; // Use title, or description as a fallback
+            finalMainUrl = mainUrl || ''; 
+            finalFlyerImageUrl = flyerImageUrl || '';
+            finalDescription = description || ''; // Ensure finalDescription is set
         }
 
         const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;

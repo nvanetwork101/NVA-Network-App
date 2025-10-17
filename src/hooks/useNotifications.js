@@ -1,10 +1,19 @@
+// Corrected Code for src/hooks/useNotifications.js
+
 import { useState, useEffect, useCallback } from 'react';
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { collection, query, orderBy, onSnapshot, where, getDocs, limit } from "firebase/firestore";
 import { app, db } from '../firebase.js';
 
 export const useNotifications = (currentUser) => {
-    const [notifications, setNotifications] = useState([]);
+    // --- START: DEFINITIVE FIX ---
+    // 1. Separate state for each data source to prevent race conditions.
+    const [privateNotifications, setPrivateNotifications] = useState([]);
+    const [broadcastNotifications, setBroadcastNotifications] = useState([]);
+    
+    // 2. Final, merged state that will be sent to the App.
+    const [notifications, setNotifications] = useState([]); 
+    
     const [isLoading, setIsLoading] = useState(true);
 
     const markToastAsSeen = useCallback(async (notificationId) => {
@@ -18,7 +27,7 @@ export const useNotifications = (currentUser) => {
         }
     }, [currentUser]);
 
-    const markNotificationAsRead = useCallback(async (notificationId) => {
+   const markNotificationAsRead = useCallback(async (notificationId) => {
         if (!currentUser) return;
         try {
             const functions = getFunctions(app);
@@ -29,48 +38,32 @@ export const useNotifications = (currentUser) => {
         }
     }, [currentUser]);
     
+    // 3. Effect to FETCH data. This just populates the raw data arrays.
     useEffect(() => {
         if (!currentUser) {
-            setNotifications([]);
+            setPrivateNotifications([]);
+            setBroadcastNotifications([]);
             setIsLoading(false);
             return () => {};
         }
 
         setIsLoading(true);
-        let privateNotifications = [];
-        let broadcastNotifications = [];
 
-        const mergeAndSetNotifications = async () => {
-            const seenRef = collection(db, "creators", currentUser.uid, "seenNotifications");
-            const seenSnapshot = await getDocs(seenRef);
-            const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
-
-            const unseenPrivate = privateNotifications.filter(p => !p.isRead && !seenIds.has(p.id));
-            const unseenBroadcasts = broadcastNotifications.filter(b => !seenIds.has(b.id));
-
-            const combined = [...unseenPrivate, ...unseenBroadcasts];
-            
-            const unique = Array.from(new Map(combined.map(item => [item.id, item])).values());
-            
-            unique.sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
-            
-            setNotifications(unique);
-            setIsLoading(false);
-        };
-
+        // Private notifications listener
         const privateNotifRef = collection(db, "notifications");
         const privateQuery = query(privateNotifRef, where("userId", "==", currentUser.uid), orderBy("timestamp", "desc"), limit(20));
         const unsubscribePrivate = onSnapshot(privateQuery, (snapshot) => {
-            privateNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: false }));
-            mergeAndSetNotifications();
+            const fetchedPrivate = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: false }));
+            setPrivateNotifications(fetchedPrivate); // Only updates its own state
         });
 
+        // Broadcast notifications listener
         const broadcastNotifRef = collection(db, "broadcast_notifications");
         const userCreationDate = new Date(currentUser.metadata.creationTime);
         const broadcastQuery = query(broadcastNotifRef, where("timestamp", ">", userCreationDate), orderBy("timestamp", "desc"));
         const unsubscribeBroadcast = onSnapshot(broadcastQuery, (snapshot) => {
-            broadcastNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: true }));
-            mergeAndSetNotifications();
+            const fetchedBroadcast = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isBroadcast: true }));
+            setBroadcastNotifications(fetchedBroadcast); // Only updates its own state
         });
 
         return () => {
@@ -79,6 +72,44 @@ export const useNotifications = (currentUser) => {
         };
     }, [currentUser]);
 
-    // Note: dismissNotification is removed as it's part of the inbox screen's specific logic.
+    // 4. Effect to PROCESS data. This runs only when the raw data changes.
+    // This is the single source of truth for creating the final notification list.
+    useEffect(() => {
+        if (!currentUser) {
+            setNotifications([]);
+            return;
+        }
+
+        const mergeAndSetNotifications = async () => {
+            const seenRef = collection(db, "creators", currentUser.uid, "seenNotifications");
+            const seenSnapshot = await getDocs(seenRef);
+            const seenIds = new Set(seenSnapshot.docs.map(doc => doc.id));
+
+            // Combine the latest raw data from both states
+            const combined = [...privateNotifications, ...broadcastNotifications];
+            
+            // Filter out any toasts that have already been seen
+            const unseen = combined.filter(n => !seenIds.has(n.id));
+
+            // Remove any potential duplicates from the combined list
+            const unique = Array.from(new Map(unseen.map(item => [item.id, item])).values());
+            
+            // Sort the final list
+            unique.sort((a, b) => {
+                const timeA = a.timestamp?.toDate()?.getTime() || 0;
+                const timeB = b.timestamp?.toDate()?.getTime() || 0;
+                return timeB - timeA;
+            });
+            
+            // Set the final state ONE time. This prevents the duplicate toast bug.
+            setNotifications(unique);
+            setIsLoading(false);
+        };
+
+        mergeAndSetNotifications();
+
+    }, [privateNotifications, broadcastNotifications, currentUser]);
+    // --- END: DEFINITIVE FIX ---
+
     return { notifications, isLoading, markToastAsSeen, markNotificationAsRead };
 };

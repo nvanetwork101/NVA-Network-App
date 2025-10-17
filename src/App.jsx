@@ -532,22 +532,13 @@ useEffect(() => {
 
     requestPermissionAndSaveToken();
 
-    // Handle messages that arrive while the app is in the foreground
+     // Handle messages that arrive while the app is in the foreground
     const unsubscribeOnMessage = onMessage(messaging, (payload) => {
-        console.log("Message received in foreground: ", payload);
-        
-        // THE FIX: Create a notification object from the payload and add it to the toast queue
-        const newToast = {
-            id: payload.messageId || new Date().getTime().toString(), // Ensure a unique ID
-            title: payload.notification.title,
-            message: payload.notification.body,
-            link: payload.data.link, // This is the crucial part for navigation
-            isRead: false,
-            timestamp: new Date()
-        };
-
-        // Add the new toast to the beginning of the queue to show it immediately
-        setToastQueue(prev => [newToast, ...prev]);
+        // THE FIX: The onSnapshot listener from the useNotifications hook is the
+        // single source of truth for creating toast notifications. This onMessage
+        // listener must NOT create a duplicate. We will log the incoming push for 
+        // debugging purposes but will not add it to the toast queue.
+        console.log("Foreground push received and intentionally ignored to prevent duplicate toast:", payload);
     });
 
     // Cleanup function to unsubscribe when the component unmounts or user logs out
@@ -1098,6 +1089,7 @@ return (
                       setCurrentToast(null);
                       setToastQueue(prev => prev.slice(1));
                   }}
+                  setActiveScreen={handleNavigate} // THIS LINE IS THE FIX
               />
           )}
           <audio ref={notificationSoundRef} src={notificationSound} preload="auto" />
