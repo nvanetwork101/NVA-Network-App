@@ -92,9 +92,20 @@ function PromotedSlot({ showMessage, handleVideoPress, currentUser }) {
                     <span style={{color: '#00FFFF'}}>{livePromo.content.title}</span> 
                     <span style={{fontSize: '12px', color: '#0A0A0A', backgroundColor: '#00FFFF', padding: '3px 8px', borderRadius: '10px', fontWeight: 'bold'}}>★ Promoted</span>
                 </div>
-                <p className="campaignListDescription" style={{ WebkitLineClamp: 2 }}>
-                    Click to learn more.
-                </p>
+                <>
+                    {/* This paragraph ONLY appears if a description exists. */}
+                    {livePromo.content.description && (
+                        <p className="campaignListDescription" style={{ WebkitLineClamp: 2, marginBottom: '4px' }}>
+                            {livePromo.content.description}
+                        </p>
+                    )}
+                    {/* This paragraph ONLY appears if a clickable link exists. */}
+                    {(livePromo.content.adVideoUrl || livePromo.content.destinationUrl) && (
+                         <p className="campaignListDescription" style={{ WebkitLineClamp: 1, color: '#00FFFF', opacity: 0.8, fontSize: '13px' }}>
+                            Click to learn more.
+                        </p>
+                    )}
+                </>
             </div>
         </div>
     );
