@@ -6282,7 +6282,10 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                 if (data) {
                     ogTitle = data.title;
                     ogDescription = data.description || "View this promoted ad on NVA Network.";
-                    ogImage = data.flyerImageUrl || ogImage;
+                    // THE FIX: Set ogImage directly to the image URL if it exists, otherwise keep the default.
+                    if (data.flyerImageUrl) {
+                        ogImage = data.flyerImageUrl; 
+                    }
                     debugMessage = `<!-- NVA DEBUG: Rendered promoted status ad: ${id} -->`;
                 }
             }
@@ -6334,6 +6337,9 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
         logger.error(`Error fetching social preview for path '${path}':`, error);
         debugMessage = `<!-- NVA DEBUG: A database error occurred: ${error.message} -->`;
     }
+
+    // TEMPORARY DEBUG LOG: Log the final tags before they are rendered into HTML
+    logger.info(`[DEBUG SSR] FINAL TAGS`, { ogTitle, ogDescription, ogImage, finalUrl, debugMessage });
 
     const html = `
       <!DOCTYPE html>

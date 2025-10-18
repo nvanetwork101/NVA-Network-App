@@ -133,10 +133,16 @@ const BookStatusScreen = ({
                 setIsSubmitting(true);
                 showMessage("Uploading flyer...");
                 try {
-                    const filePath = `promo_flyers/${currentUser.uid}/${Date.now()}_booking.png`;
+                    const fileName = `${Date.now()}_booking.png`;
+                    const folderPath = `promo_flyers/${currentUser.uid}`;
+                    const filePath = `${folderPath}/${fileName}`;
                     const storageRef = ref(storage, filePath);
-                    const snapshot = await uploadBytes(storageRef, flyerFile);
-                    uploadedFlyerUrl = await getDownloadURL(snapshot.ref);
+                    await uploadBytes(storageRef, flyerFile);
+
+                    // THE PERMANENT FIX: Construct a clean, proxy-friendly URL
+                    // This URL format is stable and avoids the security token, which causes scraper failure.
+                    uploadedFlyerUrl = `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket}/o/${encodeURIComponent(filePath)}?alt=media`;
+                    
                 } catch (error) {
                     showMessage(`Flyer upload failed: ${error.message}`);
                     setIsSubmitting(false);
