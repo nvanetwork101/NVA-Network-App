@@ -67,8 +67,9 @@ const GiftTicketModal = ({ onClose, eventDetails, setPledgeContext, setActiveScr
             recipientName: selectedUser.creatorName // For display on the next screen
         });
         
-        setActiveScreen('SupportUsScreen');
-        onClose(); // Close the modal
+        // THIS IS THE FIX: Navigate directly to the screen designed to handle pledges,
+        // not the general support menu.
+        setActiveScreen('SubscriptionPledgeScreen');
     };
 
     return (
@@ -107,6 +108,15 @@ const GiftTicketModal = ({ onClose, eventDetails, setPledgeContext, setActiveScr
                                         key={user.userId}
                                         className={`user-list-item ${selectedUser?.userId === user.userId ? 'selected' : ''}`}
                                         onClick={() => setSelectedUser(user)}
+                                        style={{
+                                            cursor: 'pointer',
+                                            // THIS IS THE FIX: Adds a prominent visual style to the selected user.
+                                            backgroundColor: selectedUser?.userId === user.userId ? '#FFD700' : 'transparent',
+                                            color: selectedUser?.userId === user.userId ? '#0A0A0A' : 'inherit',
+                                            fontWeight: selectedUser?.userId === user.userId ? 'bold' : 'normal',
+                                            padding: '10px',
+                                            borderRadius: '8px'
+                                        }}
                                     >
                                         <img
                                             src={user.profilePictureUrl || 'https://placehold.co/40x40/2A2A2A/FFF?text=N/A'}

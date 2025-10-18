@@ -97,6 +97,9 @@ import ReportContentModal from './components/ReportContentModal';
 import CommentsModal from './components/CommentsModal';
 import ContentAppealModal from './components/ContentAppealModal';
 import LikesModal from './components/LikesModal';
+
+import ImageViewerModal from './components/ImageViewerModal';
+
 import IosInstallPrompt from './components/IosInstallPrompt'; // <-- ADD THIS LINE
 
 import { useNotifications } from './hooks/useNotifications';
@@ -413,6 +416,12 @@ function App() {
                         case 'competition':
                             setActiveScreen('CompetitionScreen');
                             navigated = true;
+                            break;
+                        case 'promotedStatus': // <-- NEW AD LOGIC ADDED
+                            if (id) {
+                                setActiveScreen('Home'); 
+                                navigated = true;
+                            }
                             break;
                         case 'content':
                             if (id) {
@@ -932,6 +941,15 @@ useEffect(() => {
         };
     }, []); // This effect should only run once on mount.
 
+         // --- GUARANTEED NAVIGATION FOR PLEDGE FLOW ---
+  useEffect(() => {
+    // This effect runs whenever the pledgeContext is changed.
+    // It ensures that data is set *before* we navigate to the payment screen.
+    if (pledgeContext && pledgeContext.type) {
+        handleNavigate('SupportUsScreen');
+    }
+  }, [pledgeContext]); // Dependency array: this code runs only when pledgeContext changes.
+
         // New Code to Add
   // --- Notification Toast System Logic ---
   useEffect(() => {
@@ -1000,7 +1018,7 @@ useEffect(() => {
       case 'DonationPledge': return <DonationPledgeScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
       case 'SubscriptionPledge': return <SubscriptionPledgeScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} selectedCurrency={selectedCurrency} currencyRates={currencyRates} />;
       case 'PendingConfirmation': return <PendingConfirmationScreen showMessage={showMessage} setActiveScreen={handleNavigate} pledgeIdForConfirmation={pledgeIdForConfirmation} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
-      case 'SupportUsScreen': return <SupportUsScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} setPledgeContext={setPledgeContext} liveEvent={liveEvent} pledgeContext={pledgeContext} />;
+      case 'SupportUsScreen': return <SupportUsScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} setPledgeContext={setPledgeContext} liveEvent={liveEvent} />;
       case 'PremiumPerks': return <PremiumPerksScreen setActiveScreen={handleNavigate} currentUser={currentUser} showMessage={showMessage} setPledgeContext={setPledgeContext} />;
       case 'AdvertiserPerks': return <AdvertiserPerksScreen setActiveScreen={handleNavigate} />;
       case 'CreatorConnect': return <CreatorConnectScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setSelectedOpportunity={setSelectedOpportunity} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;

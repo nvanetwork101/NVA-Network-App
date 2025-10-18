@@ -6275,7 +6275,18 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                 ogImage = data.flyerImageUrl || ogImage;
                 debugMessage = `<!-- NVA DEBUG: Rendered opportunity: ${id} -->`;
             }
-        } else if (screen === 'user' && id) { // <-- NEW LOGIC
+        } else if (screen === 'promotedStatus' && id) { // <-- NEW AD LOGIC ADDED
+            const docSnap = await db.doc(`promotedStatuses/${id}`).get();
+            if (docSnap.exists) {
+                const data = docSnap.data().content; // Ad content is nested under 'content' field
+                if (data) {
+                    ogTitle = data.title;
+                    ogDescription = data.description || "View this promoted ad on NVA Network.";
+                    ogImage = data.flyerImageUrl || ogImage;
+                    debugMessage = `<!-- NVA DEBUG: Rendered promoted status ad: ${id} -->`;
+                }
+            }
+        } else if (screen === 'user' && id) {
             const docSnap = await db.doc(`creators/${id}`).get();
             if (docSnap.exists) {
                 const data = docSnap.data();
@@ -6284,6 +6295,7 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                 ogImage = data.profilePictureUrl || ogImage;
                 debugMessage = `<!-- NVA DEBUG: Rendered user profile: ${id} -->`;
             }
+      
         } else if (screen === 'competition') {
             let compDocSnap;
             if (id) {

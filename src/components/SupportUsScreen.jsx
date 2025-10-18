@@ -56,8 +56,9 @@ const SupportUsScreen = ({
             };
         } else { return; }
         
+        // THIS IS THE FIX: Only set the context. The useEffect in App.jsx
+        // will now handle the navigation automatically, preventing the race condition.
         setPledgeContext(context);
-        setActiveScreen('SubscriptionPledge');
     };
 
     const isVerified = creatorProfile?.isVerifiedAdvertiser && creatorProfile.verifiedAdvertiserExpiresAt?.toDate() > new Date();

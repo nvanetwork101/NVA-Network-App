@@ -15,11 +15,16 @@ const SubscriptionPledgeScreen = ({
     const [userName, setUserName] = useState((creatorProfile?.creatorName) || (currentUser?.email.split('@')[0]) || '');
     const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [giftMessage, setGiftMessage] = useState(''); // State for the optional gift message
 
     // Determine content based on the pledge context
     const isTicket = pledgeContext.type === 'eventTicket';
-    const title = isTicket ? "Purchase Event Ticket" : "Get NVA Premium";
-    const subtitle = isTicket ? `Ticket for: "${pledgeContext.targetEventTitle}"` : "Unlock exclusive content and an ad-free experience.";
+    const isGift = isTicket && !!pledgeContext.recipientId;
+
+    const title = isGift ? "Gift a Ticket" : (isTicket ? "Purchase Event Ticket" : "Get NVA Premium");
+    const subtitle = isGift 
+        ? `You are gifting a ticket for "${pledgeContext.targetEventTitle}" to ${pledgeContext.recipientName}.`
+        : (isTicket ? `Ticket for: "${pledgeContext.targetEventTitle}"` : "Unlock exclusive content and an ad-free experience.");
     const priceText = isTicket ? 'one-time purchase' : 'per month';
 
     const handleSubmitPledge = async (e) => {
@@ -35,20 +40,33 @@ const SubscriptionPledgeScreen = ({
         setIsSubmitting(true);
         
         const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;
+        
+        // Prepare the base pledge data
+        const pledgeData = {
+            pledgeId,
+            userId: currentUser.uid, // The buyer
+            userName,
+            userEmail: currentUser.email,
+            paymentType: pledgeContext.type,
+            amount: pledgeContext.amount,
+            status: 'pending',
+            targetEventId: pledgeContext.targetEventId || null, 
+            targetEventTitle: pledgeContext.targetEventTitle || null,
+            createdAt: new Date().toISOString(),
+        };
+
+        // If it's a gift, add the extra fields
+        if (isGift) {
+            pledgeData.recipientId = pledgeContext.recipientId;
+            pledgeData.recipientName = pledgeContext.recipientName;
+            if (giftMessage.trim()) {
+                pledgeData.giftMessage = giftMessage.trim();
+            }
+        }
+
         try {
             const pledgeRef = doc(db, "paymentPledges", pledgeId);
-            await setDoc(pledgeRef, {
-                pledgeId,
-                userId: currentUser.uid,
-                userName,
-                userEmail: currentUser.email,
-                paymentType: pledgeContext.type,
-                amount: pledgeContext.amount,
-                status: 'pending',
-                targetEventId: pledgeContext.targetEventId || null, 
-                targetEventTitle: pledgeContext.targetEventTitle || null,
-                createdAt: new Date().toISOString(),
-            });
+            await setDoc(pledgeRef, pledgeData); // Save the complete data object
             setPledgeIdForConfirmation(pledgeId);
             setActiveScreen('PendingConfirmation');
         } catch (error) {
@@ -66,6 +84,22 @@ const SubscriptionPledgeScreen = ({
                     <label htmlFor="pledgeName" className="formLabel">Your Name:</label>
                     <input type="text" id="pledgeName" className="formInput" value={userName} onChange={(e) => setUserName(e.target.value)} required />
                 </div>
+                
+                {isGift && (
+                    <div className="formGroup">
+                        <label htmlFor="giftMessage" className="formLabel">Add a Personal Message (Optional):</label>
+                        <textarea
+                            id="giftMessage"
+                            className="formInput"
+                            value={giftMessage}
+                            onChange={(e) => setGiftMessage(e.target.value)}
+                            placeholder="e.g. Happy Birthday! Enjoy the show."
+                            rows="3"
+                            maxLength="200"
+                        />
+                    </div>
+                )}
+
                 <div className="premiumFeatureCard">
                     <p className="premiumFeatureTitle" style={{textAlign: 'center'}}>{isTicket ? 'Event Ticket' : 'Premium Subscription'}</p>
                     <p className="premiumFeatureDescription" style={{fontSize: '24px', fontWeight: 'bold', textAlign: 'center', color: '#FFF'}}>
