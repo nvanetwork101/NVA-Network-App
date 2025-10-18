@@ -60,6 +60,55 @@ exports.cleanupGhostArtifacts = onCall(async (request) => {
 });
 // =========== END: GHOST CLEANUP FUNCTION ===========
 
+    // =========== START: NEW 'searchForUser' FUNCTION ===========
+exports.searchForUser = onCall(async (request) => {
+    // Security Check: User must be authenticated to search.
+    if (!request.auth.uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to search for users.");
+    }
+
+    const { searchTerm } = request.data;
+    if (!searchTerm || typeof searchTerm !== 'string' || searchTerm.trim().length < 3) {
+        throw new HttpsError("invalid-argument", "A search term of at least 3 characters is required.");
+    }
+
+    const db = admin.firestore();
+    const creatorsRef = db.collection("creators");
+    const searchStr = searchTerm.trim().toLowerCase();
+    
+    // NOTE: For optimal performance at scale, this query requires a composite index 
+    // in Firestore on 'creatorName_lowercase' (ascending). The frontend should be updated
+    // to create 'creatorName_lowercase' when users sign up or change their name.
+    const searchQuery = creatorsRef
+        .where('creatorName_lowercase', '>=', searchStr)
+        .where('creatorName_lowercase', '<=', searchStr + '\uf8ff')
+        .orderBy('creatorName_lowercase')
+        .limit(10);
+        
+    try {
+        const snapshot = await searchQuery.get();
+        if (snapshot.empty) {
+            return { users: [] };
+        }
+
+        const users = snapshot.docs.map(doc => {
+            const userData = doc.data();
+            // Return only public-safe data
+            return {
+                userId: doc.id,
+                creatorName: userData.creatorName || "N/A",
+                profilePictureUrl: userData.profilePictureUrl || ""
+            };
+        });
+
+        return { users: users };
+
+    } catch (error) {
+        logger.error("Error during user search:", error);
+        throw new HttpsError("internal", "An error occurred while searching for users.", error.message);
+    }
+});
+// =========== END: NEW 'searchForUser' FUNCTION ===========
 
 exports.approvePledge = onCall(async (request) => {
   const uid = request.auth.uid;
@@ -196,37 +245,69 @@ exports.approvePledge = onCall(async (request) => {
         const ticketPrice = pledgeData.amount;
         
         // --- ALL READS MUST HAPPEN FIRST ---
-        let eventDoc = null; // Initialize eventDoc
-        if (eventId) {
-            // THE FIX: Point to the correct master event document.
-            const eventDocRef = db.collection("events").doc(eventId);
-            eventDoc = await transaction.get(eventDocRef); // Read the master event document.
+        const finalRecipientId = pledgeData.recipientId || pledgeData.userId;
+        const isGift = !!pledgeData.recipientId;
+        const buyerUserRef = db.collection("creators").doc(pledgeData.userId); // Explicitly reference the buyer
+
+        const recipientRef = db.collection("creators").doc(finalRecipientId);
+        const [eventDoc, recipientDoc] = await Promise.all([
+            eventId ? transaction.get(db.collection("events").doc(eventId)) : Promise.resolve(null),
+            transaction.get(recipientRef)
+        ]);
+        
+        if (!recipientDoc.exists) {
+            throw new HttpsError("not-found", `The gift recipient with ID '${finalRecipientId}' does not exist. Cannot approve pledge.`);
         }
+        const recipientData = recipientDoc.data();
 
         // --- ALL WRITES HAPPEN AFTER THE READS ---
         transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
         
-        const userNotification = {
-            userId: pledgeData.userId, type: 'TICKET_APPROVED',
-            message: `Your ticket purchase for "${pledgeData.targetEventTitle || 'the Live Premiere'}" is confirmed!`,
-            link: `/user/${pledgeData.userId}`,
-            isRead: false, timestamp: approvalTimestamp
-        };
-        transaction.set(notificationsRef.doc(), userNotification);
-        // Badge Logic
-        transaction.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });        
-        if (eventId) {
-            // Grant the user their ticket
-            transaction.set(userRef, { purchasedTickets: { [eventId]: true } }, { merge: true });
+        if (isGift) {
+            // Create a "Gift Received" notification for the RECIPIENT
+            const recipientNotification = {
+                userId: finalRecipientId,
+                type: 'GIFT_RECEIVED',
+                message: `${pledgeData.userName} gifted you a ticket for "${pledgeData.targetEventTitle || 'the Live Premiere'}"!` + (pledgeData.giftMessage ? ` They said: "${pledgeData.giftMessage}"` : ''),
+                link: `/user/${finalRecipientId}`,
+                isRead: false,
+                timestamp: approvalTimestamp
+            };
+            transaction.set(notificationsRef.doc(), recipientNotification);
+            transaction.update(recipientRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
             
-            // Now, check if the master event document exists before updating it.
+            // Create a "Gift Purchase Confirmed" receipt for the BUYER
+            const buyerNotification = {
+                userId: pledgeData.userId,
+                type: 'GIFT_PURCHASE_CONFIRMED',
+                message: `Your gift of a ticket for "${pledgeData.targetEventTitle || 'the Live Premiere'}" to ${recipientData.creatorName} was confirmed.`,
+                link: `/Home`,
+                isRead: false,
+                timestamp: approvalTimestamp
+            };
+            transaction.set(notificationsRef.doc(), buyerNotification);
+            transaction.update(buyerUserRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        } else {
+            // This is a standard self-purchase
+            const userNotification = {
+                userId: pledgeData.userId, type: 'TICKET_APPROVED',
+                message: `Your ticket purchase for "${pledgeData.targetEventTitle || 'the Live Premiere'}" is confirmed!`,
+                link: `/user/${pledgeData.userId}`,
+                isRead: false, timestamp: approvalTimestamp
+            };
+            transaction.set(notificationsRef.doc(), userNotification);
+            transaction.update(buyerUserRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        }
+                
+        if (eventId) {
+            // Grant the RECIPIENT their ticket
+            transaction.set(recipientRef, { purchasedTickets: { [eventId]: true } }, { merge: true });
+            
             if (eventDoc && eventDoc.exists) {
                 transaction.update(eventDoc.ref, {
                     ticketsSold: admin.firestore.FieldValue.increment(1),
                     totalRevenue: admin.firestore.FieldValue.increment(ticketPrice)
                 });
-                // Note: The 'recentPurchases' subcollection can be added here if needed,
-                // but the primary fix is updating the main document.
             } else {
                 logger.warn(`Pledge approved for eventId '${eventId}', but the master event document was not found. Ticket was granted, but stats were not updated.`);
             }
@@ -283,11 +364,33 @@ exports.approvePledge = onCall(async (request) => {
             link: '/PromotedStatus'
         });
     } else if (finalPledgeData.paymentType === 'eventTicket') {
-        await sendPushNotification(finalPledgeData.userId, {
-            title: 'Ticket Purchase Confirmed!',
-            body: `Your ticket for "${finalPledgeData.targetEventTitle || 'the Live Premiere'}" is confirmed!`,
-            link: `/user/${finalPledgeData.userId}`
-        });
+        const isGift = !!finalPledgeData.recipientId;
+
+        if (isGift) {
+            const recipientDoc = await db.collection("creators").doc(finalPledgeData.recipientId).get();
+            const recipientName = recipientDoc.exists ? recipientDoc.data().creatorName : "your recipient";
+
+            // Push to Recipient
+            await sendPushNotification(finalPledgeData.recipientId, {
+                title: 'You Received a Gift!',
+                body: `${finalPledgeData.userName} gifted you a ticket for "${finalPledgeData.targetEventTitle || 'the Live Premiere'}"!`,
+                link: `/user/${finalPledgeData.recipientId}`
+            });
+
+            // Push to Buyer (as a receipt)
+            await sendPushNotification(finalPledgeData.userId, {
+                title: 'Gift Purchase Confirmed',
+                body: `Your gift ticket for "${finalPledgeData.targetEventTitle || 'the Live Premiere'}" was successfully sent to ${recipientName}.`,
+                link: `/Home`
+            });
+        } else {
+            // Standard self-purchase push notification
+            await sendPushNotification(finalPledgeData.userId, {
+                title: 'Ticket Purchase Confirmed!',
+                body: `Your ticket for "${finalPledgeData.targetEventTitle || 'the Live Premiere'}" is confirmed!`,
+                link: `/user/${finalPledgeData.userId}`
+            });
+        }
     }
     // --- END: PUSH NOTIFICATION LOGIC ---
 
