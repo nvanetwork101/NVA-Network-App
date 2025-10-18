@@ -709,7 +709,9 @@ useEffect(() => {
 
         useEffect(() => {
         const openImageViewerHandler = (event) => {
-            setImageViewerData(event.detail);
+            // THE FIX: Explicitly extract the full item details from the dispatch
+            const { imageUrl, description, itemId, itemType } = event.detail;
+            setImageViewerData({ imageUrl, description, itemId, itemType }); // <--- Set all details
             setShowImageViewerModal(true);
         };
         window.addEventListener('openImageViewer', openImageViewerHandler);
@@ -1193,6 +1195,9 @@ return (
         <ImageViewerModal
           imageUrl={imageViewerData.imageUrl}
           description={imageViewerData.description}
+          itemId={imageViewerData.itemId} 
+          itemType={imageViewerData.itemType}
+          showMessage={showMessage} // <--- CRITICAL FIX: Pass the showMessage prop
           onClose={() => setShowImageViewerModal(false)}
         />
       )}

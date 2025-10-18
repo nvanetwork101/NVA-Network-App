@@ -65,11 +65,13 @@ function PromotedSlot({ showMessage, handleVideoPress, currentUser }) {
             window.open(content.destinationUrl, '_blank');
         
         // Priority 3: Handle Image-Only promotions (remains the same)
-        } else if (content.flyerImageUrl) {
+       } else if (content.flyerImageUrl) {
             window.dispatchEvent(new CustomEvent('openImageViewer', { 
                 detail: { 
                     imageUrl: content.flyerImageUrl,
-                    description: content.description 
+                    description: content.description,
+                    itemId: livePromo.id,         // <--- CRITICAL: Pass the Ad ID
+                    itemType: 'promotedStatus'    // <--- CRITICAL: Pass the Ad Type
                 } 
             }));
         
