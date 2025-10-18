@@ -5,6 +5,8 @@ import { collection, query, where, orderBy, onSnapshot, doc, getDoc, getDocs, li
 import { db, functions, httpsCallable, extractVideoInfo } from '../firebase.js';
 import LiveEventChat from './LiveEventChat';
 
+import GiftTicketModal from './GiftTicketModal';
+
 // --- Replay Card Component ---
 import ShareButton from './ShareButton';
 const ReplayEventCard = ({ event, onClick }) => {
@@ -75,6 +77,8 @@ function DiscoverScreen({
     const viewCounted = React.useRef(false);
     const [countdownDistance, setCountdownDistance] = useState(null); // Milliseconds remaining until start
     
+    const [showGiftModal, setShowGiftModal] = useState(false);
+
     // --- DATA FETCHING LOGIC ---
     
     // --- DEEP LINK HANDLING EFFECT (NEW) ---
@@ -461,27 +465,43 @@ function DiscoverScreen({
                             >
                                 Ticket Owned
                             </button>
-                        ) : (
-                            <button 
-                                className="button" 
-                                style={{ backgroundColor: '#B91C1C', color: 'white', display: 'block', margin: '20px auto 0 auto' }} 
-                                onClick={() => {
-                                    if (!currentUser) {
-                                        showMessage("Please log in to purchase a ticket.");
-                                        setActiveScreen('Login');
-                                        return;
-                                    }
-                                    setPledgeContext({
-                                        type: 'eventTicket',
-                                        amount: masterEventDetails.ticketPrice,
-                                        targetEventId: masterEventDetails.id,
-                                        targetEventTitle: masterEventDetails.eventTitle
-                                    });
-                                    setActiveScreen('SupportUsScreen');
-                                }}
-                            >
-                                Purchase Ticket (${(masterEventDetails.ticketPrice || 0).toFixed(2)})
-                            </button>
+                       ) : (
+                            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
+                                <button 
+                                    className="button" 
+                                    style={{ backgroundColor: '#B91C1C', color: 'white', margin: 0 }} 
+                                    onClick={() => {
+                                        if (!currentUser) {
+                                            showMessage("Please log in to purchase a ticket.");
+                                            setActiveScreen('Login');
+                                            return;
+                                        }
+                                        setPledgeContext({
+                                            type: 'eventTicket',
+                                            amount: masterEventDetails.ticketPrice,
+                                            targetEventId: masterEventDetails.id,
+                                            targetEventTitle: masterEventDetails.eventTitle
+                                        });
+                                        setActiveScreen('SupportUsScreen');
+                                    }}
+                                >
+                                    Purchase Ticket (${(masterEventDetails.ticketPrice || 0).toFixed(2)})
+                                </button>
+                                <button
+                                    className="button"
+                                    style={{ backgroundColor: '#007BFF', color: 'white', margin: 0 }}
+                                    onClick={() => {
+                                        if (!currentUser) {
+                                            showMessage("Please log in to gift a ticket.");
+                                            setActiveScreen('Login');
+                                            return;
+                                        }
+                                        setShowGiftModal(true);
+                                    }}
+                                >
+                                    🎁 Gift a Ticket
+                                </button>
+                            </div>
                         )
                     )}
                 </div>
@@ -646,6 +666,17 @@ function DiscoverScreen({
                 </div>
             )}
 
+            {/* --- MODAL RENDERING LOGIC (Moved to correct location) --- */}
+            {showGiftModal && (
+                <GiftTicketModal
+                    onClose={() => setShowGiftModal(false)}
+                    eventDetails={masterEventDetails}
+                    currentUser={currentUser}
+                    setPledgeContext={setPledgeContext}
+                    setActiveScreen={setActiveScreen}
+                    showMessage={showMessage}
+                />
+            )}
         </div>
     );
 }

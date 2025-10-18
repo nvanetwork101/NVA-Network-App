@@ -60,55 +60,55 @@ exports.cleanupGhostArtifacts = onCall(async (request) => {
 });
 // =========== END: GHOST CLEANUP FUNCTION ===========
 
-    // =========== START: NEW 'searchForUser' FUNCTION ===========
+    // =========== START: CORRECTED 'searchForUser' FUNCTION (HYBRID LOGIC) ===========
 exports.searchForUser = onCall(async (request) => {
-    // Security Check: User must be authenticated to search.
     if (!request.auth.uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to search for users.");
     }
 
     const { searchTerm } = request.data;
     if (!searchTerm || typeof searchTerm !== 'string' || searchTerm.trim().length < 3) {
-        throw new HttpsError("invalid-argument", "A search term of at least 3 characters is required.");
+        return { users: [] };
     }
 
     const db = admin.firestore();
     const creatorsRef = db.collection("creators");
     const searchStr = searchTerm.trim().toLowerCase();
     
-    // NOTE: For optimal performance at scale, this query requires a composite index 
-    // in Firestore on 'creatorName_lowercase' (ascending). The frontend should be updated
-    // to create 'creatorName_lowercase' when users sign up or change their name.
-    const searchQuery = creatorsRef
-        .where('creatorName_lowercase', '>=', searchStr)
-        .where('creatorName_lowercase', '<=', searchStr + '\uf8ff')
-        .orderBy('creatorName_lowercase')
-        .limit(10);
-        
     try {
-        const snapshot = await searchQuery.get();
+        // Step 1: Fetch all users from the database.
+        // This mirrors the logic from the working DiscoverUsersScreen.
+        const snapshot = await creatorsRef.get();
+        
+        logger.info(`[Hybrid Search] Fetched ${snapshot.size} total users to filter in memory.`);
+
         if (snapshot.empty) {
             return { users: [] };
         }
 
-        const users = snapshot.docs.map(doc => {
-            const userData = doc.data();
-            // Return only public-safe data
-            return {
-                userId: doc.id,
-                creatorName: userData.creatorName || "N/A",
-                profilePictureUrl: userData.profilePictureUrl || ""
-            };
-        });
+        // Step 2: Filter the results in the function's memory using .includes().
+        const users = snapshot.docs
+            .map(doc => ({ userId: doc.id, ...doc.data() }))
+            .filter(user => 
+                user.creatorName && 
+                user.creatorName.toLowerCase().includes(searchStr)
+            )
+            .slice(0, 10) // Limit the number of results returned.
+            .map(user => ({ // Return only public-safe data.
+                userId: user.userId,
+                creatorName: user.creatorName,
+                profilePictureUrl: user.profilePictureUrl || ""
+            }));
 
+        logger.info(`[Hybrid Search] Found ${users.length} matches for "${searchStr}".`);
         return { users: users };
 
     } catch (error) {
-        logger.error("Error during user search:", error);
+        logger.error("Error during hybrid user search:", error);
         throw new HttpsError("internal", "An error occurred while searching for users.", error.message);
     }
 });
-// =========== END: NEW 'searchForUser' FUNCTION ===========
+// =========== END: CORRECTED 'searchForUser' FUNCTION (HYBRID LOGIC) ===========
 
 exports.approvePledge = onCall(async (request) => {
   const uid = request.auth.uid;
