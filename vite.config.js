@@ -12,11 +12,11 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: null,
-      strategies: 'injectManifest',
-      // THE FINAL FIX: Point to the new source file
-      swSrc: 'public/custom-sw.js',
-      // THE FINAL FIX: Define the output file name that Firebase needs
-      swDest: 'dist/firebase-messaging-sw.js',
+      // THE DEFINITIVE FIX: Use the correct singular property 'strategy'
+      strategy: 'injectManifest',
+      // THE DEFINITIVE FIX: Point to the correct source file
+      srcDir: 'public',
+      filename: 'firebase-messaging-sw.js',
       injectManifest: {
         // This tells the plugin to find and cache all our app's files
         globPatterns: ['**/*.{js,css,html,ico,png,svg}']
