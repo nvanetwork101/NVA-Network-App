@@ -4,6 +4,9 @@
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
+// This placeholder will be replaced by the PWA plugin with the list of files to cache.
+importScripts('__WB_MANIFEST');
+
 // Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBo3DM-4ZwrZdzcYQAMWAVHu70vWUdB7J4",

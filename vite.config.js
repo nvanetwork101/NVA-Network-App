@@ -10,10 +10,14 @@ export default defineConfig({
     react(),
     // Add the PWA plugin configuration
     VitePWA({
-      registerType: 'autoUpdate', // Automatically update the app in the background
-      injectRegister: 'auto',
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'] // Cache these file types
+      registerType: 'autoUpdate',
+      // THE FIX: Change the strategy to inject into our existing service worker
+      strategies: 'injectManifest',
+      srcDir: 'public',
+      filename: 'firebase-messaging-sw.js',
+      injectManifest: {
+        // This tells the plugin to find and cache all our app's files
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
       },
       manifest: {
         name: 'NVA Network',
