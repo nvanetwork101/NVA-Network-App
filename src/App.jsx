@@ -208,6 +208,11 @@ function App() {
     setTimeout(() => setMessage(''), 3000);
   };
 
+      const handleToastClose = useCallback(() => {
+    setCurrentToast(null);
+    setToastQueue(prev => prev.slice(1));
+  }, []);
+
         const dismissNotification = async (notificationId) => {
     try {
         const deleteNotificationFunction = httpsCallable(functions, 'deleteNotification');
@@ -375,28 +380,13 @@ function App() {
                 setHasNewFollowerContent(!snapshot.empty);
             });
             // --- End of listener initialization ---
-
-            // This logic now checks if the URL path is empty. It will only perform its default
-            // navigation if the user landed on the root domain, preventing it from
-            // overwriting a deep link handled by the new router.
-            const path = window.location.pathname;
-            if (path === '/' || path === '') {
-              if (['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
-                if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
-                  setActiveScreen('CreatorDashboard');
-                } else {
-                  setActiveScreen('Home');
-                }
-              }
-            }
-
+            
             // --- START: DEFINITIVE ROUTING & DEEP LINKING LOGIC ---
             if (!routingDoneRef.current) {
-                routingDoneRef.current = true; // Lock this logic so it only runs once per page load.
+                routingDoneRef.current = true; 
                 
                 const path = window.location.pathname;
                 const parts = path.split('/').filter(Boolean);
-                let navigated = false; // Flag to see if we handled the deep link
 
                 if (parts.length > 0) {
                     const screen = parts[0];
@@ -404,60 +394,45 @@ function App() {
 
                     switch (screen) {
                         case 'opportunity':
-                            if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); navigated = true; }
+                            if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); }
                             break;
                         case 'discover':
                             setActiveScreen('Discover');
-                            navigated = true;
                             break;
                         case 'user':
-                            if (id) {
-                                // This is the crucial check:
+                             if (id) {
                                 if (user && id === user.uid) {
-                                    // If the user is navigating to their own profile,
-                                    // send them to their dashboard to see the private view.
                                     setActiveScreen('CreatorDashboard');
                                 } else {
-                                    // Otherwise, show the public profile of the other user.
                                     setSelectedUserId(id);
                                     setActiveScreen('UserProfile');
                                 }
-                                navigated = true;
                             }
                             break;
                         case 'competition':
                             setActiveScreen('CompetitionScreen');
-                            navigated = true;
                             break;
-                        case 'promotedStatus': // <-- NEW AD LOGIC ADDED
-                            if (id) {
-                                setActiveScreen('Home'); 
-                                navigated = true;
-                            }
+                        case 'promotedStatus':
+                            if (id) { setActiveScreen('Home'); }
                             break;
                         case 'content':
                             if (id) {
                                 (async () => {
                                     try {
-                                        // First, check for a standard VOD content item
                                         const appId = "production-app-id";
                                         const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
                                         let docSnap = await getDoc(contentRef);
 
                                         if (docSnap.exists()) {
-                                            // It's a standard VOD item, play it in the modal directly
                                             const contentData = { id: docSnap.id, ...docSnap.data() };
                                             handleVideoPress(contentData.embedUrl || contentData.mainUrl, contentData);
                                         } else {
-                                            // If not found, check if it's a replay from the events collection
                                             const eventRef = doc(db, "events", id);
                                             docSnap = await getDoc(eventRef);
                                             if (docSnap.exists() && docSnap.data().status === 'completed') {
-                                                // It IS a replay. Set the ID and navigate to the Discover screen.
                                                 setDeepLinkedReplayId(id);
                                                 setActiveScreen('Discover');
                                             } else {
-                                                // It was not found in either location.
                                                 showMessage("The shared content could not be found.");
                                             }
                                         }
@@ -466,18 +441,8 @@ function App() {
                                         showMessage("Error loading shared content.");
                                     }
                                 })();
-                                navigated = true; // Mark as handled
                             }
                             break;
-                    }
-                }
-
-                // If a deep link was NOT handled, proceed with default navigation.
-                if (!navigated && ['Login', 'CreatorSignUp', 'UserSignUp', 'VerifyEmail', 'Suspended', 'Banned'].includes(activeScreen)) {
-                    if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
-                        setActiveScreen('CreatorDashboard');
-                    } else {
-                        setActiveScreen('Home');
                     }
                 }
             }
@@ -495,11 +460,11 @@ function App() {
           setAuthLoading(false);
           setIsInitialLoad(false);
         }
-      } else { // This user is fully logged out.
+      } else { 
         setCurrentUser(null);
         setCreatorProfile(null);
-        setHasNewFollowerContent(false); // Explicitly reset state related to listeners
-        setNotificationBadgeCount(0); // Reset badge count on logout
+        setHasNewFollowerContent(false);
+        setNotificationBadgeCount(0); 
         const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
         if (protectedScreens.includes(activeScreen)) {
             setActiveScreen('Home');
@@ -510,12 +475,11 @@ function App() {
     });
 
     return () => {
-      // This cleanup runs when the App component unmounts entirely.
       unsubscribeAuth();
       unsubProfile();
       unsubFollowing();
     };
-   }, [activeScreen]); // Dependency remains the same
+   }, []); // <<< THE DEFINITIVE FIX IS THIS EMPTY ARRAY
   // =========================== END: LOGOUT RACE CONDITION FIX ===========================
  
         // ======================= START: PUSH NOTIFICATION SETUP =======================
@@ -958,53 +922,41 @@ useEffect(() => {
 
         // New Code to Add
   // --- Notification Toast System Logic ---
-  useEffect(() => {
-      // This logic now correctly filters out notifications that have already been queued in this session.
+useEffect(() => {
+      // Step 1: Add new, unseen notifications to the queue.
       const newNotifications = notifications.filter(n => !processedToastIds.current.has(n.id));
-
       if (newNotifications.length > 0) {
-          setToastQueue(prev => [...prev, ...newNotifications]);
+          setToastQueue(prevQueue => [...prevQueue, ...newNotifications]);
           newNotifications.forEach(n => processedToastIds.current.add(n.id));
       }
-  }, [notifications]);
 
-  useEffect(() => {
-      // If there is no active toast but there are items in the queue, show the next one.
+      // Step 2: If there's no active toast, process the next item from the queue.
       if (!currentToast && toastQueue.length > 0) {
           const nextToast = toastQueue[0];
           setCurrentToast(nextToast);
           
-          // --- THIS IS THE FINAL, ISOLATED FIX ---
-          // Define the list of notification types that should NOT play a sound.
-          const soundMutedTypes = ['newComment', 'newPledge', 'livePremiere'];
-          
-          // Play sound only for allowed notification types, respecting broadcast vs. private.
-          const mutedPrivateTypes = ['NEW_COMMENT']; // Mute private "new comment" notifications.
-          const mutedBroadcastTypes = ['DONATION', 'EVENT_LIVE']; // Mute public donation and live event tickers.
+          const mutedPrivateTypes = ['NEW_COMMENT'];
+          const mutedBroadcastTypes = ['DONATION', 'EVENT_LIVE'];
 
           let shouldPlaySound = true;
           if (nextToast.isBroadcast) {
-              // For public broadcasts, check against the broadcast type list.
               if (mutedBroadcastTypes.includes(nextToast.broadcastType)) {
                   shouldPlaySound = false;
               }
           } else {
-              // For private notifications, check against the private type list.
               if (mutedPrivateTypes.includes(nextToast.type)) {
                   shouldPlaySound = false;
               }
           }
 
-          // Play the sound only if it has not been muted.
           if (shouldPlaySound) {
               notificationSoundRef.current?.play().catch(e => console.error("Audio play failed:", e));
           }
-          // --- END OF FIX ---
 
-          // A toast appearing should now mark the item as "seen" in the database.
           markToastAsSeen(nextToast.id);
       }
-  }, [toastQueue, currentToast, markToastAsSeen, markNotificationAsRead]);
+  // The stable dependencies that correctly drive the toast logic
+  }, [notifications, currentToast, toastQueue, markToastAsSeen]);
 
    const renderScreen = () => {
     if (activeScreen === 'Banned') return <BannedScreen setActiveScreen={handleNavigate} />;
@@ -1123,11 +1075,8 @@ return (
               <NotificationToast
                   key={currentToast.id}
                   notification={currentToast}
-                  onClose={() => {
-                      setCurrentToast(null);
-                      setToastQueue(prev => prev.slice(1));
-                  }}
-                  setActiveScreen={handleNavigate} // THIS LINE IS THE FIX
+                  onClose={handleToastClose}
+                  setActiveScreen={handleNavigate}
               />
           )}
           <audio ref={notificationSoundRef} src={notificationSound} preload="auto" />
