@@ -94,7 +94,7 @@ function AdminCategoryManagerScreen({ showMessage }) {
             <div className="dashboardSection">
                 <p className="dashboardSectionTitle">Existing Categories</p>
                 {loadingCategories ? <p>Loading...</p> : (
-                    <div className="dashboardContentList">
+                    <div className="dashboardContentList" style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
                         {categories.map(cat => (
                             <div key={cat.id} className="adminDashboardItem" style={{alignItems: 'center', gap: '10px'}}>
                                 <span className="flex-grow font-bold">{cat.name}</span>

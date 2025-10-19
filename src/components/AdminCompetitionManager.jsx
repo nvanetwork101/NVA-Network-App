@@ -202,7 +202,7 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
             <div className="dashboardSection" style={{marginTop: '30px'}}>
                 <p className="dashboardSectionTitle">Existing Competitions</p>
                 {loadingComps ? <p>Loading competitions...</p> : (
-                    <div className="dashboardContentList">
+                    <div className="dashboardContentList" style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
                         {competitions.length === 0 ? <p className="dashboardItem">No competitions found.</p> :
                             competitions.map(comp => (
                                 <div key={comp.id} className="adminDashboardItem">

@@ -6,6 +6,7 @@ import { db, collection, query, where, orderBy, onSnapshot } from '../firebase';
 function AdminModerationQueue({ showMessage, setActiveScreen, setSelectedReportGroup }) {
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // --- REAL-TIME DATA FETCHING ---
     useEffect(() => {
@@ -58,13 +59,28 @@ function AdminModerationQueue({ showMessage, setActiveScreen, setSelectedReportG
             <p className="heading" style={{ fontSize: '20px', margin: '0 0 5px 0' }}>Moderation Queue</p>
             <p className="subHeading" style={{ textAlign: 'center', margin: '0 0 20px 0' }}>Content reported by the community. Items with the most reports are shown first.</p>
             
+            <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                <input
+                    type="text"
+                    className="formInput"
+                    placeholder="Search by content title or user name..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
+
             {loading ? (
                 <p className="dashboardItem">Loading reports...</p>
-            ) : groupedReports.length === 0 ? ( // Changed from mockReports to groupedReports
+            ) : groupedReports.length === 0 ? (
                 <p className="dashboardItem" style={{ textAlign: 'center' }}>The queue is empty. No pending reports.</p>
             ) : (
-                <div className="dashboardContentList">
-                    {groupedReports.map(group => ( // Changed from mockReports to groupedReports
+                <div className="dashboardContentList" style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
+                    {groupedReports
+                        .filter(group => 
+                            group.contentTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            group.reportedUserName.toLowerCase().includes(searchTerm.toLowerCase())
+                        )
+                        .map(group => (
                         <div key={group.contentId} className="adminDashboardItem" style={{ borderLeft: '4px solid #DC3545' }}>
                             <div style={{ flexGrow: 1 }}>
                                 <p className="adminDashboardItemTitle">{group.contentTitle}</p>

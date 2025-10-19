@@ -76,6 +76,11 @@ const AdminDashboardScreen = ({
     const [pledgeSearchTerm, setPledgeSearchTerm] = useState('');
     const [pledgeSortType, setPledgeSortType] = useState('date');
     const [campaignSearchTerm, setCampaignSearchTerm] = useState('');
+    const [pendingCampaignsSearchTerm, setPendingCampaignsSearchTerm] = useState('');
+    const [pendingBillboardSearchTerm, setPendingBillboardSearchTerm] = useState('');
+    const [pendingOpportunitiesSearchTerm, setPendingOpportunitiesSearchTerm] = useState('');
+    const [activeOpportunitiesSearchTerm, setActiveOpportunitiesSearchTerm] = useState('');
+    const [payoutRequestsSearchTerm, setPayoutRequestsSearchTerm] = useState('');
 
     // State for Notification Badges
     const [pendingReportsCount, setPendingReportsCount] = useState(0);
@@ -418,23 +423,40 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                             </div>
                             <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPayoutRequestsExpanded ? 'max-h-[5000px]' : 'max-h-0'}`}>
                                 <div className="pt-4 border-t mt-4" style={{borderColor: '#333'}}>
-                                     {payoutRequests.length === 0 ? <p className="dashboardItem">No pending payout requests.</p> : payoutRequests.map(req => (
-                                         <div key={req.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
-                                             <div style={{display: 'flex', justifyContent: 'space-between', width: '100%'}}>
-                                                 <p className="adminDashboardItemTitle" style={{margin: 0}}>{req.campaignTitle}</p>
-                                                 <p style={{color: '#00FF00', fontWeight: 'bold', fontSize: '1.1rem'}}>{formatCurrency(req.netAmount, selectedCurrency, currencyRates)}</p>
-                                             </div>
-                                             <div style={{fontSize: '13px', color: '#CCC'}}>
-                                                 <p style={{margin: 0}}><strong>Creator:</strong> {req.creatorName}</p>
-                                                 <p style={{margin: '4px 0'}}><strong>Legal Name:</strong> {req.legalName}</p>
-                                                 <p style={{margin: 0}}><strong>MMG Phone:</strong> {req.mmgPhoneNumber}</p>
-                                             </div>
-                                             <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px'}}>
-                                                 <button className="adminActionButton reject" onClick={() => handleUpdateRequestStatus(req.id, 'dismissed')}>Dismiss</button>
-                                                 <button className="adminActionButton approve" onClick={() => handleUpdateRequestStatus(req.id, 'paid')}>Mark as Paid</button>
-                                             </div>
-                                         </div>
-                                     ))}
+                                    <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                                        <input
+                                            type="text"
+                                            className="formInput"
+                                            placeholder="Search by campaign, creator, or phone..."
+                                            value={payoutRequestsSearchTerm}
+                                            onChange={(e) => setPayoutRequestsSearchTerm(e.target.value)}
+                                        />
+                                    </div>
+                                    <div style={{maxHeight: '400px', overflowY: 'auto', paddingRight: '10px'}}>
+                                        {payoutRequests.length === 0 ? <p className="dashboardItem">No pending payout requests.</p> : payoutRequests
+                                            .filter(req => 
+                                                req.campaignTitle?.toLowerCase().includes(payoutRequestsSearchTerm.toLowerCase()) ||
+                                                req.creatorName?.toLowerCase().includes(payoutRequestsSearchTerm.toLowerCase()) ||
+                                                req.mmgPhoneNumber?.includes(payoutRequestsSearchTerm)
+                                            )
+                                            .map(req => (
+                                            <div key={req.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
+                                                <div style={{display: 'flex', justifyContent: 'space-between', width: '100%'}}>
+                                                    <p className="adminDashboardItemTitle" style={{margin: 0}}>{req.campaignTitle}</p>
+                                                    <p style={{color: '#00FF00', fontWeight: 'bold', fontSize: '1.1rem'}}>{formatCurrency(req.netAmount, selectedCurrency, currencyRates)}</p>
+                                                </div>
+                                                <div style={{fontSize: '13px', color: '#CCC'}}>
+                                                    <p style={{margin: 0}}><strong>Creator:</strong> {req.creatorName}</p>
+                                                    <p style={{margin: '4px 0'}}><strong>Legal Name:</strong> {req.legalName}</p>
+                                                    <p style={{margin: 0}}><strong>MMG Phone:</strong> {req.mmgPhoneNumber}</p>
+                                                </div>
+                                                <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px'}}>
+                                                    <button className="adminActionButton reject" onClick={() => handleUpdateRequestStatus(req.id, 'dismissed')}>Dismiss</button>
+                                                    <button className="adminActionButton approve" onClick={() => handleUpdateRequestStatus(req.id, 'paid')}>Mark as Paid</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                             </section>
@@ -564,9 +586,14 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                 <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Pending Campaigns ({pendingCampaigns.length})</p>
                                 <span className="text-xl font-bold text-white">{isPendingCampaignsExpanded ? '▼' : '▶'}</span>
                             </div>
-                            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}>
+                            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPendingCampaignsExpanded ? 'max-h-[400px]' : 'max-h-0'}`}>
                                 <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
-                                    {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns pending review.</p> : pendingCampaigns.map(c => <div key={c.id} className="adminDashboardItem" onClick={() => {setSelectedAdminCampaignId(c.id); setActiveScreen('AdminCampaignDetails');}} style={{cursor: 'pointer'}}><img src={c.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Thumb" style={{width:'80px', height:'45px', objectFit:'cover', borderRadius:'4px', marginRight:'15px'}}/><div className="flex-grow"><p className="adminDashboardItemTitle">{c.title}</p><p className="text-sm" style={{color:'#CCC'}}>by {c.creatorName}</p></div><button className="adminActionButton approve">Review</button></div>)}
+                                    <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                                        <input type="text" className="formInput" placeholder="Search pending campaigns..." value={pendingCampaignsSearchTerm} onChange={(e) => setPendingCampaignsSearchTerm(e.target.value)} />
+                                    </div>
+                                    <div style={{maxHeight: '300px', overflowY: 'auto', paddingRight: '10px'}}>
+                                        {pendingCampaigns.length === 0 ? <p className="dashboardItem">No campaigns pending review.</p> : pendingCampaigns.filter(c => c.title.toLowerCase().includes(pendingCampaignsSearchTerm.toLowerCase())).map(c => <div key={c.id} className="adminDashboardItem" onClick={() => {setSelectedAdminCampaignId(c.id); setActiveScreen('AdminCampaignDetails');}} style={{cursor: 'pointer'}}><img src={c.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Thumb" style={{width:'80px', height:'45px', objectFit:'cover', borderRadius:'4px', marginRight:'15px'}}/><div className="flex-grow"><p className="adminDashboardItemTitle">{c.title}</p><p className="text-sm" style={{color:'#CCC'}}>by {c.creatorName}</p></div><button className="adminActionButton approve">Review</button></div>)}
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -576,33 +603,26 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                 <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Active Campaigns ({activeCampaigns.length})</p>
                                 <span className="text-xl font-bold text-white">{isActiveCampaignsExpanded ? '▼' : '▶'}</span>
                             </div>
-                             <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-screen' : 'max-h-0'}`}>
+                             <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActiveCampaignsExpanded ? 'max-h-[400px]' : 'max-h-0'}`}>
                                 <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
                                     <div className="formGroup" style={{ marginBottom: '1rem' }}>
-                                        <input
-                                            type="text"
-                                            className="formInput"
-                                            placeholder="Search by campaign title or creator name..."
-                                            value={campaignSearchTerm}
-                                            onChange={(e) => setCampaignSearchTerm(e.target.value)}
-                                        />
+                                        <input type="text" className="formInput" placeholder="Search by campaign title or creator name..." value={campaignSearchTerm} onChange={(e) => setCampaignSearchTerm(e.target.value)} />
                                     </div>
-                                    {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : activeCampaigns
-                                        .filter(c => 
-                                            c.title.toLowerCase().includes(campaignSearchTerm.toLowerCase()) || 
-                                            c.creatorName.toLowerCase().includes(campaignSearchTerm.toLowerCase())
-                                        )
-                                        .map(c => (
-                                            <div key={c.id} className="adminDashboardItem" onClick={() => {setSelectedAdminCampaignId(c.id); setActiveScreen('AdminCampaignDetails');}} style={{cursor: 'pointer'}}>
-                                                <img src={c.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Thumb" style={{width:'80px', height:'45px', objectFit:'cover', borderRadius:'4px', marginRight:'15px'}}/>
-                                                <div className="flex-grow">
-                                                    <p className="adminDashboardItemTitle">{c.title}</p>
-                                                    <p className="text-sm" style={{color:'#CCC'}}>by {c.creatorName}</p>
+                                    <div style={{maxHeight: '300px', overflowY: 'auto', paddingRight: '10px'}}>
+                                        {activeCampaigns.length === 0 ? <p className="dashboardItem">No campaigns currently active.</p> : activeCampaigns
+                                            .filter(c => c.title.toLowerCase().includes(campaignSearchTerm.toLowerCase()) || c.creatorName.toLowerCase().includes(campaignSearchTerm.toLowerCase()))
+                                            .map(c => (
+                                                <div key={c.id} className="adminDashboardItem" onClick={() => {setSelectedAdminCampaignId(c.id); setActiveScreen('AdminCampaignDetails');}} style={{cursor: 'pointer'}}>
+                                                    <img src={c.imageUrl || 'https://placehold.co/80x45/3A3A3A/FFF?text=N/A'} alt="Thumb" style={{width:'80px', height:'45px', objectFit:'cover', borderRadius:'4px', marginRight:'15px'}}/>
+                                                    <div className="flex-grow">
+                                                        <p className="adminDashboardItemTitle">{c.title}</p>
+                                                        <p className="text-sm" style={{color:'#CCC'}}>by {c.creatorName}</p>
+                                                    </div>
+                                                    <button className="adminActionButton">Manage</button>
                                                 </div>
-                                                <button className="adminActionButton">Manage</button>
-                                            </div>
-                                        ))
-                                    }
+                                            ))
+                                        }
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -612,9 +632,14 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                 <p className="dashboardSectionTitle" style={{marginBottom: 0, color: '#00FFFF'}}>Pending Billboard Content ({pendingStatuses.length})</p>
                                 <span className="text-xl font-bold text-white">{isPendingBillboardExpanded ? '▼' : '▶'}</span>
                             </div>
-                            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPendingBillboardExpanded ? 'max-h-screen' : 'max-h-0'}`}>
+                            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPendingBillboardExpanded ? 'max-h-[400px]' : 'max-h-0'}`}>
                                 <div className="pt-4 border-t mt-4" style={{borderColor: '#333'}}>
-                                     {pendingStatuses.length === 0 ? <p className="dashboardItem">No billboard content is pending review.</p> : pendingStatuses.map(s => <div key={s.id} className="adminDashboardItem"><p className="flex-grow">{s.content?.title || "Untitled Ad"}<span className="text-sm" style={{color:'#CCC'}}> for {new Date(s.startTime.toDate()).toLocaleDateString()}</span></p><button className="adminActionButton approve" onClick={() => { setSelectedStatus(s); setActiveScreen('AdminStatusReview'); }}>Review</button></div>)}
+                                    <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                                        <input type="text" className="formInput" placeholder="Search pending billboard content..." value={pendingBillboardSearchTerm} onChange={(e) => setPendingBillboardSearchTerm(e.target.value)} />
+                                    </div>
+                                    <div style={{maxHeight: '300px', overflowY: 'auto', paddingRight: '10px'}}>
+                                        {pendingStatuses.length === 0 ? <p className="dashboardItem">No billboard content is pending review.</p> : pendingStatuses.filter(s => (s.content?.title || "Untitled Ad").toLowerCase().includes(pendingBillboardSearchTerm.toLowerCase())).map(s => <div key={s.id} className="adminDashboardItem"><p className="flex-grow">{s.content?.title || "Untitled Ad"}<span className="text-sm" style={{color:'#CCC'}}> for {new Date(s.startTime.toDate()).toLocaleDateString()}</span></p><button className="adminActionButton approve" onClick={() => { setSelectedStatus(s); setActiveScreen('AdminStatusReview'); }}>Review</button></div>)}
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -625,26 +650,28 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                     <p className="dashboardSectionTitle" style={{marginBottom: 0, color: '#FFD700'}}>Pending Payments ({pendingPledges.length})</p>
                                     <span className="text-xl font-bold text-white">{isPaymentsExpanded ? '▼' : '▶'}</span>
                                 </div>
-                                <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPaymentsExpanded ? 'max-h-screen' : 'max-h-0'}`}>
+                                <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPaymentsExpanded ? 'max-h-[400px]' : 'max-h-0'}`}>
                                     <div className="pt-4 border-t mt-4" style={{borderColor: '#444'}}>
                                         <input type="text" className="formInput" placeholder="Search by Pledge ID or User Name..." value={pledgeSearchTerm} onChange={(e) => setPledgeSearchTerm(e.target.value)} />
-                                        {filteredAndSortedPledges.map(p => (
-                                            <div key={p.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '8px'}}>
-                                                <div className="flex justify-between w-full">
-                                                    <p className="adminDashboardItemTitle" style={{margin: 0}}>{p.targetCampaignTitle || `[${p.paymentType.toUpperCase()}] Pledge`}</p>
-                                                    <p style={{color:'#FFD700', fontWeight: 'bold', fontSize: '1.1rem'}}>{formatCurrency(p.amount, selectedCurrency, currencyRates)}</p>
+                                        <div style={{maxHeight: '300px', overflowY: 'auto', paddingRight: '10px'}}>
+                                            {filteredAndSortedPledges.map(p => (
+                                                <div key={p.id} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '8px'}}>
+                                                    <div className="flex justify-between w-full">
+                                                        <p className="adminDashboardItemTitle" style={{margin: 0}}>{p.targetCampaignTitle || `[${p.paymentType.toUpperCase()}] Pledge`}</p>
+                                                        <p style={{color:'#FFD700', fontWeight: 'bold', fontSize: '1.1rem'}}>{formatCurrency(p.amount, selectedCurrency, currencyRates)}</p>
+                                                    </div>
+                                                    <div style={{fontSize: '13px', color: '#CCC', borderTop: '1px solid #444', paddingTop: '8px'}}>
+                                                        <p style={{margin: 0}}><strong>Pledged By:</strong> {p.userName}</p>
+                                                        <p style={{margin: '4px 0'}}><strong>Pledge ID:</strong> {p.pledgeId || p.id}</p>
+                                                        <p style={{margin: 0}}><strong>Date:</strong> {new Date(p.createdAt).toLocaleString()}</p>
+                                                    </div>
+                                                    <div className="flex justify-end gap-4 mt-2">
+                                                        <button className="adminActionButton reject" onClick={() => denyPledgeLogic(p.id)}>Deny</button>
+                                                        <button className="adminActionButton approve" onClick={() => handleApprovePledge(p.id)}>Approve</button>
+                                                    </div>
                                                 </div>
-                                                <div style={{fontSize: '13px', color: '#CCC', borderTop: '1px solid #444', paddingTop: '8px'}}>
-                                                    <p style={{margin: 0}}><strong>Pledged By:</strong> {p.userName}</p>
-                                                    <p style={{margin: '4px 0'}}><strong>Pledge ID:</strong> {p.pledgeId || p.id}</p>
-                                                    <p style={{margin: 0}}><strong>Date:</strong> {new Date(p.createdAt).toLocaleString()}</p>
-                                                </div>
-                                                <div className="flex justify-end gap-4 mt-2">
-                                                    <button className="adminActionButton reject" onClick={() => denyPledgeLogic(p.id)}>Deny</button>
-                                                    <button className="adminActionButton approve" onClick={() => handleApprovePledge(p.id)}>Approve</button>
-                                                </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </section>
@@ -655,9 +682,14 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                 <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Pending Opportunities ({pendingOpportunities.length})</p>
                                 <span className="text-xl font-bold text-white">{isPendingOpportunitiesExpanded ? '▼' : '▶'}</span>
                             </div>
-                             <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPendingOpportunitiesExpanded ? 'max-h-screen' : 'max-h-0'}`}>
+                             <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isPendingOpportunitiesExpanded ? 'max-h-[400px]' : 'max-h-0'}`}>
                                 <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
-                                    {pendingOpportunities.map(o => <div key={o.id} className="adminDashboardItem"><p className="flex-grow">{o.title}<span className="text-sm" style={{color:'#CCC'}}> by {o.providerName}</span></p><button className="adminActionButton approve" onClick={() => {setSelectedOpportunity(o); setActiveScreen('AdminOpportunityDetails');}}>Review</button></div>)}
+                                    <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                                        <input type="text" className="formInput" placeholder="Search pending opportunities..." value={pendingOpportunitiesSearchTerm} onChange={(e) => setPendingOpportunitiesSearchTerm(e.target.value)} />
+                                    </div>
+                                    <div style={{maxHeight: '300px', overflowY: 'auto', paddingRight: '10px'}}>
+                                        {pendingOpportunities.filter(o => o.title.toLowerCase().includes(pendingOpportunitiesSearchTerm.toLowerCase())).map(o => <div key={o.id} className="adminDashboardItem"><p className="flex-grow">{o.title}<span className="text-sm" style={{color:'#CCC'}}> by {o.providerName}</span></p><button className="adminActionButton approve" onClick={() => {setSelectedOpportunity(o); setActiveScreen('AdminOpportunityDetails');}}>Review</button></div>)}
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -667,9 +699,14 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                 <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Active Opportunities ({activeOpportunities.length})</p>
                                 <span className="text-xl font-bold text-white">{isActiveOpportunitiesExpanded ? '▼' : '▶'}</span>
                             </div>
-                             <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActiveOpportunitiesExpanded ? 'max-h-screen' : 'max-h-0'}`}>
+                             <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isActiveOpportunitiesExpanded ? 'max-h-[400px]' : 'max-h-0'}`}>
                                 <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
-                                    {activeOpportunities.map(o => <div key={o.id} className="adminDashboardItem"><p className="flex-grow">{o.title}<span className="text-sm" style={{color:'#CCC'}}> by {o.providerName}</span></p><button className="adminActionButton" onClick={() => {setSelectedOpportunity(o); setActiveScreen('AdminOpportunityDetails');}}>Manage</button></div>)}
+                                    <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                                        <input type="text" className="formInput" placeholder="Search active opportunities..." value={activeOpportunitiesSearchTerm} onChange={(e) => setActiveOpportunitiesSearchTerm(e.target.value)} />
+                                    </div>
+                                    <div style={{maxHeight: '300px', overflowY: 'auto', paddingRight: '10px'}}>
+                                        {activeOpportunities.filter(o => o.title.toLowerCase().includes(activeOpportunitiesSearchTerm.toLowerCase())).map(o => <div key={o.id} className="adminDashboardItem"><p className="flex-grow">{o.title}<span className="text-sm" style={{color:'#CCC'}}> by {o.providerName}</span></p><button className="adminActionButton" onClick={() => {setSelectedOpportunity(o); setActiveScreen('AdminOpportunityDetails');}}>Manage</button></div>)}
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -723,6 +760,5 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
             )}
         </>
     );
-}
-
+  }
 export default AdminDashboardScreen;

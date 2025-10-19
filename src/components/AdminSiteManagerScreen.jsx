@@ -18,6 +18,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     const [promotedStatusPrice, setPromotedStatusPrice] = useState(10.00);
     const [isTicketedEvent, setIsTicketedEvent] = useState(false);
     const [submissions, setSubmissions] = useState([]);
+    const [submissionsSearchTerm, setSubmissionsSearchTerm] = useState('');
     const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
     const [selectedSubmission, setSelectedSubmission] = useState(null);
     const [diagnosticResults, setDiagnosticResults] = useState(null);
@@ -39,6 +40,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     
     // --- STATE FOR PAYOUT HISTORY ---
     const [payoutHistory, setPayoutHistory] = useState([]);
+    const [payoutHistorySearchTerm, setPayoutHistorySearchTerm] = useState('');
     
     // --- STATE FOR DESTRUCTIVE ACTIONS ---
     const [isResetting, setIsResetting] = useState(false);
@@ -46,7 +48,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     
     const [isLoadingHistory, setIsLoadingHistory] = useState(true);
     const [isHistoryExpanded, setIsHistoryExpanded] = useState(false); // Start collapsed
-
+    const [isDataIntegrityExpanded, setIsDataIntegrityExpanded] = useState(true);
     // --- STATE FOR SUPPORT HUB CONTENT ---
     const [supportHubContent, setSupportHubContent] = useState({
         hubTitle: '', hubSubtitle: '',
@@ -517,9 +519,24 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
                         </div>
                         <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isHistoryExpanded ? 'max-h-[5000px]' : 'max-h-0'}`}>
                             <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
+                                <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                                    <input
+                                        type="text"
+                                        className="formInput"
+                                        placeholder="Search by campaign, creator, or legal name..."
+                                        value={payoutHistorySearchTerm}
+                                        onChange={(e) => setPayoutHistorySearchTerm(e.target.value)}
+                                    />
+                                </div>
                                 {isLoadingHistory ? <p>Loading history...</p> : payoutHistory.length === 0 ? <p className="dashboardItem">No processed payouts found.</p> : (
                                     <div className="dashboardContentList" style={{maxHeight: '400px', overflowY: 'auto', paddingRight: '10px'}}>
-                                        {payoutHistory.map((req, index) => (
+                                        {payoutHistory
+                                            .filter(req => 
+                                                req.campaignTitle?.toLowerCase().includes(payoutHistorySearchTerm.toLowerCase()) ||
+                                                req.creatorName?.toLowerCase().includes(payoutHistorySearchTerm.toLowerCase()) ||
+                                                req.legalName?.toLowerCase().includes(payoutHistorySearchTerm.toLowerCase())
+                                            )
+                                            .map((req, index) => (
                                             <div key={req.id} style={{
                                                 padding: '15px 0',
                                                 borderBottom: index === payoutHistory.length - 1 ? 'none' : '1px solid #444'
@@ -563,7 +580,38 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
             )}
             {/* --- END: PAYOUT HISTORY SECTION --- */}
 
-            <div className="dashboardSection" style={{marginTop: '20px'}}><p className="dashboardSectionTitle">Contact Form Submissions</p>{isLoadingSubmissions ? <p>Loading submissions...</p> : (<div className="dashboardContentList">{submissions.length === 0 ? <p className="dashboardItem">No submissions yet.</p> : (submissions.map(sub => (<div key={sub.id} className="adminDashboardItem" onClick={() => handleViewSubmission(sub)} style={{cursor: 'pointer', borderLeft: sub.status === 'New' ? '4px solid #FFD700' : '4px solid transparent'}}><div style={{flexGrow: 1}}><p className="adminDashboardItemTitle">{sub.queryType} - <span style={{fontWeight: 'normal'}}>{sub.userName}</span></p><p style={{fontSize: '12px', color: '#AAA'}}>{new Date(sub.submittedAt).toLocaleString()}</p></div><span className="adminDashboardItemStatus">{sub.status}</span></div>)))}</div>)}
+            <div className="dashboardSection" style={{marginTop: '20px'}}>
+                <p className="dashboardSectionTitle">Contact Form Submissions</p>
+                <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                    <input
+                        type="text"
+                        className="formInput"
+                        placeholder="Search by name, email, or query type..."
+                        value={submissionsSearchTerm}
+                        onChange={(e) => setSubmissionsSearchTerm(e.target.value)}
+                    />
+                </div>
+                {isLoadingSubmissions ? <p>Loading submissions...</p> : (
+                    <div className="dashboardContentList" style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
+                        {submissions.length === 0 ? <p className="dashboardItem">No submissions yet.</p> : (
+                            submissions
+                                .filter(sub => 
+                                    sub.userName?.toLowerCase().includes(submissionsSearchTerm.toLowerCase()) ||
+                                    sub.userEmail?.toLowerCase().includes(submissionsSearchTerm.toLowerCase()) ||
+                                    sub.queryType?.toLowerCase().includes(submissionsSearchTerm.toLowerCase())
+                                )
+                                .map(sub => (
+                                    <div key={sub.id} className="adminDashboardItem" onClick={() => handleViewSubmission(sub)} style={{cursor: 'pointer', borderLeft: sub.status === 'New' ? '4px solid #FFD700' : '4px solid transparent'}}>
+                                        <div style={{flexGrow: 1}}>
+                                            <p className="adminDashboardItemTitle">{sub.queryType} - <span style={{fontWeight: 'normal'}}>{sub.userName}</span></p>
+                                            <p style={{fontSize: '12px', color: '#AAA'}}>{new Date(sub.submittedAt).toLocaleString()}</p>
+                                        </div>
+                                        <span className="adminDashboardItemStatus">{sub.status}</span>
+                                    </div>
+                                ))
+                        )}
+                    </div>
+                )}
             
             <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', borderTop: '1px solid #555', marginTop: '20px', paddingTop: '20px'}}>
                         <p className="adminDashboardItemTitle">Clear My Own Feed</p>
@@ -577,84 +625,79 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
 
             {selectedSubmission && (<div className="confirmationModalOverlay" style={{zIndex: 2500}}><div className="confirmationModalContent" style={{textAlign: 'left', maxWidth: '500px'}}><p className="confirmationModalTitle">{selectedSubmission.queryType}</p><div className="dashboardItem"><strong>From:</strong> {selectedSubmission.userName}</div><div className="dashboardItem"><strong>Email:</strong> <a href={`mailto:${selectedSubmission.userEmail}`} className="termsLink">{selectedSubmission.userEmail}</a></div><div className="dashboardItem"><strong>Date:</strong> {new Date(selectedSubmission.submittedAt).toLocaleString()}</div><hr style={{borderColor: '#333', margin: '15px 0'}}/><p className="paragraph" style={{backgroundColor: '#0A0A0A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap'}}>{selectedSubmission.message}</p><div className="confirmationModalButtons"><button className="confirmationButton cancel" onClick={() => confirmDeleteSubmission(selectedSubmission)}>Delete</button><button className="confirmationButton confirm" onClick={() => setSelectedSubmission(null)}>Close</button></div></div></div>)}</div>
             <div className="dashboardSection" style={{ border: '2px solid #FF8C00', marginTop: '20px' }}>
-    <p className="dashboardSectionTitle">Data Integrity Tools</p>
-    
-    <div className="dashboardSection" style={{ border: '4px solid #DC3545', marginTop: '20px' }}>
-                        <p className="dashboardSectionTitle" style={{color: '#DC3545'}}>Destructive Actions</p>
-                        <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
-                            <p className="adminDashboardItemTitle">Reset All User and Content Data</p>
-                            <p className="paragraph" style={{color: '#AAA', fontSize: '14px'}}>
-                                This will permanently delete all user-generated data (accounts, content, campaigns, etc.) to prepare the site for public launch. System settings will be preserved.
-                            </p>
-                            <button className="button" onClick={handleResetAllData} style={{ backgroundColor: '#B22222', marginTop: '10px' }} disabled={isResetting}>
-                                <span className="buttonText">{isResetting ? 'DELETING...' : 'Initiate Full Data Reset'}</span>
+                <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsDataIntegrityExpanded(!isDataIntegrityExpanded)}>
+                    <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Data Integrity Tools</p>
+                    <span className="text-xl font-bold text-white">{isDataIntegrityExpanded ? '▼' : '▶'}</span>
+                </div>
+                <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isDataIntegrityExpanded ? 'max-h-[5000px]' : 'max-h-0'}`}>
+                    <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
+                        <div className="dashboardSection" style={{ border: '4px solid #DC3545', marginTop: '20px' }}>
+                            <p className="dashboardSectionTitle" style={{color: '#DC3545'}}>Destructive Actions</p>
+                            <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
+                                <p className="adminDashboardItemTitle">Reset All User and Content Data</p>
+                                <p className="paragraph" style={{color: '#AAA', fontSize: '14px'}}>
+                                    This will permanently delete all user-generated data (accounts, content, campaigns, etc.) to prepare the site for public launch. System settings will be preserved.
+                                </p>
+                                <button className="button" onClick={handleResetAllData} style={{ backgroundColor: '#B22222', marginTop: '10px' }} disabled={isResetting}>
+                                    <span className="buttonText">{isResetting ? 'DELETING...' : 'Initiate Full Data Reset'}</span>
+                                </button>
+                            </div>
+                        </div>
+                        <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '20px' }}>Use these tools to perform database maintenance. These are powerful actions. Use with caution.</p>
+                        <div style={{ marginBottom: '20px' }}>
+                            <button className="button" onClick={confirmGhostAccountCleanup} style={{ backgroundColor: '#B22222' }} disabled={isCleaningGhostAccounts}>
+                                <span className="buttonText">{isCleaningGhostAccounts ? 'Cleaning...' : 'Clean Up Ghost Accounts'}</span>
+                            </button>
+                            {ghostAccountCleanupResults && (
+                                <p className="paragraph" style={{ marginTop: '15px', backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap' }}>
+                                    {ghostAccountCleanupResults}
+                                </p>
+                            )}
+                        </div>
+                        <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
+                            <button className="button" onClick={confirmCleanup} style={{ backgroundColor: '#DC3545' }} disabled={isCleaning}>
+                                <span className="buttonText">{isCleaning ? 'Cleaning...' : 'Clean Up Ghost Artifacts'}</span>
+                            </button>
+                            {cleanupResults && (
+                                <p className="paragraph" style={{ marginTop: '15px', backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap' }}>
+                                    {cleanupResults}
+                                </p>
+                            )}
+                        </div>
+                        <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
+                            <button className="button" onClick={handleBackfill} style={{ backgroundColor: '#008000' }} disabled={isCleaning}>
+                                <span className="buttonText">{isCleaning ? 'Processing...' : 'Backfill Follower Data'}</span>
                             </button>
                         </div>
+                        <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
+                            <button className="button" onClick={handleFcmTokenCleanup} style={{ backgroundColor: '#1E90FF' }} disabled={isCleaningTokens}>
+                                <span className="buttonText">{isCleaningTokens ? 'Cleaning...' : 'Clean Up FCM Tokens'}</span>
+                            </button>
+                            <p className="paragraph" style={{color: '#AAA', fontSize: '14px', marginTop: '10px'}}>
+                                Removes duplicate push notification tokens from all user profiles for better performance.
+                            </p>
+                        </div>
+                        <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
+                            <button className="button" onClick={handleClearPinnedContent} style={{ backgroundColor: '#4F46E5' }} disabled={isClearingPins}>
+                                <span className="buttonText">{isClearingPins ? 'Clearing...' : 'Clear User Pinned Content'}</span>
+                            </button>
+                        </div>
+                        <div style={{ borderTop: '1px solid #444', paddingTop: '20px' }}>
+                            <button className="button" onClick={handleRunAudit} style={{ backgroundColor: '#FFD700' }} disabled={isAuditing}>
+                                <span className="buttonText" style={{color: '#0A0A1A'}}>{isAuditing ? 'Auditing...' : 'Run Full Data Integrity Audit'}</span>
+                            </button>
+                            {auditResults && (
+                                <div style={{marginTop: '15px'}}>
+                                    <p className="dashboardSectionTitle" style={{fontSize: '16px'}}>Audit Results:</p>
+                                    <pre className="paragraph" style={{ backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap', color: '#00FF00', fontSize: '12px' }}>
+                                        {JSON.stringify(auditResults, null, 2)}
+                                    </pre>
+                                </div>
+                            )}
+                        </div>
                     </div>
-    
-    <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '20px' }}>Use these tools to perform database maintenance. These are powerful actions. Use with caution.</p>
-    
-    {/* --- THIS IS THE NEW SECTION FOR OUR GHOST ACCOUNT BUTTON --- */}
-    <div style={{ marginBottom: '20px' }}>
-        <button className="button" onClick={confirmGhostAccountCleanup} style={{ backgroundColor: '#B22222' }} disabled={isCleaningGhostAccounts}>
-            <span className="buttonText">{isCleaningGhostAccounts ? 'Cleaning...' : 'Clean Up Ghost Accounts'}</span>
-        </button>
-        {ghostAccountCleanupResults && (
-            <p className="paragraph" style={{ marginTop: '15px', backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap' }}>
-                {ghostAccountCleanupResults}
-            </p>
-        )}
-    </div>
-
-    {/* --- The existing tools are now separated for clarity --- */}
-    <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
-        <button className="button" onClick={confirmCleanup} style={{ backgroundColor: '#DC3545' }} disabled={isCleaning}>
-            <span className="buttonText">{isCleaning ? 'Cleaning...' : 'Clean Up Ghost Artifacts'}</span>
-        </button>
-        {cleanupResults && (
-            <p className="paragraph" style={{ marginTop: '15px', backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap' }}>
-                {cleanupResults}
-            </p>
-        )}
-    </div>
-
-    <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
-        <button className="button" onClick={handleBackfill} style={{ backgroundColor: '#008000' }} disabled={isCleaning}>
-            <span className="buttonText">{isCleaning ? 'Processing...' : 'Backfill Follower Data'}</span>
-        </button>
-    </div>
-         
-    <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
-        <button className="button" onClick={handleFcmTokenCleanup} style={{ backgroundColor: '#1E90FF' }} disabled={isCleaningTokens}>
-            <span className="buttonText">{isCleaningTokens ? 'Cleaning...' : 'Clean Up FCM Tokens'}</span>
-        </button>
-        <p className="paragraph" style={{color: '#AAA', fontSize: '14px', marginTop: '10px'}}>
-            Removes duplicate push notification tokens from all user profiles for better performance.
-        </p>
-    </div>
-
-        <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
-        <button className="button" onClick={handleClearPinnedContent} style={{ backgroundColor: '#4F46E5' }} disabled={isClearingPins}>
-            <span className="buttonText">{isClearingPins ? 'Clearing...' : 'Clear User Pinned Content'}</span>
-        </button>
-    </div>
-
-    <div style={{ borderTop: '1px solid #444', paddingTop: '20px' }}>
-        <button className="button" onClick={handleRunAudit} style={{ backgroundColor: '#FFD700' }} disabled={isAuditing}>
-            <span className="buttonText" style={{color: '#0A0A1A'}}>{isAuditing ? 'Auditing...' : 'Run Full Data Integrity Audit'}</span>
-                      
-        </button>
-        {auditResults && (
-            
-            <div style={{marginTop: '15px'}}>
-                <p className="dashboardSectionTitle" style={{fontSize: '16px'}}>Audit Results:</p>
-                <pre className="paragraph" style={{ backgroundColor: '#1A1A1A', padding: '10px', borderRadius: '5px', whiteSpace: 'pre-wrap', color: '#00FF00', fontSize: '12px' }}>
-                    {JSON.stringify(auditResults, null, 2)}
-                </pre>
+                </div>
             </div>
-        )}
-    </div>
-</div>
             <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}><p className="dashboardSectionTitle">System Status</p><button className="button" onClick={handleRunDiagnostics} style={{ backgroundColor: '#008080' }} disabled={isDiagnosing}><span className="buttonText">{isDiagnosing ? 'Running...' : 'Run System Diagnostics'}</span></button>{diagnosticResults && (<div style={{ marginTop: '15px', color: '#FFF' }}>{diagnosticResults.error ? (<p style={{ color: '#DC3545' }}>Error: {diagnosticResults.error}</p>) : (<table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody><tr style={{ borderBottom: '1px solid #3A3A3A' }}><td style={{ padding: '8px 0', fontWeight: 'bold' }}>Project ID:</td><td style={{ textAlign: 'right' }}>{diagnosticResults.projectID}</td></tr><tr style={{ borderBottom: '1px solid #3A3A3A' }}><td style={{ padding: '8px 0', fontWeight: 'bold' }}>Database Connectivity:</td><td style={{ textAlign: 'right', color: diagnosticResults.dbConnectivity === 'Success' ? '#00FF00' : '#DC3545', fontWeight: 'bold' }}>{diagnosticResults.dbConnectivity}</td></tr></tbody></table>)}</div>)}</div>
         </div>
     );

@@ -32,6 +32,7 @@ function AnalyticsDashboardScreen({ showMessage, setActiveScreen }) {
     const [loading, setLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [sortBy, setSortBy] = useState('lifetimeViews');
+    const [creatorSearchTerm, setCreatorSearchTerm] = useState('');
 
     useEffect(() => {
         const statsRef = doc(db, "statistics", "platformOverview");
@@ -69,8 +70,12 @@ function AnalyticsDashboardScreen({ showMessage, setActiveScreen }) {
     };
 
     const sortedCreators = useMemo(() => {
-        return [...creators].sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
-    }, [creators, sortBy]);
+        return creators
+            .filter(creator => 
+                creator.creatorName?.toLowerCase().includes(creatorSearchTerm.toLowerCase())
+            )
+            .sort((a, b) => (b[sortBy] || 0) - (a[sortBy] || 0));
+    }, [creators, sortBy, creatorSearchTerm]);
 
     if (loading) {
         return <div className="screenContainer"><p className="heading">Loading Analytics...</p></div>;
@@ -107,27 +112,38 @@ function AnalyticsDashboardScreen({ showMessage, setActiveScreen }) {
 
             <div className="dashboardSection" style={{ marginTop: '20px' }}>
                 <p className="dashboardSectionTitle">Creator Performance (Lifetime)</p>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                        <tr style={{ borderBottom: '1px solid #FFD700' }}>
-                            <th style={{ textAlign: 'left', paddingBottom: '10px' }}>Creator</th>
-                            <th onClick={() => setSortBy('lifetimeViews')} style={{ cursor: 'pointer', textAlign: 'right', padding: '0 10px 10px 10px' }}>Views {sortBy === 'lifetimeViews' && '▼'}</th>
-                            <th onClick={() => setSortBy('lifetimeLikes')} style={{ cursor: 'pointer', textAlign: 'right', padding: '0 10px 10px 10px' }}>Likes {sortBy === 'lifetimeLikes' && '▼'}</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sortedCreators.map(creator => (
-                            <tr key={creator.id} style={{ borderBottom: '1px solid #3A3A3A' }}>
-                                <td style={{ padding: '10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                    <img src={creator.profilePictureUrl || 'https://placehold.co/40x40/888/FFF?text=P'} alt={creator.creatorName} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
-                                    <span style={{ fontWeight: 'bold' }}>{creator.creatorName}</span>
-                                </td>
-                                <td style={{ textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'lifetimeViews' ? '#FFD700' : '#FFF', padding: '0 10px' }}>{(creator.lifetimeViews || 0).toLocaleString()}</td>
-                                <td style={{ textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'lifetimeLikes' ? '#FFD700' : '#FFF', padding: '0 10px' }}>{(creator.lifetimeLikes || 0).toLocaleString()}</td>
+                <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                    <input
+                        type="text"
+                        className="formInput"
+                        placeholder="Search by creator name..."
+                        value={creatorSearchTerm}
+                        onChange={(e) => setCreatorSearchTerm(e.target.value)}
+                    />
+                </div>
+                <div style={{ maxHeight: '500px', overflowY: 'auto', paddingRight: '10px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '1px solid #FFD700' }}>
+                                <th style={{ textAlign: 'left', paddingBottom: '10px' }}>Creator</th>
+                                <th onClick={() => setSortBy('lifetimeViews')} style={{ cursor: 'pointer', textAlign: 'right', padding: '0 10px 10px 10px' }}>Views {sortBy === 'lifetimeViews' && '▼'}</th>
+                                <th onClick={() => setSortBy('lifetimeLikes')} style={{ cursor: 'pointer', textAlign: 'right', padding: '0 10px 10px 10px' }}>Likes {sortBy === 'lifetimeLikes' && '▼'}</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {sortedCreators.map(creator => (
+                                <tr key={creator.id} style={{ borderBottom: '1px solid #3A3A3A' }}>
+                                    <td style={{ padding: '10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <img src={creator.profilePictureUrl || 'https://placehold.co/40x40/888/FFF?text=P'} alt={creator.creatorName} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                                        <span style={{ fontWeight: 'bold' }}>{creator.creatorName}</span>
+                                    </td>
+                                    <td style={{ textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'lifetimeViews' ? '#FFD700' : '#FFF', padding: '0 10px' }}>{(creator.lifetimeViews || 0).toLocaleString()}</td>
+                                    <td style={{ textAlign: 'right', fontSize: '16px', fontWeight: 'bold', color: sortBy === 'lifetimeLikes' ? '#FFD700' : '#FFF', padding: '0 10px' }}>{(creator.lifetimeLikes || 0).toLocaleString()}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     );

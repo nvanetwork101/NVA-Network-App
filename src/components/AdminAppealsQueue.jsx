@@ -7,6 +7,7 @@ const AdminAppealsQueue = ({ showMessage }) => {
     const [appeals, setAppeals] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(null); // Tracks the ID of the appeal being processed
+    const [searchTerm, setSearchTerm] = useState('');
 
     useEffect(() => {
         const appealsRef = collection(db, "appeals");
@@ -61,15 +62,31 @@ const AdminAppealsQueue = ({ showMessage }) => {
         return <p className="paragraph" style={{textAlign: 'center', marginTop: '20px'}}>Loading appeals...</p>;
     }
 
+    const filteredAppeals = appeals.filter(appeal =>
+        appeal.userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        appeal.userEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        appeal.message.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
     return (
         <div className="adminSubScreenContainer">
             <p className="dashboardSectionTitle">Pending Appeals ({appeals.length})</p>
+            
+            <div className="formGroup" style={{ marginBottom: '1rem' }}>
+                <input
+                    type="text"
+                    className="formInput"
+                    placeholder="Search by user name, email, or message..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                />
+            </div>
+
             {appeals.length === 0 ? (
                 <p className="paragraph" style={{textAlign: 'center', marginTop: '20px'}}>There are no pending appeals.</p>
             ) : (
-                <div className="appealsList">
-                    {appeals.map(appeal => {
-                        // Dynamically add a CSS class for color-coding based on appeal type.
+                <div className="appealsList" style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
+                    {filteredAppeals.map(appeal => {
                         const itemClass = appeal.appealType === 'suspension'
                             ? "appealItem appealItem--suspension"
                             : "appealItem";
