@@ -27,8 +27,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(clients.claim());
 });
 
-// Initialize Firebase
-// This call is no longer needed here; the service worker uses the app's main initialization.
+// Safely initialize Firebase
+// This check prevents the "already exists" error if the script is ever run multiple times.
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
 const messaging = firebase.messaging();
 
 // HANDLER 1: SHOW THE NOTIFICATION (This was the part that was accidentally deleted)
