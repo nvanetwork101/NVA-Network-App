@@ -11,7 +11,8 @@ export default defineConfig({
     // Add the PWA plugin configuration
     VitePWA({
       registerType: 'autoUpdate',
-      // THE FIX: Change the strategy to inject into our existing service worker
+      // THIS IS THE FINAL FIX: Disable the conflicting auto-registration
+      injectRegister: null,
       strategies: 'injectManifest',
       srcDir: 'public',
       filename: 'firebase-messaging-sw.js',
