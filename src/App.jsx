@@ -307,19 +307,14 @@ function App() {
 
   // ========================== START: DEFINITIVE AUTH FLOW FIX ==========================
     // ========================== START: LOGOUT RACE CONDITION FIX ==========================
-  useEffect(() => {
-    // These 'unsubscribe' variables live in the useEffect's scope.
-    // They will be assigned when a user logs in and called when that user logs out.
+ useEffect(() => {
     let unsubProfile = () => {};
     let unsubFollowing = () => {};
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      // --- THIS IS THE CORE FIX ---
-      // The very first step on ANY auth change is to tear down all existing user-specific listeners.
-      // This prevents race conditions on logout.
+      // Always tear down old listeners on any auth change.
       unsubProfile();
       unsubFollowing();
-
       setAuthLoading(true);
 
       if (user && !user.emailVerified) {
@@ -328,125 +323,113 @@ function App() {
         setUnverifiedUser(user);
         setActiveScreen('VerifyEmail');
         setAuthLoading(false);
-        setIsInitialLoad(false);
         return;
       }
-
       setUnverifiedUser(null);
 
-      if (user) { // This is now a fully verified and logged-in user
+      if (user) { // A fully verified user is present.
         const userDocRef = doc(db, "creators", user.uid);
         try {
           const docSnap = await getDoc(userDocRef);
-
           if (docSnap.exists()) {
             const profileData = docSnap.data();
 
             if (profileData.banned) {
-                showMessage("This account is permanently banned.");
-                setActiveScreen('Banned');
-                signOut(auth); // Use internal signOut, no need for handleLogout
-                return;
+              setActiveScreen('Banned');
+              signOut(auth);
+              return;
             }
-
             if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
-                const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
-                setCurrentUser(user);
-                setCreatorProfile(profileData);
-                setSuspensionDetails({ email: profileData.email, expiryDate });
-                setActiveScreen('Suspended');
-                return;
+              const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
+              setCurrentUser(user); // Set user data so SuspendedScreen can use it
+              setCreatorProfile(profileData);
+              setSuspensionDetails({ email: profileData.email, expiryDate });
+              setActiveScreen('Suspended');
+              return;
             }
 
             await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
 
-            // --- Re-initialize all user-specific listeners here ---
             unsubProfile = onSnapshot(userDocRef, (snap) => {
-    if (snap.exists()) {
-        const profileData = snap.data();
-        setCurrentUser(user); // Keep currentUser in sync
-        setCreatorProfile(profileData);
-        // THIS IS THE FIX: Get the count directly from the user's document
-        setNotificationBadgeCount(profileData.unreadNotificationCount || 0);
-    } else {
-        // If the profile is deleted from under the user, log them out.
-        signOut(auth);
-    }
-  });
-
-            const followingRef = collection(db, "creators", user.uid, "following");
-            const q = query(followingRef, where("hasNewContent", "==", true));
-            unsubFollowing = onSnapshot(q, (snapshot) => {
-                setHasNewFollowerContent(!snapshot.empty);
+              if (snap.exists()) {
+                setCurrentUser(user);
+                setCreatorProfile(snap.data());
+                setNotificationBadgeCount(snap.data().unreadNotificationCount || 0);
+              } else { signOut(auth); }
             });
-            // --- End of listener initialization ---
-            
-            // --- START: DEFINITIVE ROUTING & DEEP LINKING LOGIC ---
+
+            const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
+            unsubFollowing = onSnapshot(q, (snapshot) => setHasNewFollowerContent(!snapshot.empty));
+
+            // --- THE CRITICAL FIX: SIMPLIFIED ROUTING ---
+            // This logic is now clean. It no longer depends on activeScreen.
+            // If the deep linking logic below handles navigation, great.
+            // If not, we fall through to a simple, reliable post-login redirect.
             if (!routingDoneRef.current) {
-                routingDoneRef.current = true; 
-                
+                routingDoneRef.current = true;
                 const path = window.location.pathname;
                 const parts = path.split('/').filter(Boolean);
+                let navigated = false;
 
                 if (parts.length > 0) {
                     const screen = parts[0];
                     const id = parts[1];
-
+                    // (The entire deep-linking switch statement from the previous fix goes here, it remains unchanged)
                     switch (screen) {
-                        case 'opportunity':
-                            if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); }
-                            break;
-                        case 'discover':
-                            setActiveScreen('Discover');
-                            break;
-                        case 'user':
-                             if (id) {
-                                if (user && id === user.uid) {
-                                    setActiveScreen('CreatorDashboard');
-                                } else {
-                                    setSelectedUserId(id);
-                                    setActiveScreen('UserProfile');
-                                }
-                            }
-                            break;
-                        case 'competition':
-                            setActiveScreen('CompetitionScreen');
-                            break;
-                        case 'promotedStatus':
-                            if (id) { setActiveScreen('Home'); }
-                            break;
-                        case 'content':
-                            if (id) {
-                                (async () => {
-                                    try {
-                                        const appId = "production-app-id";
-                                        const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
-                                        let docSnap = await getDoc(contentRef);
+                      case 'opportunity':
+                          if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); navigated = true; }
+                          break;
+                      case 'discover':
+                          setActiveScreen('Discover');
+                          navigated = true;
+                          break;
+                      case 'user':
+                           if (id) {
+                              if (user && id === user.uid) { setActiveScreen('CreatorDashboard'); } 
+                              else { setSelectedUserId(id); setActiveScreen('UserProfile'); }
+                              navigated = true;
+                          }
+                          break;
+                      case 'competition':
+                          setActiveScreen('CompetitionScreen');
+                          navigated = true;
+                          break;
+                      case 'promotedStatus':
+                          if (id) { setActiveScreen('Home'); navigated = true; }
+                          break;
+                      case 'content':
+                          if (id) {
+                              (async () => {
+                                  try {
+                                      const appId = "production-app-id";
+                                      let docSnap = await getDoc(doc(db, "artifacts", appId, "public", "data", "content_items", id));
+                                      if (docSnap.exists()) {
+                                          const item = { id: docSnap.id, ...docSnap.data() };
+                                          handleVideoPress(item.embedUrl || item.mainUrl, item);
+                                      } else {
+                                          docSnap = await getDoc(doc(db, "events", id));
+                                          if (docSnap.exists() && docSnap.data().status === 'completed') {
+                                              setDeepLinkedReplayId(id);
+                                              setActiveScreen('Discover');
+                                          } else { showMessage("Shared content could not be found."); }
+                                      }
+                                  } catch (error) { showMessage("Error loading shared content."); }
+                              })();
+                              navigated = true;
+                          }
+                          break;
+                  }
+                }
 
-                                        if (docSnap.exists()) {
-                                            const contentData = { id: docSnap.id, ...docSnap.data() };
-                                            handleVideoPress(contentData.embedUrl || contentData.mainUrl, contentData);
-                                        } else {
-                                            const eventRef = doc(db, "events", id);
-                                            docSnap = await getDoc(eventRef);
-                                            if (docSnap.exists() && docSnap.data().status === 'completed') {
-                                                setDeepLinkedReplayId(id);
-                                                setActiveScreen('Discover');
-                                            } else {
-                                                showMessage("The shared content could not be found.");
-                                            }
-                                        }
-                                    } catch (error) {
-                                        console.error("Deep link fetch error:", error);
-                                        showMessage("Error loading shared content.");
-                                    }
-                                })();
-                            }
-                            break;
+                // Fallback Navigation: If no deep link was handled, perform the default redirect.
+                if (!navigated) {
+                    if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                        setActiveScreen('CreatorDashboard');
+                    } else {
+                        setActiveScreen('Home');
                     }
                 }
             }
-            // --- END: DEFINITIVE ROUTING & DEEP LINKING LOGIC ---
 
           } else {
             showMessage("User profile not found. Logging out.");
@@ -460,14 +443,18 @@ function App() {
           setAuthLoading(false);
           setIsInitialLoad(false);
         }
-      } else { 
+      } else { // No user is logged in.
         setCurrentUser(null);
         setCreatorProfile(null);
         setHasNewFollowerContent(false);
-        setNotificationBadgeCount(0); 
-        const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
-        if (protectedScreens.includes(activeScreen)) {
-            setActiveScreen('Home');
+        setNotificationBadgeCount(0);
+        // Do not force navigation on logout if a deep link is present.
+        const path = window.location.pathname;
+        if (path === '/' || path === '') {
+           const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
+           if (protectedScreens.includes(activeScreen)) {
+               setActiveScreen('Home');
+           }
         }
         setAuthLoading(false);
         setIsInitialLoad(false);
@@ -479,7 +466,7 @@ function App() {
       unsubProfile();
       unsubFollowing();
     };
-   }, []); // <<< THE DEFINITIVE FIX IS THIS EMPTY ARRAY
+  }, []); // The empty dependency array is now correct.
   // =========================== END: LOGOUT RACE CONDITION FIX ===========================
  
         // ======================= START: PUSH NOTIFICATION SETUP =======================
