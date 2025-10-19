@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 // Define constants outside the component to prevent re-creation on every render.
-const CANVAS_SIZE = { width: 320, height: 180 }; // 16:9 preview canvas
+const CANVAS_SIZE = { width: 360, height: 202.5 }; // 16:9 preview canvas
 const OUTPUT_SIZE = { width: 1280, height: 720 }; // Final 16:9 output resolution
 
 const ThumbnailAdjustModal = ({ imageUrl, onSave, onCancel, showMessage, isUploading }) => {
