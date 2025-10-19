@@ -81,24 +81,36 @@ const ImageViewerModal = ({ imageUrl, description, itemId, itemType, showMessage
                         ×
                     </button>
                 </div>
-                
-                {/* Image container that grows to fill space */}
-                <div className="flex-1 min-h-0 flex justify-center items-center bg-black rounded-lg">
-                    <img
-                        src={imageUrl}
-                        alt="Promotional Content"
-                        className="w-full h-full object-cover"
-                    />
-                </div>
-                
-                {/* Description container */}
-                {description && (
-                    <div className="w-full flex-shrink-0 pt-3 overflow-y-auto">
-                        <p className="m-0 text-base text-[#DDDDDD] leading-normal whitespace-pre-wrap">
-                            {description}
-                        </p>
+                          
+                  {/* Scrollable Content Area */}
+                <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+
+                    {/* Letterbox Container: This grows and provides a positioning context */}
+                    <div className="flex-1 w-full bg-black rounded-lg relative">
+                        <img
+                            src={imageUrl}
+                            alt="Promotional Content"
+                            style={{
+                                position: 'absolute',
+                                top: '50%',
+                                left: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                maxWidth: '100%',
+                                maxHeight: '100%',
+                                objectFit: 'contain'
+                            }}
+                        />
                     </div>
-                )}
+
+                    {/* Description container */}
+                    {description && (
+                        <div className="w-full pt-3 flex-shrink-0">
+                            <p className="m-0 text-base text-[#DDDDDD] leading-normal whitespace-pre-wrap">
+                                {description}
+                            </p>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

@@ -411,7 +411,19 @@ function App() {
                             navigated = true;
                             break;
                         case 'user':
-                            if (id) { setSelectedUserId(id); setActiveScreen('UserProfile'); navigated = true; }
+                            if (id) {
+                                // This is the crucial check:
+                                if (user && id === user.uid) {
+                                    // If the user is navigating to their own profile,
+                                    // send them to their dashboard to see the private view.
+                                    setActiveScreen('CreatorDashboard');
+                                } else {
+                                    // Otherwise, show the public profile of the other user.
+                                    setSelectedUserId(id);
+                                    setActiveScreen('UserProfile');
+                                }
+                                navigated = true;
+                            }
                             break;
                         case 'competition':
                             setActiveScreen('CompetitionScreen');
@@ -596,8 +608,16 @@ useEffect(() => {
     };
     const handleNavToUser = (event) => {
         const { id } = event.detail;
-        setSelectedUserId(id);
-        handleNavigate('UserProfile');
+
+        // This is the definitive fix:
+        if (currentUser && id === currentUser.uid) {
+            // If the notification link is for the logged-in user, go to their private dashboard.
+            handleNavigate('CreatorDashboard');
+        } else {
+            // Otherwise, go to the public profile of the other user.
+            setSelectedUserId(id);
+            handleNavigate('UserProfile');
+        }
     };
 
     window.addEventListener('navigateToOpportunity', handleNavToOpp);
@@ -607,7 +627,7 @@ useEffect(() => {
         window.removeEventListener('navigateToOpportunity', handleNavToOpp);
         window.removeEventListener('navigateToUser', handleNavToUser);
     };
-}, [handleNavigate]); // Dependency on handleNavigate is correct
+}, [handleNavigate, currentUser]); // Added `currentUser` to the dependency array // Dependency on handleNavigate is correct
 // ======================== END: NOTIFICATION INBOX HANDLERS ========================
 
     // ======================= START: CONTENT NOTIFICATION HANDLER =======================
@@ -945,17 +965,17 @@ useEffect(() => {
 
          // --- GUARANTEED NAVIGATION FOR PLEDGE FLOW ---
   useEffect(() => {
-    // This effect runs whenever the pledgeContext is changed.
-    // It ensures that data is set *before* we navigate to the payment screen.
+    // This effect runs whenever pledgeContext is set, directing the user to the correct screen.
     if (pledgeContext && pledgeContext.type) {
-        // THE FIX: Direct the flow based on pledge type
-        if (pledgeContext.type === 'premium') {
-             handleNavigate('SubscriptionPledge'); // Direct to the Subscription Pledge Screen
+        // Direct premium subscriptions AND event ticket purchases to the pledge screen.
+        if (pledgeContext.type === 'premium' || pledgeContext.type === 'eventTicket') {
+             handleNavigate('SubscriptionPledge');
         } else {
-             handleNavigate('SupportUsScreen'); // All others go to SupportUsScreen first (e.g., tickets, donations)
+             // All other types (like donations) go to the general support hub.
+             handleNavigate('SupportUsScreen');
         }
     }
-  }, [pledgeContext]); // Dependency array: this code runs only when pledgeContext changes.
+  }, [pledgeContext]);
 
         // New Code to Add
   // --- Notification Toast System Logic ---

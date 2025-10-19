@@ -106,7 +106,7 @@ function PromotedSlot({ showMessage, handleVideoPress, currentUser }) {
                     style={{
                         width: '100%',
                         height: '100%',
-                        objectFit: 'contain'
+                        objectFit: 'cover'
                     }}
                     onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/100x100/1A1A1A/00FFFF?text=Ad'; }}
                 />

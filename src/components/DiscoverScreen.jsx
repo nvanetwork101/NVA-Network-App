@@ -482,7 +482,6 @@ function DiscoverScreen({
                                             targetEventId: masterEventDetails.id,
                                             targetEventTitle: masterEventDetails.eventTitle
                                         });
-                                        setActiveScreen('SupportUsScreen');
                                     }}
                                 >
                                     Purchase Ticket (${(masterEventDetails.ticketPrice || 0).toFixed(2)})
