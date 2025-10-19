@@ -38,6 +38,10 @@
         "function": "generateSharePreviewV2"
       },
       {
+        "source": "/promotedStatus/**",
+        "function": "generateSharePreviewV2"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
