@@ -56,8 +56,8 @@ const ThumbnailAdjustModal = ({ imageUrl, onSave, onCancel, showMessage, isUploa
             const devicePixelRatio = window.devicePixelRatio || 1;
             canvas.width = CANVAS_SIZE.width * devicePixelRatio;
             canvas.height = CANVAS_SIZE.height * devicePixelRatio;
-            canvas.style.width = `${CANVAS_SIZE.width}px`;
-            canvas.style.height = `${CANVAS_SIZE.height}px`;
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
 
             const handleWheelProxy = (e) => handleWheel(e);
             canvas.addEventListener('wheel', handleWheelProxy, { passive: false });
@@ -126,7 +126,7 @@ const ThumbnailAdjustModal = ({ imageUrl, onSave, onCancel, showMessage, isUploa
             <div className="confirmationModalContent" style={{ maxWidth: '400px', textAlign: 'center' }}>
                 <p className="confirmationModalTitle">Adjust Thumbnail</p>
                 <p className="subHeading" style={{fontSize: '14px', marginBottom: '15px', color: '#CCC'}}>Drag to pan, scroll or pinch to zoom.</p>
-                <div onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} style={{ cursor: isDragging ? 'grabbing' : 'grab', margin: '0 auto', width: `${CANVAS_SIZE.width}px`, height: `${CANVAS_SIZE.height}px`, border: '2px solid #555' }}>
+                <div onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} style={{ cursor: isDragging ? 'grabbing' : 'grab', margin: '0 auto', width: '100%', aspectRatio: '16 / 9', border: '2px solid #555', touchAction: 'none' }}>
                     <canvas ref={canvasRef}></canvas>
                 </div>
                 <div className="confirmationModalButtons">
