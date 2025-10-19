@@ -31,7 +31,7 @@ const ImageViewerModal = ({ imageUrl, description, onClose }) => {
                     <img
                         src={imageUrl}
                         alt="Promotional Content"
-                        className="max-w-full max-h-full object-contain"
+                        className="w-full h-full object-contain"
                     />
                 </div>
                 
