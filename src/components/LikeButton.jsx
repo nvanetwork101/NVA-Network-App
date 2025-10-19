@@ -114,8 +114,27 @@ function LikeButton({ contentItem, currentUser, showMessage, itemType }) {
                     }
                 }}
                 title="View who liked this"
-                style={{ padding: '0 5px', cursor: likeCount > 0 ? 'pointer' : 'default' }}
+                style={{ 
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '0 5px', 
+                    cursor: likeCount > 0 ? 'pointer' : 'default' 
+                }}
             >
+                {contentItem.lastLikerProfileUrl && likeCount > 0 && (
+                    <img 
+                        src={contentItem.lastLikerProfileUrl} 
+                        alt="Last liker"
+                        style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                            border: '1px solid #555'
+                        }}
+                    />
+                )}
                 <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>{likeCount}</span>
             </div>
         </button>

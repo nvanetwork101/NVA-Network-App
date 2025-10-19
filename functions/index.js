@@ -2306,11 +2306,21 @@ exports.updateLikeCount = onCall(async (request) => {
             }
 
             if (isLiking) {
+                // Get the user's profile to store their picture on the content item
+                const userRef = db.collection("creators").doc(uid);
+                const userDoc = await transaction.get(userRef);
+                const userProfileUrl = userDoc.exists ? userDoc.data().profilePictureUrl : null;
+
                 transaction.set(likeRef, { likedAt: new Date().toISOString() });
+                transaction.update(itemRef, { 
+                    likeCount: admin.firestore.FieldValue.increment(increment),
+                    lastLikerProfileUrl: userProfileUrl || null // Add the new field
+                });
+
             } else {
                 transaction.delete(likeRef);
+                transaction.update(itemRef, { likeCount: admin.firestore.FieldValue.increment(increment) });
             }
-            transaction.update(itemRef, { likeCount: admin.firestore.FieldValue.increment(increment) });
         });
         return { success: true, message: `Successfully ${isLiking ? 'liked' : 'unliked'} item.` };
     } catch (error) {
