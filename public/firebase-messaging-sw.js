@@ -28,7 +28,7 @@ self.addEventListener('activate', (event) => {
 });
 
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);
+// This call is no longer needed here; the service worker uses the app's main initialization.
 const messaging = firebase.messaging();
 
 // HANDLER 1: SHOW THE NOTIFICATION (This was the part that was accidentally deleted)
