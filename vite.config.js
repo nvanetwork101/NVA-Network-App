@@ -11,11 +11,12 @@ export default defineConfig({
     // Add the PWA plugin configuration
     VitePWA({
       registerType: 'autoUpdate',
-      // THIS IS THE FINAL FIX: Disable the conflicting auto-registration
       injectRegister: null,
       strategies: 'injectManifest',
-      srcDir: 'public',
-      filename: 'firebase-messaging-sw.js',
+      // THE FINAL FIX: Point to the new source file
+      swSrc: 'public/custom-sw.js',
+      // THE FINAL FIX: Define the output file name that Firebase needs
+      swDest: 'dist/firebase-messaging-sw.js',
       injectManifest: {
         // This tells the plugin to find and cache all our app's files
         globPatterns: ['**/*.{js,css,html,ico,png,svg}']
