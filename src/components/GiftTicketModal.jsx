@@ -67,9 +67,9 @@ const GiftTicketModal = ({ onClose, eventDetails, setPledgeContext, setActiveScr
             recipientName: selectedUser.creatorName // For display on the next screen
         });
         
-        // THIS IS THE FIX: Navigate directly to the screen designed to handle pledges,
-        // not the general support menu.
-        setActiveScreen('SubscriptionPledgeScreen');
+        // CRITICAL FIX: Close the modal and let the App.jsx useEffect handle the navigation 
+        // after the pledgeContext state has successfully updated.
+        onClose(); 
     };
 
     return (

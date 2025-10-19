@@ -73,10 +73,11 @@ const SupportUsScreen = ({
             <p className="subHeading">{content.hubSubtitle || "Your support empowers creators."}</p>
 
             <div className="allCampaignsList">
-                {/* --- THIS IS THE FIX (PART 2) --- */}
+                 {/* --- THIS IS THE FIX (PART 2) --- */}
                 {/* The entire "Buy Ticket" section is now conditional on a valid, ticketed liveEvent. */}
                 {liveEvent?.isTicketed && (
-                    <div className="allCampaignsListItem" onClick={() => handlePledge('eventTicket')} style={{borderLeft: '5px solid #00FF00'}}>
+                    <div className="allCampaignsListItem" onClick={() => handlePledge('eventTicket')} style={{cursor: 'pointer', borderLeft: '5px solid #00FF00'}}>                 
+                
                         <div className="campaignListContent">
                             <p className="campaignListTitle" style={{color: '#00FF00'}}>
                                 Buy Ticket: {liveEvent.eventTitle || "Live Premiere Event"}

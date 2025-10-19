@@ -948,7 +948,12 @@ useEffect(() => {
     // This effect runs whenever the pledgeContext is changed.
     // It ensures that data is set *before* we navigate to the payment screen.
     if (pledgeContext && pledgeContext.type) {
-        handleNavigate('SupportUsScreen');
+        // THE FIX: Direct the flow based on pledge type
+        if (pledgeContext.type === 'premium') {
+             handleNavigate('SubscriptionPledge'); // Direct to the Subscription Pledge Screen
+        } else {
+             handleNavigate('SupportUsScreen'); // All others go to SupportUsScreen first (e.g., tickets, donations)
+        }
     }
   }, [pledgeContext]); // Dependency array: this code runs only when pledgeContext changes.
 
