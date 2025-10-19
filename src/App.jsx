@@ -520,57 +520,36 @@ function App() {
  
         // ======================= START: PUSH NOTIFICATION SETUP =======================
 useEffect(() => {
-    if (!currentUser) return; // Only run for logged-in users
+    // Only run this logic if a user is logged in.
+    if (!currentUser) return;
 
-    // Define an async function inside the effect
     const requestPermissionAndSaveToken = async () => {
-        // Check if we've already asked for permission this session to avoid spamming the user
-        if (sessionStorage.getItem('notificationPermissionRequested')) {
-            return;
-        }
-        sessionStorage.setItem('notificationPermissionRequested', 'true');
-
         try {
-            const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
-                console.log("Notification permission granted.");
-                
-                // Get the token
+            // Check current permission status without prompting
+            if (Notification.permission === 'granted') {
                 const currentToken = await getToken(messaging, { vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0' });
-                
                 if (currentToken) {
-                    // Send the token to your server
                     const saveTokenFunction = httpsCallable(functions, 'saveFCMToken');
                     await saveTokenFunction({ token: currentToken });
-                    console.log("FCM Token saved successfully.");
-                } else {
-                    console.warn("No registration token available. Request permission to generate one.");
+                    console.log("FCM Token refreshed and saved successfully.");
                 }
-            } else {
-                console.warn("Notification permission denied.");
             }
         } catch (error) {
-            console.error("An error occurred while getting token. ", error);
+            console.error("An error occurred while getting or saving the FCM token.", error);
         }
     };
 
     requestPermissionAndSaveToken();
 
-     // Handle messages that arrive while the app is in the foreground
     const unsubscribeOnMessage = onMessage(messaging, (payload) => {
-        // THE FIX: The onSnapshot listener from the useNotifications hook is the
-        // single source of truth for creating toast notifications. This onMessage
-        // listener must NOT create a duplicate. We will log the incoming push for 
-        // debugging purposes but will not add it to the toast queue.
-        console.log("Foreground push received and intentionally ignored to prevent duplicate toast:", payload);
+        console.log("Foreground push received. Toast will be handled by the useNotifications hook.", payload);
     });
 
-    // Cleanup function to unsubscribe when the component unmounts or user logs out
     return () => {
         unsubscribeOnMessage();
     };
 
-}, [currentUser]); // This effect runs once when a user logs in
+}, [currentUser]); // Dependency ensures this runs when the user logs in.
 // ======================== END: PUSH NOTIFICATION SETUP ========================
     
      

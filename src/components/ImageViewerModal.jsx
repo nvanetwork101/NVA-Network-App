@@ -81,30 +81,21 @@ const ImageViewerModal = ({ imageUrl, description, itemId, itemType, showMessage
                         ×
                     </button>
                 </div>
-                          
-                  {/* Scrollable Content Area */}
-                <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
-
-                    {/* Letterbox Container: This grows and provides a positioning context */}
-                    <div className="flex-1 w-full bg-black rounded-lg relative">
+                
+                {/* Scrollable Content Area */}
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                    {/* Square Image container */}
+                    <div className="w-full aspect-square flex justify-center items-center bg-black rounded-lg">
                         <img
                             src={imageUrl}
                             alt="Promotional Content"
-                            style={{
-                                position: 'absolute',
-                                top: '50%',
-                                left: '50%',
-                                transform: 'translate(-50%, -50%)',
-                                maxWidth: '100%',
-                                maxHeight: '100%',
-                                objectFit: 'contain'
-                            }}
+                            className="max-w-full max-h-full object-contain"
                         />
                     </div>
 
                     {/* Description container */}
                     {description && (
-                        <div className="w-full pt-3 flex-shrink-0">
+                        <div className="w-full pt-3">
                             <p className="m-0 text-base text-[#DDDDDD] leading-normal whitespace-pre-wrap">
                                 {description}
                             </p>
