@@ -430,9 +430,17 @@ function App() {
 
                 // Fallback Navigation: If no deep link was handled, perform the default redirect.
                 if (!navigated) {
-                    if (profileData.role === 'creator' || profileData.role === 'admin' || profileData.role === 'authority') {
+                    const creationTime = new Date(user.metadata.creationTime);
+                    const lastSignInTime = new Date(user.metadata.lastSignInTime);
+                    
+                    // Check if the sign-in is within 10 seconds of creation time.
+                    const isNewUser = (lastSignInTime.getTime() - creationTime.getTime()) < 10000;
+
+                    if (isNewUser) {
+                        // For a brand new user, direct them to the dashboard as requested.
                         setActiveScreen('CreatorDashboard');
                     } else {
+                        // For any returning user, the default screen is now Home.
                         setActiveScreen('Home');
                     }
                 }

@@ -28,22 +28,22 @@ const ChatMessageScreen = ({
     const [menuState, setMenuState] = useState({ visible: false, x: 0, y: 0, message: null });
     const [replyingToMessage, setReplyingToMessage] = useState(null);
 
-    // --- NEW: ReactionPills Component ---
+  // --- NEW: ReactionPills Component ---
     // Renders the reaction emojis below a message bubble.
     const ReactionPills = ({ reactions, messageId }) => {
         if (!reactions || Object.keys(reactions).length === 0) return null;
 
         return (
-            <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+            <div style={{ display: 'flex', gap: '4px', marginTop: '4px', paddingLeft: '5px' }}>
                 {Object.entries(reactions).map(([emoji, uids]) => {
-                    if (uids.length === 0) return null; // Don't render if no one is reacting
+                    if (uids.length === 0) return null;
                     const hasReacted = uids.includes(currentUser.uid);
                     return (
                         <div key={emoji}
                              style={{
                                  display: 'flex', alignItems: 'center', gap: '3px',
-                                 background: hasReacted ? '#FFD700' : '#4A4A4A',
-                                 color: hasReacted ? '#0A0A0A' : '#FFF',
+                                 background: hasReacted ? 'rgba(135, 206, 235, 0.15)' : '#4A4A4A',
+                                 color: '#FFF',
                                  borderRadius: '12px', padding: '2px 8px', fontSize: '13px'
                              }}>
                             <span>{emoji}</span>
@@ -265,11 +265,11 @@ const ChatMessageScreen = ({
                             return (
                                 <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isMyMessage ? 'flex-end' : 'flex-start', marginBottom: '15px' }}>
                                     {msg.replyTo && (
-                                        <div style={{ padding: '5px 12px', marginBottom: '-2px', backgroundColor: isMyMessage ? '#d8b600' : '#2A2A2A', borderRadius: '12px 12px 0 0', border: '1px solid #444', borderBottom: 'none', maxWidth: '65%', alignSelf: isMyMessage ? 'flex-end' : 'flex-start' }}>
-                                            <p style={{ margin: 0, fontSize: '11px', color: isMyMessage ? '#333' : '#AAA', fontWeight: 'bold' }}>Replying to {msg.replyTo.senderName}</p>
-                                            <p style={{ margin: '2px 0 0', fontSize: '12px', color: isMyMessage ? '#1A1A1A' : '#CCC', fontStyle: 'italic', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg.replyTo.text}</p>
-                                        </div>
-                                    )}
+                                <div style={{ padding: '5px 12px', marginBottom: '-2px', backgroundColor: 'rgba(135, 206, 235, 0.15)', borderRadius: '12px 12px 0 0', border: '1px solid rgba(135, 206, 235, 0.3)', borderBottom: 'none', maxWidth: '65%', alignSelf: isMyMessage ? 'flex-end' : 'flex-start' }}>
+                                <p style={{ margin: 0, fontSize: '11px', color: '#FFD700', fontWeight: 'bold' }}>Replying to {msg.replyTo.senderName}</p>
+                                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#FFFFFF', fontStyle: 'italic', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg.replyTo.text}</p>
+                                </div>
+                                )}
                                     <div onTouchStart={(e) => !msg.isDeleted && handleTouchStart(e, msg)} onTouchEnd={handleTouchEnd} onContextMenu={(e) => !msg.isDeleted && handleContextMenu(e, msg)} >
                                         <div style={{
                                             maxWidth: '100%', padding: '10px 15px',
