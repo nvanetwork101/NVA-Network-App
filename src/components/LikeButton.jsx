@@ -91,7 +91,7 @@ function LikeButton({ contentItem, currentUser, showMessage, itemType }) {
                 width: 'auto',
                 minWidth: '32px',
                 height: '32px',
-                padding: '0 5px 0 10px',
+                padding: '0 10px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

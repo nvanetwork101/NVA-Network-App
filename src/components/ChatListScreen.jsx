@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 
+import { functions } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+
 // A helper function to format timestamps into a user-friendly string
 const formatTimestamp = (timestamp) => {
     if (!timestamp) return '';
@@ -26,10 +29,26 @@ const formatTimestamp = (timestamp) => {
     }
 };
 
-const ChatListScreen = ({ setActiveScreen, currentUser, setSelectedChatId, showMessage }) => {
-    const [chats, setChats] = useState([]);
+const ChatListScreen = ({ 
+    setActiveScreen, 
+    currentUser, 
+    setSelectedChatId, 
+    showMessage, 
+    // --- THE FIX: Accept the new props from App.jsx ---
+    setShowConfirmationModal, 
+    setConfirmationTitle, 
+    setConfirmationMessage, 
+    setOnConfirmationAction 
+}) => {
+    const [rawChats, setRawChats] = useState([]);
+    const [blockedUserIds, setBlockedUserIds] = useState(new Set());
+    const [filteredChats, setFilteredChats] = useState([]);
     const [loading, setLoading] = useState(true);
 
+    // --- State for glowing delete button ---
+    const [hoveredChatId, setHoveredChatId] = useState(null);
+
+    // Effect to fetch initial data
     useEffect(() => {
         if (!currentUser) {
             setActiveScreen('Login');
@@ -37,34 +56,73 @@ const ChatListScreen = ({ setActiveScreen, currentUser, setSelectedChatId, showM
             return;
         }
 
+        // The line `setLoading(true)` was removed from here. The initial `useState(true)`
+        // handles the first load, and removing this line prevents re-renders (like opening a modal)
+        // from causing a "loading" flicker. The `setLoading(false)` below will correctly
+        // turn off the spinner once the initial data is fetched.
+        
+        const blockListRef = collection(db, 'creators', currentUser.uid, 'blockedUsers');
+        const unsubBlocks = onSnapshot(blockListRef, (snapshot) => {
+            const blockedIds = new Set(snapshot.docs.map(doc => doc.id));
+            setBlockedUserIds(blockedIds);
+        });
         const chatsRef = collection(db, 'chats');
-        const q = query(
-            chatsRef, 
-            where('participants', 'array-contains', currentUser.uid),
-            orderBy('lastMessageTimestamp', 'desc')
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const conversations = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
-            setChats(conversations);
+        const q = query(chatsRef, where('participants', 'array-contains', currentUser.uid), orderBy('lastMessageTimestamp', 'desc'));
+        const unsubChats = onSnapshot(q, (snapshot) => {
+            const conversations = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setRawChats(conversations);
             setLoading(false);
         }, (error) => {
             console.error("Error fetching chat list: ", error);
             showMessage("Could not load conversations.");
             setLoading(false);
         });
-
-        // Cleanup the listener when the component unmounts
-        return () => unsubscribe();
-
+        return () => {
+            unsubBlocks();
+            unsubChats();
+        };
     }, [currentUser, setActiveScreen, showMessage]);
+
+    // Effect to filter the chat list (unchanged)
+    useEffect(() => {
+        if (!loading && currentUser) {
+            const filtered = rawChats.filter(chat => {
+                const isHidden = chat.hiddenFor?.includes(currentUser.uid);
+                if (isHidden) return false;
+                const otherParticipantUid = chat.participants.find(uid => uid !== currentUser.uid);
+                const isBlocked = otherParticipantUid && blockedUserIds.has(otherParticipantUid);
+                if (isBlocked) return false;
+                return true;
+            });
+            setFilteredChats(filtered);
+        }
+    }, [rawChats, blockedUserIds, loading, currentUser]);
 
     const handleChatSelect = (chatId) => {
         setSelectedChatId(chatId);
         setActiveScreen('ChatMessageScreen');
+    };
+
+    // --- REVISED Delete Handler ---
+    const handleDeleteChat = (chatId, event) => {
+        event.stopPropagation();
+
+        setConfirmationTitle("Delete Conversation");
+        setConfirmationMessage("Are you sure you want to permanently delete this conversation from your list? This action cannot be undone.");
+        
+        // This sets the function that the modal will execute upon confirmation.
+        setOnConfirmationAction(() => async () => {
+            try {
+                const hideChatFunction = httpsCallable(functions, 'hideChatForUser');
+                await hideChatFunction({ chatId: chatId });
+                showMessage("Conversation deleted.");
+            } catch (error) {
+                console.error("Error deleting chat:", error);
+                showMessage("Could not delete conversation. Please try again.");
+            }
+        });
+
+        setShowConfirmationModal(true); // Show the modal
     };
 
     return (
@@ -72,35 +130,43 @@ const ChatListScreen = ({ setActiveScreen, currentUser, setSelectedChatId, showM
             <div className="dashboardSection">
                 <p className="dashboardSectionTitle" style={{ marginBottom: '20px' }}>Conversations</p>
 
-                {loading ? (
+               {loading ? (
                     <p className="dashboardItem">Loading conversations...</p>
-                ) : chats.length === 0 ? (
+                ) : filteredChats.length === 0 ? (
                     <p className="dashboardItem">You have no conversations yet. Find a user and press the 'Message' button to start a chat!</p>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        {chats.map(chat => {
-                            // Find the other person in the chat
+                        {filteredChats.map(chat => {
                             const otherParticipantUid = chat.participants.find(uid => uid !== currentUser.uid);
-                            if (!otherParticipantUid) return null; // Should not happen in a 2-person chat
-                            
-                            // Get their details from the denormalized data
+                            if (!otherParticipantUid) return null;
                             const otherUserDetails = chat.participantDetails?.[otherParticipantUid] || {};
 
                             return (
                                 <div 
                                     key={chat.id} 
                                     onClick={() => handleChatSelect(chat.id)}
+                                    onMouseEnter={() => setHoveredChatId(chat.id)}
+                                    onMouseLeave={() => setHoveredChatId(null)}
                                     style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '15px',
-                                        padding: '10px',
-                                        backgroundColor: '#2A2A2A',
-                                        borderRadius: '8px',
-                                        cursor: 'pointer',
-                                        border: '1px solid #3A3A3A'
+                                        display: 'flex', alignItems: 'center', gap: '15px', padding: '10px',
+                                        backgroundColor: '#2A2A2A', borderRadius: '8px', cursor: 'pointer',
+                                        border: '1px solid #3A3A3A', position: 'relative'
                                     }}
                                 >
+                                    <button 
+                                        onClick={(e) => handleDeleteChat(chat.id, e)}
+                                        className="button"
+                                        style={{
+                                            position: 'absolute', top: '50%', right: '10px',
+                                            transform: 'translateY(-50%)', background: 'transparent',
+                                            padding: '8px', margin: 0, zIndex: 2
+                                        }}
+                                        title="Delete this conversation"
+                                    >
+                                        <svg fill={hoveredChatId === chat.id ? '#F44336' : '#616161'} viewBox="0 0 24 24" style={{ width: '22px', height: '22px', transition: 'fill 0.2s' }}>
+                                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path>
+                                        </svg>
+                                    </button>
                                     <img 
                                         src={otherUserDetails.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} 
                                         alt={otherUserDetails.creatorName}
@@ -114,7 +180,7 @@ const ChatListScreen = ({ setActiveScreen, currentUser, setSelectedChatId, showM
                                             {chat.lastMessage?.text || "No messages yet..."}
                                         </p>
                                     </div>
-                                    <span style={{ color: '#888', fontSize: '12px', marginLeft: 'auto' }}>
+                                    <span style={{ color: '#888', fontSize: '12px', marginLeft: 'auto', paddingRight: '40px' }}>
                                         {formatTimestamp(chat.lastMessageTimestamp)}
                                     </span>
                                 </div>

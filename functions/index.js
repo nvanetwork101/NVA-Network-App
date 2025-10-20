@@ -1,5 +1,6 @@
 // FORCED UPDATE: 2025-10-04 23:59
 // The Cloud Functions for Firebase SDK to create Cloud Functions and set up triggers.
+const {onValueWritten} = require("firebase-functions/v2/database");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentUpdated, onDocumentDeleted, onDocumentCreated} = require("firebase-functions/v2/firestore");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
@@ -11,6 +12,45 @@ const admin = require("firebase-admin");
 admin.initializeApp(); // THIS IS THE CORRECT, DEFAULT INITIALIZATION
 
 const PLATFORM_FEE_PERCENTAGE = 0.07; // 7% platform fee
+
+// =====================================================================
+// ============ START: USER PRESENCE SYSTEM (REALTIME DB) ==============
+// =====================================================================
+exports.onUserStatusChanged = onValueWritten("/status/{uid}", async (event) => {
+    const db = admin.firestore();
+    const { uid } = event.params;
+    const userStatusRef = db.doc(`creators/${uid}`);
+
+    // onValueWritten is triggered on create, update, or delete.
+    // If the data does not exist after the event, it means it was deleted (user disconnected).
+    if (!event.data.after.exists()) {
+        logger.info(`User '${uid}' disconnected. Setting status to offline.`);
+        return userStatusRef.set({
+            isOnline: false,
+            lastSeen: new Date().toISOString() // Use ISO string for consistency
+        }, { merge: true });
+    }
+
+    const status = event.data.after.val();
+
+    // The client will write an object like { state: 'online', last_changed: ... }
+    if (status.state === 'online') {
+        logger.info(`User '${uid}' connected. Setting status to online.`);
+        return userStatusRef.set({
+            isOnline: true,
+            // We don't set lastSeen here because they are currently online.
+        }, { merge: true });
+    } else { // Handles 'offline' or any other state
+        logger.info(`User '${uid}' went offline. Setting status to offline.`);
+        return userStatusRef.set({
+            isOnline: false,
+            lastSeen: new Date().toISOString()
+        }, { merge: true });
+    }
+});
+// =====================================================================
+// ============= END: USER PRESENCE SYSTEM (REALTIME DB) ===============
+// =====================================================================
 
 // =========== START: GHOST CLEANUP FUNCTION ===========
 exports.cleanupGhostArtifacts = onCall(async (request) => {
@@ -1783,37 +1823,34 @@ exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId
             return null;
         }
         
-        // --- THIS IS THE CRITICAL LOGIC ---
-        // 1. Get sender's details for the notification body
         const senderDoc = await db.collection("creators").doc(senderId).get();
         const senderName = senderDoc.exists() ? senderDoc.data().creatorName : "Someone";
         
-        // 2. Prepare the push notification payload
+        // --- THIS IS THE FIX ---
+        // The link now points directly to the chat screen.
         const pushPayload = {
             title: `New Message from ${senderName}`,
-            body: messageData.text.substring(0, 100), // Truncate long messages
-            link: `/user/${senderId}` // Link to the sender's profile to open the app
+            body: messageData.text.substring(0, 100),
+            link: `/chat/${chatId}` // Corrected Link
         };
 
-        // 3. Send the notification
         logger.info(`Sending new message push notification to '${recipientId}'.`);
         await sendPushNotification(recipientId, pushPayload);
         
-        // 4. Increment the recipient's unread notification badge
         const recipientRef = db.collection("creators").doc(recipientId);
         await recipientRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
         
-        // 5. Create a standard in-app notification document
+        // --- THIS IS THE FIX ---
+        // The in-app notification also points directly to the chat.
         const notificationPayload = {
             userId: recipientId,
             type: 'NEW_CHAT_MESSAGE',
             message: `${senderName}: ${messageData.text.substring(0, 100)}`,
-            link: `/user/${senderId}`, // Or could be a direct link to the chat
+            link: `/chat/${chatId}`, // Corrected Link
             isRead: false,
             timestamp: new Date()
         };
         await db.collection("notifications").add(notificationPayload);
-
 
     } catch (error) {
         logger.error(`FATAL: Error in onNewChatMessage for chat '${chatId}':`, error);
@@ -1823,6 +1860,219 @@ exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId
 // =====================================================================
 // =============== END: PRIVATE CHAT PUSH NOTIFICATIONS ================
 // =====================================================================
+
+    // =====================================================================
+// =========== START: CHAT CONVERSATION DELETION LOGIC =================
+// =====================================================================
+exports.hideChatForUser = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to delete a conversation.");
+    }
+
+    const { chatId } = request.data;
+    if (!chatId) {
+        throw new HttpsError("invalid-argument", "The function must be called with a 'chatId'.");
+    }
+
+    const db = admin.firestore();
+    const chatRef = db.collection("chats").doc(chatId);
+
+    try {
+        const chatDoc = await chatRef.get();
+        if (!chatDoc.exists) {
+            // If the chat doesn't exist, it's already gone. Return success.
+            return { success: true, message: "Chat already deleted." };
+        }
+
+        const chatData = chatDoc.data();
+        if (!chatData.participants.includes(uid)) {
+            // Security rule: a user cannot delete a conversation they are not part of.
+            throw new HttpsError("permission-denied", "You do not have permission to delete this chat.");
+        }
+
+        // Atomically add the user's UID to the 'hiddenFor' array.
+        await chatRef.update({
+            hiddenFor: admin.firestore.FieldValue.arrayUnion(uid)
+        });
+
+        logger.info(`User '${uid}' soft-deleted chat '${chatId}'.`);
+        return { success: true, message: "Conversation successfully deleted from your list." };
+
+    } catch (error) {
+        logger.error(`Error hiding chat '${chatId}' for user '${uid}':`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred while deleting the conversation.");
+    }
+});
+// =====================================================================
+// ============= END: CHAT CONVERSATION DELETION LOGIC =================
+// =====================================================================
+
+    // =====================================================================
+// ============ START: CONVERSATION DELETION (SOFT DELETE) =============
+// =====================================================================
+exports.hideChatForUser = onCall(async (request) => {
+    // 1. Authenticate the user.
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to delete a conversation.");
+    }
+
+    // 2. Validate the incoming data from the client.
+    const { chatId } = request.data;
+    if (!chatId) {
+        throw new HttpsError("invalid-argument", "The function must be called with a 'chatId'.");
+    }
+
+    const db = admin.firestore();
+    const chatRef = db.collection("chats").doc(chatId);
+
+    try {
+        const chatDoc = await chatRef.get();
+        if (!chatDoc.exists) {
+            // If the chat doesn't exist, it's already gone. Return success.
+            return { success: true, message: "Chat already deleted." };
+        }
+
+        const chatData = chatDoc.data();
+        
+        // 3. SECURITY CHECK: Ensure the user calling the function is a participant.
+        // This prevents one user from deleting a conversation they are not a part of.
+        if (!chatData.participants || !chatData.participants.includes(uid)) {
+            throw new HttpsError("permission-denied", "You do not have permission to modify this chat.");
+        }
+        
+        // 4. Perform the "soft delete" by adding the user's ID to the 'hiddenFor' array.
+        // The `arrayUnion` operator is safe and idempotent.
+        await chatRef.update({
+            hiddenFor: admin.firestore.FieldValue.arrayUnion(uid)
+        });
+
+        logger.info(`User '${uid}' successfully deleted chat '${chatId}' from their view.`);
+        return { success: true, message: "Conversation deleted." };
+
+    } catch (error) {
+        logger.error(`Error deleting chat '${chatId}' for user '${uid}':`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred.");
+    }
+});
+// =====================================================================
+// ============= END: CONVERSATION DELETION (SOFT DELETE) ==============
+// =====================================================================
+
+    // ============ START: CHAT MANAGEMENT FUNCTIONS =======================
+// =====================================================================
+
+// Soft-deletes a conversation from a single user's view.
+exports.hideChatForUser = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in."); }
+
+    const { chatId } = request.data;
+    if (!chatId) { throw new HttpsError("invalid-argument", "Missing chatId."); }
+
+    const db = admin.firestore();
+    const chatRef = db.collection("chats").doc(chatId);
+    try {
+        const chatDoc = await chatRef.get();
+        if (!chatDoc.exists) return { success: true, message: "Chat already deleted." };
+        if (!chatDoc.data().participants?.includes(uid)) {
+            throw new HttpsError("permission-denied", "You cannot modify this chat.");
+        }
+        await chatRef.update({ hiddenFor: admin.firestore.FieldValue.arrayUnion(uid) });
+        return { success: true, message: "Conversation deleted from your list." };
+    } catch (error) {
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred.");
+    }
+});
+
+// Soft-deletes a single message within a private chat.
+exports.deleteChatMessagePrivate = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in."); }
+
+    const { chatId, messageId } = request.data;
+    if (!chatId || !messageId) { throw new HttpsError("invalid-argument", "Missing chatId or messageId."); }
+
+    const db = admin.firestore();
+    const messageRef = db.doc(`chats/${chatId}/messages/${messageId}`);
+    try {
+        const messageDoc = await messageRef.get();
+        if (!messageDoc.exists) return { success: true };
+
+        // SECURITY RULE: Only the original sender can delete their own message.
+        if (messageDoc.data().senderId !== uid) {
+            throw new HttpsError("permission-denied", "You can only delete your own messages.");
+        }
+        
+        // Perform the soft delete.
+        await messageRef.update({
+            text: "This message was deleted",
+            isDeleted: true
+        });
+        return { success: true, message: "Message deleted." };
+    } catch (error) {
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred.");
+    }
+});
+
+    // --- START: NEW FUNCTION TO BE ADDED ---
+
+exports.reactToChatMessagePrivate = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in to react."); }
+
+    const { chatId, messageId, emoji } = request.data;
+    if (!chatId || !messageId || !emoji) { throw new HttpsError("invalid-argument", "Missing chatId, messageId, or emoji."); }
+
+    const db = admin.firestore();
+    const messageRef = db.doc(`chats/${chatId}/messages/${messageId}`);
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const messageDoc = await transaction.get(messageRef);
+            if (!messageDoc.exists) { throw new HttpsError("not-found", "The message you are reacting to does not exist."); }
+
+            const messageData = messageDoc.data();
+            const reactions = messageData.reactions || {}; // e.g., { '👍': ['uid1', 'uid2'] }
+
+            // Ensure the emoji property exists as an array
+            if (!reactions[emoji]) {
+                reactions[emoji] = [];
+            }
+
+            const userIndex = reactions[emoji].indexOf(uid);
+
+            if (userIndex > -1) {
+                // User has already reacted with this emoji, so remove the reaction (toggle off)
+                reactions[emoji].splice(userIndex, 1);
+                // If the array for this emoji is now empty, remove the emoji key
+                if (reactions[emoji].length === 0) {
+                    delete reactions[emoji];
+                }
+            } else {
+                // User has not reacted with this emoji, so add them
+                reactions[emoji].push(uid);
+            }
+            
+            transaction.update(messageRef, { reactions: reactions });
+        });
+        return { success: true, message: "Reaction updated." };
+    } catch (error) {
+        logger.error(`Error reacting to message '${messageId}' by user '${uid}'`, { error });
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred while adding the reaction.");
+    }
+});
+
+// --- END: NEW FUNCTION TO BE ADDED ---
+
+// =====================================================================
+// ============== END: CHAT MANAGEMENT FUNCTIONS =======================
 
     exports.onPayoutRequestUpdate = onDocumentUpdated("payoutRequests/{requestId}", async (event) => {
     const dataBefore = event.data.before.data();

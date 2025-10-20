@@ -272,35 +272,36 @@ service cloud.firestore {
     }
 
    // =====================================================================
-    // ============= FINAL CORRECTED RULES FOR CHAT SYSTEM ===============
+    // =================== RULES FOR CHAT SYSTEM ===========================
     // =====================================================================
     match /chats/{chatId} {
-      
-      // READ Rule: A user can only read a chat document OR its messages if their UID
-      // is in the 'participants' array of that chat document.
-      // This rule is applied to every document returned by a query.
+
+      // Rule: A user can read (get/list) a chat document if their UID
+      // is in that document's 'participants' array.
+      // This rule correctly validates the query from ChatListScreen.
       allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
 
-      // CREATE Rule: A user can create a chat if they include themselves in the participants list.
+      // Rule: A user can create a chat if they are a participant.
       allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
-      
-      // UPDATE Rule: A user can update a chat (e.g. lastMessage) if they are a participant.
+
+      // Rule: A user can update a chat if they are a participant.
       allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
 
-      // Client-side deletes are not allowed.
+      // Rule: Client-side deletes are not permitted.
       allow delete: if false;
 
       // --- SUB-COLLECTION: MESSAGES ---
       match /messages/{messageId} {
-        // We can remove the individual rules here because they will inherit from the parent `read` rule.
-        // The parent `allow read` ensures only participants can see messages.
-        allow read: if isAuthenticated();
+        // Rule: A user can read messages if they are part of the parent chat.
+        // We re-check the parent chat document's data to ensure security.
+        allow read: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
 
-        // CREATE Rule: A user can create a message if they are a participant (checked by the parent `read` permission context)
-        // AND the senderId is their own.
-        allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
-        
-        // No client-side updates or deletes.
+        // Rule: A user can create a message if they are the sender and part of the parent chat.
+        allow create: if isAuthenticated()
+                      && request.resource.data.senderId == request.auth.uid
+                      && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
+
+        // Rule: Client-side updates or deletes of messages are not permitted.
         allow update, delete: if false;
       }
     }

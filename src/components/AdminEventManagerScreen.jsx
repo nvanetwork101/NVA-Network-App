@@ -241,8 +241,8 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
             <div className="dashboardSection">
                 <p className="dashboardSectionTitle">Master Event Library</p>
                 {isLoading ? <p>Loading events...</p> : (
-                    <div className="event-list-container">
-                        <div className="event-list-header">
+                    <div className="event-list-container" style={{ overflowX: 'auto' }}>
+                        <div className="event-list-header" style={{ minWidth: '850px' }}>
                             <div style={{ flex: '0 0 70px' }}>Image</div>
                             <div style={{ flex: '2 1 0%' }}>Event Title</div>
                             <div style={{ flex: '1 1 0%' }}>Status</div>
@@ -252,7 +252,7 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
                         </div>
                         <div className="event-list-body">
                             {events.map(event => (
-                                <div key={event.id} className="event-list-item">
+                                <div key={event.id} className="event-list-item" style={{ minWidth: '850px' }}>
                                     <div style={{ flex: '0 0 70px' }}><img src={event.thumbnailUrl || 'https://placehold.co/100x56/2A2A2A/FFF?text=N/A'} alt={event.eventTitle} style={{ width: '60px', height: '34px', borderRadius: '4px', objectFit: 'cover' }}/></div>
                                     <div style={{ flex: '2 1 0%', fontWeight: 'bold' }}>{event.eventTitle}</div>
                                     <div style={{ flex: '1 1 0%' }}><span className={`status-badge status-${event.status}`}>{event.status?.toUpperCase() || 'UNKNOWN'}</span></div>

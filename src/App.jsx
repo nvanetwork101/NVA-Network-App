@@ -16,6 +16,7 @@ import FollowingFeedScreen from './components/FollowingFeedScreen';
 
 import SubscriptionPledgeScreen from './components/SubscriptionPledgeScreen';
 import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, updateDoc } from "firebase/firestore"; // CORRECT: getDoc and updateDoc are imported
+import { getDatabase, ref, onValue, onDisconnect, set, serverTimestamp } from "firebase/database";
 import BlockedListScreen from './components/BlockedListScreen';
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from './firebase.js';
@@ -475,6 +476,49 @@ function App() {
   }, []); // The empty dependency array is now correct.
   // =========================== END: LOGOUT RACE CONDITION FIX ===========================
  
+    // ======================= START: USER PRESENCE SYSTEM (REALTIME DB) ========================
+  useEffect(() => {
+    // This effect runs when the user logs in and cleans up when they log out.
+    if (!currentUser) {
+        return; // Don't run if the user is not logged in.
+    }
+
+    // Get a reference to the Realtime Database.
+    const dbRT = getDatabase();
+    const myStatusRef = ref(dbRT, '/status/' + currentUser.uid);
+
+    // This is the data that will be written to the Realtime Database when online.
+    const isOnlineForDB = {
+        state: 'online',
+        last_changed: serverTimestamp(),
+    };
+
+    // Listen to the special '.info/connected' path to detect connection changes.
+    const connectedRef = ref(dbRT, '.info/connected');
+    const unsubscribe = onValue(connectedRef, (snap) => {
+        if (snap.val() === true) {
+            // User's device is connected to Firebase.
+            // 1. Set an 'onDisconnect' handler. This will execute on the server when the
+            // client disconnects uncleanly (e.g., closes browser tab).
+            onDisconnect(myStatusRef).remove(); // The cloud function will handle this.
+
+            // 2. Set the user's status to 'online' in the Realtime Database.
+            // This triggers the cloud function to update their Firestore profile.
+            set(myStatusRef, isOnlineForDB);
+        }
+    });
+
+    // Cleanup function: This runs when the component unmounts or `currentUser` changes (logout).
+    return () => {
+        unsubscribe(); // Detach the connection listener.
+        // Gracefully signal that the user is offline on logout/unmount, without waiting for onDisconnect.
+        if (myStatusRef) {
+          ref(dbRT, '/status/' + currentUser.uid).remove();
+        }
+    };
+  }, [currentUser]); // Dependency on `currentUser` is crucial.
+  // ========================= END: USER PRESENCE SYSTEM (REALTIME DB) ==========================
+
         // ======================= START: PUSH NOTIFICATION SETUP =======================
 useEffect(() => {
     // Only run this logic if a user is logged in.
@@ -999,8 +1043,8 @@ useEffect(() => {
       case 'Contact': return <ContactScreen setActiveScreen={handleNavigate} showMessage={showMessage} currentUser={currentUser} />;
       case 'NvaNetworkCharts': return <NvaNetworkChartsScreen setActiveScreen={handleNavigate} />;
       case 'NotificationInbox': return <NotificationInboxScreen setActiveScreen={handleNavigate} currentUser={currentUser} dismissNotification={dismissNotification} markNotificationAsRead={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
-      case 'ChatList': return <ChatListScreen currentUser={currentUser} setActiveScreen={handleNavigate} setSelectedChatId={setSelectedChatId} showMessage={showMessage} />;
-      case 'ChatMessageScreen': return <ChatMessageScreen chatId={selectedChatId} currentUser={currentUser} creatorProfile={creatorProfile} setActiveScreen={handleNavigate} showMessage={showMessage} />;
+      case 'ChatList': return <ChatListScreen currentUser={currentUser} setActiveScreen={handleNavigate} setSelectedChatId={setSelectedChatId} showMessage={showMessage} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
+      case 'ChatMessageScreen': return <ChatMessageScreen chatId={selectedChatId} currentUser={currentUser} creatorProfile={creatorProfile} setActiveScreen={handleNavigate} showMessage={showMessage} setSelectedUserId={setSelectedUserId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
 
       case 'Home': default: return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
     

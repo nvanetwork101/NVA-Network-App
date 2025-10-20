@@ -11,7 +11,7 @@ import ShareButton from './ShareButton';
 
 const ContentStats = ({ item, currentUser, showMessage }) => {
     const LikeButtonVisual = () => (
-         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(10,10,10,0.7)', padding: '4px 8px', borderRadius: '15px', border: '1px solid #444' }}>
+         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: 'rgba(10,10,10,0.7)', padding: '4px 12px', borderRadius: '15px', border: '1px solid #444' }}>
             <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: '#FFD700' }}>
                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
             </svg>
@@ -189,86 +189,81 @@ const UserProfileScreen = ({
     };
 
     const handleMessageClick = async () => {
-        if (!currentUser || !creatorProfile) {
-            showMessage("Please log in to send messages.");
-            setActiveScreen('Login');
-            return;
-        }
+    if (!currentUser || !creatorProfile) {
+        showMessage("Please log in to send messages.");
+        setActiveScreen('Login');
+        return;
+    }
 
-        const targetUserUid = profile.id;
-        if (currentUser.uid === targetUserUid) {
-            showMessage("You cannot start a conversation with yourself.");
-            return;
-        }
+    const targetUserUid = profile.id;
+    if (currentUser.uid === targetUserUid) {
+        showMessage("You cannot start a conversation with yourself.");
+        return;
+    }
 
-        // Generate a predictable, canonical chat ID
-        const participants = [currentUser.uid, targetUserUid].sort();
-        const chatId = participants.join('_');
-        
-        try {
-            const chatDocRef = doc(db, 'chats', chatId);
-            const chatDocSnap = await getDoc(chatDocRef);
-
-            // If the chat room doesn't exist, create it.
-            if (!chatDocSnap.exists()) {
-                const newChatData = {
-                    participants: participants,
-                    createdAt: Timestamp.now(),
-                    lastMessage: null,
-                    lastMessageTimestamp: null,
-                    // Store denormalized data to avoid extra reads on the chat list screen
-                    participantDetails: {
-                        [currentUser.uid]: {
-                            creatorName: creatorProfile.creatorName || "Unknown User",
-                            profilePictureUrl: creatorProfile.profilePictureUrl || null
-                        },
-                        [targetUserUid]: {
-                            creatorName: profile.creatorName,
-                            profilePictureUrl: profile.profilePictureUrl || null
-                        }
-                    }
-                };
-                await setDoc(chatDocRef, newChatData);
-            }
-
-            // Navigate to the chat screen
-            setSelectedChatId(chatId);
-            setActiveScreen('ChatMessageScreen');
-
-        } catch (error) {
-            console.error("Error starting chat:", error);
-            showMessage("Could not start a conversation. Please try again later.");
-        }
-    };
+    // Generate a predictable, canonical chat ID
+    const participants = [currentUser.uid, targetUserUid].sort();
+    const chatId = participants.join('_');
     
-    const handleShareClick = async () => {
-        const shareUrl = `${window.location.origin}/user/${profile.id}`;
-        if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: profile.creatorName,
-                    text: `Check out ${profile.creatorName}'s profile on NVA Network!`,
-                    url: shareUrl
-                });
-            } catch (error) {
-                // Silently fail if the user cancels the share dialog.
-                if (error.name !== 'AbortError') {
-                    console.error("Sharing failed:", error);
-                    showMessage("Could not share profile at this time.");
+    try {
+        const chatDocRef = doc(db, 'chats', chatId);
+        const chatDocSnap = await getDoc(chatDocRef);
+
+        if (!chatDocSnap.exists()) {
+            const newChatData = {
+                participants: participants,
+                createdAt: Timestamp.now(),
+                lastMessage: null,
+                lastMessageTimestamp: null,
+                participantDetails: {
+                    [currentUser.uid]: {
+                        creatorName: creatorProfile.creatorName || "Unknown User",
+                        profilePictureUrl: creatorProfile.profilePictureUrl || null
+                    },
+                    [targetUserUid]: {
+                        creatorName: profile.creatorName,
+                        profilePictureUrl: profile.profilePictureUrl || null
+                    }
                 }
-            }
-        } else {
-            // Fallback for desktop or browsers that don't support Web Share API
-            try {
-                await navigator.clipboard.writeText(shareUrl);
-                showMessage("Profile URL copied to clipboard!");
-            } catch (err) {
-                console.error('Failed to copy: ', err);
-                showMessage("Could not copy URL. Your browser may not support this feature.");
+            };
+            await setDoc(chatDocRef, newChatData);
+        }
+
+        setSelectedChatId(chatId);
+        setActiveScreen('ChatMessageScreen');
+
+    } catch (error) {
+        console.error("Error starting chat:", error);
+        showMessage("Could not start a conversation. Please try again later.");
+    }
+};
+
+const handleShareClick = async () => {
+    const shareUrl = `${window.location.origin}/user/${profile.id}`;
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: profile.creatorName,
+                text: `Check out ${profile.creatorName}'s profile on NVA Network!`,
+                url: shareUrl
+            });
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                console.error("Sharing failed:", error);
+                showMessage("Could not share profile at this time.");
             }
         }
-    };
-
+    } else {
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            showMessage("Profile URL copied to clipboard!");
+        } catch (err) {
+            console.error('Failed to copy: ', err);
+            showMessage("Could not copy URL. Your browser may not support this feature.");
+        }
+    }
+};
+    
     const handleRoleChange = async (newRole) => { /* ... existing logic ... */ };
     
     const handleToggleBan = () => {
@@ -361,37 +356,37 @@ const UserProfileScreen = ({
                     </div>
 
                     {currentUser && currentUser.uid !== selectedUserId && (
-                        <div style={{display: 'flex', alignItems: 'center', gap: '10px', marginTop: '15px'}}>
-                            <button 
-                                className="button" 
-                                onClick={handleFollowToggle} 
-                                disabled={isFollowLoading}
-                                style={{
-                                    margin: 0,
-                                    backgroundColor: isFollowing ? 'transparent' : '#FFD700',
-                                    border: '1px solid #FFD700',
-                                    flex: 1 /* Let this button grow */
-                                }}
-                            >
-                                <span className="buttonText" style={{ color: isFollowing ? '#FFD700' : '#0A0A0A', fontWeight: 'bold' }}>
-                                    {isFollowLoading ? '...' : (isFollowing ? 'Following' : 'Follow')}
-                                </span>
-                            </button>
-                            
-                            {/* --- ICON BUTTONS --- */}
-                            <button title="Message User" className="button" onClick={handleMessageClick} style={{margin: 0, backgroundColor: '#3A3A3A', flexShrink: 0, width: '44px', height: '44px', padding: '10px' }}>
-                                <svg fill="#FFFFFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"></path></svg>
-                            </button>
-                             <button title="Share Profile" className="button" onClick={handleShareClick} style={{margin: 0, backgroundColor: '#3A3A3A', flexShrink: 0, width: '44px', height: '44px', padding: '10px' }}>
-                               <svg fill="#FFFFFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"></path></svg>
-                            </button>
-                            {/* --- END ICON BUTTONS --- */}
+    <div style={{display: 'flex', alignItems: 'center', gap: '10px', marginTop: '15px'}}>
+        <button 
+            className="button" 
+            onClick={handleFollowToggle} 
+            disabled={isFollowLoading}
+            style={{
+                margin: 0,
+                backgroundColor: isFollowing ? 'transparent' : '#FFD700',
+                border: '1px solid #FFD700',
+                flex: 1 /* Let this button grow */
+            }}
+        >
+            <span className="buttonText" style={{ color: isFollowing ? '#FFD700' : '#0A0A0A', fontWeight: 'bold' }}>
+                {isFollowLoading ? '...' : (isFollowing ? 'Following' : 'Follow')}
+            </span>
+        </button>
+        
+        {/* --- ICON BUTTONS --- */}
+        <button title="Message User" className="button" onClick={handleMessageClick} style={{margin: 0, backgroundColor: '#3A3A3A', flexShrink: 0, width: '44px', height: '44px', padding: '10px' }}>
+            <svg fill="#FFFFFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"></path></svg>
+        </button>
+         <button title="Share Profile" className="button" onClick={handleShareClick} style={{margin: 0, backgroundColor: '#3A3A3A', flexShrink: 0, width: '44px', height: '44px', padding: '10px' }}>
+           <svg fill="#FFFFFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"></path></svg>
+        </button>
+        {/* --- END ICON BUTTONS --- */}
 
-                            <button className="button" onClick={handleToggleBlock} disabled={isBlockLoading} style={{margin: 0, backgroundColor: isBlocked ? '#FF8C00' : '#DC3545', flex: 1 /* Let this button grow */ }}>
-                                <span className="buttonText">{isBlockLoading ? '...' : (isBlocked ? 'Unblock' : 'Block')}</span>
-                            </button>
-                        </div>
-                    )}
+        <button className="button" onClick={handleToggleBlock} disabled={isBlockLoading} style={{margin: 0, backgroundColor: isBlocked ? '#FF8C00' : '#DC3545', flex: 1 /* Let this button grow */ }}>
+            <span className="buttonText">{isBlockLoading ? '...' : (isBlocked ? 'Unblock' : 'Block')}</span>
+        </button>
+    </div>
+)}
                     
                     <div style={{borderTop: '1px solid #3A3A3A', paddingTop: '15px', marginTop: '15px'}}>
                         <p className="dashboardItem"><strong>Bio:</strong> {profile.bio || "No bio provided."}</p>
