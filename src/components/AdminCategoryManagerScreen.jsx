@@ -5,7 +5,7 @@ import { db } from '../firebase';
 import { collection, onSnapshot, addDoc, deleteDoc, updateDoc, doc, query, orderBy } from 'firebase/firestore';
 
 // This is a dedicated component for managing Discover screen categories.
-function AdminCategoryManagerScreen({ showMessage }) {
+function AdminCategoryManagerScreen({ showMessage, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) {
     // --- STATE MANAGEMENT ---
     const [categories, setCategories] = useState([]);
     const [loadingCategories, setLoadingCategories] = useState(true);
@@ -49,15 +49,21 @@ function AdminCategoryManagerScreen({ showMessage }) {
         }
     };
 
-    const handleDeleteCategory = async (cat) => {
-        if (window.confirm(`Are you sure you want to permanently delete the category "${cat.name}"?`)) {
+    const handleDeleteCategory = (cat) => {
+        const deleteAction = async () => {
+            showMessage("Deleting category...");
             try {
                 await deleteDoc(doc(db, "content_categories", cat.id));
-                showMessage("Category deleted.");
-            } catch (error) { 
-                showMessage(`Error deleting category: ${error.message}`); 
+                showMessage("Category deleted successfully.");
+            } catch (error) {
+                showMessage(`Error deleting category: ${error.message}`);
             }
-        }
+        };
+
+        setConfirmationTitle("Confirm Deletion");
+        setConfirmationMessage(`Are you sure you want to permanently delete the category "${cat.name}"? This action cannot be undone.`);
+        setOnConfirmationAction(() => deleteAction);
+        setShowConfirmationModal(true);
     };
 
     const handleToggleActive = async (cat) => {
