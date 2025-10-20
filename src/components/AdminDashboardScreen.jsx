@@ -717,7 +717,13 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                 {selectedAdminSubScreen === 'ContentManagement' && <AdminContentManagerScreen {...{showMessage, setActiveScreen, featuredContentSlots, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction}} />}
                 {selectedAdminSubScreen === 'Competitions' && <AdminCompetitionManager {...{showMessage, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction}} />}
                 {selectedAdminSubScreen === 'EventManager' && <AdminEventManagerScreen {...{showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction}} />} 
-                {selectedAdminSubScreen === 'CategoryManager' && <AdminCategoryManagerScreen {...{showMessage}} />}
+                {selectedAdminSubScreen === 'CategoryManager' && <AdminCategoryManagerScreen 
+                    showMessage={showMessage}
+                    setShowConfirmationModal={setShowConfirmationModal}
+                    setConfirmationTitle={setConfirmationTitle}
+                    setConfirmationMessage={setConfirmationMessage}
+                    setOnConfirmationAction={setOnConfirmationAction}
+                />}
                 
                 {selectedAdminSubScreen === 'BoxOffice' && <AdminBoxOfficeScreen {...{showMessage}} />}
 
