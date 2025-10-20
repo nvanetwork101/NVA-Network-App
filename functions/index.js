@@ -1750,6 +1750,80 @@ exports.onNewFollower = onDocumentCreated("creators/{creatorId}/followers/{follo
     return null;
 });
 
+    // functions/index.js
+
+// =====================================================================
+// ============== START: PRIVATE CHAT PUSH NOTIFICATIONS ===============
+// =====================================================================
+exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId}", async (event) => {
+    const messageData = event.data.data();
+    if (!messageData) {
+        logger.warn("New chat message trigger fired with no data.");
+        return null;
+    }
+
+    const { senderId } = messageData;
+    const { chatId } = event.params;
+    const db = admin.firestore();
+
+    try {
+        const chatDocRef = db.collection("chats").doc(chatId);
+        const chatDoc = await chatDocRef.get();
+
+        if (!chatDoc.exists) {
+            logger.error(`Chat document '${chatId}' not found for new message.`);
+            return null;
+        }
+
+        const chatData = chatDoc.data();
+        const recipientId = chatData.participants.find(uid => uid !== senderId);
+
+        if (!recipientId) {
+            logger.warn(`Could not determine recipient for message in chat '${chatId}'.`);
+            return null;
+        }
+        
+        // --- THIS IS THE CRITICAL LOGIC ---
+        // 1. Get sender's details for the notification body
+        const senderDoc = await db.collection("creators").doc(senderId).get();
+        const senderName = senderDoc.exists() ? senderDoc.data().creatorName : "Someone";
+        
+        // 2. Prepare the push notification payload
+        const pushPayload = {
+            title: `New Message from ${senderName}`,
+            body: messageData.text.substring(0, 100), // Truncate long messages
+            link: `/user/${senderId}` // Link to the sender's profile to open the app
+        };
+
+        // 3. Send the notification
+        logger.info(`Sending new message push notification to '${recipientId}'.`);
+        await sendPushNotification(recipientId, pushPayload);
+        
+        // 4. Increment the recipient's unread notification badge
+        const recipientRef = db.collection("creators").doc(recipientId);
+        await recipientRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        
+        // 5. Create a standard in-app notification document
+        const notificationPayload = {
+            userId: recipientId,
+            type: 'NEW_CHAT_MESSAGE',
+            message: `${senderName}: ${messageData.text.substring(0, 100)}`,
+            link: `/user/${senderId}`, // Or could be a direct link to the chat
+            isRead: false,
+            timestamp: new Date()
+        };
+        await db.collection("notifications").add(notificationPayload);
+
+
+    } catch (error) {
+        logger.error(`FATAL: Error in onNewChatMessage for chat '${chatId}':`, error);
+    }
+    return null;
+});
+// =====================================================================
+// =============== END: PRIVATE CHAT PUSH NOTIFICATIONS ================
+// =====================================================================
+
     exports.onPayoutRequestUpdate = onDocumentUpdated("payoutRequests/{requestId}", async (event) => {
     const dataBefore = event.data.before.data();
     const dataAfter = event.data.after.data();

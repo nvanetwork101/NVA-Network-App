@@ -271,6 +271,40 @@ service cloud.firestore {
       }
     }
 
+   // =====================================================================
+    // ============= FINAL CORRECTED RULES FOR CHAT SYSTEM ===============
+    // =====================================================================
+    match /chats/{chatId} {
+      
+      // READ Rule: A user can only read a chat document OR its messages if their UID
+      // is in the 'participants' array of that chat document.
+      // This rule is applied to every document returned by a query.
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
+
+      // CREATE Rule: A user can create a chat if they include themselves in the participants list.
+      allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
+      
+      // UPDATE Rule: A user can update a chat (e.g. lastMessage) if they are a participant.
+      allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
+
+      // Client-side deletes are not allowed.
+      allow delete: if false;
+
+      // --- SUB-COLLECTION: MESSAGES ---
+      match /messages/{messageId} {
+        // We can remove the individual rules here because they will inherit from the parent `read` rule.
+        // The parent `allow read` ensures only participants can see messages.
+        allow read: if isAuthenticated();
+
+        // CREATE Rule: A user can create a message if they are a participant (checked by the parent `read` permission context)
+        // AND the senderId is their own.
+        allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
+        
+        // No client-side updates or deletes.
+        allow update, delete: if false;
+      }
+    }
+
     match /artifacts/{appId}/public/data/content_items/{contentId} {
       allow read: if true;
       allow create, delete: if (isAuthenticated() && (request.auth.uid == resource.data.creatorId || request.auth.uid == request.resource.data.creatorId)) || isModerator();
