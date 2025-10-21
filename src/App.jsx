@@ -1239,14 +1239,7 @@ return (
           onClose={() => setShowImageViewerModal(false)}
         />
       )}
-
-      {/* --- PWA UPDATE FIX: Render a persistent button when an update is available --- */}
-      {needRefresh && (
-        <button className="update-button" onClick={handleUpdate}>
-          Update
-        </button>
-      )}
-
+      
       {/* --- iOS PWA FIX: The new, styled install prompt for iPhones/iPads --- */}
       {showIosInstallPrompt && (
         <IosInstallPrompt onClose={() => setShowIosInstallPrompt(false)} />
