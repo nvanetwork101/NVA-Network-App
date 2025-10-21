@@ -262,18 +262,17 @@ const ChatMessageScreen = ({
             setNewMessage('');
             setReplyingToMessage(null);
             setShowEmojiPicker(false);
-
-            // --- KEYBOARD FIX: Immediately refocus the input to prevent keyboard dismissal ---
-            // A microtask is used to ensure this focus command runs after the current execution stack
-            // clears, which makes it more reliable on all devices.
-            queueMicrotask(() => {
-                inputRef.current?.focus();
-            });
-
+            
         } catch (error) {            console.error("Error sending message via Cloud Function:", error);
             showMessage(error.message || "Failed to send message. You may have been blocked or removed from this chat.");
+        
         } finally {
             setIsSending(false);
+            // This pushes the focus command to the end of the event queue, ensuring it runs
+            // AFTER React has finished its re-render cycle, which prevents the keyboard from dismissing.
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 0);
         }
     };
 
