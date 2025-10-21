@@ -364,8 +364,7 @@ const ChatMessageScreen = ({
     const lastSeenTimestamp = chatDetails?.lastSeenBy?.[currentUser.uid];
 
     return (
-       <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-            {/* Header */}
+       <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>            {/* Header */}
             <div style={{ padding: '10px', backgroundColor: '#1A1A1A', display: 'flex', flexDirection: 'column', gap: '10px', borderBottom: '1px solid #3A3A3A', flexShrink: 0 }}>
                  <div style={{display: 'flex', alignItems: 'center', width: '100%'}}>
                     <button onClick={() => setActiveScreen('ChatList')} className="button" style={{ margin: 0, padding: '8px', background: 'transparent', alignSelf: 'center' }}>
