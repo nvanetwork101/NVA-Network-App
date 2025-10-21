@@ -85,7 +85,7 @@ const ChatMessageScreen = ({
     const initialScrollDoneRef = useRef(false); // Ref to track if the initial scroll has happened
 
     // --- UNIFIED SCROLLING LOGIC ---
-    // This single hook manages both initial "smart scroll" and scrolls for new messages, eliminating the race condition.
+    // This single hook manages both initial "smart scroll" and scrolls for new messages, eliminating race conditions.
     useLayoutEffect(() => {
         // First, ensure all necessary data and elements are loaded before attempting any scroll operations.
         if (loading || !chatDetails || messages.length === 0) {
@@ -130,7 +130,13 @@ const ChatMessageScreen = ({
         } else {
             const isNewMessageArriving = messages.length > prevMessagesLength.current;
             if (isNewMessageArriving) {
-                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                // By wrapping the scroll in a `setTimeout`, we push this action to the end of the
+                // browser's event queue. This gives React just enough time to render the new
+                // message into the DOM before we attempt to scroll to it, fixing the issue
+                // where the user's own sent message would be partially cut off.
+                setTimeout(() => {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                }, 0);
             }
         }
 
