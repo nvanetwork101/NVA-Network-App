@@ -1117,135 +1117,101 @@ return (
         </div>
       ) : (
         <>
-          {/* Step 2: Once the video is done, show the rest of the app. */}
-          <Header 
-            setActiveScreen={handleNavigate}
-            currencyRates={currencyRates}
-            selectedCurrency={selectedCurrency}
-            onCurrencyChange={setSelectedCurrency}
-            isLive={isLive}
-            countdownText={countdownText}
-            // --- PWA Install Button Props ---
-            onInstallClick={handleInstallClick}
-            showInstallButton={!isStandalone}
-            // --- PWA UPDATE PROPS ---
-            needRefresh={needRefresh}
-            onUpdate={handleUpdate}
-          />
-          <div className="container">
-            {/* Step 3: Use the original authLoading for the quick, text-based loader during navigation. */}
-            {authLoading ? (
-                <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
-                  <p className="heading">Loading...</p>
-                </div>
-            ) : (
-                renderScreen()
+          {/* This new div is the master container that enforces the fixed header/footer layout */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100vh', // This forces the container to fill the screen vertically
+            maxHeight: '-webkit-fill-available', // A common fix for mobile browser viewport issues
+          }}>
+
+            <Header 
+              setActiveScreen={handleNavigate}
+              currencyRates={currencyRates}
+              selectedCurrency={selectedCurrency}
+              onCurrencyChange={setSelectedCurrency}
+              isLive={isLive}
+              countdownText={countdownText}
+              onInstallClick={handleInstallClick}
+              showInstallButton={!isStandalone}
+              needRefresh={needRefresh}
+              onUpdate={handleUpdate}
+            />
+
+            {/* This div now acts as the flexible "middle" part of the app that grows/shrinks */}
+            <div className="container" style={{
+              flex: 1,           // Critical: Makes this div expand to fill all available space.
+              minHeight: 0,      // Prevents flex child from overflowing its parent on smaller screens.
+              overflow: 'hidden',// This container doesn't scroll; scrolling happens inside the screen component.
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              {authLoading ? (
+                  <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
+                    <p className="heading">Loading...</p>
+                  </div>
+              ) : (
+                  // The `screenContainer` inside ChatMessageScreen will now correctly fill this space.
+                  renderScreen()
+              )}
+            </div>
+
+            {!['Suspended', 'Banned'].includes(activeScreen) && (
+              <NavigationBar
+                activeScreen={activeScreen}
+                setActiveScreen={handleNavigate}
+                currentUser={currentUser}
+                creatorProfile={creatorProfile}
+                showMessage={showMessage}
+                hasNewFollowerContent={hasNewFollowerContent}
+                unreadCount={notificationBadgeCount}
+                unreadChatCount={unreadChatCount}
+              />
             )}
           </div>
-          {!['Suspended', 'Banned'].includes(activeScreen) && (
-            <NavigationBar
-              activeScreen={activeScreen}
-              setActiveScreen={handleNavigate}
-              currentUser={currentUser}
-              creatorProfile={creatorProfile}
-              showMessage={showMessage}
-              hasNewFollowerContent={hasNewFollowerContent}
-          unreadCount={notificationBadgeCount}
-          unreadChatCount={unreadChatCount} // <-- NEW PROP ADDED HERE
-        />
-          )}
-
-          {/* All modals and toasts remain here */}
+          
+          {/* All modals and overlays are placed here, OUTSIDE the main layout div */}
           {currentToast && (
-              <NotificationToast
-                  key={currentToast.id}
-                  notification={currentToast}
-                  onClose={handleToastClose}
-                  setActiveScreen={handleNavigate}
-              />
+              <NotificationToast key={currentToast.id} notification={currentToast} onClose={handleToastClose} setActiveScreen={handleNavigate} />
           )}
           <audio ref={notificationSoundRef} src={notificationSound} preload="auto" />
 
           {message && (
-            <div className="messageBox">
-              <p className="messageText">{message}</p>
-            </div>
+            <div className="messageBox"> <p className="messageText">{message}</p> </div>
           )}
 
           {showConfirmationModal && (
-            <ConfirmationModal
-                title={confirmationTitle}
-                message={confirmationMessage}
-                onConfirm={onConfirmationAction}
-                onCancel={() => setShowConfirmationModal(false)}
-            />
+            <ConfirmationModal title={confirmationTitle} message={confirmationMessage} onConfirm={onConfirmationAction} onCancel={() => setShowConfirmationModal(false)} />
           )}
 
           {showReportModal && (
-              <ReportContentModal
-                  showMessage={showMessage}
-                  onCancel={() => setShowReportModal(false)}
-                  contentToReport={contentToReport}
-                  currentUser={currentUser}
-              />
+              <ReportContentModal showMessage={showMessage} onCancel={() => setShowReportModal(false)} contentToReport={contentToReport} currentUser={currentUser} />
           )}
 
-            {showContentAppealModal && (
-              <ContentAppealModal
-                  notification={notificationToAppeal}
-                  showMessage={showMessage}
-                  onClose={() => setShowContentAppealModal(false)}
-              />
+          {showContentAppealModal && (
+              <ContentAppealModal notification={notificationToAppeal} showMessage={showMessage} onClose={() => setShowContentAppealModal(false)} />
           )}
           
           {showVideoModal && (
-              <VideoPlayerModal
-                  videoUrl={currentVideoUrl}
-                  onClose={() => {
-                      setShowVideoModal(false);
-                      setOpenCommentsOnLoad(false); // <-- Reset the flag when the modal is closed
-                  }}
-                  contentItem={currentContentItem}
-                  currentUser={currentUser}
-                  showMessage={showMessage}
-                  openCommentsProp={openCommentsOnLoad} // <-- Pass the flag as a prop
-              />
+              <VideoPlayerModal videoUrl={currentVideoUrl} onClose={() => { setShowVideoModal(false); setOpenCommentsOnLoad(false); }} contentItem={currentContentItem} currentUser={currentUser} showMessage={showMessage} openCommentsProp={openCommentsOnLoad} />
           )}
 
-            {showCommentsModal && itemForComments && (
-              <CommentsModal
-                  item={itemForComments}
-                  itemType={itemTypeForComments}
-                  currentUser={currentUser}
-                  creatorProfile={creatorProfile}
-                  showMessage={showMessage}
-                  onClose={() => setShowCommentsModal(false)}
-              />
+          {showCommentsModal && itemForComments && (
+              <CommentsModal item={itemForComments} itemType={itemTypeForComments} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} onClose={() => setShowCommentsModal(false)} />
           )}
-            {showLikesModal && contentForLikes && (
-          <LikesModal
-              contentItem={contentForLikes}
-              onClose={() => setShowLikesModal(false)}
-          />
-      )}
+
+          {showLikesModal && contentForLikes && (
+            <LikesModal contentItem={contentForLikes} onClose={() => setShowLikesModal(false)} />
+          )}
       
-        {showImageViewerModal && (
-        <ImageViewerModal
-          imageUrl={imageViewerData.imageUrl}
-          description={imageViewerData.description}
-          itemId={imageViewerData.itemId} 
-          itemType={imageViewerData.itemType}
-          showMessage={showMessage} // <--- CRITICAL FIX: Pass the showMessage prop
-          onClose={() => setShowImageViewerModal(false)}
-        />
-      )}
+          {showImageViewerModal && (
+            <ImageViewerModal imageUrl={imageViewerData.imageUrl} description={imageViewerData.description} itemId={imageViewerData.itemId} itemType={imageViewerData.itemType} showMessage={showMessage} onClose={() => setShowImageViewerModal(false)} />
+          )}
       
-      {/* --- iOS PWA FIX: The new, styled install prompt for iPhones/iPads --- */}
-      {showIosInstallPrompt && (
-        <IosInstallPrompt onClose={() => setShowIosInstallPrompt(false)} />
-      )}
-      {/* --- END OF FIX --- */}
-      </>
+          {showIosInstallPrompt && (
+            <IosInstallPrompt onClose={() => setShowIosInstallPrompt(false)} />
+          )}
+        </>
       )}
     </>
   );
