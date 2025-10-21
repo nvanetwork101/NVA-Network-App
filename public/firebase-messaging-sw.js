@@ -7,10 +7,28 @@ importScripts('https://storage.googleapis.com/workbox-cdn/releases/6.4.1/workbox
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-// This line tells Workbox to manage the entire update lifecycle and caching.
-// The manual 'activate' and 'message' listeners have been removed to prevent conflicts.
-// The `vite-plugin-pwa` library will handle sending 'SKIP_WAITING' messages automatically.
+// This line tells Workbox to manage the file caching.
 workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
+
+// --- START: PWA PROMPT MODE LISTENERS ---
+// These listeners are required by the `registerType: 'prompt'` configuration in vite.config.js.
+
+// This listener waits for the message from our `usePWAUpdate.js` hook.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    // This command tells the new service worker to stop waiting and begin activating.
+    self.skipWaiting();
+  }
+});
+
+// This listener fires once the worker begins activating.
+self.addEventListener('activate', (event) => {
+  // This command tells the service worker to take immediate control of all open
+  // application tabs, which is crucial for the update to apply seamlessly.
+  event.waitUntil(self.clients.claim());
+});
+// --- END: PWA PROMPT MODE LISTENERS ---
+
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -29,7 +47,7 @@ if (!firebase.apps.length) {
 }
 const messaging = firebase.messaging();
 
-// HANDLER 1: Show background push notifications. This is application logic and should remain.
+// HANDLER 1: Show background push notifications. This is application logic and must remain.
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message: ', payload);
 
