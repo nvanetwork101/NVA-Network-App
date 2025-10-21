@@ -1,53 +1,30 @@
-import { useState, useEffect, useRef } from 'react'; // <-- ADD useRef
+import { useState } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 
 export function usePWAUpdate() {
   const [needRefresh, setNeedRefresh] = useState(false);
-  
-  // This ref will act as a flag to ensure we only reload when we mean to.
-  const isUpdateInProgress = useRef(false);
+  const [isUpdating, setIsUpdating] = useState(false); // Added for "Updating..." text
 
-  // The registerSW function from the PWA library
+  // The registerSW function from the PWA library returns its own update function.
   const updateServiceWorker = registerSW({
     onNeedRefresh() {
-      // This is called when a new service worker is waiting.
       setNeedRefresh(true);
     },
     onRegisterError(error) {
-      // Added for robust error handling
       console.error('Service Worker registration error:', error);
     }
   });
 
-  useEffect(() => {
-    // This listener waits for the browser to confirm a new SW has taken control.
-    const controllerChangeListener = () => {
-      // We only reload if our flag is true, preventing accidental reloads.
-      if (isUpdateInProgress.current) {
-        window.location.reload();
-      }
-    };
-
-    if (navigator.serviceWorker) {
-      navigator.serviceWorker.addEventListener('controllerchange', controllerChangeListener);
-    }
-
-    // Cleanup the listener on component unmount
-    return () => {
-      if (navigator.serviceWorker) {
-        navigator.serviceWorker.removeEventListener('controllerchange', controllerChangeListener);
-      }
-    };
-  }, []); // The empty array ensures this effect runs only once.
-
+  // This is now the definitive, one-line fix for the update loop.
   const handleUpdate = () => {
-    // Step 1: Set our flag so the listener knows to act.
-    isUpdateInProgress.current = true;
+    setIsUpdating(true); // Visually confirm the update has started.
     
-    // Step 2: Tell the new service worker to take over.
-    // We don't need to pass `true` because our listener is handling the reload.
-    updateServiceWorker(); 
+    // By passing `true` to the library's own update function, we are telling it:
+    // "Take care of everything. Tell the service worker to skip waiting, activate,
+    // and then perform a graceful reload yourself, only after you have reset
+    // your internal state." This prevents the update loop.
+    updateServiceWorker(true);
   };
 
-  return { needRefresh, handleUpdate };
+  return { needRefresh, isUpdating, handleUpdate };
 }
