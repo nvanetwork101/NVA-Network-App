@@ -17,6 +17,8 @@ const ChatMessageScreen = ({
     const messagesEndRef = useRef(null);
     const longPressTimer = useRef();
 
+    const inputRef = useRef(null); // --- KEYBOARD FIX: Ref for the message input ---
+
     const [newMessage, setNewMessage] = useState('');
     const [otherParticipantProfile, setOtherParticipantProfile] = useState(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -197,22 +199,31 @@ const ChatMessageScreen = ({
         setFilteredMessages(searchText.trim() === '' ? messages : messages.filter(msg => !msg.isDeleted && msg.text.toLowerCase().includes(searchText.toLowerCase()))); 
     }, [messages, searchText]);
 
-        // --- "MARK AS READ" LOGIC ---
-useEffect(() => {
-    // This effect runs when the component loads.
-    // It calls the cloud function to mark this chat as read.
-    
-    // --- "LAST SEEN" TIMESTAMP LOGIC FOR UNREAD INDICATOR ---
-    const updateLastSeenTimestamp = httpsCallable(functions, 'updateChatLastSeen');
-    updateLastSeenTimestamp({ chatId: chatId }).catch(err => console.error("Failed to update last seen timestamp.", err));
-
-    if (chatId) {
+        // --- "MARK AS READ" LOGIC (DEFINITIVE) ---
+    useEffect(() => {
+        const updateLastSeenTimestamp = httpsCallable(functions, 'updateChatLastSeen');
         const markAsRead = httpsCallable(functions, 'markChatAsRead');
-        markAsRead({ chatId: chatId }).catch(error => {
-            console.error("Could not mark chat as read:", error);
-        });
-    }
-}, [chatId]); // It runs only when the chatId changes.
+
+        // --- PHASE 1: Runs when the component LOADS ---
+        // When the user enters the chat, update both "read" metrics immediately.
+        if (chatId) {
+            updateLastSeenTimestamp({ chatId: chatId }).catch(err => console.error("Error on initial last-seen update:", err));
+            markAsRead({ chatId: chatId }).catch(error => console.error("Error on initial mark-as-read:", error));
+        }
+
+        // --- PHASE 2: Cleanup function that runs when the component UNMOUNTS (user leaves) ---
+        // This definitive fix updates BOTH "read" metrics on departure. This ensures that the
+        // "Unread" indicator inside the chat and the visual unread state on the chat list
+        // are perfectly synchronized with the user's actions.
+        return () => {
+            if (chatId) {
+                updateLastSeenTimestamp({ chatId: chatId }).catch(err => console.error("Error on final last-seen update:", err));
+                // This is the crucial line that was missing. It ensures the "unreadBy"
+                // array in the database is cleared, which the ChatListScreen depends on.
+                markAsRead({ chatId: chatId }).catch(error => console.error("Error on final mark-as-read:", error));
+            }
+        };
+    }, [chatId]);
 
     // --- FIX #2: THE FULLY REWRITTEN handleSendMessage FUNCTION ---
     const handleSendMessage = async (e) => {
@@ -244,15 +255,22 @@ useEffect(() => {
             await sendChatMessageFunction(payload);
 
             // --- TYPING INDICATOR FIX: Immediately clear typing status on send ---
-        if (typingTimer.current) clearTimeout(typingTimer.current);
-        httpsCallable(functions, 'updateTypingStatus')({ chatId: chatId, isTyping: false });
+            if (typingTimer.current) clearTimeout(typingTimer.current);
+            httpsCallable(functions, 'updateTypingStatus')({ chatId: chatId, isTyping: false });
 
             // Clear the input fields on success.
             setNewMessage('');
             setReplyingToMessage(null);
             setShowEmojiPicker(false);
-        } catch (error) {
-            console.error("Error sending message via Cloud Function:", error);
+
+            // --- KEYBOARD FIX: Immediately refocus the input to prevent keyboard dismissal ---
+            // A microtask is used to ensure this focus command runs after the current execution stack
+            // clears, which makes it more reliable on all devices.
+            queueMicrotask(() => {
+                inputRef.current?.focus();
+            });
+
+        } catch (error) {            console.error("Error sending message via Cloud Function:", error);
             showMessage(error.message || "Failed to send message. You may have been blocked or removed from this chat.");
         } finally {
             setIsSending(false);
@@ -506,7 +524,7 @@ useEffect(() => {
                     <button type="button" className="button" style={{ marginRight: '10px', background: 'transparent', padding: '8px' }} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
                         <svg fill="#FFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path></svg>
                     </button>
-                    <input type="text" value={newMessage} onChange={handleTypingChange} placeholder="Type a message..." className="formInput" style={{ flex: 1, marginRight: '10px', borderRadius: '20px' }} disabled={isSending} onFocus={() => setShowEmojiPicker(false)} />
+                   <input ref={inputRef} type="text" value={newMessage} onChange={handleTypingChange} placeholder="Type a message..." className="formInput" style={{ flex: 1, marginRight: '10px', borderRadius: '20px' }} disabled={isSending} onFocus={() => setShowEmojiPicker(false)} />
                     <button type="submit" className="button" style={{ borderRadius: '50%', width: '44px', height: '44px', padding: 0 }} disabled={!newMessage.trim() || isSending}>
                        <svg fill={isSending ? "#555" : "#0A0A0A"} viewBox="0 0 24 24" style={{ width: '24px', height: '24px', margin: 'auto' }}><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
                     </button>
