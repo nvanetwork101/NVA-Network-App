@@ -23,12 +23,6 @@ const firebaseConfig = {
   measurementId: "G-6RNS6DH3G0"
 };
 
-self.addEventListener('install', (event) => {
-  console.log('Service worker installing...');
-  // Force the waiting service worker to become the active service worker.
-  self.skipWaiting();
-});
-
 self.addEventListener('activate', (event) => {
   console.log('Service worker activating...');
   // Take control of all clients as soon as the service worker is activated.
