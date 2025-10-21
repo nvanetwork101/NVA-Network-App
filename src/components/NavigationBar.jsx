@@ -24,8 +24,9 @@ const [showMoreMenu, setShowMoreMenu] = useState(false);
         <div className="navigationBar" style={{
             position: 'relative',
             display: 'flex',
-            justifyContent: 'space-around', // This property spaces the buttons out evenly.
-            alignItems: 'center' // This property prevents the buttons from stretching vertically.
+            justifyContent: 'center', // This property groups the buttons in the center.
+            alignItems: 'center',     // This property prevents vertical stretching.
+            gap: '10px'                // This adds a consistent space between each button.
         }}>
             <button 
                 className="navButton" 
@@ -68,7 +69,9 @@ const [showMoreMenu, setShowMoreMenu] = useState(false);
                         <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" />
                     </svg>
                     {unreadChatCount > 0 && (
-                        <span className="notification-badge" style={{top: '2px', right: '5px'}}>
+                        // --- THIS IS THE FIX ---
+                        // Negative values for top and right push the badge outside the button's boundary.
+                        <span className="notification-badge" style={{top: '-8px', right: '-8px'}}>
                             {unreadChatCount}
                         </span>
                     )}
