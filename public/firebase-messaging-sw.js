@@ -25,8 +25,8 @@ const firebaseConfig = {
 
 self.addEventListener('activate', (event) => {
   console.log('Service worker activating...');
-  // Take control of all clients as soon as the service worker is activated.
-  event.waitUntil(clients.claim());
+  // THE DEFINITIVE FIX: Ensure the new service worker takes control immediately.
+  event.waitUntil(self.clients.claim());
 });
 
    // This is the new listener that handles the update prompt.
