@@ -84,66 +84,79 @@ const ChatMessageScreen = ({
     const scrollContainerRef = useRef(null);
     const initialScrollDoneRef = useRef(false); // Ref to track if the initial scroll has happened
 
-    // --- UNIFIED SCROLLING LOGIC ---
-    // This single hook manages both initial "smart scroll" and scrolls for new messages, eliminating race conditions.
+    // --- SMART SCROLL ON INITIAL LOAD ---
+    // This hook's ONLY responsibility is to perform the initial "smart scroll" to the
+    // "Unread Messages" line when the chat is first opened. All subsequent scrolling is
+    // now handled by the new MutationObserver hook.
     useLayoutEffect(() => {
-        // First, ensure all necessary data and elements are loaded before attempting any scroll operations.
-        if (loading || !chatDetails || messages.length === 0) {
+        // Ensure all data is loaded and the initial scroll hasn't already happened.
+        if (loading || !chatDetails || messages.length === 0 || initialScrollDoneRef.current) {
             return;
         }
 
-        // This block handles the "smart" scroll on the very first load. It runs ONLY ONCE.
-        if (!initialScrollDoneRef.current) {
-            const lastSeenTimestamp = chatDetails.lastSeenBy?.[currentUser.uid];
-            let unreadId = null;
+        // This block runs ONLY ONCE on the initial load.
+        const lastSeenTimestamp = chatDetails.lastSeenBy?.[currentUser.uid];
+        let unreadId = null;
 
-            if (lastSeenTimestamp) {
-                const firstUnread = messages.find(msg =>
-                    msg.timestamp &&
-                    msg.timestamp.toDate() > lastSeenTimestamp.toDate() &&
-                    msg.senderId !== currentUser.uid
-                );
-                if (firstUnread) {
-                    unreadId = firstUnread.id;
-                }
-            }
-
-            // This state update places the "Unread Messages" marker in the DOM.
-            setFirstUnreadMessageId(unreadId);
-
-            // By delaying the scroll action to the next browser paint, we ensure the UI has updated
-            // with the `unreadIndicatorRef` before we try to scroll to it.
-            const performInitialScroll = () => {
-                if (unreadId && unreadIndicatorRef.current) {
-                    unreadIndicatorRef.current.scrollIntoView({ behavior: 'auto', block: 'center' });
-                } else {
-                    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-                }
-                // We lock this logic from ever running again for this chat session.
-                initialScrollDoneRef.current = true;
-            };
-
-            // Use a microtask to ensure state updates have rendered.
-            queueMicrotask(performInitialScroll);
-
-        // This block handles scrolling for all subsequent new messages AFTER the initial load is complete.
-        } else {
-            const isNewMessageArriving = messages.length > prevMessagesLength.current;
-            if (isNewMessageArriving) {
-                // By wrapping the scroll in a `setTimeout`, we push this action to the end of the
-                // browser's event queue. This gives React just enough time to render the new
-                // message into the DOM before we attempt to scroll to it, fixing the issue
-                // where the user's own sent message would be partially cut off.
-                setTimeout(() => {
-                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-                }, 0);
+        if (lastSeenTimestamp) {
+            const firstUnread = messages.find(msg =>
+                msg.timestamp &&
+                msg.timestamp.toDate() > lastSeenTimestamp.toDate() &&
+                msg.senderId !== currentUser.uid
+            );
+            if (firstUnread) {
+                unreadId = firstUnread.id;
             }
         }
 
-        // We must always update the message count at the end for the next render cycle.
-        prevMessagesLength.current = messages.length;
+        // This state update places the "Unread Messages" marker in the DOM.
+        setFirstUnreadMessageId(unreadId);
+
+        // Delay the scroll to ensure the UI has updated with the `unreadIndicatorRef`.
+        const performInitialScroll = () => {
+            if (unreadId && unreadIndicatorRef.current) {
+                unreadIndicatorRef.current.scrollIntoView({ behavior: 'auto', block: 'center' });
+            } else {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+            }
+            // Lock this from ever running again, which passes control to the MutationObserver.
+            initialScrollDoneRef.current = true;
+        };
+
+        // Use a microtask to ensure state updates have been rendered before scrolling.
+        queueMicrotask(performInitialScroll);
 
     }, [loading, messages, chatDetails, currentUser]);
+    
+        // --- ROBUST SCROLLING FOR NEW MESSAGES ---
+    // This hook uses a MutationObserver to reliably scroll to the bottom when new messages arrive
+    // AFTER the initial "smart scroll" is complete, completely avoiding race conditions.
+    useEffect(() => {
+        // Only run this logic if the message container element exists.
+        if (!scrollContainerRef.current) return;
+
+        // The callback function to execute when a mutation is observed.
+        const observerCallback = () => {
+            // We only care if the initial scroll is done and the chat is "live".
+            // If so, we scroll to the bottom smoothly.
+            if (initialScrollDoneRef.current) {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }
+        };
+
+        // Create an observer instance linked to the callback function.
+        const observer = new MutationObserver(observerCallback);
+
+        // Start observing the target node for the addition or removal of children.
+        observer.observe(scrollContainerRef.current, { childList: true });
+
+        // Cleanup: Disconnect the observer when the component unmounts to prevent memory leaks.
+        return () => observer.disconnect();
+
+    }, []); // Empty dependency array means this effect runs once on mount and cleans up on unmount.
+
+    // --- END: NEW CODE TO ADD ---
+    
     // This stable effect now only handles fetching data, which prevents the "flicker".
     useEffect(() => {
         if (!chatId) return;
