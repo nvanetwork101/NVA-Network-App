@@ -29,6 +29,9 @@ const ChatMessageScreen = ({
     const [replyingToMessage, setReplyingToMessage] = useState(null);
     const typingTimer = useRef(null);
     const isInitialRender = useRef(true);
+    
+    const [firstUnreadMessageId, setFirstUnreadMessageId] = useState(null);
+    const unreadIndicatorRef = useRef(null);
 
   // --- NEW: ReactionPills Component ---
     // Renders the reaction emojis below a message bubble.
@@ -80,22 +83,46 @@ const ChatMessageScreen = ({
      const prevMessagesLength = useRef(0);
     const scrollContainerRef = useRef(null); // <-- NEW: Ref for the scroll container
 
-    // --- FINAL, DEFINITIVE SCROLL FIX ---
+    // --- FINAL, DEFINITIVE SMART SCROLL FIX ---
     useEffect(() => {
         const timer = setTimeout(() => {
-            // THIS IS THE FIX: We only consider it the "initial render" scroll
-            // if the flag is true AND there are actually messages to scroll to.
+            const isNewMessageArriving = messages.length > prevMessagesLength.current;
+
             if (isInitialRender.current && messages.length > 0) {
-                messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-                isInitialRender.current = false; // The flag is now correctly updated only after messages load.
-            } else {
-                // This will now correctly handle all subsequent new messages.
+                // This is the first time we have messages.
+                if (firstUnreadMessageId && unreadIndicatorRef.current) {
+                    unreadIndicatorRef.current.scrollIntoView({ behavior: 'auto' });
+                } else {
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+                }
+                isInitialRender.current = false; // Mark initial render as complete.
+            } else if (isNewMessageArriving) {
+                // This is a subsequent new message arriving while the chat is open.
                 messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
             }
+            // Update the length for the next comparison.
+            prevMessagesLength.current = messages.length;
         }, 0);
 
         return () => clearTimeout(timer);
-    }, [messages]);
+    }, [messages, firstUnreadMessageId]); // This dependency array is correct.
+
+      // --- LOGIC TO FIND THE FIRST UNREAD MESSAGE ---
+    useEffect(() => {
+        const lastSeenTimestamp = chatDetails?.lastSeenBy?.[currentUser.uid];
+        // We only run this logic if we have a valid "last seen" time.
+        if (lastSeenTimestamp) {
+            // Find the very first message that is newer than the last time we looked.
+            const firstUnread = messages.find(msg => msg.timestamp && msg.timestamp.toDate() > lastSeenTimestamp.toDate());
+            if (firstUnread) {
+                setFirstUnreadMessageId(firstUnread.id);
+            } else {
+                setFirstUnreadMessageId(null); // No new messages found
+            }
+        } else {
+            setFirstUnreadMessageId(null); // We've never seen this chat before
+        }
+    }, [messages, chatDetails, currentUser]);
 
     // This stable effect now only handles fetching data, which prevents the "flicker".
     useEffect(() => {
@@ -141,6 +168,11 @@ const ChatMessageScreen = ({
 useEffect(() => {
     // This effect runs when the component loads.
     // It calls the cloud function to mark this chat as read.
+    
+    // --- "LAST SEEN" TIMESTAMP LOGIC FOR UNREAD INDICATOR ---
+    const updateLastSeenTimestamp = httpsCallable(functions, 'updateChatLastSeen');
+    updateLastSeenTimestamp({ chatId: chatId }).catch(err => console.error("Failed to update last seen timestamp.", err));
+
     if (chatId) {
         const markAsRead = httpsCallable(functions, 'markChatAsRead');
         markAsRead({ chatId: chatId }).catch(error => {
@@ -277,6 +309,10 @@ useEffect(() => {
     const otherParticipantUid = chatDetails?.participants.find(uid => uid !== currentUser?.uid);
     const finalOtherUserDetails = { ...(chatDetails?.participantDetails?.[otherParticipantUid] || {}), ...(otherParticipantProfile || {}) };
 
+    // --- THIS IS THE FIX: The variables are now correctly placed before the return statement ---
+    let unreadIndicatorRendered = false;
+    const lastSeenTimestamp = chatDetails?.lastSeenBy?.[currentUser.uid];
+
     return (
         <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {/* Header */}
@@ -320,30 +356,39 @@ useEffect(() => {
                     <>
                        {filteredMessages.map(msg => {
                             const isMyMessage = msg.senderId === currentUser.uid;
+                            const showUnreadIndicator = msg.id === firstUnreadMessageId;
+
                             return (
-                                <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isMyMessage ? 'flex-end' : 'flex-start', marginBottom: '15px' }}>
-                                    {msg.replyTo && (
-                                <div style={{ padding: '5px 12px', marginBottom: '-2px', backgroundColor: 'rgba(135, 206, 235, 0.15)', borderRadius: '12px 12px 0 0', border: '1px solid rgba(135, 206, 235, 0.3)', borderBottom: 'none', maxWidth: '65%', alignSelf: isMyMessage ? 'flex-end' : 'flex-start' }}>
-                                <p style={{ margin: 0, fontSize: '11px', color: '#FFD700', fontWeight: 'bold' }}>Replying to {msg.replyTo.senderName}</p>
-                                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#FFFFFF', fontStyle: 'italic', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg.replyTo.text}</p>
-                                </div>
-                                )}
-                                    <div onTouchStart={(e) => !msg.isDeleted && handleTouchStart(e, msg)} onTouchEnd={handleTouchEnd} onContextMenu={(e) => !msg.isDeleted && handleContextMenu(e, msg)} >
-                                        <div style={{
-                                        maxWidth: '100%', padding: '10px 15px',
-                                        borderRadius: msg.replyTo ? (isMyMessage ? '18px 4px 18px 18px' : '4px 18px 18px 18px') : '18px',
-                                        backgroundColor: menuState.message?.id === msg.id ? '#5A5A5A' : (isMyMessage ? (msg.isDeleted ? '#555' : '#FFB41C') : '#3A3A3A'),
-                                        color: isMyMessage ? '#0A0A0A' : '#FFF', fontStyle: msg.isDeleted ? 'italic' : 'normal',
-                                        opacity: msg.isDeleted ? 0.7 : 1, transition: 'background-color 0.2s',
-                                        // The text shadow is no longer needed with the new color.
-                                        textShadow: 'none'
-                                    }}>
-                                        {msg.isDeleted ? "This message was deleted" : msg.text}
+                                <React.Fragment key={msg.id}>
+                                    {showUnreadIndicator && (
+                                        <div ref={unreadIndicatorRef} style={{ display: 'flex', alignItems: 'center', width: '100%', margin: '15px 0' }}>
+                                            <div style={{ flex: 1, height: '1px', background: '#FFB41C' }}></div>
+                                            <p style={{ margin: '0 10px', color: '#FFB41C', fontSize: '12px', fontWeight: 'bold' }}>Unread Messages</p>
+                                            <div style={{ flex: 1, height: '1px', background: '#FFB41C' }}></div>
+                                        </div>
+                                    )}
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: isMyMessage ? 'flex-end' : 'flex-start', marginBottom: '15px', width: '100%' }}>
+                                        {msg.replyTo && (
+                                            <div style={{ padding: '5px 12px', marginBottom: '-2px', backgroundColor: 'rgba(135, 206, 235, 0.15)', borderRadius: '12px 12px 0 0', border: '1px solid rgba(135, 206, 235, 0.3)', borderBottom: 'none', maxWidth: '65%', alignSelf: isMyMessage ? 'flex-end' : 'flex-start' }}>
+                                                <p style={{ margin: 0, fontSize: '11px', color: '#FFD700', fontWeight: 'bold' }}>Replying to {msg.replyTo.senderName}</p>
+                                                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#FFFFFF', fontStyle: 'italic', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg.replyTo.text}</p>
+                                            </div>
+                                        )}
+                                        <div onTouchStart={(e) => !msg.isDeleted && handleTouchStart(e, msg)} onTouchEnd={handleTouchEnd} onContextMenu={(e) => !msg.isDeleted && handleContextMenu(e, msg)} >
+                                            <div style={{
+                                                maxWidth: '100%', padding: '10px 15px',
+                                                borderRadius: msg.replyTo ? (isMyMessage ? '18px 4px 18px 18px' : '4px 18px 18px 18px') : '18px',
+                                                backgroundColor: menuState.message?.id === msg.id ? '#5A5A5A' : (isMyMessage ? (msg.isDeleted ? '#555' : '#FFB41C') : '#3A3A3A'),
+                                                color: isMyMessage ? '#0A0A0A' : '#FFF', fontStyle: msg.isDeleted ? 'italic' : 'normal',
+                                                opacity: msg.isDeleted ? 0.7 : 1, transition: 'background-color 0.2s',
+                                                textShadow: 'none'
+                                            }}>
+                                                {msg.isDeleted ? "This message was deleted" : msg.text}
+                                            </div>
+                                        </div>
+                                        <ReactionPills reactions={msg.reactions} messageId={msg.id} />
                                     </div>
-                                    </div>
-                                    {/* --- FIX #1: THE NEW REACTION PILLS UI IS ADDED HERE --- */}
-                                    <ReactionPills reactions={msg.reactions} messageId={msg.id} />
-                                </div>
+                                </React.Fragment>
                             );
                         })}
                         <div ref={messagesEndRef} />

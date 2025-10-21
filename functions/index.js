@@ -2085,6 +2085,40 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
  
         // --- START: NEW FUNCTION TO BE ADDED ---
 
+        // --- START: NEW FUNCTION FOR UNREAD MESSAGE INDICATOR ---
+
+exports.updateChatLastSeen = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+
+    const { chatId } = request.data;
+    if (!chatId) {
+        throw new HttpsError("invalid-argument", "Missing chatId.");
+    }
+
+    const db = admin.firestore();
+    const chatRef = db.collection("chats").doc(chatId);
+
+    try {
+        // This robustly sets a map field with the current user's ID and the
+        // exact server time they viewed the chat.
+        await chatRef.set({
+            lastSeenBy: {
+                [uid]: admin.firestore.FieldValue.serverTimestamp()
+            }
+        }, { merge: true });
+
+        return { success: true };
+    } catch (error) {
+        logger.warn(`Could not update lastSeenBy for user '${uid}' in chat '${chatId}'.`, { error: error.message });
+        return { success: false };
+    }
+});
+
+// --- END: NEW FUNCTION FOR UNREAD MESSAGE INDICATOR ---
+
 exports.updateTypingStatus = onCall(async (request) => {
     const uid = request.auth.uid;
     if (!uid) {
