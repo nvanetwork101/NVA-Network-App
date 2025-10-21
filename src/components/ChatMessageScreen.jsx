@@ -1,6 +1,6 @@
 // src/components/ChatMessageScreen.jsx
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { functions } from '../firebase';
@@ -75,42 +75,55 @@ const ChatMessageScreen = ({
     const handleAddEmoji = (emoji) => setNewMessage(prev => prev + emoji);
     const emojis = ['👍', '👎', '❤️', '😂', '🔥', '😢', '😡', '✅', '❌', '🙏'];
 
-    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [filteredMessages]);
+     const prevMessagesLength = useRef(0);
+    const scrollContainerRef = useRef(null); // <-- NEW: Ref for the scroll container
 
-    // Combined effect for fetching all chat data and listening to real-time messages.
-    useEffect(() => {
-        if (!chatId || !currentUser) {
-            showMessage("Could not open chat. Please try again.");
-            setActiveScreen('ChatList');
-            return;
+    // --- FINAL, DEFINITIVE SCROLL FIX ---
+    useLayoutEffect(() => {
+        const scrollContainer = scrollContainerRef.current;
+        if (!scrollContainer) return;
+
+        // Case 1: Initial Load.
+        // Manually setting scrollTop to scrollHeight is the most reliable method.
+        // It happens before the browser paints, so the user never sees the top.
+        if (messages.length > 0 && prevMessagesLength.current === 0) {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        }
+        // Case 2: New Message Added.
+        // For subsequent new messages, scrollIntoView is reliable and gives a smooth effect.
+        else if (messages.length > prevMessagesLength.current) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }
 
-        setLoading(true);
+        // Update the ref for the next render cycle.
+        prevMessagesLength.current = messages.length;
+    }, [messages]);
 
+    // This stable effect now only handles fetching data, which prevents the "flicker".
+    useEffect(() => {
+        if (!chatId) return;
+        setLoading(true);
         const chatDocRef = doc(db, 'chats', chatId);
         const unsubscribeChatDetails = onSnapshot(chatDocRef, (docSnap) => {
-             if (docSnap.exists()) {
+            if (docSnap.exists()) {
                 setChatDetails(docSnap.data());
             } else {
-                 showMessage("Chat not found.");
-                 setActiveScreen('ChatList');
+                showMessage("Chat not found.");
+                setActiveScreen('ChatList');
             }
         });
-
         const messagesRef = collection(db, 'chats', chatId, 'messages');
         const q = query(messagesRef, orderBy('timestamp', 'asc'));
-
         const unsubscribeMessages = onSnapshot(q, (snapshot) => {
             const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setMessages(msgs);
             setLoading(false);
         });
-
         return () => {
             unsubscribeChatDetails();
             unsubscribeMessages();
         };
-    }, [chatId, currentUser, setActiveScreen, showMessage]);
+    }, [chatId]);
 
     // Effect for fetching the other participant's profile details
     useEffect(() => {
@@ -125,6 +138,18 @@ const ChatMessageScreen = ({
     useEffect(() => { 
         setFilteredMessages(searchText.trim() === '' ? messages : messages.filter(msg => !msg.isDeleted && msg.text.toLowerCase().includes(searchText.toLowerCase()))); 
     }, [messages, searchText]);
+
+        // --- "MARK AS READ" LOGIC ---
+useEffect(() => {
+    // This effect runs when the component loads.
+    // It calls the cloud function to mark this chat as read.
+    if (chatId) {
+        const markAsRead = httpsCallable(functions, 'markChatAsRead');
+        markAsRead({ chatId: chatId }).catch(error => {
+            console.error("Could not mark chat as read:", error);
+        });
+    }
+}, [chatId]); // It runs only when the chatId changes.
 
     // --- FIX #2: THE FULLY REWRITTEN handleSendMessage FUNCTION ---
     const handleSendMessage = async (e) => {
@@ -261,7 +286,7 @@ const ChatMessageScreen = ({
             </div>
 
             {/* Message Area */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }} onClick={handleCloseMenu}>
+            <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '15px' }} onClick={handleCloseMenu}>
                  {loading ? <p style={{ textAlign: 'center', color: '#AAA' }}>Loading messages...</p> : (
                     <>
                        {filteredMessages.map(msg => {

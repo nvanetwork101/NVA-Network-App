@@ -527,40 +527,38 @@ function App() {
     });
 
     // Cleanup function: This runs when the component unmounts or `currentUser` changes (logout).
-    return () => {
+     return () => {
         unsubscribe(); // Detach the connection listener.
-        // Gracefully signal that the user is offline on logout/unmount, without waiting for onDisconnect.
-        if (myStatusRef) {
-          ref(dbRT, '/status/' + currentUser.uid).remove();
+        // THE FIX: Check for currentUser before trying to access its 'uid' property on logout.
+        if (currentUser) {
+          const dbRT = getDatabase();
+          const myStatusRef = ref(dbRT, '/status/' + currentUser.uid);
+          // Gracefully signal that the user is offline on logout/unmount.
+          myStatusRef.remove();
         }
     };
   }, [currentUser]); // Dependency on `currentUser` is crucial.
   // ========================= END: USER PRESENCE SYSTEM (REALTIME DB) ==========================
 
        // ======================= START: UNREAD CHAT COUNT LISTENER ========================
-  useEffect(() => {
+   useEffect(() => {
     if (!currentUser) {
         setUnreadChatCount(0);
         return;
     }
+
+    // THIS IS THE DEFINITIVE FIX:
+    // This query now directly and efficiently counts only the chats that are marked as unread FOR the current user.
     const q = query(
         collection(db, "chats"),
-        where("participants", "array-contains", currentUser.uid)
+        where("unreadBy", "array-contains", currentUser.uid)
     );
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
-        let count = 0;
-        snapshot.forEach(doc => {
-            const chatData = doc.data();
-            if (
-                chatData.lastMessage &&
-                chatData.lastMessage.senderId !== currentUser.uid &&
-                !chatData.hiddenFor?.includes(currentUser.uid)
-            ) {
-                count++;
-            }
-        });
-        setUnreadChatCount(count);
+        // The number of documents in the result is the unread count.
+        setUnreadChatCount(snapshot.size);
     });
+
     return () => unsubscribe();
   }, [currentUser]);
   // ========================= END: UNREAD CHAT COUNT LISTENER ========================== 

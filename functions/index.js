@@ -2020,10 +2020,9 @@ exports.deleteChatMessagePrivate = onCall(async (request) => {
     }
 });
 
-       // --- START: NEW CHAT MESSAGE SENDING FUNCTION ---
+       // --- START: REVISED CHAT MESSAGE SENDING FUNCTION ---
 
 exports.sendChatMessagePrivate = onCall(async (request) => {
-    // 1. Authentication & User Data Validation
     const uid = request.auth.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to send a message.");
@@ -2046,70 +2045,53 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
             const chatDoc = await transaction.get(chatRef);
             const currentUserDoc = await transaction.get(currentUserRef);
 
-            if (!chatDoc.exists) {
-                throw new HttpsError("not-found", "The chat conversation does not exist.");
-            }
-            if (!currentUserDoc.exists) {
-                throw new HttpsError("not-found", "Your user profile could not be found.");
-            }
+            if (!chatDoc.exists) { throw new HttpsError("not-found", "The chat conversation does not exist."); }
+            if (!currentUserDoc.exists) { throw new HttpsError("not-found", "Your user profile could not be found."); }
 
             const chatData = chatDoc.data();
             senderName = currentUserDoc.data().creatorName || "NVA User";
             
-            // SECURITY CHECK: Ensure the sender is a valid participant of the chat.
             if (!chatData.participants || !chatData.participants.includes(uid)) {
                 throw new HttpsError("permission-denied", "You do not have permission to send messages in this chat.");
             }
 
-            // Determine the recipient for notifications.
             recipientId = chatData.participants.find(p => p !== uid);
             
-            // Construct the final, secure message object.
             const finalMessage = {
                 ...messageData,
                 senderId: uid,
-                senderName: senderName, // Use the server-verified name.
+                senderName: senderName,
                 isDeleted: false,
                 reactions: {},
-                timestamp: admin.firestore.FieldValue.serverTimestamp() // Use server timestamp.
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
             };
 
             const newMessageRef = chatRef.collection("messages").doc();
             transaction.set(newMessageRef, finalMessage);
             
-            // Update the chat document with the last message details for the chat list UI.
+            // === THIS IS THE CORE LOGIC CHANGE ===
             transaction.update(chatRef, {
                 lastMessage: {
                     text: finalMessage.text,
                     timestamp: finalMessage.timestamp,
                     senderId: uid
                 },
+                // Add the recipient's ID to the 'unreadBy' array. This marks the chat as unread for them.
+                unreadBy: admin.firestore.FieldValue.arrayUnion(recipientId),
                 // Unhide the chat for any participant who previously deleted it.
-                hiddenFor: admin.firestore.FieldValue.arrayRemove(recipientId)
+                hiddenFor: [] // A new message resurfaces the chat for everyone.
             });
         });
 
         // --- NOTIFICATION LOGIC (Runs AFTER the transaction succeeds) ---
         if (recipientId) {
-            // 1. Create In-App (Inbox) Notification
-            const notificationPayload = {
-                userId: recipientId,
-                type: 'NEW_CHAT_MESSAGE',
-                message: `${senderName}: ${messageData.text.substring(0, 100)}`,
-                link: `/chat/${chatId}`,
-                isRead: false,
-                timestamp: new Date()
-            };
-            await db.collection("notifications").add(notificationPayload);
-            await db.collection("creators").doc(recipientId).update({ 
-                unreadNotificationCount: admin.firestore.FieldValue.increment(1) 
-            });
-
-            // 2. Send Push Notification
+            // The in-app "bell" notification has been REMOVED as requested.
+            
+            // Send Push Notification (This remains)
             const pushPayload = {
                 title: `New Message from ${senderName}`,
                 body: messageData.text.substring(0, 100),
-                link: `/chat/${chatId}`
+                link: `/ChatMessageScreen/${chatId}` // Use a more direct link
             };
             await sendPushNotification(recipientId, pushPayload);
         }
@@ -2123,7 +2105,7 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
     }
 });
 
-// --- END: NEW CHAT MESSAGE SENDING FUNCTION ---
+// --- END: REVISED CHAT MESSAGE SENDING FUNCTION ---
  
 
     // --- START: NEW FUNCTION TO BE ADDED ---
@@ -2177,8 +2159,49 @@ exports.reactToChatMessagePrivate = onCall(async (request) => {
 
 // --- END: NEW FUNCTION TO BE ADDED ---
 
-// =====================================================================
-// ============== END: CHAT MANAGEMENT FUNCTIONS =======================
+// --- START: NEW FUNCTION TO MARK CHATS AS READ ---
+exports.markChatAsRead = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to perform this action.");
+    }
+
+    const { chatId } = request.data;
+    if (!chatId) {
+        throw new HttpsError("invalid-argument", "Missing chatId.");
+    }
+
+    const db = admin.firestore();
+    const chatRef = db.collection("chats").doc(chatId);
+
+    try {
+        const chatDoc = await chatRef.get();
+        if (!chatDoc.exists) {
+            // If the chat doesn't exist, there's nothing to do.
+            return { success: true, message: "Chat not found." };
+        }
+
+        const chatData = chatDoc.data();
+        // SECURITY CHECK: Ensure the user is actually a participant in this chat.
+        if (!chatData.participants?.includes(uid)) {
+            throw new HttpsError("permission-denied", "You do not have permission to modify this chat.");
+        }
+
+        // Atomically remove the user's UID from the 'unreadBy' array.
+        // This marks the chat as "read" for the current user.
+        await chatRef.update({
+            unreadBy: admin.firestore.FieldValue.arrayRemove(uid)
+        });
+
+        return { success: true, message: "Chat marked as read." };
+
+    } catch (error) {
+        logger.error(`Error marking chat '${chatId}' as read for user '${uid}':`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred.");
+    }
+});
+// --- END: NEW FUNCTION TO MARK CHATS AS READ ---
 
     exports.onPayoutRequestUpdate = onDocumentUpdated("payoutRequests/{requestId}", async (event) => {
     const dataBefore = event.data.before.data();
