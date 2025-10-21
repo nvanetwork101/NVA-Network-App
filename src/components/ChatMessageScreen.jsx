@@ -27,6 +27,8 @@ const ChatMessageScreen = ({
     
     const [menuState, setMenuState] = useState({ visible: false, x: 0, y: 0, message: null });
     const [replyingToMessage, setReplyingToMessage] = useState(null);
+    const typingTimer = useRef(null);
+
 
   // --- NEW: ReactionPills Component ---
     // Renders the reaction emojis below a message bubble.
@@ -251,6 +253,27 @@ useEffect(() => {
         }
     };
     
+    // --- START: NEW CODE TO ADD FOR TYPING INDICATOR ---
+    const handleTypingChange = (e) => {
+        const newText = e.target.value;
+        setNewMessage(newText);
+
+        // Clear any existing "stopped typing" timer
+        if (typingTimer.current) {
+            clearTimeout(typingTimer.current);
+        }
+
+        // Signal that we are typing now
+        const updateStatus = httpsCallable(functions, 'updateTypingStatus');
+        updateStatus({ chatId: chatId, isTyping: true });
+
+        // Set a new timer. If it finishes, it means we've stopped typing.
+        typingTimer.current = setTimeout(() => {
+            updateStatus({ chatId: chatId, isTyping: false });
+        }, 2000); // 2-second delay
+    };
+    // --- END: NEW CODE TO ADD FOR TYPING INDICATOR ---
+
     const otherParticipantUid = chatDetails?.participants.find(uid => uid !== currentUser?.uid);
     const finalOtherUserDetails = { ...(chatDetails?.participantDetails?.[otherParticipantUid] || {}), ...(otherParticipantProfile || {}) };
 
@@ -269,7 +292,15 @@ useEffect(() => {
                         </div>
                         <div style={{flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                             <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{finalOtherUserDetails.creatorName || 'Loading...'}</p>
-                            <p style={{ margin: '2px 0 0', color: '#888', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{finalOtherUserDetails.isOnline ? 'Online' : formatLastSeen(finalOtherUserDetails.lastSeen)}</p>
+                            {chatDetails?.typing?.[otherParticipantUid] ? (
+                            <p style={{ margin: '2px 0 0', color: '#FFD700', fontSize: '12px', fontStyle: 'italic' }}>
+                            is typing...
+                            </p>
+                            ) : (
+                                <p style={{ margin: '2px 0 0', color: '#888', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {finalOtherUserDetails.isOnline ? 'Online' : formatLastSeen(finalOtherUserDetails.lastSeen)}
+                             </p>
+                            )}
                         </div>
                     </div>
                     <button onClick={() => setIsSearchVisible(!isSearchVisible)} className="button" style={{ margin: 0, padding: '8px', background: 'transparent' }}>
@@ -304,6 +335,8 @@ useEffect(() => {
                                             backgroundColor: menuState.message?.id === msg.id ? '#5A5A5A' : (isMyMessage ? (msg.isDeleted ? '#555' : '#FFD700') : '#3A3A3A'),
                                             color: isMyMessage ? '#0A0A0A' : '#FFF', fontStyle: msg.isDeleted ? 'italic' : 'normal',
                                             opacity: msg.isDeleted ? 0.7 : 1, transition: 'background-color 0.2s',
+                                            // --- THIS IS THE FIX ---
+                                            textShadow: isMyMessage ? '0px 0px 2px rgba(0, 0, 0, 0.2)' : 'none'
                                         }}>
                                             {msg.isDeleted ? "This message was deleted" : msg.text}
                                         </div>
@@ -395,7 +428,7 @@ useEffect(() => {
                     <button type="button" className="button" style={{ marginRight: '10px', background: 'transparent', padding: '8px' }} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
                         <svg fill="#FFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path></svg>
                     </button>
-                    <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Type a message..." className="formInput" style={{ flex: 1, marginRight: '10px', borderRadius: '20px' }} disabled={isSending} onFocus={() => setShowEmojiPicker(false)} />
+                    <input type="text" value={newMessage} onChange={handleTypingChange} placeholder="Type a message..." className="formInput" style={{ flex: 1, marginRight: '10px', borderRadius: '20px' }} disabled={isSending} onFocus={() => setShowEmojiPicker(false)} />
                     <button type="submit" className="button" style={{ borderRadius: '50%', width: '44px', height: '44px', padding: 0 }} disabled={!newMessage.trim() || isSending}>
                        <svg fill={isSending ? "#555" : "#0A0A0A"} viewBox="0 0 24 24" style={{ width: '24px', height: '24px', margin: 'auto' }}><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
                     </button>

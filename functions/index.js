@@ -2083,6 +2083,38 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
 
 // --- END: REVISED CHAT MESSAGE SENDING FUNCTION ---
  
+        // --- START: NEW FUNCTION TO BE ADDED ---
+
+exports.updateTypingStatus = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+
+    const { chatId, isTyping } = request.data;
+    if (!chatId || typeof isTyping !== 'boolean') {
+        throw new HttpsError("invalid-argument", "Missing chatId or isTyping status.");
+    }
+
+    const db = admin.firestore();
+    const chatRef = db.collection("chats").doc(chatId);
+
+    try {
+        // Use dot notation to update only the current user's typing status
+        // in the 'typing' map field without affecting other users.
+        await chatRef.update({
+            [`typing.${uid}`]: isTyping
+        });
+        return { success: true };
+    } catch (error) {
+        // This might fail if the chat document doesn't exist, which is okay.
+        // We don't want to throw an error back to the client for this.
+        logger.warn(`Could not update typing status for user '${uid}' in chat '${chatId}'.`, { error: error.message });
+        return { success: false, message: "Could not update status." };
+    }
+});
+
+// --- END: NEW FUNCTION TO BE ADDED ---
 
     // --- START: NEW FUNCTION TO BE ADDED ---
 
