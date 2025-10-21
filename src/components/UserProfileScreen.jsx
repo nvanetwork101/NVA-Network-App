@@ -201,40 +201,43 @@ const UserProfileScreen = ({
         return;
     }
 
-    // Generate a predictable, canonical chat ID
     const participants = [currentUser.uid, targetUserUid].sort();
     const chatId = participants.join('_');
     
     try {
         const chatDocRef = doc(db, 'chats', chatId);
-        const chatDocSnap = await getDoc(chatDocRef);
 
-        if (!chatDocSnap.exists()) {
-            const newChatData = {
-                participants: participants,
-                createdAt: Timestamp.now(),
-                lastMessage: null,
-                lastMessageTimestamp: null,
-                participantDetails: {
-                    [currentUser.uid]: {
-                        creatorName: creatorProfile.creatorName || "Unknown User",
-                        profilePictureUrl: creatorProfile.profilePictureUrl || null
-                    },
-                    [targetUserUid]: {
-                        creatorName: profile.creatorName,
-                        profilePictureUrl: profile.profilePictureUrl || null
-                    }
+        // This is the core data needed to CREATE a chat document.
+        const initialChatData = {
+            participants: participants,
+            createdAt: Timestamp.now(),
+            participantDetails: {
+                [currentUser.uid]: {
+                    creatorName: creatorProfile.creatorName || "Unknown User",
+                    profilePictureUrl: creatorProfile.profilePictureUrl || null
+                },
+                [targetUserUid]: {
+                    creatorName: profile.creatorName,
+                    profilePictureUrl: profile.profilePictureUrl || null
                 }
-            };
-            await setDoc(chatDocRef, newChatData);
-        }
+            },
+            // Set hiddenFor to an empty array on creation
+            hiddenFor: []
+        };
 
+        // THE FIX: Use setDoc with {merge: true}.
+        // If the chat doesn't exist, it creates it. The `create` rule in firestore.rules allows this.
+        // If the chat *does* exist, it merges these fields, which effectively does nothing if the data is the same.
+        // This single, robust operation avoids the failing `getDoc` call entirely.
+        await setDoc(chatDocRef, initialChatData, { merge: true });
+
+        // Proceed to the chat screen
         setSelectedChatId(chatId);
         setActiveScreen('ChatMessageScreen');
 
     } catch (error) {
         console.error("Error starting chat:", error);
-        showMessage("Could not start a conversation. Please try again later.");
+        showMessage("Could not start a conversation. Please check your Firestore Rules for the 'chats' collection.");
     }
 };
 
