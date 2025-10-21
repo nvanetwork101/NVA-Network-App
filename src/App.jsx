@@ -1128,6 +1128,9 @@ return (
             // --- PWA Install Button Props ---
             onInstallClick={handleInstallClick}
             showInstallButton={!isStandalone}
+            // --- PWA UPDATE PROPS ---
+            needRefresh={needRefresh}
+            onUpdate={handleUpdate}
           />
           <div className="container">
             {/* Step 3: Use the original authLoading for the quick, text-based loader during navigation. */}
@@ -1236,14 +1239,7 @@ return (
           onClose={() => setShowImageViewerModal(false)}
         />
       )}
-
-      {/* --- PWA UPDATE FIX: Render a persistent button when an update is available --- */}
-      {needRefresh && (
-        <button className="update-button" onClick={handleUpdate}>
-          Update
-        </button>
-      )}
-
+      
       {/* --- iOS PWA FIX: The new, styled install prompt for iPhones/iPads --- */}
       {showIosInstallPrompt && (
         <IosInstallPrompt onClose={() => setShowIosInstallPrompt(false)} />

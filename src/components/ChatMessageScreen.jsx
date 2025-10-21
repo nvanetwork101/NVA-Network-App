@@ -158,15 +158,16 @@ useEffect(() => {
 
         setIsSending(true);
 
-        // This object no longer needs serverTimestamp, the backend will handle it.
-        const messagePayload = {
-            text: newMessage,
-            senderId: currentUser.uid,
-            senderName: creatorProfile.creatorName || "NVA User",
+        // This is the payload object that will be sent to the Cloud Function.
+        // It must match exactly what the function expects.
+        const payload = {
+            chatId: chatId,
+            text: newMessage.trim(), // Top-level 'text' property
         };
 
+        // If there is a message being replied to, add it to the payload.
         if (replyingToMessage) {
-            messagePayload.replyTo = {
+            payload.replyTo = {
                 id: replyingToMessage.id,
                 text: replyingToMessage.text,
                 senderId: replyingToMessage.senderId,
@@ -175,14 +176,11 @@ useEffect(() => {
         }
 
         try {
-            // This is the secure Cloud Function call that replaces the direct DB write.
             const sendChatMessageFunction = httpsCallable(functions, 'sendChatMessagePrivate');
-            await sendChatMessageFunction({
-                chatId: chatId,
-                messageData: messagePayload
-            });
+            // Send the correctly structured payload.
+            await sendChatMessageFunction(payload);
 
-            // Optimistically clear the input fields on successful function call.
+            // Clear the input fields on success.
             setNewMessage('');
             setReplyingToMessage(null);
             setShowEmojiPicker(false);

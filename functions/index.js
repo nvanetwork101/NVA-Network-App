@@ -2034,78 +2034,48 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
         throw new HttpsError("unauthenticated", "You must be logged in to send a message.");
     }
 
-    const { chatId, messageData } = request.data;
-    if (!chatId || !messageData || !messageData.text || messageData.text.trim() === '') {
-        throw new HttpsError("invalid-argument", "Missing chat ID or message text.");
+    // THE FIX: Destructure 'replyTo' from the request data as well.
+    const { chatId, text, replyTo } = request.data;
+    if (!chatId || !text || !text.trim()) {
+        throw new HttpsError("invalid-argument", "Missing chatId or message text.");
     }
 
     const db = admin.firestore();
-    const chatRef = db.doc(`chats/${chatId}`);
-    const currentUserRef = db.doc(`creators/${uid}`);
+    const chatRef = db.collection("chats").doc(chatId);
+    const messageRef = chatRef.collection("messages").doc();
+
+    const newMessage = {
+        senderId: uid,
+        text: text.trim(),
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        // THE FIX: Add the 'replyTo' object to the message if it exists, otherwise set to null.
+        replyTo: replyTo || null,
+    };
 
     try {
-        let recipientId;
-        let senderName;
-        
         await db.runTransaction(async (transaction) => {
             const chatDoc = await transaction.get(chatRef);
-            const currentUserDoc = await transaction.get(currentUserRef);
-
-            if (!chatDoc.exists) { throw new HttpsError("not-found", "The chat conversation does not exist."); }
-            if (!currentUserDoc.exists) { throw new HttpsError("not-found", "Your user profile could not be found."); }
-
-            const chatData = chatDoc.data();
-            senderName = currentUserDoc.data().creatorName || "NVA User";
-            
-            if (!chatData.participants || !chatData.participants.includes(uid)) {
-                throw new HttpsError("permission-denied", "You do not have permission to send messages in this chat.");
+            if (!chatDoc.exists) {
+                throw new HttpsError("not-found", "The chat conversation does not exist.");
             }
+            const chatData = chatDoc.data();
+            const otherParticipantId = chatData.participants.find(p => p !== uid);
 
-            recipientId = chatData.participants.find(p => p !== uid);
-            
-            const finalMessage = {
-                ...messageData,
-                senderId: uid,
-                senderName: senderName,
-                isDeleted: false,
-                reactions: {},
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            };
+            transaction.set(messageRef, newMessage);
 
-            const newMessageRef = chatRef.collection("messages").doc();
-            transaction.set(newMessageRef, finalMessage);
-            
-            // === THIS IS THE CORE LOGIC CHANGE ===
             transaction.update(chatRef, {
                 lastMessage: {
-                    text: finalMessage.text,
-                    timestamp: finalMessage.timestamp,
-                    senderId: uid
+                    senderId: uid,
+                    text: text.trim()
                 },
-                // Add the recipient's ID to the 'unreadBy' array. This marks the chat as unread for them.
-                unreadBy: admin.firestore.FieldValue.arrayUnion(recipientId),
-                // Unhide the chat for any participant who previously deleted it.
-                hiddenFor: [] // A new message resurfaces the chat for everyone.
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+                unreadBy: admin.firestore.FieldValue.arrayUnion(otherParticipantId)
             });
         });
 
-        // --- NOTIFICATION LOGIC (Runs AFTER the transaction succeeds) ---
-        if (recipientId) {
-            // The in-app "bell" notification has been REMOVED as requested.
-            
-            // Send Push Notification (This remains)
-            const pushPayload = {
-                title: `New Message from ${senderName}`,
-                body: messageData.text.substring(0, 100),
-                link: `/ChatMessageScreen/${chatId}` // Use a more direct link
-            };
-            await sendPushNotification(recipientId, pushPayload);
-        }
-
         return { success: true, message: "Message sent." };
-
     } catch (error) {
-        logger.error(`Error sending message in chat '${chatId}' by user '${uid}'`, { error });
+        logger.error(`Error in sendChatMessagePrivate transaction for user '${uid}' in chat '${chatId}':`, error);
         if (error instanceof HttpsError) throw error;
         throw new HttpsError("internal", "An unexpected error occurred while sending the message.");
     }
