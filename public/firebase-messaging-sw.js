@@ -29,7 +29,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(clients.claim());
 });
 
-    // This is the new listener that handles the update prompt.
+   // This is the new listener that handles the update prompt.
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();

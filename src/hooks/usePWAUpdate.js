@@ -16,8 +16,8 @@ export function usePWAUpdate() {
   });
 
   const handleUpdate = () => {
-    // This closes the prompt and triggers the actual update and page reload.
-    setNeedRefresh(false);
+    // This triggers the service worker to update.
+    // The `(true)` part tells it to reload the page.
     updateServiceWorker(true);
   };
 

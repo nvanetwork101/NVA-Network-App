@@ -34,7 +34,7 @@ function Header({ setActiveScreen, currencyRates, selectedCurrency, onCurrencyCh
 
   const handleUpdateButtonClick = () => {
     setIsUpdating(true);
-    onUpdate();
+    onUpdate(); // This now calls the function from App.jsx
   };
 
   return (
@@ -43,11 +43,14 @@ function Header({ setActiveScreen, currencyRates, selectedCurrency, onCurrencyCh
         <p className="tagline">Caribbean Content to a Global Stage.</p>
         <p className="headerTitle">NVA Network</p>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px' }}>
+          {/* The Live Button is untouched and will always show if there's an event */}
           <HeaderLiveButton 
               setActiveScreen={setActiveScreen} 
               isLive={isLive} 
               countdownText={countdownText} 
           />
+          
+          {/* LOGIC 1: Show the Install button if the app is not installed */}
           {showInstallButton && (
             <button
               onClick={onInstallClick}
@@ -63,7 +66,7 @@ function Header({ setActiveScreen, currencyRates, selectedCurrency, onCurrencyCh
             </button>
           )}
 
-          {/* --- THIS IS THE NEW LOGIC --- */}
+          {/* LOGIC 2: If Install button is hidden AND an update is ready, show the Update button */}
           {!showInstallButton && needRefresh && (
             <button
               onClick={handleUpdateButtonClick}
@@ -75,11 +78,10 @@ function Header({ setActiveScreen, currencyRates, selectedCurrency, onCurrencyCh
                 alignItems: 'center', gap: '8px'
               }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
-              <span>{isUpdating ? 'Updating...' : 'Update'}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
+              <span>{isUpdating ? 'Updating...' : 'Update App'}</span>
             </button>
           )}
-
         </div>
       </div>
       <div className="header-right-group">
