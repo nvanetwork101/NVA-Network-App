@@ -329,3 +329,18 @@
     opacity: 1;
   }
 }
+
+.update-button {
+  position: fixed;
+  bottom: 80px; /* Position it above the navigation bar */
+  right: 20px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 1000;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}

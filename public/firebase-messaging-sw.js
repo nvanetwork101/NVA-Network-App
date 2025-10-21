@@ -29,6 +29,13 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(clients.claim());
 });
 
+    // This is the new listener that handles the update prompt.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 // Safely initialize Firebase
 // This check prevents the "already exists" error if the script is ever run multiple times.
 if (!firebase.apps.length) {

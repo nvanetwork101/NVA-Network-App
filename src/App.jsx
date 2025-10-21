@@ -496,48 +496,45 @@ function App() {
  
     // ======================= START: USER PRESENCE SYSTEM (REALTIME DB) ========================
   useEffect(() => {
-    // This effect runs when the user logs in and cleans up when they log out.
     if (!currentUser) {
-        return; // Don't run if the user is not logged in.
+        return;
     }
 
-    // Get a reference to the Realtime Database.
     const dbRT = getDatabase();
     const myStatusRef = ref(dbRT, '/status/' + currentUser.uid);
 
-    // This is the data that will be written to the Realtime Database when online.
     const isOnlineForDB = {
         state: 'online',
         last_changed: serverTimestamp(),
     };
+    
+    const isOfflineForDB = {
+        state: 'offline',
+        last_changed: serverTimestamp(),
+    };
 
-    // Listen to the special '.info/connected' path to detect connection changes.
     const connectedRef = ref(dbRT, '.info/connected');
     const unsubscribe = onValue(connectedRef, (snap) => {
         if (snap.val() === true) {
-            // User's device is connected to Firebase.
-            // 1. Set an 'onDisconnect' handler. This will execute on the server when the
-            // client disconnects uncleanly (e.g., closes browser tab).
-            onDisconnect(myStatusRef).remove(); // The cloud function will handle this.
+            // --- This is the definitive, robust setup ---
+            // 1. Set the server-side disconnect handler FIRST.
+            // If the user closes the tab, the server will set them to offline.
+            onDisconnect(myStatusRef).set(isOfflineForDB);
 
-            // 2. Set the user's status to 'online' in the Realtime Database.
-            // This triggers the cloud function to update their Firestore profile.
+            // 2. THEN, set the user's status to online.
             set(myStatusRef, isOnlineForDB);
         }
     });
 
-    // Cleanup function: This runs when the component unmounts or `currentUser` changes (logout).
-     return () => {
-        unsubscribe(); // Detach the connection listener.
-        // THE FIX: Check for currentUser before trying to access its 'uid' property on logout.
+    // Cleanup function for when the user logs out.
+    return () => {
+        unsubscribe();
         if (currentUser) {
-          const dbRT = getDatabase();
-          const myStatusRef = ref(dbRT, '/status/' + currentUser.uid);
-          // Gracefully signal that the user is offline on logout/unmount.
-          myStatusRef.remove();
+            // Explicitly set the user to offline on graceful logout.
+            set(myStatusRef, isOfflineForDB);
         }
     };
-  }, [currentUser]); // Dependency on `currentUser` is crucial.
+  }, [currentUser]);
   // ========================= END: USER PRESENCE SYSTEM (REALTIME DB) ==========================
 
        // ======================= START: UNREAD CHAT COUNT LISTENER ========================
@@ -1240,8 +1237,12 @@ return (
         />
       )}
 
-      {/* --- PWA UPDATE FIX: Render the update prompt component --- */}
-      <UpdatePrompt show={needRefresh} onUpdate={handleUpdate} />
+      {/* --- PWA UPDATE FIX: Render a persistent button when an update is available --- */}
+      {needRefresh && (
+        <button className="update-button" onClick={handleUpdate}>
+          Update
+        </button>
+      )}
 
       {/* --- iOS PWA FIX: The new, styled install prompt for iPhones/iPads --- */}
       {showIosInstallPrompt && (

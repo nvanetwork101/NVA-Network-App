@@ -21,32 +21,38 @@ exports.onUserStatusChanged = onValueWritten("/status/{uid}", async (event) => {
     const { uid } = event.params;
     const userStatusRef = db.doc(`creators/${uid}`);
 
-    // onValueWritten is triggered on create, update, or delete.
-    // If the data does not exist after the event, it means it was deleted (user disconnected).
+    // Case 1: The user's status record was deleted (unclean disconnect).
     if (!event.data.after.exists()) {
-        logger.info(`User '${uid}' disconnected. Setting status to offline.`);
-        return userStatusRef.set({
-            isOnline: false,
-            lastSeen: new Date().toISOString() // Use ISO string for consistency
-        }, { merge: true });
-    }
-
-    const status = event.data.after.val();
-
-    // The client will write an object like { state: 'online', last_changed: ... }
-    if (status.state === 'online') {
-        logger.info(`User '${uid}' connected. Setting status to online.`);
-        return userStatusRef.set({
-            isOnline: true,
-            // We don't set lastSeen here because they are currently online.
-        }, { merge: true });
-    } else { // Handles 'offline' or any other state
-        logger.info(`User '${uid}' went offline. Setting status to offline.`);
+        logger.info(`[Presence] User '${uid}' disconnected uncleanly. Setting status to offline.`);
         return userStatusRef.set({
             isOnline: false,
             lastSeen: new Date().toISOString()
         }, { merge: true });
     }
+
+    const status = event.data.after.val();
+    if (!status || !status.state) {
+        return null; // No valid state to process.
+    }
+
+    // Case 2: The user's status is explicitly 'online'.
+    if (status.state === 'online') {
+        logger.info(`[Presence] User '${uid}' connected. Setting status to online.`);
+        return userStatusRef.set({
+            isOnline: true,
+        }, { merge: true });
+    }
+    
+    // Case 3: The user's status is explicitly 'offline' (graceful logout).
+    if (status.state === 'offline') {
+        logger.info(`[Presence] User '${uid}' logged out gracefully. Setting status to offline.`);
+        return userStatusRef.set({
+            isOnline: false,
+            lastSeen: new Date().toISOString()
+        }, { merge: true });
+    }
+
+    return null; // Ignore any other states.
 });
 // =====================================================================
 // ============= END: USER PRESENCE SYSTEM (REALTIME DB) ===============
