@@ -80,50 +80,64 @@ const ChatMessageScreen = ({
     const handleAddEmoji = (emoji) => setNewMessage(prev => prev + emoji);
     const emojis = ['👍', '👎', '❤️', '😂', '🔥', '😢', '😡', '✅', '❌', '🙏'];
 
-     const prevMessagesLength = useRef(0);
-    const scrollContainerRef = useRef(null); // <-- NEW: Ref for the scroll container
+    const prevMessagesLength = useRef(0);
+    const scrollContainerRef = useRef(null);
+    const initialScrollDoneRef = useRef(false); // Ref to track if the initial scroll has happened
 
-    // --- FINAL, DEFINITIVE SMART SCROLL FIX ---
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            const isNewMessageArriving = messages.length > prevMessagesLength.current;
+    // --- UNIFIED SCROLLING LOGIC ---
+    // This single hook manages both initial "smart scroll" and scrolls for new messages, eliminating the race condition.
+    useLayoutEffect(() => {
+        // First, ensure all necessary data and elements are loaded before attempting any scroll operations.
+        if (loading || !chatDetails || messages.length === 0) {
+            return;
+        }
 
-            if (isInitialRender.current && messages.length > 0) {
-                // This is the first time we have messages.
-                if (firstUnreadMessageId && unreadIndicatorRef.current) {
-                    unreadIndicatorRef.current.scrollIntoView({ behavior: 'auto' });
+        // This block handles the "smart" scroll on the very first load. It runs ONLY ONCE.
+        if (!initialScrollDoneRef.current) {
+            const lastSeenTimestamp = chatDetails.lastSeenBy?.[currentUser.uid];
+            let unreadId = null;
+
+            if (lastSeenTimestamp) {
+                const firstUnread = messages.find(msg =>
+                    msg.timestamp &&
+                    msg.timestamp.toDate() > lastSeenTimestamp.toDate() &&
+                    msg.senderId !== currentUser.uid
+                );
+                if (firstUnread) {
+                    unreadId = firstUnread.id;
+                }
+            }
+
+            // This state update places the "Unread Messages" marker in the DOM.
+            setFirstUnreadMessageId(unreadId);
+
+            // By delaying the scroll action to the next browser paint, we ensure the UI has updated
+            // with the `unreadIndicatorRef` before we try to scroll to it.
+            const performInitialScroll = () => {
+                if (unreadId && unreadIndicatorRef.current) {
+                    unreadIndicatorRef.current.scrollIntoView({ behavior: 'auto', block: 'center' });
                 } else {
                     messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
                 }
-                isInitialRender.current = false; // Mark initial render as complete.
-            } else if (isNewMessageArriving) {
-                // This is a subsequent new message arriving while the chat is open.
+                // We lock this logic from ever running again for this chat session.
+                initialScrollDoneRef.current = true;
+            };
+
+            // Use a microtask to ensure state updates have rendered.
+            queueMicrotask(performInitialScroll);
+
+        // This block handles scrolling for all subsequent new messages AFTER the initial load is complete.
+        } else {
+            const isNewMessageArriving = messages.length > prevMessagesLength.current;
+            if (isNewMessageArriving) {
                 messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
             }
-            // Update the length for the next comparison.
-            prevMessagesLength.current = messages.length;
-        }, 0);
-
-        return () => clearTimeout(timer);
-    }, [messages, firstUnreadMessageId]); // This dependency array is correct.
-
-      // --- LOGIC TO FIND THE FIRST UNREAD MESSAGE ---
-    useEffect(() => {
-        const lastSeenTimestamp = chatDetails?.lastSeenBy?.[currentUser.uid];
-        // We only run this logic if we have a valid "last seen" time.
-        if (lastSeenTimestamp) {
-            // Find the very first message that is newer than the last time we looked.
-            const firstUnread = messages.find(msg => msg.timestamp && msg.timestamp.toDate() > lastSeenTimestamp.toDate());
-            if (firstUnread) {
-                setFirstUnreadMessageId(firstUnread.id);
-            } else {
-                setFirstUnreadMessageId(null); // No new messages found
-            }
-        } else {
-            setFirstUnreadMessageId(null); // We've never seen this chat before
         }
-    }, [messages, chatDetails, currentUser]);
 
+        // We must always update the message count at the end for the next render cycle.
+        prevMessagesLength.current = messages.length;
+
+    }, [loading, messages, chatDetails, currentUser]);
     // This stable effect now only handles fetching data, which prevents the "flicker".
     useEffect(() => {
         if (!chatId) return;
