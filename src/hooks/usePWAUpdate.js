@@ -1,14 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 
 export function usePWAUpdate() {
   const [needRefresh, setNeedRefresh] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  // The registerSW function returns a function to trigger the update.
-  // We don't need to call it until the user clicks the button.
+  // A ref is used to track the update state. This prevents the event listener
+  // from having a "stale" reference to the `isUpdating` state.
+  const isUpdateInProgressRef = useRef(false);
+  
+  // By setting the state, we also immediately update the ref.
+  const setUpdateState = (updating) => {
+    isUpdateInProgressRef.current = updating;
+    setIsUpdating(updating);
+  };
+
+  // The registerSW function is configured once. The `updateServiceWorker` function
+  // it returns is what we'll call when the user clicks the button.
   const updateServiceWorker = registerSW({
     onNeedRefresh() {
-      // This is called when a new service worker is waiting.
+      // This is called when a new service worker is downloaded and waiting.
+      // We set needRefresh to true to show the "Update" button in the UI.
       setNeedRefresh(true);
     },
     onRegisterError(error) {
@@ -16,27 +28,39 @@ export function usePWAUpdate() {
     }
   });
 
-  // This is the new, more reliable update handler.
-  const handleUpdate = () => {
-    // We create a temporary, one-time listener that will trigger the reload.
-    const reloadOnUpdate = () => {
-      // IMPORTANT: We must remove the listener to prevent it from ever
-      // firing again accidentally on a future controller change.
-      if (navigator.serviceWorker) {
-          navigator.serviceWorker.removeEventListener('controllerchange', reloadOnUpdate);
+  // This effect sets up a PERSISTENT listener for the `controllerchange` event.
+  // It runs only once when the hook is first mounted.
+  useEffect(() => {
+    const handleControllerChange = () => {
+      // This event fires when a new service worker takes control.
+      // We check our ref to see if this change was triggered by our update process.
+      if (isUpdateInProgressRef.current) {
+        // If it was, we perform the reload to complete the update.
+        window.location.reload();
       }
-      window.location.reload();
     };
 
-    // We attach this listener right before we ask the service worker to update.
-    // This guarantees we will catch the event.
-    if (navigator.serviceWorker) {
-        navigator.serviceWorker.addEventListener('controllerchange', reloadOnUpdate);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
     }
-    
-    // Now, tell the new service worker to take over.
+
+    // Cleanup: remove the event listener when the component unmounts.
+    return () => {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+      }
+    };
+  }, []); // The empty dependency array ensures this runs only once.
+
+  // This is the function called when the user clicks the "Update" button.
+  const handleUpdate = () => {
+    // 1. Set the state to "updating". This shows "Updating..." in the UI.
+    setUpdateState(true);
+    // 2. Call the function from registerSW. This sends the "SKIP_WAITING"
+    //    message to the new service worker in the background.
+    // The persistent listener will now handle the reload automatically.
     updateServiceWorker();
   };
 
-  return { needRefresh, handleUpdate };
+  return { needRefresh, isUpdating, handleUpdate };
 }
