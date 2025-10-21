@@ -7,8 +7,8 @@ importScripts('https://storage.googleapis.com/workbox-cdn/releases/6.4.1/workbox
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-// This line tells Workbox to manage the file caching.
-workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
+// This line is the placeholder that vite-plugin-pwa will replace with the file manifest.
+workbox.precaching.precacheAndRoute(self.__WB_MANIFEST);
 
 // --- START: PWA PROMPT MODE LISTENERS ---
 // These listeners are required by the `registerType: 'prompt'` configuration in vite.config.js.
