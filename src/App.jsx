@@ -111,7 +111,15 @@ import { useNotifications } from './hooks/useNotifications';
 import NotificationToast from './components/NotificationToast';
 import { useRef } from 'react';
 
+// --- PWA UPDATE FIX: Import our new custom hook and the component ---
+import { usePWAUpdate } from './hooks/usePWAUpdate';
+import UpdatePrompt from './components/UpdatePrompt';
+
 function App() {
+  // --- PWA UPDATE FIX: Logic to handle the update prompt ---
+  const { needRefresh, handleUpdate } = usePWAUpdate();
+  // --- END OF PWA UPDATE FIX ---
+
   // --- STATE MANAGEMENT ---
   const routingDoneRef = useRef(false);
   
@@ -1202,6 +1210,9 @@ return (
           onClose={() => setShowImageViewerModal(false)}
         />
       )}
+
+      {/* --- PWA UPDATE FIX: Render the update prompt component --- */}
+      <UpdatePrompt show={needRefresh} onUpdate={handleUpdate} />
 
       {/* --- iOS PWA FIX: The new, styled install prompt for iPhones/iPads --- */}
       {showIosInstallPrompt && (

@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     // Add the PWA plugin configuration
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       injectRegister: null,
       // THE DEFINITIVE FIX: Use the correct singular property 'strategy'
       strategy: 'injectManifest',
