@@ -27,38 +27,37 @@ export function usePWAUpdate() {
       console.error('Service Worker registration error:', error);
     }
   });
-
-  // This effect sets up a PERSISTENT listener for the `controllerchange` event.
-  // It runs only once when the hook is first mounted.
-  useEffect(() => {
-    const handleControllerChange = () => {
-      // This event fires when a new service worker takes control.
-      // We check our ref to see if this change was triggered by our update process.
-      if (isUpdateInProgressRef.current) {
-        // If it was, we perform the reload to complete the update.
-        window.location.reload();
-      }
-    };
-
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
-    }
-
-    // Cleanup: remove the event listener when the component unmounts.
-    return () => {
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
-      }
-    };
-  }, []); // The empty dependency array ensures this runs only once.
-
+  
   // This is the function called when the user clicks the "Update" button.
   const handleUpdate = () => {
     // 1. Set the state to "updating". This shows "Updating..." in the UI.
     setUpdateState(true);
-    // 2. Call the function from registerSW. This sends the "SKIP_WAITING"
+
+    // 2. Add a fallback timer. This is the critical change.
+    // If the `controllerchange` event fails to fire (which is the source of the stall),
+    // this timer will forcefully reload the page after 3 seconds, guaranteeing the
+    // user gets the updated version of the application.
+    const fallbackTimeout = setTimeout(() => {
+        console.warn('PWA Update: controllerchange event did not fire within 3 seconds. Forcing reload.');
+        window.location.reload();
+    }, 3000); // 3-second delay
+
+    // 3. Set up a one-time, highly-reliable listener for the successful update.
+    // We do this here instead of relying on the useEffect listener to avoid any
+    // potential race conditions or stale closures.
+    const onControllerChange = () => {
+        // When the event fires, clear the fallback timer and reload immediately.
+        clearTimeout(fallbackTimeout);
+        window.location.reload();
+    };
+
+    // Register the listener just before we trigger the update.
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('controllerchange', onControllerChange, { once: true });
+    }
+
+    // 4. Call the function from registerSW. This sends the "SKIP_WAITING"
     //    message to the new service worker in the background.
-    // The persistent listener will now handle the reload automatically.
     updateServiceWorker();
   };
 
