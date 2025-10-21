@@ -2,46 +2,50 @@
 /* =============== FOUNDATIONAL LAYOUT STYLES ========================== */
 /* ===================================================================== */
 
-/* Set a consistent box model for all elements */
 *, *::before, *::after {
   box-sizing: border-box;
 }
 
-/* 1. Force the root elements to take up 100% of the viewport height and prevent page-level scrolling. */
 html, body {
   height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* This is CRITICAL. It prevents the entire page body from scrolling. */
+  overflow: hidden; /* Prevents outer page scrolling */
   font-family: 'Poppins', sans-serif;
   background-color: #0A0A0A;
 }
 
-/* 2. Make the React root element a full-height flexbox column. This is the application's true foundation. */
+/* The React root element now simply fills the screen. */
 #root {
+  height: 100%;
+}
+
+/* This is the NEW master layout container we will add in App.jsx.
+   It creates the fixed-header, fixed-footer structure. */
+.app-layout {
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-/* 3. The container for the screen content. This will now correctly grow to fill the space
-      between the Header and NavigationBar. This div will scroll if a long screen (like Discover) needs it. */
+/* This is the flexible content area in the middle. It will scroll if its
+   content is too long (e.g., Discover screen), but the container itself does not move. */
 .container {
   flex: 1;
-  min-height: 0; /* Prevents flex children from overflowing on smaller viewports. */
-  overflow-y: auto; /* Allow this main content area to scroll if its content is taller than the screen. */
+  min-height: 0; /* Prevents flexbox overflow bugs */
+  overflow-y: auto; /* A scrollbar appears HERE if needed, not on the body. */
   display: flex;
   flex-direction: column;
 }
 
-/* 4. This ensures that any component with a 'screenContainer' class (like our Chat screen)
-      will properly expand to fill the available space inside the '.container'. */
+/* Any screen that should fill the .container must have this class.
+   It handles its own internal scrolling (like the chat message list). */
 .screenContainer {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden; /* A screenContainer handles its own scrolling internally. */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Prevents this container from scrolling; its children will. */
 }
 
 /* ===================================================================== */
