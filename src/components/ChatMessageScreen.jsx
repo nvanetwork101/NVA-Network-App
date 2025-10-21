@@ -35,6 +35,12 @@ const ChatMessageScreen = ({
     const [firstUnreadMessageId, setFirstUnreadMessageId] = useState(null);
     const unreadIndicatorRef = useRef(null);
 
+    const formatMessageTimestamp = (timestamp) => {
+        if (!timestamp || !timestamp.toDate) return '';
+        const date = timestamp.toDate();
+        return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    };
+
   // --- NEW: ReactionPills Component ---
     // Renders the reaction emojis below a message bubble.
     const ReactionPills = ({ reactions, messageId }) => {
@@ -72,6 +78,13 @@ const ChatMessageScreen = ({
             const diffInSeconds = Math.floor((now - date) / 1000);
             if (diffInSeconds < 120) return 'Online';
             const diffInMinutes = Math.floor(diffInSeconds / 60);
+            
+            const formatMessageTimestamp = (timestamp) => {
+        if (!timestamp || !timestamp.toDate) return '';
+        const date = timestamp.toDate();
+        return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        };
+            
             if (diffInMinutes < 60) return `Active ${diffInMinutes}m ago`;
             const diffInHours = Math.floor(diffInMinutes / 60);
             if (diffInHours < 24) return `Active ${diffInHours}h ago`;
@@ -436,6 +449,16 @@ const ChatMessageScreen = ({
                                                 {msg.isDeleted ? "This message was deleted" : msg.text}
                                             </div>
                                         </div>
+                                        
+                                        <p style={{
+                                            margin: '4px 0 0',
+                                            fontSize: '10px',
+                                            color: '#888',
+                                            padding: '0 8px'
+                                        }}>
+                                            {formatMessageTimestamp(msg.timestamp)}
+                                        </p>
+
                                         <ReactionPills reactions={msg.reactions} messageId={msg.id} />
                                     </div>
                                 </React.Fragment>
