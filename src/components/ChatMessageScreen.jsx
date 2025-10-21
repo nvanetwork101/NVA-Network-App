@@ -133,17 +133,15 @@ const ChatMessageScreen = ({
 
         setIsSending(true);
 
-        const messageData = {
+        // This object no longer needs serverTimestamp, the backend will handle it.
+        const messagePayload = {
             text: newMessage,
-            timestamp: serverTimestamp(),
             senderId: currentUser.uid,
             senderName: creatorProfile.creatorName || "NVA User",
-            isDeleted: false,
-            reactions: {}
         };
 
         if (replyingToMessage) {
-            messageData.replyTo = {
+            messagePayload.replyTo = {
                 id: replyingToMessage.id,
                 text: replyingToMessage.text,
                 senderId: replyingToMessage.senderId,
@@ -152,14 +150,20 @@ const ChatMessageScreen = ({
         }
 
         try {
-            const messagesRef = collection(db, 'chats', chatId, 'messages');
-            await addDoc(messagesRef, messageData);
+            // This is the secure Cloud Function call that replaces the direct DB write.
+            const sendChatMessageFunction = httpsCallable(functions, 'sendChatMessagePrivate');
+            await sendChatMessageFunction({
+                chatId: chatId,
+                messageData: messagePayload
+            });
+
+            // Optimistically clear the input fields on successful function call.
             setNewMessage('');
             setReplyingToMessage(null);
             setShowEmojiPicker(false);
         } catch (error) {
-            console.error("Error sending message:", error);
-            showMessage("Failed to send message. Please check your connection.");
+            console.error("Error sending message via Cloud Function:", error);
+            showMessage(error.message || "Failed to send message. You may have been blocked or removed from this chat.");
         } finally {
             setIsSending(false);
         }
@@ -329,7 +333,41 @@ const ChatMessageScreen = ({
                         <button onClick={() => setReplyingToMessage(null)} style={{background: 'transparent', border: 'none', color: '#AAA', cursor: 'pointer', fontSize: '20px'}}>&times;</button>
                     </div>
                 )}
-                {showEmojiPicker && ( <div className="emojiPicker" style={{ padding: '10px', display: 'flex', justifyContent: 'space-around', background: '#2A2A2A' }}> {emojis.map(e => <button key={e} className="emojiButton" onClick={() => handleAddEmoji(e)}>{e}</button>)} </div> )}
+               {showEmojiPicker && (
+                    <div className="emojiPicker" style={{
+                        // --- Core UI from your example ---
+                        background: 'rgba(40, 40, 80, 0.3)',
+                        backdropFilter: 'blur(12px)',
+                        WebkitBackdropFilter: 'blur(12px)',
+                        borderRadius: '50px',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+
+                        // --- Scrolling and Layout ---
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '20px', // Space between emojis
+                        padding: '8px 25px',
+                        margin: '0 10px 10px 10px',
+                        overflowX: 'auto', // CRITICAL: This enables side-scrolling
+                        whiteSpace: 'nowrap', // Prevents emojis from wrapping
+                        scrollbarWidth: 'none', // Hides the scrollbar for Firefox
+                        msOverflowStyle: 'none' // Hides the scrollbar for IE/Edge
+                        // Note: A CSS pseudo-selector is needed to hide the scrollbar on Webkit (Chrome/Safari)
+                        // but this inline style ensures functionality and a clean look for most users.
+                    }}>
+                        {emojis.map(e => (
+                             <button key={e} className="button" onClick={() => handleAddEmoji(e)} style={{
+                                background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', padding: '0',
+                                transform: 'scale(1)', transition: 'transform 0.15s ease'
+                            }}
+                            onMouseOver={e => e.currentTarget.style.transform = 'scale(1.2)'}
+                            onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
+                            >
+                                {e}
+                            </button>
+                        ))}
+                    </div>
+                )}
                 <form onSubmit={handleSendMessage} style={{ display: 'flex', alignItems: 'center', padding: '10px' }}>
                     <button type="button" className="button" style={{ marginRight: '10px', background: 'transparent', padding: '8px' }} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
                         <svg fill="#FFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path></svg>

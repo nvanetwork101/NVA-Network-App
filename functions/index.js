@@ -2020,6 +2020,112 @@ exports.deleteChatMessagePrivate = onCall(async (request) => {
     }
 });
 
+       // --- START: NEW CHAT MESSAGE SENDING FUNCTION ---
+
+exports.sendChatMessagePrivate = onCall(async (request) => {
+    // 1. Authentication & User Data Validation
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to send a message.");
+    }
+
+    const { chatId, messageData } = request.data;
+    if (!chatId || !messageData || !messageData.text || messageData.text.trim() === '') {
+        throw new HttpsError("invalid-argument", "Missing chat ID or message text.");
+    }
+
+    const db = admin.firestore();
+    const chatRef = db.doc(`chats/${chatId}`);
+    const currentUserRef = db.doc(`creators/${uid}`);
+
+    try {
+        let recipientId;
+        let senderName;
+        
+        await db.runTransaction(async (transaction) => {
+            const chatDoc = await transaction.get(chatRef);
+            const currentUserDoc = await transaction.get(currentUserRef);
+
+            if (!chatDoc.exists) {
+                throw new HttpsError("not-found", "The chat conversation does not exist.");
+            }
+            if (!currentUserDoc.exists) {
+                throw new HttpsError("not-found", "Your user profile could not be found.");
+            }
+
+            const chatData = chatDoc.data();
+            senderName = currentUserDoc.data().creatorName || "NVA User";
+            
+            // SECURITY CHECK: Ensure the sender is a valid participant of the chat.
+            if (!chatData.participants || !chatData.participants.includes(uid)) {
+                throw new HttpsError("permission-denied", "You do not have permission to send messages in this chat.");
+            }
+
+            // Determine the recipient for notifications.
+            recipientId = chatData.participants.find(p => p !== uid);
+            
+            // Construct the final, secure message object.
+            const finalMessage = {
+                ...messageData,
+                senderId: uid,
+                senderName: senderName, // Use the server-verified name.
+                isDeleted: false,
+                reactions: {},
+                timestamp: admin.firestore.FieldValue.serverTimestamp() // Use server timestamp.
+            };
+
+            const newMessageRef = chatRef.collection("messages").doc();
+            transaction.set(newMessageRef, finalMessage);
+            
+            // Update the chat document with the last message details for the chat list UI.
+            transaction.update(chatRef, {
+                lastMessage: {
+                    text: finalMessage.text,
+                    timestamp: finalMessage.timestamp,
+                    senderId: uid
+                },
+                // Unhide the chat for any participant who previously deleted it.
+                hiddenFor: admin.firestore.FieldValue.arrayRemove(recipientId)
+            });
+        });
+
+        // --- NOTIFICATION LOGIC (Runs AFTER the transaction succeeds) ---
+        if (recipientId) {
+            // 1. Create In-App (Inbox) Notification
+            const notificationPayload = {
+                userId: recipientId,
+                type: 'NEW_CHAT_MESSAGE',
+                message: `${senderName}: ${messageData.text.substring(0, 100)}`,
+                link: `/chat/${chatId}`,
+                isRead: false,
+                timestamp: new Date()
+            };
+            await db.collection("notifications").add(notificationPayload);
+            await db.collection("creators").doc(recipientId).update({ 
+                unreadNotificationCount: admin.firestore.FieldValue.increment(1) 
+            });
+
+            // 2. Send Push Notification
+            const pushPayload = {
+                title: `New Message from ${senderName}`,
+                body: messageData.text.substring(0, 100),
+                link: `/chat/${chatId}`
+            };
+            await sendPushNotification(recipientId, pushPayload);
+        }
+
+        return { success: true, message: "Message sent." };
+
+    } catch (error) {
+        logger.error(`Error sending message in chat '${chatId}' by user '${uid}'`, { error });
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred while sending the message.");
+    }
+});
+
+// --- END: NEW CHAT MESSAGE SENDING FUNCTION ---
+ 
+
     // --- START: NEW FUNCTION TO BE ADDED ---
 
 exports.reactToChatMessagePrivate = onCall(async (request) => {
