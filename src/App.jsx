@@ -204,7 +204,9 @@ function App() {
   const notificationSoundRef = useRef(null);
   const unreadCount = notifications.filter(n => !n.isBroadcast && !n.isRead).length;
   const [notificationBadgeCount, setNotificationBadgeCount] = useState(0);
-       
+    
+    const [unreadChatCount, setUnreadChatCount] = useState(0); // For the chat icon badge
+
     const markAllAsRead = () => {
     notifications.forEach(notification => {
       if (!notification.isBroadcast && !notification.isRead) {
@@ -534,6 +536,34 @@ function App() {
     };
   }, [currentUser]); // Dependency on `currentUser` is crucial.
   // ========================= END: USER PRESENCE SYSTEM (REALTIME DB) ==========================
+
+       // ======================= START: UNREAD CHAT COUNT LISTENER ========================
+  useEffect(() => {
+    if (!currentUser) {
+        setUnreadChatCount(0);
+        return;
+    }
+    const q = query(
+        collection(db, "chats"),
+        where("participants", "array-contains", currentUser.uid)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        let count = 0;
+        snapshot.forEach(doc => {
+            const chatData = doc.data();
+            if (
+                chatData.lastMessage &&
+                chatData.lastMessage.senderId !== currentUser.uid &&
+                !chatData.hiddenFor?.includes(currentUser.uid)
+            ) {
+                count++;
+            }
+        });
+        setUnreadChatCount(count);
+    });
+    return () => unsubscribe();
+  }, [currentUser]);
+  // ========================= END: UNREAD CHAT COUNT LISTENER ========================== 
 
         // ======================= START: PUSH NOTIFICATION SETUP =======================
 useEffect(() => {
@@ -1122,8 +1152,9 @@ return (
               creatorProfile={creatorProfile}
               showMessage={showMessage}
               hasNewFollowerContent={hasNewFollowerContent}
-              unreadCount={notificationBadgeCount}
-            />
+          unreadCount={notificationBadgeCount}
+          unreadChatCount={unreadChatCount} // <-- NEW PROP ADDED HERE
+        />
           )}
 
           {/* All modals and toasts remain here */}

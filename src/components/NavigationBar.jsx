@@ -13,16 +13,34 @@ const NavigationBar = (props) => {
         currentUser, 
         creatorProfile, 
         showMessage, 
-        hasNewFollowerContent, 
-        unreadCount 
-    } = props;
+    hasNewFollowerContent, 
+    unreadCount,
+    unreadChatCount // <-- ADD THIS LINE
+} = props;
 
-    const [showMoreMenu, setShowMoreMenu] = useState(false);
+const [showMoreMenu, setShowMoreMenu] = useState(false);
     
     return (
         <div className="navigationBar" style={{ position: 'relative' }}>
-            <button className="navButton" onClick={() => setActiveScreen('Home')}>
-                <span className={activeScreen === 'Home' ? 'activeNavButtonText navButtonText' : 'navButtonText'}>Home</span>
+            <button 
+                className="navButton" 
+                onClick={() => setActiveScreen('Home')}
+                style={{
+                    backgroundColor: '#FFD700',
+                    border: '1px solid #FFD700',
+                    transition: 'box-shadow 0.2s ease-in-out',
+                    // Add a glow effect when the Home screen is active
+                    boxShadow: activeScreen === 'Home' ? '0 0 10px #FFD700' : 'none'
+                }}
+            >
+                <svg 
+                    height="24px" 
+                    width="24px" 
+                    viewBox="0 0 24 24" 
+                    fill="#0A0A0A" // Black icon color
+                >
+                    <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+                </svg>
             </button>
             
             {/* --- THIS IS THE FIX: All user-specific buttons now check for email verification --- */}
@@ -32,6 +50,27 @@ const NavigationBar = (props) => {
                     
                     <button 
                         className="navButton" 
+                        onClick={() => setActiveScreen('ChatList')} 
+                        style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700', position: 'relative' }}
+                    >
+                        <svg 
+                            height="24px" 
+                            width="24px" 
+                            viewBox="0 0 24 24" 
+                            fill={ (activeScreen === 'ChatList' || activeScreen === 'ChatMessageScreen') ? '#FFFFFF' : '#FFD700' } // Brighter when active
+                            style={{ transition: 'fill 0.2s ease-in-out' }}
+                        >
+                        <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" />
+                    </svg>
+                    {unreadChatCount > 0 && (
+                        <span className="notification-badge" style={{top: '2px', right: '5px'}}>
+                            {unreadChatCount}
+                        </span>
+                    )}
+                </button>
+                
+                <button 
+                    className="navButton"
                         onClick={() => setActiveScreen('CreatorConnect')}
                     >
                         <span className="navButtonText">Creator Connect</span>

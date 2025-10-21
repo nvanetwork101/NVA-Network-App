@@ -11,7 +11,6 @@ export default defineConfig({
     // Add the PWA plugin configuration
     VitePWA({
       registerType: 'prompt',
-      injectRegister: null,
       // THE DEFINITIVE FIX: Use the correct singular property 'strategy'
       strategy: 'injectManifest',
       // THE DEFINITIVE FIX: Point to the correct source file
