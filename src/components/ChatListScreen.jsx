@@ -242,17 +242,23 @@ const ChatListScreen = ({
                                             }}></span>
                                         )}
                                     </div>
-                                    <p style={{ 
-                                        margin: '4px 0 0', 
-                                        color: isUnread ? '#FFFFFF' : '#AAA', 
-                                        fontSize: '14px', 
-                                        whiteSpace: 'nowrap', 
-                                        overflow: 'hidden', 
-                                        textOverflow: 'ellipsis',
-                                        fontWeight: isUnread ? 'bold' : 'normal'
-                                    }}>
-                                        {chat.lastMessage?.text || "No messages yet..."}
-                                    </p>
+                                    {/* --- TYPING INDICATOR FEATURE --- */}
+                                    {chat.typing?.[otherParticipantUid] ? (
+                                        <p style={{
+                                            margin: '4px 0 0', color: '#FFD700', fontSize: '14px',
+                                            fontStyle: 'italic', fontWeight: 'bold'
+                                        }}>
+                                            is typing...
+                                        </p>
+                                    ) : (
+                                        <p style={{
+                                            margin: '4px 0 0', color: isUnread ? '#FFFFFF' : '#AAA',
+                                            fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden',
+                                            textOverflow: 'ellipsis', fontWeight: isUnread ? 'bold' : 'normal'
+                                        }}>
+                                            {chat.lastMessage?.text || "No messages yet..."}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div style={{textAlign: 'right', marginLeft: 'auto', paddingRight: '40px', flexShrink: 0}}>

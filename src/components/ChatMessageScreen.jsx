@@ -28,7 +28,7 @@ const ChatMessageScreen = ({
     const [menuState, setMenuState] = useState({ visible: false, x: 0, y: 0, message: null });
     const [replyingToMessage, setReplyingToMessage] = useState(null);
     const typingTimer = useRef(null);
-
+    const isInitialRender = useRef(true);
 
   // --- NEW: ReactionPills Component ---
     // Renders the reaction emojis below a message bubble.
@@ -81,24 +81,20 @@ const ChatMessageScreen = ({
     const scrollContainerRef = useRef(null); // <-- NEW: Ref for the scroll container
 
     // --- FINAL, DEFINITIVE SCROLL FIX ---
-    useLayoutEffect(() => {
-        const scrollContainer = scrollContainerRef.current;
-        if (!scrollContainer) return;
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            // THIS IS THE FIX: We only consider it the "initial render" scroll
+            // if the flag is true AND there are actually messages to scroll to.
+            if (isInitialRender.current && messages.length > 0) {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+                isInitialRender.current = false; // The flag is now correctly updated only after messages load.
+            } else {
+                // This will now correctly handle all subsequent new messages.
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }
+        }, 0);
 
-        // Case 1: Initial Load.
-        // Manually setting scrollTop to scrollHeight is the most reliable method.
-        // It happens before the browser paints, so the user never sees the top.
-        if (messages.length > 0 && prevMessagesLength.current === 0) {
-            scrollContainer.scrollTop = scrollContainer.scrollHeight;
-        }
-        // Case 2: New Message Added.
-        // For subsequent new messages, scrollIntoView is reliable and gives a smooth effect.
-        else if (messages.length > prevMessagesLength.current) {
-            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        }
-
-        // Update the ref for the next render cycle.
-        prevMessagesLength.current = messages.length;
+        return () => clearTimeout(timer);
     }, [messages]);
 
     // This stable effect now only handles fetching data, which prevents the "flicker".
@@ -181,6 +177,10 @@ useEffect(() => {
             const sendChatMessageFunction = httpsCallable(functions, 'sendChatMessagePrivate');
             // Send the correctly structured payload.
             await sendChatMessageFunction(payload);
+
+            // --- TYPING INDICATOR FIX: Immediately clear typing status on send ---
+        if (typingTimer.current) clearTimeout(typingTimer.current);
+        httpsCallable(functions, 'updateTypingStatus')({ chatId: chatId, isTyping: false });
 
             // Clear the input fields on success.
             setNewMessage('');
@@ -330,16 +330,16 @@ useEffect(() => {
                                 )}
                                     <div onTouchStart={(e) => !msg.isDeleted && handleTouchStart(e, msg)} onTouchEnd={handleTouchEnd} onContextMenu={(e) => !msg.isDeleted && handleContextMenu(e, msg)} >
                                         <div style={{
-                                            maxWidth: '100%', padding: '10px 15px',
-                                            borderRadius: msg.replyTo ? (isMyMessage ? '18px 4px 18px 18px' : '4px 18px 18px 18px') : '18px',
-                                            backgroundColor: menuState.message?.id === msg.id ? '#5A5A5A' : (isMyMessage ? (msg.isDeleted ? '#555' : '#FFD700') : '#3A3A3A'),
-                                            color: isMyMessage ? '#0A0A0A' : '#FFF', fontStyle: msg.isDeleted ? 'italic' : 'normal',
-                                            opacity: msg.isDeleted ? 0.7 : 1, transition: 'background-color 0.2s',
-                                            // --- THIS IS THE FIX ---
-                                            textShadow: isMyMessage ? '0px 0px 2px rgba(0, 0, 0, 0.2)' : 'none'
-                                        }}>
-                                            {msg.isDeleted ? "This message was deleted" : msg.text}
-                                        </div>
+                                        maxWidth: '100%', padding: '10px 15px',
+                                        borderRadius: msg.replyTo ? (isMyMessage ? '18px 4px 18px 18px' : '4px 18px 18px 18px') : '18px',
+                                        backgroundColor: menuState.message?.id === msg.id ? '#5A5A5A' : (isMyMessage ? (msg.isDeleted ? '#555' : '#FFB41C') : '#3A3A3A'),
+                                        color: isMyMessage ? '#0A0A0A' : '#FFF', fontStyle: msg.isDeleted ? 'italic' : 'normal',
+                                        opacity: msg.isDeleted ? 0.7 : 1, transition: 'background-color 0.2s',
+                                        // The text shadow is no longer needed with the new color.
+                                        textShadow: 'none'
+                                    }}>
+                                        {msg.isDeleted ? "This message was deleted" : msg.text}
+                                    </div>
                                     </div>
                                     {/* --- FIX #1: THE NEW REACTION PILLS UI IS ADDED HERE --- */}
                                     <ReactionPills reactions={msg.reactions} messageId={msg.id} />

@@ -2100,15 +2100,19 @@ exports.updateTypingStatus = onCall(async (request) => {
     const chatRef = db.collection("chats").doc(chatId);
 
     try {
-        // Use dot notation to update only the current user's typing status
-        // in the 'typing' map field without affecting other users.
-        await chatRef.update({
-            [`typing.${uid}`]: isTyping
-        });
+        // --- THIS IS THE FIX ---
+        // Using .set() with { merge: true } is more robust than .update().
+        // It will create the 'typing' map field if it doesn't exist,
+        // and it will only update the key for the current user,
+        // leaving other users' typing statuses untouched.
+        await chatRef.set({
+            typing: {
+                [uid]: isTyping
+            }
+        }, { merge: true });
+
         return { success: true };
     } catch (error) {
-        // This might fail if the chat document doesn't exist, which is okay.
-        // We don't want to throw an error back to the client for this.
         logger.warn(`Could not update typing status for user '${uid}' in chat '${chatId}'.`, { error: error.message });
         return { success: false, message: "Could not update status." };
     }

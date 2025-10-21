@@ -21,7 +21,12 @@ const NavigationBar = (props) => {
 const [showMoreMenu, setShowMoreMenu] = useState(false);
     
     return (
-        <div className="navigationBar" style={{ position: 'relative' }}>
+        <div className="navigationBar" style={{
+            position: 'relative',
+            display: 'flex',
+            justifyContent: 'space-around', // This property spaces the buttons out evenly.
+            alignItems: 'center' // This property prevents the buttons from stretching vertically.
+        }}>
             <button 
                 className="navButton" 
                 onClick={() => setActiveScreen('Home')}
