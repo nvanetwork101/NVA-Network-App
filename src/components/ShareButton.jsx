@@ -59,7 +59,8 @@ const ShareButton = ({ title, text, url, showMessage }) => {
         display: 'inline-flex', 
         alignItems: 'center', 
         gap: '8px',
-        backgroundColor: '#3A3A3A' // Neutral dark button color
+        backgroundColor: '#1877F2', // Facebook blue
+        color: '#FFFFFF' // Ensure text is white and readable
       }}
     >
       {shareIcon}

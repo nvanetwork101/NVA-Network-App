@@ -993,6 +993,15 @@ useEffect(() => {
   }, [notifications, currentToast, toastQueue, markToastAsSeen]);
 
    const renderScreen = () => {
+    
+    // --- THE DEFINITIVE VERIFICATION GATEKEEPER ---
+    // This check runs on EVERY re-render, before anything else.
+    // If a user is logged in but their email is not verified...
+    if (currentUser && !currentUser.emailVerified) {
+      // ...force the VerifyEmailScreen to be displayed, ignoring the activeScreen state.
+      return <VerifyEmailScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={handleNavigate} handleLogout={handleLogout} />;
+    }
+    
     if (activeScreen === 'Banned') return <BannedScreen setActiveScreen={handleNavigate} />;
     if (activeScreen === 'Suspended') return <SuspendedScreen showMessage={showMessage} setActiveScreen={handleNavigate} suspensionDetails={suspensionDetails} />;
     

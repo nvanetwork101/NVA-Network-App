@@ -13,6 +13,36 @@ import CompetitionLikeButton from './CompetitionLikeButton';
 import CompetitionVideoViewer from './CompetitionVideoViewer';
 import EnlargedPhotoViewer from './EnlargedPhotoViewer';
 
+const TimesSquareStyles = `
+  @keyframes pulse-indigo {
+    0% { text-shadow: 0 0 5px #4B0082, 0 0 10px #4B0082, 0 0 15px #8A2BE2, 0 0 20px #8A2BE2; }
+    50% { text-shadow: 0 0 10px #4B0082, 0 0 15px #9400D3, 0 0 20px #9400D3, 0 0 25px #9932CC; }
+    100% { text-shadow: 0 0 5px #4B0082, 0 0 10px #4B0082, 0 0 15px #8A2BE2, 0 0 20px #8A2BE2; }
+  }
+
+  .times-square-bg {
+    background-color: #0a0a0a;
+    background-image: url('https://www.transparenttextures.com/patterns/dark-denim-3.png');
+  }
+
+  .neon-indigo-text {
+    color: #E6E6FA; /* A very light lavender for the base text color */
+    font-family: 'Arial Black', Gadget, sans-serif;
+    font-weight: bold;
+    text-shadow: 0 0 5px #4B0082, 0 0 10px #4B0082, 0 0 15px #8A2BE2, 0 0 20px #8A2BE2;
+    animation: pulse-indigo 4s infinite ease-in-out;
+  }
+  
+  .billboard-panel {
+    background-color: rgba(26, 26, 26, 0.6);
+    border: 1px solid #4B0082;
+    box-shadow: 0 0 15px rgba(75, 0, 130, 0.5);
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 15px;
+  }
+`;
+
 function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorProfile }) {
     // --- STATE MANAGEMENT ---
     const [competition, setCompetition] = useState(null);
@@ -106,6 +136,19 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
     };
     // ======================= END: MODIFIED CODE BLOCK (HANDLERS) =======================
 
+        const handleFlyerClick = () => {
+        if (competition?.flyerImageUrl) {
+            window.dispatchEvent(new CustomEvent('openImageViewer', {
+                detail: {
+                    imageUrl: competition.flyerImageUrl,
+                    description: competition.title,
+                    itemId: competition.id,
+                    itemType: 'competition'
+                }
+            }));
+        }
+    };
+
       const getEntryThumbnail = (entry) => {
         if (entry.photoUrl) return entry.photoUrl; // Priority 1: Direct photo upload
         if (entry.customThumbnailUrl) return entry.customThumbnailUrl; // Priority 2: Custom thumbnail from a link
@@ -137,159 +180,145 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
     }
 
     return (
-        <div className="screenContainer">
-            {/* Header section */}
-            <div style={{ flexShrink: 0, paddingBottom: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', gap: '15px' }}>
-                    <button onClick={() => setActiveScreen('Home')} style={{ background: 'none', border: '1px solid #00FFFF', color: '#00FFFF', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-                        &#x2190;
-                    </button>
-                    <p className="heading" style={{ margin: 0, textAlign: 'center', flexGrow: 1, color: '#00FFFF' }}>
-                        {competition.title}
-                    </p>
-                    <div style={{ flexShrink: 0 }}>
-                        <ShareButton
-                            title={competition.title}
-                            text={`Join the "${competition.title}" competition on NVA Network!`}
-                            url={`/competition/${competition.id}`}
-                            showMessage={showMessage}
-                        />
+        <>
+            <style>{TimesSquareStyles}</style>
+            <div className="screenContainer times-square-bg">
+                {/* Header section */}
+                <div style={{ flexShrink: 0, paddingBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px', gap: '15px' }}>
+                        <button onClick={() => setActiveScreen('Home')} style={{ background: 'none', border: '1px solid #8A2BE2', color: '#E6E6FA', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                            &#x2190;
+                        </button>
+                        <p className="heading neon-indigo-text" style={{ margin: 0, textAlign: 'center', flexGrow: 1 }}>
+                            {competition.title}
+                        </p>
+                        <div style={{ flexShrink: 0 }}>
+                            <ShareButton
+                                title={competition.title}
+                                text={`Join the "${competition.title}" competition on NVA Network!`}
+                                url={`/competition/${competition.id}`}
+                                showMessage={showMessage}
+                            />
+                        </div>
                     </div>
-                </div>
-                
-                {/* Centering container for the flyer */}
-                <div style={{ display: 'flex', justifyContent: 'center', width: '100%' }}>
-                    {competition.flyerImageUrl && (
-                        competition.flyerLinkUrl ? (
-                            <a href={competition.flyerLinkUrl} target="_blank" rel="noopener noreferrer" className="clickable-flyer-container" style={{ display: 'block', width: '100%' }}>
-    <img 
-        src={competition.flyerImageUrl} 
-        alt={competition.title}
-        className="clickable-flyer-image"
-        style={{ width: '100%', display: 'block' }}
-    />
-    <div className="flyer-link-icon">
-<svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24" fill="#FFFFFF">
-    <path d="M0 0h24v24H0z" fill="none"/>
-    <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
-</svg>
-</div>
-</a>
-                        ) : (
+                    
+                    <div className="billboard-panel">
+                        {competition.flyerImageUrl && (
                             <img 
                                 src={competition.flyerImageUrl} 
                                 alt={competition.title}
                                 className="clickable-flyer-image"
-                                style={{ width: '100%', display: 'block' }}
+                                onClick={handleFlyerClick}
+                                style={{ width: '100%', display: 'block', cursor: 'pointer', borderRadius: '4px' }}
                             />
-                        )
-                    )}
-                </div>
-                
-                {competition.noticeText && (
-                    <div className="dashboardSection" style={{padding: '10px', border: '1px solid #FFD700', margin: '0 0 10px 0'}}>
-                        <p className="dashboardSectionTitle" style={{fontSize: '14px', marginBottom: '5px'}}>Notice</p>
-                        <p className="dashboardItem" style={{fontSize: '12px', color: '#CCC', margin: 0, whiteSpace: 'pre-wrap'}}>{competition.noticeText}</p>
+                        )}
+                        {/* --- NEW: Conditional "Learn More" Button --- */}
+                        {competition.flyerLinkUrl && (
+                            <a href={competition.flyerLinkUrl} target="_blank" rel="noopener noreferrer" className="button" style={{ width: '100%', marginTop: '15px', backgroundColor: '#4B0082', textAlign: 'center' }}>
+                                <span className="buttonText light">Learn More</span>
+                            </a>
+                        )}
                     </div>
-                )}
-                <div className="formGroup" style={{marginBottom: '10px'}}><input type="text" className="formInput" placeholder="Search entries by name or title..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-                <div style={{display: 'flex', gap: '10px'}}>
-                    {competition.status === 'Accepting Entries' && (
-                        <button className="button" onClick={handleEnterCompetition} style={{flex: 1, margin: 0}}><span className="buttonText">Enter Competition</span></button>
-                    )}
-                    {competition.status === 'Live Voting' && (
-                        <div className="dashboardItem" style={{flex: 1, textAlign: 'center', padding: '10px', border: '1px solid #00FFFF', borderRadius: '8px'}}>
-                            <p style={{margin: 0, color: '#00FFFF', fontWeight: 'bold'}}>Voting is now Live!</p>
+                    
+                    {competition.noticeText && (
+                        <div className="dashboardSection" style={{padding: '10px', border: '1px solid #FFD700', margin: '0 0 10px 0'}}>
+                            <p className="dashboardSectionTitle" style={{fontSize: '14px', marginBottom: '5px'}}>Notice</p>
+                            <p className="dashboardItem" style={{fontSize: '12px', color: '#CCC', margin: 0, whiteSpace: 'pre-wrap'}}>{competition.noticeText}</p>
                         </div>
                     )}
-                    {(competition.status === 'Judging' || competition.status === 'Results Visible') && (
-                        <div className="dashboardItem" style={{flex: 1, textAlign: 'center', padding: '10px', border: `1px solid ${competition.status === 'Judging' ? '#FFD700' : '#00FF00'}`, borderRadius: '8px'}}>
-                            <p style={{margin: 0, color: competition.status === 'Judging' ? '#FFD700' : '#00FF00', fontWeight: 'bold'}}>
-                                {competition.status === 'Judging' ? 'Judging in Progress' : 'Results Are In!'}
-                            </p>
-                        </div>
-                    )}
-                    <button className="button" onClick={handlePrizesClick} style={{flex: 1, margin: 0, backgroundColor: '#3A3A3A'}}><span className="buttonText light">View Prizes & Rules</span></button>
-                </div>
-            </div>
-
-            {/* Entries list */}
-            <div style={{ maxHeight: '70vh', overflowY: 'auto', paddingTop: '15px' }}>
-                {(() => {
-                    const isModerator = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';
-                    const isJudgingPublicView = competition.status === 'Judging' && !isModerator;
-
-                    if (isJudgingPublicView) {
-                        return (
-                            <div style={{textAlign: 'center', paddingTop: '40px'}}>
-                                <p className="heading" style={{color: '#FFD700'}}>Judging In Progress</p>
-                                <p className="subHeading">The competition has ended. Results will be out soon!</p>
+                    <div className="formGroup" style={{marginBottom: '10px'}}><input type="text" className="formInput" placeholder="Search entries by name or title..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+                    <div style={{display: 'flex', gap: '10px'}}>
+                        {competition.status === 'Accepting Entries' && (
+                            <button className="button" onClick={handleEnterCompetition} style={{flex: 1, margin: 0}}><span className="buttonText">Enter Competition</span></button>
+                        )}
+                        {competition.status === 'Live Voting' && (
+                            <div className="dashboardItem" style={{flex: 1, textAlign: 'center', padding: '10px', border: '1px solid #8A2BE2', borderRadius: '8px'}}>
+                                <p style={{margin: 0, color: '#E6E6FA', fontWeight: 'bold'}}>Voting is now Live!</p>
                             </div>
-                        );
-                    }
+                        )}
+                        {(competition.status === 'Judging' || competition.status === 'Results Visible') && (
+                            <div className="dashboardItem" style={{flex: 1, textAlign: 'center', padding: '10px', border: `1px solid ${competition.status === 'Judging' ? '#FFD700' : '#00FF00'}`, borderRadius: '8px'}}>
+                                <p style={{margin: 0, color: competition.status === 'Judging' ? '#FFD700' : '#00FF00', fontWeight: 'bold'}}>
+                                    {competition.status === 'Judging' ? 'Judging in Progress' : 'Results Are In!'}
+                                </p>
+                            </div>
+                        )}
+                        <button className="button" onClick={handlePrizesClick} style={{flex: 1, margin: 0, backgroundColor: '#3A3A3A'}}><span className="buttonText light">View Prizes & Rules</span></button>
+                    </div>
+                </div>
 
-                    if (loadingEntries) {
-                        return <p className="dashboardItem" style={{textAlign: 'center'}}>Loading entries...</p>;
-                    }
+                {/* Entries list */}
+                <div style={{ flex: 1, overflowY: 'auto', paddingTop: '15px' }}>
+                    {(() => {
+                        const isModerator = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';
+                        const isJudgingPublicView = competition.status === 'Judging' && !isModerator;
 
-                    if (rankedEntries.length === 0) {
-                        return <p className="dashboardItem" style={{textAlign: 'center'}}>No entries yet. Be the first!</p>;
-                    }
+                        if (isJudgingPublicView) {
+                            return (
+                                <div style={{textAlign: 'center', paddingTop: '40px'}}>
+                                    <p className="heading" style={{color: '#FFD700'}}>Judging In Progress</p>
+                                    <p className="subHeading">The competition has ended. Results will be out soon!</p>
+                                </div>
+                            );
+                        }
 
-                    return (
-                        <div className="allCampaignsList">
-                            {rankedEntries.map((entry, index) => (
-                                <div key={entry.id} className="allCampaignsListItem" style={{borderLeft: '5px solid #00FFFF', position: 'relative', cursor: 'pointer'}} onClick={() => handleEntryClick(entry)}>
-                                    <div style={{position: 'absolute', top: '-1px', left: '-1px', backgroundColor: '#00FFFF', color: '#0A0A0A', padding: '5px 10px', borderTopLeftRadius: '8px', borderBottomRightRadius: '8px', fontWeight: 'bold'}}>#{index + 1}</div>
-                                    <img src={getEntryThumbnail(entry)} alt={entry.title} className="creator-campaign-thumbnail" style={{width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px'}} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/80x80/2A2A2A/FFF?text=N/A'; }}/>
-                                    <div className="campaignListContent">
-                                        <p className="campaignListTitle" style={{color: '#FFF'}}>{entry.title}</p>
-                                        <div className="campaignListCreator"><img src={entry.userProfilePicture || 'https://placehold.co/24x24/555/FFF?text=P'} alt={entry.userName} className="campaignListCreatorProfilePic"/><span>by {entry.userName}</span></div>
-                                        <div className="campaignListStats" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                                            <div>
-                                                <span>Score: <span className="campaignListGoal">{(entry.likeCount || 0) * 5 + (entry.viewCount || 0)}</span></span>
+                        if (loadingEntries) {
+                            return <p className="dashboardItem" style={{textAlign: 'center'}}>Loading entries...</p>;
+                        }
+
+                        if (rankedEntries.length === 0) {
+                            return <p className="dashboardItem" style={{textAlign: 'center'}}>No entries yet. Be the first!</p>;
+                        }
+
+                        return (
+                            <div className="allCampaignsList">
+                                {rankedEntries.map((entry, index) => (
+                                    <div key={entry.id} className="allCampaignsListItem" style={{borderLeft: '5px solid #8A2BE2', position: 'relative', cursor: 'pointer', backgroundColor: 'rgba(26, 26, 26, 0.6)'}} onClick={() => handleEntryClick(entry)}>
+                                        <div style={{position: 'absolute', top: '-1px', left: '-1px', backgroundColor: '#8A2BE2', color: '#FFF', padding: '5px 10px', borderTopLeftRadius: '8px', borderBottomRightRadius: '8px', fontWeight: 'bold'}}>#{index + 1}</div>
+                                        <img src={getEntryThumbnail(entry)} alt={entry.title} className="creator-campaign-thumbnail" style={{width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px'}} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/80x80/2A2A2A/FFF?text=N/A'; }}/>
+                                        <div className="campaignListContent">
+                                            <p className="campaignListTitle" style={{color: '#FFF'}}>{entry.title}</p>
+                                            <div className="campaignListCreator"><img src={entry.userProfilePicture || 'https://placehold.co/24x24/555/FFF?text=P'} alt={entry.userName} className="campaignListCreatorProfilePic"/><span>by {entry.userName}</span></div>
+                                            <div className="campaignListStats" style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                                                <div>
+                                                    <span>Score: <span className="campaignListGoal">{(entry.likeCount || 0) * 5 + (entry.viewCount || 0)}</span></span>
+                                                </div>
+                                                {currentUser && competition.status === 'Live Voting' && (
+                                                    <CompetitionLikeButton competition={competition} entry={entry} currentUser={currentUser} showMessage={showMessage} />
+                                                )}
                                             </div>
-                                            {/* Only show like button during live voting */}
-                                            {currentUser && competition.status === 'Live Voting' && (
-                                                <CompetitionLikeButton competition={competition} entry={entry} currentUser={currentUser} showMessage={showMessage} />
-                                            )}
                                         </div>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                    );
-                })()}
-            </div>
+                                ))}
+                            </div>
+                        );
+                    })()}
+                </div>
 
-            {/* Modals are still functional but will now only be opened by logged-in users */}
-            {showPrizesModal && <PrizesModal competition={competition} onClose={() => setShowPrizesModal(false)} />}
-            {showEntryForm && <CompetitionEntryForm competition={competition} onClose={() => setShowEntryForm(false)} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />}
-{/* 
-  This is the definitive fix. 
-  It checks the competition type from the *parent* competition object, which is reliable.
-  It then renders the correct, specialized viewer for each media type.
-*/}
-{selectedEntry && (
-    competition.competitionType === 'Photo' ? (
-        <EnlargedPhotoViewer
-            competition={competition}
-            entry={selectedEntry}
-            currentUser={currentUser}
-            showMessage={showMessage}
-            onClose={() => setSelectedEntry(null)}
-        />
-    ) : (
-        <CompetitionVideoViewer
-            competition={competition}
-            entry={selectedEntry}
-            currentUser={currentUser}
-            showMessage={showMessage}
-            onClose={() => setSelectedEntry(null)}
-        />
-    )
-)}
-        </div>
+                {/* Modals */}
+                {showPrizesModal && <PrizesModal competition={competition} onClose={() => setShowPrizesModal(false)} />}
+                {showEntryForm && <CompetitionEntryForm competition={competition} onClose={() => setShowEntryForm(false)} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />}
+                {selectedEntry && (
+                    competition.competitionType === 'Photo' ? (
+                        <EnlargedPhotoViewer
+                            competition={competition}
+                            entry={selectedEntry}
+                            currentUser={currentUser}
+                            showMessage={showMessage}
+                            onClose={() => setSelectedEntry(null)}
+                        />
+                    ) : (
+                        <CompetitionVideoViewer
+                            competition={competition}
+                            entry={selectedEntry}
+                            currentUser={currentUser}
+                            showMessage={showMessage}
+                            onClose={() => setSelectedEntry(null)}
+                        />
+                    )
+                )}
+            </div>
+        </>
     );
 }
 

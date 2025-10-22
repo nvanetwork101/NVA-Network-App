@@ -20,6 +20,10 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
     const [flyerFile, setFlyerFile] = useState(null);
     const flyerInputRef = useRef(null);
 
+    const [enableFlyerLink, setEnableFlyerLink] = useState(false);
+    const [flyerLinkUrl, setFlyerLinkUrl] = useState('');
+    const [flyerLinkDescription, setFlyerLinkDescription] = useState('Learn More');
+
     // New state for previews and the crop modal
     const [flyerPreview, setFlyerPreview] = useState('');
     const [imageToCrop, setImageToCrop] = useState(null);
@@ -42,24 +46,30 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
         return () => unsubscribe();
     }, []);
 
-    // Effect for the "smart" URL and file preview
+    // Effect for the "smart" URL and file preview (STABILIZED)
     useEffect(() => {
+        // Priority 1: If a file is uploaded, use it for the preview.
         if (flyerFile) {
             const objectUrl = URL.createObjectURL(flyerFile);
             setFlyerPreview(objectUrl);
-            return () => URL.revokeObjectURL(objectUrl);
+            return () => URL.revokeObjectURL(objectUrl); // Cleanup function
         }
-        if (!flyerUrl) {
-            setFlyerPreview('');
-            return;
-        }
-        const videoInfo = extractVideoInfo(flyerUrl);
-        if (videoInfo && videoInfo.thumbnailUrl) {
-            setFlyerPreview(videoInfo.thumbnailUrl);
+
+        // Priority 2: If no file, use the URL field.
+        if (flyerUrl) {
+            // Try to get a video thumbnail from the URL.
+            const videoInfo = extractVideoInfo(flyerUrl);
+            if (videoInfo && videoInfo.thumbnailUrl) {
+                setFlyerPreview(videoInfo.thumbnailUrl);
+            } else {
+                // If it's not a video, assume it's a direct image URL.
+                setFlyerPreview(flyerUrl);
+            }
         } else {
+            // If both are empty, clear the preview.
             setFlyerPreview('');
         }
-    }, [flyerUrl, flyerFile]);
+    }, [flyerUrl, flyerFile]); // This hook only runs when the URL or file changes.
 
     // --- HANDLERS ---
     const clearForm = () => {
@@ -75,6 +85,10 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
         setFlyerFile(null);
         setFlyerPreview('');
         if (flyerInputRef.current) flyerInputRef.current.value = null;
+        // --- FIX: These lines are now correctly inside the function ---
+        setEnableFlyerLink(false);
+        setFlyerLinkUrl('');
+        setFlyerLinkDescription('Learn More');
     };
 
     const handleFileSelect = (e) => {
@@ -123,7 +137,8 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
             const competitionData = {
                 title, competitionType, description, rules, prizesText,
                 flyerImageUrl: finalFlyerUrl,
-                flyerLinkUrl: flyerUrl,
+                flyerLinkUrl: enableFlyerLink ? flyerLinkUrl : null,
+                flyerLinkDescription: enableFlyerLink ? flyerLinkDescription : null,
                 entryDeadline: entryDeadline ? new Date(entryDeadline).toISOString() : null,
                 competitionEnd: competitionEnd ? new Date(competitionEnd).toISOString() : null,
                 resultsRevealTime: resultsDate ? new Date(resultsDate).toISOString() : null,
@@ -180,8 +195,32 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
                     <div className="formGroup"><label className="formLabel">Prizes (Simple Text)</label><textarea className="formTextarea" value={prizesText} onChange={e => setPrizesText(e.target.value)} placeholder="e.g., 1st Place: $500, 2nd Place: Gift Basket..." /></div>
                     
                     <div className="formGroup"><label className="formLabel">Promotional Flyer Image</label><input type="file" ref={flyerInputRef} className="formInput" accept="image/*" onChange={handleFileSelect} style={{display: 'none'}} /><button type="button" className="button" style={{ width: '100%', backgroundColor: '#3A3A3A' }} onClick={() => flyerInputRef.current.click()}><span className="buttonText light">Upload Custom Flyer</span></button></div>
-                    <div className="formGroup"><label className="formLabel">Flyer Click-Through URL</label><input type="url" className="formInput" value={flyerUrl} onChange={e => { setFlyerUrl(e.target.value); }} placeholder="https://www.sponsor-site.com" /></div>
                     
+                    {/* --- START: Corrected Block for Flyer Link --- */}
+                    <div className="formGroup">
+                        <label className="formLabel" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span>Enable External Link on Flyer</span>
+                            <label className="switch">
+                                <input type="checkbox" checked={enableFlyerLink} onChange={() => setEnableFlyerLink(!enableFlyerLink)} />
+                                <span className="slider round"></span>
+                            </label>
+                        </label>
+                    </div>
+
+                    {enableFlyerLink && (
+                        <>
+                            <div className="formGroup">
+                                <label className="formLabel">Link URL</label>
+                                <input type="url" className="formInput" value={flyerLinkUrl} onChange={e => setFlyerLinkUrl(e.target.value)} placeholder="https://www.sponsor-site.com" required />
+                            </div>
+                            <div className="formGroup">
+                                <label className="formLabel">Link Description (Button Text)</label>
+                                <input type="text" className="formInput" value={flyerLinkDescription} onChange={e => setFlyerLinkDescription(e.target.value)} placeholder="e.g., Learn More, Visit Sponsor" required />
+                            </div>
+                        </>
+                    )}
+                    {/* --- END: Corrected Block for Flyer Link --- */}
+
                     {flyerPreview && (
                         <div className="formGroup">
                             <label className="formLabel">Flyer Preview:</label>

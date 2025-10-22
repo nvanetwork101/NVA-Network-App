@@ -7,37 +7,47 @@ const ImageViewerModal = ({ imageUrl, description, onClose }) => {
         return null;
     }
 
+    const handleOverlayClick = (e) => {
+        if (e.target === e.currentTarget) {
+            onClose();
+        }
+    };
+
     return (
         <div 
-            className="videoModalOverlay" // Reuse existing styles for consistency
-            onClick={(e) => {
-                // Close the modal if the overlay (background) is clicked
-                if (e.target === e.currentTarget) {
-                    onClose();
-                }
-            }}
+            className="videoModalOverlay flex justify-center items-center"
+            onClick={handleOverlayClick}
         >
-            <div className="bg-[#1A1A1A] w-full h-full md:max-w-[90vw] md:max-h-[90vh] md:rounded-lg overflow-hidden relative flex flex-col p-4">
+            {/* Main modal container - Identical to VideoPlayerModal */}
+            <div className="bg-[#1A1A1A] w-full h-full md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col">
                 <button 
                     className="closeButton" 
                     onClick={onClose}
-                    style={{ zIndex: 10 }} // Ensure it's on top
                 >
                     ×
                 </button>
                 
-                {/* Image container that grows to fill space */}
-                <div className="flex-1 min-h-0 flex justify-center items-center bg-black rounded-lg">
-                    <img
-                        src={imageUrl}
-                        alt="Promotional Content"
-                        className="w-full h-full object-contain"
-                    />
+                {/* Main black container for media - Identical to VideoPlayerModal */}
+                <div className="flex-1 min-h-0 flex justify-center items-center bg-black">
+                
+                    {/* 
+                      THIS IS THE DEFINITIVE FIX: A new sizing container DIV that wraps the image.
+                      This perfectly mimics the structure of the working VideoPlayerModal.
+                      The outer div is told to be full size, and the inner image is told to 'contain' itself within that full-size boundary.
+                    */}
+                    <div className="w-full h-full">
+                        <img
+                            src={imageUrl}
+                            alt={description || "Enlarged view"}
+                            className="w-full h-full object-contain"
+                        />
+                    </div>
+
                 </div>
                 
-                {/* Description container */}
+                {/* Description panel - Identical to VideoPlayerModal's structure */}
                 {description && (
-                    <div className="w-full flex-shrink-0 pt-3 overflow-y-auto">
+                    <div className="bg-[#1A1A1A] p-3 md:p-4 w-full flex-shrink-0 overflow-y-auto">
                         <p className="m-0 text-base text-[#DDDDDD] leading-normal whitespace-pre-wrap">
                             {description}
                         </p>

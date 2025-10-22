@@ -33,7 +33,7 @@ service cloud.firestore {
                        !exists(/databases/$(database)/documents/creators/$(userId)/blockedBy/$(request.auth.uid))
                      );
 
-      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if request.auth.uid == userId && request.resource.data.uid == request.auth.uid;
 
       allow update: if
         // Rule 1: A moderator can update any field.
