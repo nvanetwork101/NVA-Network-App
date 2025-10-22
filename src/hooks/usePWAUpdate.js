@@ -7,9 +7,11 @@ export function usePWAUpdate() {
   const updateServiceWorker = useRef(null);
   const isUpdateInProgress = useRef(false);
 
+  // This effect sets up the core listeners for PWA updates.
   useEffect(() => {
     updateServiceWorker.current = registerSW({
       onNeedRefresh() {
+        // This fires when a new version is downloaded, prompting the user.
         setNeedRefresh(true);
       },
       onRegisterError(error) {
@@ -17,6 +19,7 @@ export function usePWAUpdate() {
       }
     });
 
+    // This listener waits for the new service worker to take control.
     const handleControllerChange = () => {
       if (isUpdateInProgress.current) {
         window.location.reload();
@@ -27,6 +30,7 @@ export function usePWAUpdate() {
       navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
     }
 
+    // Cleanup the listener on unmount.
     return () => {
       if (navigator.serviceWorker) {
         navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
@@ -34,14 +38,39 @@ export function usePWAUpdate() {
     };
   }, []);
 
+  // --- NEW: Automatic update on tab hide ---
+  // This effect adds the automatic update functionality.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      // Check if an update is available AND the page is now hidden.
+      if (document.visibilityState === 'hidden' && needRefresh) {
+        // If so, trigger the same update logic as the manual button.
+        // This will apply the update in the background.
+        if (updateServiceWorker.current) {
+          isUpdateInProgress.current = true;
+          updateServiceWorker.current(true);
+        }
+      }
+    };
+
+    // Add the event listener.
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Clean up the event listener when the component unmounts.
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+    // This effect depends on `needRefresh` to ensure it only runs when an update is ready.
+  }, [needRefresh]);
+
+  // This function is called by the "Update App" button for manual updates.
   const handleUpdate = () => {
     if (updateServiceWorker.current) {
       isUpdateInProgress.current = true;
       updateServiceWorker.current(true);
 
-      // --- THIS IS THE FIX: A failsafe timeout ---
-      // If the 'controllerchange' event fails to fire for any reason,
-      // this will force a reload after 5 seconds, preventing a permanently stuck UI.
+      // This is the failsafe timeout. If the 'controllerchange' event fails,
+      // this will force a reload after 5 seconds to prevent a stuck UI.
       setTimeout(() => {
         console.log("PWA Update Failsafe: Forcing reload.");
         window.location.reload();
