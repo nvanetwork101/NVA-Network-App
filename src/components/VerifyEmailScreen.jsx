@@ -1,3 +1,4 @@
+import { getIdToken } from 'firebase/auth'; // <-- ADD THIS LINE
 import React, { useState } from 'react';
 import { auth } from '../firebase'; // Import the auth instance
 import { sendEmailVerification } from 'firebase/auth';
@@ -24,24 +25,35 @@ const VerifyEmailScreen = ({ unverifiedUser, showMessage, setActiveScreen, handl
     };
 
     const handleCheckVerification = async () => {
-        if (!auth.currentUser) return;
-        setIsChecking(true);
-        await auth.currentUser.reload();
-
-        // --- THIS IS THE CRITICAL FIX TO RESTORE FUNCTIONALITY ---
-        // After reloading, we check the status directly.
-        if (auth.currentUser.emailVerified) {
-            // If verified, we navigate to a neutral screen like 'Home'.
-            // This navigation is ESSENTIAL to trigger the main onAuthStateChanged listener in App.jsx,
-            // which will then see the newly verified user and redirect them to their correct dashboard.
-            setActiveScreen('Home');
-        } else {
-            // If they are still not verified, we provide clear feedback.
-            showMessage("Email has not been verified yet. Please click the link in your email.");
+        if (!auth.currentUser) {
+            showMessage("User session not found. Please try logging out and in again.");
+            return;
         }
-        // --- END OF FIX ---
-        
-        setIsChecking(false);
+        setIsChecking(true);
+        try {
+            // Step 1: Reload the user's profile data from Firebase servers.
+            await auth.currentUser.reload();
+
+            // Step 2 (THE DEFINITIVE FIX): Force a refresh of the authentication token.
+            // The new token will contain the "email_verified: true" claim, which reliably
+            // triggers the onAuthStateChanged listener in App.jsx.
+            await getIdToken(auth.currentUser, true);
+
+            // Step 3: Check the reloaded user object.
+            if (auth.currentUser.emailVerified) {
+                showMessage("Verification successful! Logging you in...");
+                // Navigate away. The main listener in App.jsx will now have the new token
+                // and will handle the full login and redirection.
+                setActiveScreen('Home');
+            } else {
+                showMessage("Email has not been verified yet. Please click the link in your email.");
+            }
+        } catch (error) {
+            console.error("Error during verification check:", error);
+            showMessage("An error occurred. Please try again in a moment.");
+        } finally {
+            setIsChecking(false);
+        }
     };
 
     // The component no longer has its own logout logic. It uses the main one from App.jsx.
