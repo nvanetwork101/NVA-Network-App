@@ -126,7 +126,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [creatorProfile, setCreatorProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [unverifiedUser, setUnverifiedUser] = useState(null); // <-- NEW STATE for the "limbo" user
+  
   const [isInitialLoad, setIsInitialLoad] = useState(true); // <-- FIX: New state for one-time video
   const [installPromptEvent, setInstallPromptEvent] = useState(null); // <-- PWA FIX: Stores the install event
 
@@ -322,165 +322,121 @@ function App() {
     showMessage("To install, use the 'Add to Home Screen' option in your browser's menu.");
   };
 
-  // ========================== START: DEFINITIVE AUTH FLOW FIX ==========================
-    // ========================== START: LOGOUT RACE CONDITION FIX ==========================
- useEffect(() => {
+  // ========================== START: BULLETPROOF AUTHENTICATION LISTENER ==========================
+  useEffect(() => {
     let unsubProfile = () => {};
     let unsubFollowing = () => {};
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      // Always tear down old listeners on any auth change.
+      // 1. Always clean up previous listeners and start the loading state.
       unsubProfile();
       unsubFollowing();
       setAuthLoading(true);
 
-      if (user && !user.emailVerified) {
-        setCurrentUser(null);
-        setCreatorProfile(null);
-        setUnverifiedUser(user);
-        setActiveScreen('VerifyEmail');
-        setAuthLoading(false);
-        return;
-      }
-      setUnverifiedUser(null);
+      try {
+        // 2. Handle the case where NO user is logged in.
+        if (!user) {
+          setCurrentUser(null);
+          setCreatorProfile(null);
+          setHasNewFollowerContent(false);
+          setNotificationBadgeCount(0);
+          const path = window.location.pathname;
+          if (path === '/' || path === '') {
+            const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
+            if (protectedScreens.includes(activeScreen)) {
+              setActiveScreen('Home');
+            }
+          }
+          return; // Exit the try block, the 'finally' will still run.
+        }
 
-      if (user) { // A fully verified user is present.
+        // 3. A user object EXISTS. Set it in the state immediately. This prevents all infinite loops.
+        setCurrentUser(user);
+
+        // 4. Handle the case where the user is NOT VERIFIED.
+        if (!user.emailVerified) {
+          setCreatorProfile(null);
+          setActiveScreen('VerifyEmail');
+          return; // Exit, 'finally' will run.
+        }
+
+        // 5. If we reach here, the user is LOGGED IN and VERIFIED. Proceed with fetching their profile.
         const userDocRef = doc(db, "creators", user.uid);
-        try {
-          const docSnap = await getDoc(userDocRef);
-          if (docSnap.exists()) {
-            const profileData = docSnap.data();
+        const docSnap = await getDoc(userDocRef);
 
-            if (profileData.banned) {
-              setActiveScreen('Banned');
-              signOut(auth);
-              return;
-            }
-            if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
-              const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
-              setCurrentUser(user); // Set user data so SuspendedScreen can use it
-              setCreatorProfile(profileData);
-              setSuspensionDetails({ email: profileData.email, expiryDate });
-              setActiveScreen('Suspended');
-              return;
-            }
+        if (!docSnap.exists()) {
+          showMessage("User profile not found. Logging out.");
+          signOut(auth);
+          return;
+        }
 
-            await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
+        const profileData = docSnap.data();
 
-            unsubProfile = onSnapshot(userDocRef, (snap) => {
-              if (snap.exists()) {
-                setCurrentUser(user);
-                setCreatorProfile(snap.data());
-                setNotificationBadgeCount(snap.data().unreadNotificationCount || 0);
-              } else { signOut(auth); }
-            });
+        // Handle Banned or Suspended users
+        if (profileData.banned) {
+          setActiveScreen('Banned');
+          signOut(auth);
+          return;
+        }
+        if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
+          const expiryDate = profileData.suspendedUntil.toDate().toLocaleString();
+          setCreatorProfile(profileData);
+          setSuspensionDetails({ email: profileData.email, expiryDate });
+          setActiveScreen('Suspended');
+          return;
+        }
 
-            const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
-            unsubFollowing = onSnapshot(q, (snapshot) => setHasNewFollowerContent(!snapshot.empty));
+        // This is a valid, active user. Set up their live data listeners.
+        await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
 
-            // --- THE CRITICAL FIX: SIMPLIFIED ROUTING ---
-            // This logic is now clean. It no longer depends on activeScreen.
-            // If the deep linking logic below handles navigation, great.
-            // If not, we fall through to a simple, reliable post-login redirect.
-            if (!routingDoneRef.current) {
-                routingDoneRef.current = true;
-                const path = window.location.pathname;
-                const parts = path.split('/').filter(Boolean);
-                let navigated = false;
-
-                if (parts.length > 0) {
-                    const screen = parts[0];
-                    const id = parts[1];
-                    // (The entire deep-linking switch statement from the previous fix goes here, it remains unchanged)
-                    switch (screen) {
-                      case 'opportunity':
-                          if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); navigated = true; }
-                          break;
-                      case 'discover':
-                          setActiveScreen('Discover');
-                          navigated = true;
-                          break;
-                      case 'user':
-                           if (id) {
-                              if (user && id === user.uid) { setActiveScreen('CreatorDashboard'); } 
-                              else { setSelectedUserId(id); setActiveScreen('UserProfile'); }
-                              navigated = true;
-                          }
-                          break;
-                      case 'competition':
-                          setActiveScreen('CompetitionScreen');
-                          navigated = true;
-                          break;
-                      case 'promotedStatus':
-                          if (id) { setActiveScreen('Home'); navigated = true; }
-                          break;
-                      case 'content':
-                          if (id) {
-                              (async () => {
-                                  try {
-                                      const appId = "production-app-id";
-                                      let docSnap = await getDoc(doc(db, "artifacts", appId, "public", "data", "content_items", id));
-                                      if (docSnap.exists()) {
-                                          const item = { id: docSnap.id, ...docSnap.data() };
-                                          handleVideoPress(item.embedUrl || item.mainUrl, item);
-                                      } else {
-                                          docSnap = await getDoc(doc(db, "events", id));
-                                          if (docSnap.exists() && docSnap.data().status === 'completed') {
-                                              setDeepLinkedReplayId(id);
-                                              setActiveScreen('Discover');
-                                          } else { showMessage("Shared content could not be found."); }
-                                      }
-                                  } catch (error) { showMessage("Error loading shared content."); }
-                              })();
-                              navigated = true;
-                          }
-                          break;
-                  }
-                }
-
-                // Fallback Navigation: If no deep link was handled, perform the default redirect.
-                if (!navigated) {
-                    const creationTime = new Date(user.metadata.creationTime);
-                    const lastSignInTime = new Date(user.metadata.lastSignInTime);
-                    
-                    // Check if the sign-in is within 10 seconds of creation time.
-                    const isNewUser = (lastSignInTime.getTime() - creationTime.getTime()) < 10000;
-
-                    if (isNewUser) {
-                        // For a brand new user, direct them to the dashboard as requested.
-                        setActiveScreen('CreatorDashboard');
-                    } else {
-                        // For any returning user, the default screen is now Home.
-                        setActiveScreen('Home');
-                    }
-                }
-            }
-
+        unsubProfile = onSnapshot(userDocRef, (snap) => {
+          if (snap.exists()) {
+            setCreatorProfile(snap.data());
+            setNotificationBadgeCount(snap.data().unreadNotificationCount || 0);
           } else {
-            showMessage("User profile not found. Logging out.");
             signOut(auth);
           }
-        } catch (error) {
-          console.error("Auth check failed:", error);
-          showMessage("Could not verify account status.");
-          signOut(auth);
-        } finally {
-          setAuthLoading(false);
-          setIsInitialLoad(false);
+        });
+
+        const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
+        unsubFollowing = onSnapshot(q, (snapshot) => setHasNewFollowerContent(!snapshot.empty));
+
+        // Handle initial routing for the logged-in user.
+        if (!routingDoneRef.current) {
+          routingDoneRef.current = true;
+          const path = window.location.pathname;
+          const parts = path.split('/').filter(Boolean);
+          let navigated = false;
+
+          if (parts.length > 0) {
+            const screen = parts[0];
+            const id = parts[1];
+            // (The entire deep-linking switch statement remains unchanged and goes here)
+            switch (screen) {
+              case 'opportunity': if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); navigated = true; } break;
+              case 'discover': setActiveScreen('Discover'); navigated = true; break;
+              case 'user': if (id) { if (user && id === user.uid) { setActiveScreen('CreatorDashboard'); } else { setSelectedUserId(id); setActiveScreen('UserProfile'); } navigated = true; } break;
+              case 'competition': setActiveScreen('CompetitionScreen'); navigated = true; break;
+              case 'promotedStatus': if (id) { setActiveScreen('Home'); navigated = true; } break;
+              case 'content': if (id) { (async () => { try { const appId = "production-app-id"; let docSnap = await getDoc(doc(db, "artifacts", appId, "public", "data", "content_items", id)); if (docSnap.exists()) { const item = { id: docSnap.id, ...docSnap.data() }; handleVideoPress(item.embedUrl || item.mainUrl, item); } else { docSnap = await getDoc(doc(db, "events", id)); if (docSnap.exists() && docSnap.data().status === 'completed') { setDeepLinkedReplayId(id); setActiveScreen('Discover'); } else { showMessage("Shared content could not be found."); } } } catch (error) { showMessage("Error loading shared content."); } })(); navigated = true; } break;
+            }
+          }
+
+          if (!navigated) {
+            const creationTime = new Date(user.metadata.creationTime);
+            const lastSignInTime = new Date(user.metadata.lastSignInTime);
+            const isNewUser = (lastSignInTime.getTime() - creationTime.getTime()) < 10000;
+            setActiveScreen(isNewUser ? 'CreatorDashboard' : 'Home');
+          }
         }
-      } else { // No user is logged in.
-        setCurrentUser(null);
-        setCreatorProfile(null);
-        setHasNewFollowerContent(false);
-        setNotificationBadgeCount(0);
-        // Do not force navigation on logout if a deep link is present.
-        const path = window.location.pathname;
-        if (path === '/' || path === '') {
-           const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
-           if (protectedScreens.includes(activeScreen)) {
-               setActiveScreen('Home');
-           }
-        }
+
+      } catch (error) {
+        // 6. If any error occurs anywhere in the process, log it and sign the user out.
+        console.error("A critical error occurred during authentication:", error);
+        showMessage("An error occurred. Please log in again.");
+        signOut(auth);
+      } finally {
+        // 7. This block is GUARANTEED to run, no matter what happens, ensuring the loading screen always hides.
         setAuthLoading(false);
         setIsInitialLoad(false);
       }
@@ -491,8 +447,8 @@ function App() {
       unsubProfile();
       unsubFollowing();
     };
-  }, []); // The empty dependency array is now correct.
-  // =========================== END: LOGOUT RACE CONDITION FIX ===========================
+  }, []);
+  // =========================== END: BULLETPROOF AUTHENTICATION LISTENER ===========================
  
     // ======================= START: USER PRESENCE SYSTEM (REALTIME DB) ========================
   useEffect(() => {
@@ -1045,7 +1001,7 @@ useEffect(() => {
       case 'BlockedList': return <BlockedListScreen currentUser={currentUser} setActiveScreen={handleNavigate} showMessage={showMessage} />;
       case 'Login': return <LoginScreen setActiveScreen={handleNavigate} showMessage={showMessage} />;
       case 'CreatorSignUp': return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
-      case 'VerifyEmail': return <VerifyEmailScreen unverifiedUser={unverifiedUser} showMessage={showMessage} setActiveScreen={handleNavigate} handleLogout={handleLogout} />;
+      case 'VerifyEmail': return <VerifyEmailScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={handleNavigate} handleLogout={handleLogout} />;
       case 'UserSignUp': return <UserSignUpScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'ForgotPassword': return <ForgotPasswordScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'CreateCampaign': return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} />;
