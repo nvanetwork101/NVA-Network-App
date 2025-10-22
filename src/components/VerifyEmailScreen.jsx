@@ -1,20 +1,18 @@
-import { getIdToken } from 'firebase/auth'; // <-- ADD THIS LINE
+import { getIdToken, sendEmailVerification } from 'firebase/auth';
 import React, { useState } from 'react';
-import { auth } from '../firebase'; // Import the auth instance
-import { sendEmailVerification } from 'firebase/auth';
+import { auth } from '../firebase';
 
-// --- THIS IS THE FIX: The component now receives 'unverifiedUser' and 'handleLogout' from App.jsx ---
-const VerifyEmailScreen = ({ unverifiedUser, showMessage, setActiveScreen, handleLogout }) => {
+const VerifyEmailScreen = ({ currentUser, showMessage, setActiveScreen, handleLogout }) => {
     const [isSending, setIsSending] = useState(false);
     const [isChecking, setIsChecking] = useState(false);
 
     const handleResend = async () => {
-        // It now uses the specific 'unverifiedUser' prop
-        if (!unverifiedUser) return;
+        // Using the prop here is safe because it's just for the resend action.
+        if (!currentUser) return;
         setIsSending(true);
         showMessage("Resending verification email...");
         try {
-            await sendEmailVerification(unverifiedUser);
+            await sendEmailVerification(currentUser);
             showMessage("A new verification email has been sent.");
         } catch (error) {
             console.error("Error resending verification email:", error);
@@ -25,25 +23,24 @@ const VerifyEmailScreen = ({ unverifiedUser, showMessage, setActiveScreen, handl
     };
 
     const handleCheckVerification = async () => {
-        if (!auth.currentUser) {
-            showMessage("User session not found. Please try logging out and in again.");
-            return;
-        }
         setIsChecking(true);
         try {
-            // Step 1: Reload the user's profile data from Firebase servers.
+            // THE DEFINITIVE FIX: Use `auth.currentUser` for all operations.
+            // This is the Firebase SDK's direct source of truth, not a potentially stale prop.
+            if (!auth.currentUser) {
+                throw new Error("User session not found.");
+            }
+
+            // Step 1: Reload the user's profile data directly from the auth instance.
             await auth.currentUser.reload();
 
-            // Step 2 (THE DEFINITIVE FIX): Force a refresh of the authentication token.
-            // The new token will contain the "email_verified: true" claim, which reliably
-            // triggers the onAuthStateChanged listener in App.jsx.
+            // Step 2: Force a refresh of the authentication token on the live user object.
             await getIdToken(auth.currentUser, true);
 
-            // Step 3: Check the reloaded user object.
+            // Step 3: Check the reloaded, live user object for verification status.
             if (auth.currentUser.emailVerified) {
                 showMessage("Verification successful! Logging you in...");
-                // Navigate away. The main listener in App.jsx will now have the new token
-                // and will handle the full login and redirection.
+                // Navigate away. The main listener in App.jsx will now see the verified user and proceed.
                 setActiveScreen('Home');
             } else {
                 showMessage("Email has not been verified yet. Please click the link in your email.");
@@ -56,14 +53,12 @@ const VerifyEmailScreen = ({ unverifiedUser, showMessage, setActiveScreen, handl
         }
     };
 
-    // The component no longer has its own logout logic. It uses the main one from App.jsx.
-
     return (
         <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
             <p className="heading">Please Verify Your Email</p>
             <p className="subHeading">
                 You have successfully signed in, but your account is not active yet.
-                <br/>A verification link was sent to: <br/><strong style={{color: '#FFD700'}}>{unverifiedUser?.email}</strong>
+                <br/>A verification link was sent to: <br/><strong style={{color: '#FFD700'}}>{currentUser?.email}</strong>
             </p>
             <p className="paragraph" style={{color: '#AAA', maxWidth: '400px', margin: '20px auto'}}>
                 To complete your sign-up, please click the link in the email.
