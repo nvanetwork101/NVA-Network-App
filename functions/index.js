@@ -1810,55 +1810,73 @@ exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId
         return null;
     }
 
-    const { senderId } = messageData;
+    const { senderId, text } = messageData;
     const { chatId } = event.params;
     const db = admin.firestore();
 
     try {
-        const chatDocRef = db.collection("chats").doc(chatId);
-        const chatDoc = await chatDocRef.get();
-
+        const chatDoc = await db.collection("chats").doc(chatId).get();
         if (!chatDoc.exists) {
-            logger.error(`Chat document '${chatId}' not found for new message.`);
+            logger.error(`Chat document '${chatId}' not found.`);
             return null;
         }
 
-        const chatData = chatDoc.data();
-        const recipientId = chatData.participants.find(uid => uid !== senderId);
-
+        const recipientId = chatDoc.data().participants.find(uid => uid !== senderId);
         if (!recipientId) {
-            logger.warn(`Could not determine recipient for message in chat '${chatId}'.`);
+            logger.warn(`Could not find recipient in chat '${chatId}'.`);
             return null;
         }
-        
+
+        // --- START: DIRECT PUSH NOTIFICATION LOGIC ---
+        const recipientDoc = await db.collection("creators").doc(recipientId).get();
+        if (!recipientDoc.exists) {
+            logger.warn(`Cannot send push to non-existent user: ${recipientId}`);
+            return null;
+        }
+
+        const tokens = recipientDoc.data().fcmTokens || [];
+        if (tokens.length === 0) {
+            logger.info(`User ${recipientId} has no push tokens. Skipping notification.`);
+            return null; // No tokens, nothing to do.
+        }
+
         const senderDoc = await db.collection("creators").doc(senderId).get();
         const senderName = senderDoc.exists ? senderDoc.data().creatorName : "Someone";
-        
-        // --- THIS IS THE FIX ---
-        // The link now points directly to the chat screen.
-        const pushPayload = {
-            title: `New Message from ${senderName}`,
-            body: messageData.text.substring(0, 100),
-            link: `/chat/${chatId}` // Corrected Link
+
+        // This is the correctly structured payload the service worker expects.
+        const message = {
+            notification: {
+                title: `New Message from ${senderName}`,
+                body: text.substring(0, 100),
+            },
+            data: {
+                link: `/chat/${chatId}`, // The service worker uses this to open the app.
+            },
+            tokens: tokens,
         };
 
-        logger.info(`Sending new message push notification to '${recipientId}'.`);
-        await sendPushNotification(recipientId, pushPayload);
-        
-        const recipientRef = db.collection("creators").doc(recipientId);
-        await recipientRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
-        
-        // --- THIS IS THE FIX ---
-        // The in-app notification also points directly to the chat.
-        const notificationPayload = {
-            userId: recipientId,
-            type: 'NEW_CHAT_MESSAGE',
-            message: `${senderName}: ${messageData.text.substring(0, 100)}`,
-            link: `/chat/${chatId}`, // Corrected Link
-            isRead: false,
-            timestamp: new Date()
-        };
-        await db.collection("notifications").add(notificationPayload);
+        // Send the message and handle cleanup of bad tokens.
+        const response = await admin.messaging().sendEachForMulticast(message);
+        const tokensToDelete = [];
+        response.responses.forEach((result, index) => {
+            if (!result.success) {
+                const error = result.error;
+                if (error.code === 'messaging/registration-token-not-registered' ||
+                    error.code === 'messaging/invalid-registration-token') {
+                    tokensToDelete.push(tokens[index]);
+                }
+            }
+        });
+
+        if (tokensToDelete.length > 0) {
+            await recipientDoc.ref.update({
+                fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToDelete)
+            });
+        }
+        // --- END: DIRECT PUSH NOTIFICATION LOGIC ---
+
+        // NOTE: The code that created a document in the "notifications" collection
+        // has been intentionally removed to prevent flooding the inbox.
 
     } catch (error) {
         logger.error(`FATAL: Error in onNewChatMessage for chat '${chatId}':`, error);
