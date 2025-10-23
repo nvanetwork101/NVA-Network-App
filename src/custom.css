@@ -706,7 +706,7 @@ body {
     text-align: center;
     font-size: 14px;
 }
-/* Video Modal Styles */
+/* In custom.css */
 .videoModalOverlay {
     position: fixed;
     top: 0;
@@ -714,7 +714,11 @@ body {
     width: 100%;
     height: 100%;
     background-color: rgba(0, 0, 0, 0.9);
-    /* display, justify-content, and align-items are now handled by the component */
+    
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
     z-index: 1000;
 }
 

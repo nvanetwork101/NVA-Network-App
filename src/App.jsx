@@ -2,7 +2,7 @@
 
 import PromotedStatusScreen from './components/PromotedStatusScreen';
 import BookStatusScreen from './components/BookStatusScreen';
-
+import ContentPlayerModal from './components/ContentPlayerModal';
 import NotificationInboxScreen from './components/NotificationInboxScreen';
 import notificationSound from './Notification 2.mp3';
 
@@ -126,7 +126,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [creatorProfile, setCreatorProfile] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  
+  const [contentPlayerData, setContentPlayerData] = useState(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true); // <-- FIX: New state for one-time video
   const [installPromptEvent, setInstallPromptEvent] = useState(null); // <-- PWA FIX: Stores the install event
 
@@ -705,17 +705,14 @@ useEffect(() => {
   }, []);
 
         useEffect(() => {
-        const openImageViewerHandler = (event) => {
-            // THE FIX: Explicitly extract the full item details from the dispatch
-            const { imageUrl, description, itemId, itemType } = event.detail;
-            setImageViewerData({ imageUrl, description, itemId, itemType }); // <--- Set all details
-            setShowImageViewerModal(true);
-        };
-        window.addEventListener('openImageViewer', openImageViewerHandler);
-        return () => {
-            window.removeEventListener('openImageViewer', openImageViewerHandler);
-        };
-    }, []);
+    const openContentPlayerHandler = (event) => {
+        setContentPlayerData(event.detail);
+    };
+    window.addEventListener('openContentPlayer', openContentPlayerHandler);
+    return () => {
+        window.removeEventListener('openContentPlayer', openContentPlayerHandler);
+    };
+}, []);
 
       // --- VIDEO MODAL BACK BUTTON HANDLING ---
     useEffect(() => {
@@ -1194,16 +1191,16 @@ return (
           />
       )}
       
-        {showImageViewerModal && (
-        <ImageViewerModal
-          imageUrl={imageViewerData.imageUrl}
-          description={imageViewerData.description}
-          itemId={imageViewerData.itemId} 
-          itemType={imageViewerData.itemType}
-          showMessage={showMessage} // <--- CRITICAL FIX: Pass the showMessage prop
-          onClose={() => setShowImageViewerModal(false)}
+        {contentPlayerData && (
+        <ContentPlayerModal
+            mediaUrl={contentPlayerData.imageUrl}
+            description={contentPlayerData.description}
+            // We can add these other props later
+            uploaderInfo={null} 
+            stats={null}
+            onClose={() => setContentPlayerData(null)}
         />
-      )}
+    )}
       
       {/* --- iOS PWA FIX: The new, styled install prompt for iPhones/iPads --- */}
       {showIosInstallPrompt && (

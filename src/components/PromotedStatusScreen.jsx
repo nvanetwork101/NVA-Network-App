@@ -35,6 +35,7 @@ const PromotedStatusScreen = ({
     const [selectedBooking, setSelectedBooking] = useState(null);
 
     const [deletingId, setDeletingId] = useState(null);
+    const [originalFlyerFile, setOriginalFlyerFile] = useState(null);
 
     // State for the content submission modal form
     const [title, setTitle] = useState('');
@@ -84,48 +85,62 @@ const PromotedStatusScreen = ({
     
     const handleSubmitContent = async (e) => {
         e.preventDefault();
-        if (!selectedBooking || !title.trim() || !mainUrl.trim()) { showMessage("Ad Title and a URL are required."); return; }
-        
-        setIsSubmitting(true);
-        let finalFlyerUrl = flyerPreview || autoThumbnail;
-
-        if (flyerFile) {
-            showMessage("Uploading flyer...");
-            try {
-                const fileName = `${Date.now()}_booking_content.png`;
-                const folderPath = `promo_flyers/${currentUser.uid}`;
-                const filePath = `${folderPath}/${fileName}`;
-                const storageRef = ref(storage, filePath);
-                await uploadBytes(storageRef, flyerFile);
-
-                // This is the corrected, token-free URL construction.
-                finalFlyerUrl = `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket}/o/${encodeURIComponent(filePath)}?alt=media`;
-                
-            } catch (error) { showMessage(`Flyer upload failed: ${error.message}`); setIsSubmitting(false); return; }
-        }
-
-        if (!finalFlyerUrl) {
-            showMessage("A thumbnail is required. Please upload one or use a link that provides a preview.");
-            setIsSubmitting(false);
+        if (!selectedBooking || !title.trim() || !mainUrl.trim()) {
+            showMessage("Ad Title and a URL are required.");
             return;
         }
-
-        const info = extractVideoInfo(mainUrl);
-        const submissionData = {
-            bookingId: selectedBooking.id,
-            title: title.trim(),
-            destinationUrl: info.platform === 'generic' ? mainUrl : '',
-            adVideoUrl: info.platform !== 'generic' ? mainUrl : '',
-            flyerImageUrl: finalFlyerUrl
-        };
+        
+        setIsSubmitting(true);
+        let thumbnailUrl = flyerPreview || autoThumbnail;
+        let highResUrl = '';
 
         try {
+            // Scenario 1: A file was uploaded.
+            if (flyerFile && originalFlyerFile) {
+                showMessage("Uploading thumbnail...");
+                const thumbPath = `promo_flyers/${currentUser.uid}/${Date.now()}_thumb.png`;
+                const thumbRef = ref(storage, thumbPath);
+                await uploadBytes(thumbRef, flyerFile);
+                thumbnailUrl = await getDownloadURL(thumbRef);
+
+                showMessage("Uploading high-resolution flyer...");
+                const highResPath = `promo_flyers/${currentUser.uid}/${Date.now()}_highres_${originalFlyerFile.name}`;
+                const highResRef = ref(storage, highResPath);
+                await uploadBytes(highResRef, originalFlyerFile);
+                highResUrl = await getDownloadURL(highResRef);
+                
+                showMessage("Flyers uploaded.");
+            } 
+            // Scenario 2: Only a URL was pasted in.
+            else if (thumbnailUrl) {
+                // If only a URL was used, both URLs will be the same.
+                highResUrl = thumbnailUrl;
+            }
+
+            if (!thumbnailUrl) {
+                throw new Error("A thumbnail is required. Please upload one or use a link that provides a preview.");
+            }
+
+            const info = extractVideoInfo(mainUrl);
+            const submissionData = {
+                bookingId: selectedBooking.id,
+                title: title.trim(),
+                destinationUrl: info.platform === 'generic' ? mainUrl : '',
+                adVideoUrl: info.platform !== 'generic' ? mainUrl : '',
+                flyerImageUrl: thumbnailUrl, // The smaller image for list views
+                flyerImageUrl_highRes: highResUrl, // The full-quality image for the viewer
+            };
+
             const submitContentFunction = httpsCallable(functions, 'submitStatusContent');
             await submitContentFunction(submissionData);
             showMessage("Content submitted successfully for review!");
             setSelectedBooking(null);
-        } catch (error) { showMessage(`Submission failed: ${error.message}`);
-        } finally { setIsSubmitting(false); }
+
+        } catch (error) {
+            showMessage(`Submission failed: ${error.message}`);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const handleDeleteBooking = (booking) => {
@@ -161,7 +176,19 @@ const PromotedStatusScreen = ({
         }
     };
     
-    const handleFileSelect = (e) => { const file = e.target.files[0]; if (file) { setImageFileToAdjust(file); setShowImageAdjustModal(true); }};
+    const handleFlyerClick = (content) => {
+        const imageUrl = content?.flyerImageUrl_highRes || content?.flyerImageUrl;
+        if (imageUrl) {
+            window.dispatchEvent(new CustomEvent('openContentPlayer', {
+                detail: {
+                    imageUrl: imageUrl,
+                    description: content.title
+                }
+            }));
+        }
+    };
+
+    const handleFileSelect = (e) => { const file = e.target.files[0]; if (file) { setOriginalFlyerFile(file); setImageFileToAdjust(file); setShowImageAdjustModal(true); }};
     const handleSaveAdjustedImage = (adjustedBlob) => { const newFile = new File([adjustedBlob], "promo_flyer.png", { type: "image/png" }); setFlyerFile(newFile); setFlyerPreview(URL.createObjectURL(newFile)); setShowImageAdjustModal(false); };
     const handleCancelAdjust = () => { setImageFileToAdjust(null); setShowImageAdjustModal(false); if (flyerInputRef.current) flyerInputRef.current.value = null; };
     const finalPreview = flyerPreview || autoThumbnail;
@@ -192,7 +219,7 @@ const PromotedStatusScreen = ({
                                         </div>
                                         {booking.content && (
                                             <div className="vertical-carousel-item" style={{backgroundColor: '#1A1A1A', padding: '10px', margin: '10px 0', borderRadius: '8px'}}>
-                                                <img src={booking.content.flyerImageUrl} alt={booking.content.title} className="liveFeedThumbnail" />
+                                                <img src={booking.content.flyerImageUrl} alt={booking.content.title} className="liveFeedThumbnail" onClick={() => handleFlyerClick(booking.content)} style={{cursor: 'pointer'}} />
                                                 <div className="liveFeedContent">
                                                     <p className="liveFeedTitle" style={{fontSize: '14px'}}>{booking.content.title}</p>
                                                     <p className="liveFeedCreator" style={{fontSize: '12px'}}>Content Submitted</p>

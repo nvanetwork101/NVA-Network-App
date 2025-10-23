@@ -51,6 +51,18 @@ const AdminStatusReviewScreen = ({ showMessage, setActiveScreen, selectedStatus 
 
     const { content } = selectedStatus;
 
+        const handleFlyerClick = (content) => {
+        const imageUrl = content?.flyerImageUrl_highRes || content?.flyerImageUrl;
+        if (imageUrl) {
+            window.dispatchEvent(new CustomEvent('openContentPlayer', {
+                detail: {
+                    imageUrl: imageUrl,
+                    description: content.title
+                }
+            }));
+        }
+    };
+
     return (
         <div className="screenContainer">
             <p className="heading">Review Billboard Content</p>
@@ -71,13 +83,15 @@ const AdminStatusReviewScreen = ({ showMessage, setActiveScreen, selectedStatus 
                         <img 
                             src={content.flyerImageUrl} 
                             alt="Ad Flyer" 
+                            onClick={() => handleFlyerClick(content)}
                             style={{
                                 maxWidth: '100%', 
                                 maxHeight: '400px',
                                 objectFit: 'contain',
                                 display: 'block',
                                 margin: '10px auto',
-                                borderRadius: '8px'
+                                borderRadius: '8px',
+                                cursor: 'pointer'
                             }}
                         />
                     </div>

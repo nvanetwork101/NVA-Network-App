@@ -49,29 +49,28 @@ function PromotedSlot({ showMessage, handleVideoPress, currentUser }) {
         // Priority 1: Handle Video Content
         if (content.adVideoUrl) {
             const { embedUrl } = extractVideoInfo(content.adVideoUrl);
-            
-            // THE DEFINITIVE FIX: Create a minimal object with an explicit 'isPromotion' flag.
             const promoContentItem = {
                 id: livePromo.id,
                 title: content.title,
                 description: content.description,
-                isPromotion: true // This is the new, critical flag
+                isPromotion: true
             };
-
             handleVideoPress(embedUrl || content.adVideoUrl, promoContentItem);
         
         // Priority 2: Handle External Links
         } else if (content.destinationUrl) {
             window.open(content.destinationUrl, '_blank');
         
-        // Priority 3: Handle Image-Only promotions (remains the same)
-       } else if (content.flyerImageUrl) {
-            window.dispatchEvent(new CustomEvent('openImageViewer', { 
+        // Priority 3: Handle Image-Only promotions (THE DEFINITIVE FIX)
+        } else if (content.flyerImageUrl) {
+            // Use the high-resolution URL if it exists, otherwise fall back to the standard one.
+            const imageUrl = content.flyerImageUrl_highRes || content.flyerImageUrl;
+            
+            // Dispatch the correct event to open the new, working modal.
+            window.dispatchEvent(new CustomEvent('openContentPlayer', { 
                 detail: { 
-                    imageUrl: content.flyerImageUrl,
-                    description: content.description,
-                    itemId: livePromo.id,         // <--- CRITICAL: Pass the Ad ID
-                    itemType: 'promotedStatus'    // <--- CRITICAL: Pass the Ad Type
+                    imageUrl: imageUrl,
+                    description: content.title // Pass the title as the description
                 } 
             }));
         

@@ -3,16 +3,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
-import { extractVideoInfo } from '../firebase';
 import ShareButton from './ShareButton';
 
-// --- Real Component Imports ---
+// --- Component Imports ---
 import PrizesModal from './PrizesModal';
 import CompetitionEntryForm from './CompetitionEntryForm.jsx';
 import CompetitionLikeButton from './CompetitionLikeButton';
 import CompetitionVideoViewer from './CompetitionVideoViewer';
 import EnlargedPhotoViewer from './EnlargedPhotoViewer';
 
+// --- CSS Styles for the "Times Square" Theme ---
 const TimesSquareStyles = `
   @keyframes pulse-indigo {
     0% { text-shadow: 0 0 5px #4B0082, 0 0 10px #4B0082, 0 0 15px #8A2BE2, 0 0 20px #8A2BE2; }
@@ -26,7 +26,7 @@ const TimesSquareStyles = `
   }
 
   .neon-indigo-text {
-    color: #E6E6FA; /* A very light lavender for the base text color */
+    color: #E6E6FA;
     font-family: 'Arial Black', Gadget, sans-serif;
     font-weight: bold;
     text-shadow: 0 0 5px #4B0082, 0 0 10px #4B0082, 0 0 15px #8A2BE2, 0 0 20px #8A2BE2;
@@ -87,18 +87,13 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
 
     // --- DERIVED STATE ---
     const rankedEntries = useMemo(() => {
-        const calculateScore = (entry) => {
-            const likes = entry.likeCount || 0;
-            const views = entry.viewCount || 0;
-            return (likes * 5) + views;
-        };
-
+        const calculateScore = (entry) => (entry.likeCount || 0) * 5 + (entry.viewCount || 0);
         return entries
             .filter(entry => (entry.title?.toLowerCase() || '').includes(searchTerm.toLowerCase()) || (entry.userName?.toLowerCase() || '').includes(searchTerm.toLowerCase()))
             .sort((a, b) => calculateScore(b) - calculateScore(a));
     }, [entries, searchTerm]);
     
-    // ====================== START: MODIFIED CODE BLOCK (HANDLERS) ======================
+    // --- HANDLERS ---
     const handleEnterCompetition = () => {
         if (!currentUser) {
             showMessage("Please log in to enter the competition.");
@@ -109,7 +104,6 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
     };
 
     const handleEntryClick = (entry) => {
-        // THE FIX: Add a check for the 'Accepting Entries' status first.
         if (competition?.status === 'Accepting Entries') {
             showMessage("Voting has not yet begun. Please check back later!");
             return;
@@ -134,45 +128,41 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
         }
         setShowPrizesModal(true);
     };
-    // ======================= END: MODIFIED CODE BLOCK (HANDLERS) =======================
 
         const handleFlyerClick = () => {
-        if (competition?.flyerImageUrl) {
-            window.dispatchEvent(new CustomEvent('openImageViewer', {
+        const imageUrl = competition?.flyerImageUrl_highRes || competition?.flyerImageUrl;
+        if (imageUrl) {
+            // THE FIX: Dispatch the new 'openContentPlayer' event that App.jsx is listening for.
+            window.dispatchEvent(new CustomEvent('openContentPlayer', {
                 detail: {
-                    imageUrl: competition.flyerImageUrl,
-                    description: competition.title,
-                    itemId: competition.id,
-                    itemType: 'competition'
+                    imageUrl: imageUrl,
+                    description: competition.title
+                    // The new modal doesn't need itemId or itemType yet, so we send a cleaner object.
                 }
             }));
         }
     };
 
-      const getEntryThumbnail = (entry) => {
-        if (entry.photoUrl) return entry.photoUrl; // Priority 1: Direct photo upload
-        if (entry.customThumbnailUrl) return entry.customThumbnailUrl; // Priority 2: Custom thumbnail from a link
-
-        // Priority 3: Auto-generate a thumbnail from a YouTube link
+    const getEntryThumbnail = (entry) => {
+        if (entry.photoUrl) return entry.photoUrl;
+        if (entry.customThumbnailUrl) return entry.customThumbnailUrl;
         if (entry.submissionUrl && (entry.submissionUrl.includes('youtu.be') || entry.submissionUrl.includes('youtube.com'))) {
             const videoIdMatch = entry.submissionUrl.match(/(?:youtube\.com\/(?:shorts\/|watch\?v=)|youtu\.be\/)([^#\&\?]{11})/);
-            if (videoIdMatch && videoIdMatch[1].length === 11) {
+            if (videoIdMatch && videoIdMatch[1]) {
                 return `https://img.youtube.com/vi/${videoIdMatch[1]}/mqdefault.jpg`;
             }
         }
-        
-        // Fallback to the user's profile picture if no other image is available
         return entry.userProfilePicture || 'https://placehold.co/80x80/2A2A2A/FFF?text=N/A';
     };
 
     // --- RENDER LOGIC ---
     if (loading) {
-        return <div className="screenContainer" style={{textAlign: 'center'}}><p className="heading">Loading Competition...</p></div>;
+        return <div className="screenContainer times-square-bg" style={{textAlign: 'center'}}><p className="heading neon-indigo-text">Loading Competition...</p></div>;
     }
     if (!competition) {
         return (
-            <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
-                <p className="heading">No Active Competition</p>
+            <div className="screenContainer times-square-bg" style={{textAlign: 'center', paddingTop: '50px'}}>
+                <p className="heading neon-indigo-text">No Active Competition</p>
                 <p className="subHeading">There is no competition running at the moment. Please check back later!</p>
                 <button className="button" onClick={() => setActiveScreen('Home')} style={{ backgroundColor: '#3A3A3A' }}><span className="buttonText light">Back to Home</span></button>
             </div>
@@ -192,7 +182,7 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                         <p className="heading neon-indigo-text" style={{ margin: 0, textAlign: 'center', flexGrow: 1 }}>
                             {competition.title}
                         </p>
-                        <div style={{ flexShrink: 0 }}>
+                        <div style={{ flexShrink: 0, width: '40px', height: '40px' }}>
                             <ShareButton
                                 title={competition.title}
                                 text={`Join the "${competition.title}" competition on NVA Network!`}
@@ -207,16 +197,16 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                             <img 
                                 src={competition.flyerImageUrl} 
                                 alt={competition.title}
-                                className="clickable-flyer-image"
                                 onClick={handleFlyerClick}
-                                style={{ width: '100%', display: 'block', cursor: 'pointer', borderRadius: '4px' }}
+                                style={{ width: '100%', display: 'block', borderRadius: '4px', cursor: 'pointer' }}
                             />
                         )}
-                        {/* --- NEW: Conditional "Learn More" Button --- */}
                         {competition.flyerLinkUrl && (
-                            <a href={competition.flyerLinkUrl} target="_blank" rel="noopener noreferrer" className="button" style={{ width: '100%', marginTop: '15px', backgroundColor: '#4B0082', textAlign: 'center' }}>
-                                <span className="buttonText light">Learn More</span>
-                            </a>
+                            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '15px' }}>
+                                <a href={competition.flyerLinkUrl} target="_blank" rel="noopener noreferrer" className="button" style={{ backgroundColor: '#4B0082' }}>
+                                    <span className="buttonText light">{competition.flyerLinkDescription || 'Learn More'}</span>
+                                </a>
+                            </div>
                         )}
                     </div>
                     
@@ -247,7 +237,6 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                     </div>
                 </div>
 
-                {/* Entries list */}
                 <div style={{ flex: 1, overflowY: 'auto', paddingTop: '15px' }}>
                     {(() => {
                         const isModerator = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';

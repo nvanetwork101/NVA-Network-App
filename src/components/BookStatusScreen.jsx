@@ -38,6 +38,7 @@ const BookStatusScreen = ({
     const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
     const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
     const flyerInputRef = useRef(null);
+    const [originalFlyerFile, setOriginalFlyerFile] = useState(null);
 
     const isAuthorized = creatorProfile?.isVerifiedAdvertiser && creatorProfile.verifiedAdvertiserExpiresAt && creatorProfile.verifiedAdvertiserExpiresAt.toDate() > new Date();
     const isPromotingFromOpportunity = !!opportunityToPromote;
@@ -45,6 +46,7 @@ const BookStatusScreen = ({
     const handleFileSelect = (e) => {
         const file = e.target.files[0];
         if (file) {
+            setOriginalFlyerFile(file);
             setImageFileToAdjust(URL.createObjectURL(file)); // Create blob URL
             setShowImageAdjustModal(true);
         }
@@ -113,48 +115,48 @@ const BookStatusScreen = ({
         if (isPromotingFromOpportunity) {
             bookingDetails.sourceOpportunityId = opportunityToPromote;
         } else {
-            // --- NEW CONDITIONAL VALIDATION LOGIC ---
             if (!title.trim()) {
                 showMessage("An Ad Title is required to book.");
                 return;
             }
-            // A user must provide either a valid URL that generates a preview OR a custom flyer.
             if (!flyerFile && !autoThumbnail) {
-                if (mainUrl.trim() && !autoThumbnail) {
-                    showMessage("Could not get a preview from this URL. Please upload a custom flyer to continue.");
-                } else {
-                    showMessage("Please provide either a valid URL or upload a custom flyer to book a slot.");
-                }
+                showMessage("Please provide either a valid URL or upload a custom flyer to book a slot.");
                 return;
             }
 
-            let uploadedFlyerUrl = autoThumbnail; // Default to the auto-fetched URL
-            if (flyerFile) {
-                setIsSubmitting(true);
-                showMessage("Uploading flyer...");
-                try {
-                    const fileName = `${Date.now()}_booking.png`;
-                    const folderPath = `promo_flyers/${currentUser.uid}`;
-                    const filePath = `${folderPath}/${fileName}`;
-                    const storageRef = ref(storage, filePath);
-                    await uploadBytes(storageRef, flyerFile);
+            setIsSubmitting(true);
+            try {
+                let thumbnailUrl = autoThumbnail;
+                let highResUrl = autoThumbnail; // Default to the same URL
 
-                    // THE PERMANENT FIX: Construct a clean, proxy-friendly URL
-                    // This URL format is stable and avoids the security token, which causes scraper failure.
-                    uploadedFlyerUrl = `https://firebasestorage.googleapis.com/v0/b/${storageRef.bucket}/o/${encodeURIComponent(filePath)}?alt=media`;
-                    
-                } catch (error) {
-                    showMessage(`Flyer upload failed: ${error.message}`);
-                    setIsSubmitting(false);
-                    return;
+                // If a file was uploaded, perform the dual upload.
+                if (flyerFile && originalFlyerFile) {
+                    showMessage("Uploading thumbnail...");
+                    const thumbPath = `promo_flyers/${currentUser.uid}/${Date.now()}_thumb.png`;
+                    const thumbRef = ref(storage, thumbPath);
+                    await uploadBytes(thumbRef, flyerFile);
+                    thumbnailUrl = await getDownloadURL(thumbRef);
+
+                    showMessage("Uploading high-resolution flyer...");
+                    const highResPath = `promo_flyers/${currentUser.uid}/${Date.now()}_highres.png`;
+                    const highResRef = ref(storage, highResPath);
+                    await uploadBytes(highResRef, originalFlyerFile);
+                    highResUrl = await getDownloadURL(highResRef);
                 }
+                
+                contentDetails = { 
+                    title: title.trim(), 
+                    description: description.trim(),
+                    mainUrl: mainUrl.trim(), 
+                    flyerImageUrl: thumbnailUrl, // The smaller image for list views
+                    flyerImageUrl_highRes: highResUrl // The full-quality image for the viewer
+                };
+
+            } catch (error) {
+                showMessage(`Flyer upload failed: ${error.message}`);
+                setIsSubmitting(false);
+                return;
             }
-            contentDetails = { 
-                title: title.trim(), 
-                description: description.trim(),
-                mainUrl: mainUrl.trim(), 
-                flyerImageUrl: uploadedFlyerUrl 
-            };
         }
 
         setIsSubmitting(true);

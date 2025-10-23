@@ -7,47 +7,42 @@ const ImageViewerModal = ({ imageUrl, description, onClose }) => {
         return null;
     }
 
-    const handleOverlayClick = (e) => {
-        if (e.target === e.currentTarget) {
-            onClose();
-        }
-    };
-
     return (
         <div 
-            className="videoModalOverlay flex justify-center items-center"
-            onClick={handleOverlayClick}
+            className="videoModalOverlay" // This MUST have centering styles (display: flex)
+            onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                    onClose();
+                }
+            }}
         >
-            {/* Main modal container - Identical to VideoPlayerModal */}
-            <div className="bg-[#1A1A1A] w-full h-full md:max-w-[95vw] md:max-h-[95vh] md:rounded-lg overflow-hidden relative flex flex-col">
+            <div className="bg-[#1A1A1A] w-full h-full md:max-w-[90vw] md:max-h-[90vh] md:rounded-lg overflow-hidden relative flex flex-col p-4">
                 <button 
                     className="closeButton" 
                     onClick={onClose}
+                    style={{ zIndex: 10 }}
                 >
                     ×
                 </button>
                 
-                {/* Main black container for media - Identical to VideoPlayerModal */}
-                <div className="flex-1 min-h-0 flex justify-center items-center bg-black">
-                
-                    {/* 
-                      THIS IS THE DEFINITIVE FIX: A new sizing container DIV that wraps the image.
-                      This perfectly mimics the structure of the working VideoPlayerModal.
-                      The outer div is told to be full size, and the inner image is told to 'contain' itself within that full-size boundary.
+                {/* This container grows to fill all available space in the modal */}
+                <div className="flex-1 min-h-0 grid place-items-center bg-black rounded-lg">
+                    {/*
+                      THE DEFINITIVE FIX IS HERE:
+                      - 'w-full' and 'h-full' command the image to STRETCH and fill this container.
+                      - 'object-contain' commands the stretched image to MAINTAIN ITS ASPECT RATIO without cropping.
+                      This solves both problems: shrinking large images and stretching small ones.
                     */}
-                    <div className="w-full h-full">
-                        <img
-                            src={imageUrl}
-                            alt={description || "Enlarged view"}
-                            className="w-full h-full object-contain"
-                        />
-                    </div>
-
+                    <img
+                        src={imageUrl}
+                        alt="Promotional Content"
+                        className="w-full h-full object-contain"
+                    />
                 </div>
                 
-                {/* Description panel - Identical to VideoPlayerModal's structure */}
+                {/* Description container */}
                 {description && (
-                    <div className="bg-[#1A1A1A] p-3 md:p-4 w-full flex-shrink-0 overflow-y-auto">
+                    <div className="w-full flex-shrink-0 pt-3 overflow-y-auto">
                         <p className="m-0 text-base text-[#DDDDDD] leading-normal whitespace-pre-wrap">
                             {description}
                         </p>

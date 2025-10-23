@@ -20,6 +20,8 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
     const [flyerFile, setFlyerFile] = useState(null);
     const flyerInputRef = useRef(null);
 
+    const [originalFlyerFile, setOriginalFlyerFile] = useState(null);
+
     const [enableFlyerLink, setEnableFlyerLink] = useState(false);
     const [flyerLinkUrl, setFlyerLinkUrl] = useState('');
     const [flyerLinkDescription, setFlyerLinkDescription] = useState('Learn More');
@@ -46,30 +48,24 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
         return () => unsubscribe();
     }, []);
 
-    // Effect for the "smart" URL and file preview (STABILIZED)
+    // Effect for the "smart" URL and file preview
     useEffect(() => {
-        // Priority 1: If a file is uploaded, use it for the preview.
         if (flyerFile) {
             const objectUrl = URL.createObjectURL(flyerFile);
             setFlyerPreview(objectUrl);
-            return () => URL.revokeObjectURL(objectUrl); // Cleanup function
+            return () => URL.revokeObjectURL(objectUrl);
         }
-
-        // Priority 2: If no file, use the URL field.
-        if (flyerUrl) {
-            // Try to get a video thumbnail from the URL.
-            const videoInfo = extractVideoInfo(flyerUrl);
-            if (videoInfo && videoInfo.thumbnailUrl) {
-                setFlyerPreview(videoInfo.thumbnailUrl);
-            } else {
-                // If it's not a video, assume it's a direct image URL.
-                setFlyerPreview(flyerUrl);
-            }
+        if (!flyerUrl) {
+            setFlyerPreview('');
+            return;
+        }
+        const videoInfo = extractVideoInfo(flyerUrl);
+        if (videoInfo && videoInfo.thumbnailUrl) {
+            setFlyerPreview(videoInfo.thumbnailUrl);
         } else {
-            // If both are empty, clear the preview.
             setFlyerPreview('');
         }
-    }, [flyerUrl, flyerFile]); // This hook only runs when the URL or file changes.
+    }, [flyerUrl, flyerFile]);
 
     // --- HANDLERS ---
     const clearForm = () => {
@@ -84,16 +80,18 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
         setResultsDate('');
         setFlyerFile(null);
         setFlyerPreview('');
-        if (flyerInputRef.current) flyerInputRef.current.value = null;
-        // --- FIX: These lines are now correctly inside the function ---
+        setOriginalFlyerFile(null);
         setEnableFlyerLink(false);
         setFlyerLinkUrl('');
         setFlyerLinkDescription('Learn More');
+        
+        if (flyerInputRef.current) flyerInputRef.current.value = null;
     };
 
     const handleFileSelect = (e) => {
         const file = e.target.files[0];
         if (file) {
+            setOriginalFlyerFile(file); // <-- ADD THIS LINE
             setImageToCrop(URL.createObjectURL(file));
             setShowCropModal(true);
         }
@@ -120,23 +118,39 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
         showMessage("Saving competition draft...");
 
         try {
-            let finalFlyerUrl = '';
-            if (flyerFile) {
-                showMessage("Uploading flyer image...");
-                const filePath = `competition_flyers/${Date.now()}_${flyerFile.name}`;
-                const storageRef = ref(storage, filePath);
-                const snapshot = await uploadBytes(storageRef, flyerFile);
-                finalFlyerUrl = await getDownloadURL(snapshot.ref);
-                showMessage("Flyer uploaded.");
-            } else {
-                finalFlyerUrl = flyerPreview; // Use the fetched preview from the URL
+            let thumbnailUrl = '';
+            let highResUrl = '';
+
+            // Scenario 1: A file was uploaded.
+            if (flyerFile && originalFlyerFile) {
+                // Upload the thumbnail (resized version)
+                showMessage("Uploading thumbnail...");
+                const thumbPath = `competition_flyers/${Date.now()}_thumb_${flyerFile.name}`;
+                const thumbRef = ref(storage, thumbPath);
+                await uploadBytes(thumbRef, flyerFile);
+                thumbnailUrl = await getDownloadURL(thumbRef);
+
+                // Upload the original, high-resolution file
+                showMessage("Uploading high-resolution flyer...");
+                const highResPath = `competition_flyers/${Date.now()}_highres_${originalFlyerFile.name}`;
+                const highResRef = ref(storage, highResPath);
+                await uploadBytes(highResRef, originalFlyerFile);
+                highResUrl = await getDownloadURL(highResRef);
+                
+                showMessage("Flyers uploaded.");
+            } 
+            // Scenario 2: Only a URL was pasted in.
+            else if (flyerUrl) {
+                // In this case, both URLs will be the same.
+                thumbnailUrl = flyerUrl;
+                highResUrl = flyerUrl;
             }
 
-            // THE FIX: Convert local datetime strings to full ISO 8601 strings (UTC).
-            // This ensures the server interprets the time correctly, regardless of its timezone.
             const competitionData = {
                 title, competitionType, description, rules, prizesText,
-                flyerImageUrl: finalFlyerUrl,
+                flyerImageUrl: thumbnailUrl,
+                flyerImageUrl_highRes: highResUrl,
+                // THE FIX: Use the new state variables, controlled by the toggle.
                 flyerLinkUrl: enableFlyerLink ? flyerLinkUrl : null,
                 flyerLinkDescription: enableFlyerLink ? flyerLinkDescription : null,
                 entryDeadline: entryDeadline ? new Date(entryDeadline).toISOString() : null,
@@ -195,8 +209,6 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
                     <div className="formGroup"><label className="formLabel">Prizes (Simple Text)</label><textarea className="formTextarea" value={prizesText} onChange={e => setPrizesText(e.target.value)} placeholder="e.g., 1st Place: $500, 2nd Place: Gift Basket..." /></div>
                     
                     <div className="formGroup"><label className="formLabel">Promotional Flyer Image</label><input type="file" ref={flyerInputRef} className="formInput" accept="image/*" onChange={handleFileSelect} style={{display: 'none'}} /><button type="button" className="button" style={{ width: '100%', backgroundColor: '#3A3A3A' }} onClick={() => flyerInputRef.current.click()}><span className="buttonText light">Upload Custom Flyer</span></button></div>
-                    
-                    {/* --- START: Corrected Block for Flyer Link --- */}
                     <div className="formGroup">
                         <label className="formLabel" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <span>Enable External Link on Flyer</span>
@@ -219,8 +231,7 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
                             </div>
                         </>
                     )}
-                    {/* --- END: Corrected Block for Flyer Link --- */}
-
+                    
                     {flyerPreview && (
                         <div className="formGroup">
                             <label className="formLabel">Flyer Preview:</label>
