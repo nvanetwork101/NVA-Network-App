@@ -1832,7 +1832,7 @@ exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId
         }
         
         const senderDoc = await db.collection("creators").doc(senderId).get();
-        const senderName = senderDoc.exists() ? senderDoc.data().creatorName : "Someone";
+        const senderName = senderDoc.exists ? senderDoc.data().creatorName : "Someone";
         
         // --- THIS IS THE FIX ---
         // The link now points directly to the chat screen.

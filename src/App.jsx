@@ -527,17 +527,27 @@ useEffect(() => {
                 const permission = await Notification.requestPermission();
                 if (permission !== 'granted') {
                     // User denied permission, so we stop here.
-                    return; 
+                    return;
                 }
             }
 
             // 2. If permission is granted (either now or previously), get and save the token.
             if (Notification.permission === 'granted') {
-                const currentToken = await getToken(messaging, { vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0' });
+                // --- THIS IS THE DEFINITIVE FIX ---
+                // First, we wait for our PWA's service worker to be ready and active.
+                const swRegistration = await navigator.serviceWorker.ready;
+
+                // Then, we explicitly pass that service worker registration to getToken.
+                // This tells Firebase exactly which worker to use, preventing the conflict.
+                const currentToken = await getToken(messaging, {
+                    vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0',
+                    serviceWorkerRegistration: swRegistration
+                });
+
                 if (currentToken) {
                     const saveTokenFunction = httpsCallable(functions, 'saveFCMToken');
                     await saveTokenFunction({ token: currentToken });
-                    console.log("FCM Token acquired and saved successfully.");
+                    console.log("FCM Token acquired and saved successfully using the correct service worker.");
                 }
             }
         } catch (error) {
