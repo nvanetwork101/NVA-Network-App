@@ -43,21 +43,23 @@ if (!firebase.apps.length) {
 }
 const messaging = firebase.messaging();
 
-// HANDLER 1: SHOW THE NOTIFICATION (This was the part that was accidentally deleted)
-// Intercept background messages to construct and display the notification.
+// HANDLER 1: This robust handler correctly processes the notification payload.
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message: ', payload);
 
+  // THE FIX: All required data (title, body, link) is reliably present
+  // inside the `payload.notification` object. We use it as the single source of truth.
   const notificationTitle = payload.notification.title;
   const notificationOptions = {
     body: payload.notification.body,
-    icon: '/icons/icon-192x192.png', // Default icon
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/badge-72x72.png', // This restores the app icon badge
     data: {
-      link: payload.data.link // CRITICAL: Pass the link data through
+      // The `data` property from the FCM message is nested here by the time it arrives.
+      link: payload.notification.data.link 
     }
   };
 
-  // Display the notification to the user.
   return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
