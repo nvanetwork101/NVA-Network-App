@@ -2075,29 +2075,21 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
             });
         });
 
-        // --- START: DIAGNOSTIC NOTIFICATION LOGIC ---
+        // --- START: Production Notification Logic ---
         try {
-            logger.info(`[Chat ${chatId}] Starting notification process.`);
             const otherParticipantId = chatData.participants.find(p => p !== uid);
-            if (!otherParticipantId) {
-                logger.warn(`[Chat ${chatId}] Could not find other participant. Aborting notifications.`);
-                return { success: true, message: "Message sent, but recipient not found for notification." };
-            }
-            logger.info(`[Chat ${chatId}] Recipient ID: ${otherParticipantId}. Sender ID: ${uid}.`);
+            if (!otherParticipantId) return;
 
             const senderDoc = await db.collection('creators').doc(uid).get();
             const senderName = senderDoc.exists ? senderDoc.data().creatorName : 'Someone';
             const recipientDoc = await db.collection('creators').doc(otherParticipantId).get();
             const recipientProfile = recipientDoc.exists ? recipientDoc.data() : null;
-            logger.info(`[Chat ${chatId}] Fetched profiles. Sender: ${senderName}, Recipient profile exists: ${!!recipientProfile}`);
 
             const rtdb = admin.database();
             const recipientStatusSnap = await rtdb.ref(`/status/${otherParticipantId}`).get();
             const isOnline = recipientStatusSnap.exists() && recipientStatusSnap.val().state === 'online';
-            logger.info(`[Chat ${chatId}] Recipient online status: ${isOnline}.`);
 
             if (isOnline) {
-                logger.info(`[Chat ${chatId}] Recipient is online. Creating ticker notification.`);
                 const notificationRef = db.collection('notifications').doc();
                 await notificationRef.set({
                     recipientId: otherParticipantId,
@@ -2110,9 +2102,7 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
                     isBroadcast: false,
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
-                logger.info(`[Chat ${chatId}] Ticker notification created successfully.`);
             } else if (recipientProfile && recipientProfile.fcmToken) {
-                logger.info(`[Chat ${chatId}] Recipient is offline and has FCM token. Preparing push notification.`);
                 const payload = {
                     notification: {
                         title: `New message from ${senderName}`,
@@ -2124,19 +2114,12 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
                     }
                 };
                 await admin.messaging().sendToDevice(recipientProfile.fcmToken, payload);
-                logger.info(`[Chat ${chatId}] Push notification sent successfully.`);
-            } else {
-                logger.warn(`[Chat ${chatId}] No notification sent. Recipient is offline and has no FCM token, or profile does not exist.`);
             }
         } catch (notificationError) {
-            logger.error(`[Chat ${chatId}] CRITICAL ERROR during notification process.`, {
-                errorMessage: notificationError.message,
-                errorStack: notificationError.stack,
-                chatId: chatId,
-                senderId: uid,
-            });
+            // Log only the error if notifications fail, but don't crash the function.
+            logger.error(`Failed to send notification for chat '${chatId}'.`, notificationError);
         }
-        // --- END: DIAGNOSTIC NOTIFICATION LOGIC ---
+        // --- END: Production Notification Logic ---
 
         return { success: true, message: "Message sent." };
 
@@ -2147,7 +2130,10 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
     }
 });
 
-  
+// --- END: REVISED CHAT MESSAGE SENDING FUNCTION ---
+ 
+        // --- START: NEW FUNCTION TO BE ADDED ---
+
         // --- START: NEW FUNCTION FOR UNREAD MESSAGE INDICATOR ---
 
 exports.updateChatLastSeen = onCall(async (request) => {

@@ -518,27 +518,37 @@ function App() {
 
         // ======================= START: PUSH NOTIFICATION SETUP =======================
 useEffect(() => {
-    // Only run this logic if a user is logged in.
     if (!currentUser) return;
 
     const requestPermissionAndSaveToken = async () => {
         try {
-            // Check current permission status without prompting
+            // 1. If permission has not been asked, request it.
+            if (Notification.permission === 'default') {
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') {
+                    // User denied permission, so we stop here.
+                    return; 
+                }
+            }
+
+            // 2. If permission is granted (either now or previously), get and save the token.
             if (Notification.permission === 'granted') {
                 const currentToken = await getToken(messaging, { vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0' });
                 if (currentToken) {
                     const saveTokenFunction = httpsCallable(functions, 'saveFCMToken');
                     await saveTokenFunction({ token: currentToken });
-                    console.log("FCM Token refreshed and saved successfully.");
+                    console.log("FCM Token acquired and saved successfully.");
                 }
             }
         } catch (error) {
-            console.error("An error occurred while getting or saving the FCM token.", error);
+            console.error("An error occurred during push notification setup.", error);
+            showMessage("Could not set up notifications.");
         }
     };
 
     requestPermissionAndSaveToken();
 
+    // This listener handles incoming messages when the app is in the foreground.
     const unsubscribeOnMessage = onMessage(messaging, (payload) => {
         console.log("Foreground push received. Toast will be handled by the useNotifications hook.", payload);
     });
@@ -547,7 +557,7 @@ useEffect(() => {
         unsubscribeOnMessage();
     };
 
-}, [currentUser]); // Dependency ensures this runs when the user logs in.
+}, [currentUser]);
 // ======================== END: PUSH NOTIFICATION SETUP ========================
     
      
