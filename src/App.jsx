@@ -518,56 +518,40 @@ function App() {
 
        // ======================= START: PUSH NOTIFICATION SETUP =======================
 useEffect(() => {
-    if (!currentUser) return;
+    // Exit if there's no user or the Firebase messaging object isn't ready.
+    if (!currentUser || !messaging) return;
 
-    // This function contains the full, robust notification setup logic.
-    const setupPushNotifications = async () => {
+    const setupNotifications = async () => {
         try {
-            // 1. Request permission from the user.
-            if (Notification.permission === 'default') {
-                const permission = await Notification.requestPermission();
-                if (permission !== 'granted') {
-                    return; // User denied permission.
-                }
-            }
+            // 1. Request permission if needed.
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+                // 2. Get the token. This simple call is now safe because we previously
+                // fixed the underlying service worker conflict. The Firebase SDK
+                // will correctly find our single, dedicated service worker.
+                const currentToken = await getToken(messaging, {
+                    vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0',
+                });
 
-            // 2. If permission is granted, proceed.
-            if (Notification.permission === 'granted') {
-                // This is the key to fixing the deadlock. We get the registration
-                // object, which is available as soon as the SW is registered,
-                // without waiting for it to become fully active.
-                const swRegistration = await navigator.serviceWorker.getRegistration();
-                if (swRegistration) {
-                    const currentToken = await getToken(messaging, {
-                        vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0',
-                        serviceWorkerRegistration: swRegistration,
-                    });
-
-                    if (currentToken) {
-                        const saveTokenFunction = httpsCallable(functions, 'saveFCMToken');
-                        await saveTokenFunction({ token: currentToken });
-                        console.log("FCM Token acquired and saved successfully.");
-                    }
-                } else {
-                    // This case can happen on the very first visit. The token will be
-                    // retrieved on the next page load after the SW is installed.
-                    console.log("Service worker not registered yet. Token will be retrieved on next visit.");
+                if (currentToken) {
+                    const saveTokenFunction = httpsCallable(functions, 'saveFCMToken');
+                    await saveTokenFunction({ token: currentToken });
+                    console.log("FCM Token acquired and saved successfully.");
                 }
             }
         } catch (error) {
-            console.error("An error occurred during push notification setup.", error);
-            showMessage("Could not set up notifications.");
+            console.error("An error occurred while getting the FCM token.", error);
         }
     };
 
-    setupPushNotifications();
+    setupNotifications();
 
     // 3. Set up the foreground message listener.
     const unsubscribeOnMessage = onMessage(messaging, (payload) => {
-        console.log("Foreground push received:", payload);
-
-        // This is the corrected logic for the in-app ticker.
-        // It correctly reads the data from the nested object structure.
+        console.log("Foreground message received:", payload);
+        
+        // This is the corrected logic for the in-app ticker, based on the
+        // other developer's accurate analysis of the payload structure.
         if (payload.notification && payload.notification.data && payload.notification.data.link && payload.notification.data.link.startsWith('/chat/')) {
             const newToast = {
                 id: `chat-${Date.now()}`,
