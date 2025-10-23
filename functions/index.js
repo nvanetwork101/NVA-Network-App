@@ -1659,16 +1659,35 @@ exports.deleteNotification = onCall(async (request) => {
     if (!notificationId) { throw new HttpsError("invalid-argument", "Missing 'notificationId'."); }
     const db = admin.firestore();
     const notificationRef = db.collection("notifications").doc(notificationId);
+    const userRef = db.collection("creators").doc(uid); // <-- Reference to the user's profile
+
     try {
-        const notificationDoc = await notificationRef.get();
-        if (!notificationDoc.exists) {
-            return { success: true, message: "Notification already deleted." };
-        }
-        if (notificationDoc.data().userId !== uid) {
-            throw new HttpsError("permission-denied", "You do not have permission to delete this.");
-        }
-        await notificationRef.delete();
+        // Use a transaction to guarantee both actions succeed or fail together.
+        await db.runTransaction(async (transaction) => {
+            const notificationDoc = await transaction.get(notificationRef);
+            if (!notificationDoc.exists) {
+                // If the notification is already gone, do nothing.
+                return;
+            }
+
+            const notificationData = notificationDoc.data();
+            if (notificationData.userId !== uid) {
+                throw new HttpsError("permission-denied", "You do not have permission to delete this.");
+            }
+            
+            // --- THIS IS THE FIX ---
+            // If the notification being deleted was unread...
+            if (notificationData.isRead === false) {
+                // ...decrement the user's badge count.
+                transaction.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(-1) });
+            }
+
+            // Always delete the notification itself.
+            transaction.delete(notificationRef);
+        });
+
         return { success: true, message: "Notification deleted." };
+
     } catch (error) {
         logger.error(`Error deleting notification '${notificationId}'`, { error });
         if (error instanceof HttpsError) { throw error; }
@@ -1805,10 +1824,7 @@ exports.onNewFollower = onDocumentCreated("creators/{creatorId}/followers/{follo
 // =====================================================================
 exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId}", async (event) => {
     const messageData = event.data.data();
-    if (!messageData) {
-        logger.warn("New chat message trigger fired with no data.");
-        return null;
-    }
+    if (!messageData) return null;
 
     const { senderId, text } = messageData;
     const { chatId } = event.params;
@@ -1816,70 +1832,23 @@ exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId
 
     try {
         const chatDoc = await db.collection("chats").doc(chatId).get();
-        if (!chatDoc.exists) {
-            logger.error(`Chat document '${chatId}' not found.`);
-            return null;
-        }
+        if (!chatDoc.exists) return null;
 
         const recipientId = chatDoc.data().participants.find(uid => uid !== senderId);
-        if (!recipientId) {
-            logger.warn(`Could not find recipient in chat '${chatId}'.`);
-            return null;
-        }
-
-        // --- START: DIRECT PUSH NOTIFICATION LOGIC ---
-        const recipientDoc = await db.collection("creators").doc(recipientId).get();
-        if (!recipientDoc.exists) {
-            logger.warn(`Cannot send push to non-existent user: ${recipientId}`);
-            return null;
-        }
-
-        const tokens = recipientDoc.data().fcmTokens || [];
-        if (tokens.length === 0) {
-            logger.info(`User ${recipientId} has no push tokens. Skipping notification.`);
-            return null; // No tokens, nothing to do.
-        }
+        if (!recipientId) return null;
 
         const senderDoc = await db.collection("creators").doc(senderId).get();
         const senderName = senderDoc.exists ? senderDoc.data().creatorName : "Someone";
 
-        // This is the correctly structured payload the service worker expects.
-        const message = {
-            notification: {
-                title: `New Message from ${senderName}`,
-                body: text.substring(0, 100),
-            },
-            data: {
-                link: `/chat/${chatId}`, // The service worker uses this to open the app.
-            },
-            tokens: tokens,
-        };
-
-        // Send the message and handle cleanup of bad tokens.
-        const response = await admin.messaging().sendEachForMulticast(message);
-        const tokensToDelete = [];
-        response.responses.forEach((result, index) => {
-            if (!result.success) {
-                const error = result.error;
-                if (error.code === 'messaging/registration-token-not-registered' ||
-                    error.code === 'messaging/invalid-registration-token') {
-                    tokensToDelete.push(tokens[index]);
-                }
-            }
+        // THE FIX: This now calls our corrected "data-only" helper function.
+        await sendPushNotification(recipientId, {
+            title: `New Message from ${senderName}`,
+            body: text.substring(0, 100),
+            link: `/chat/${chatId}`,
         });
 
-        if (tokensToDelete.length > 0) {
-            await recipientDoc.ref.update({
-                fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToDelete)
-            });
-        }
-        // --- END: DIRECT PUSH NOTIFICATION LOGIC ---
-
-        // NOTE: The code that created a document in the "notifications" collection
-        // has been intentionally removed to prevent flooding the inbox.
-
     } catch (error) {
-        logger.error(`FATAL: Error in onNewChatMessage for chat '${chatId}':`, error);
+        logger.error(`Error in onNewChatMessage for chat '${chatId}':`, error);
     }
     return null;
 });
@@ -2096,43 +2065,17 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
         // --- START: Production Notification Logic ---
         try {
             const otherParticipantId = chatData.participants.find(p => p !== uid);
-            if (!otherParticipantId) return;
+            if (otherParticipantId) {
+                const senderDoc = await db.collection('creators').doc(uid).get();
+                const senderName = senderDoc.exists ? senderDoc.data().creatorName : 'Someone';
 
-            const senderDoc = await db.collection('creators').doc(uid).get();
-            const senderName = senderDoc.exists ? senderDoc.data().creatorName : 'Someone';
-            const recipientDoc = await db.collection('creators').doc(otherParticipantId).get();
-            const recipientProfile = recipientDoc.exists ? recipientDoc.data() : null;
-
-            const rtdb = admin.database();
-            const recipientStatusSnap = await rtdb.ref(`/status/${otherParticipantId}`).get();
-            const isOnline = recipientStatusSnap.exists() && recipientStatusSnap.val().state === 'online';
-
-            if (isOnline) {
-                const notificationRef = db.collection('notifications').doc();
-                await notificationRef.set({
-                    recipientId: otherParticipantId,
-                    type: 'NEW_MESSAGE',
-                    title: `New message from ${senderName}`,
-                    body: text.trim(),
-                    entityId: chatId,
-                    senderId: uid,
-                    isRead: false,
-                    isBroadcast: false,
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                // This single call replaces the entire previous logic block.
+                // It sends a "data-only" push that the service worker can correctly handle.
+                await sendPushNotification(otherParticipantId, {
+                    title: `New Message from ${senderName}`,
+                    body: text.trim().substring(0, 100),
+                    link: `/chat/${chatId}`
                 });
-            } else if (recipientProfile && Array.isArray(recipientProfile.fcmTokens) && recipientProfile.fcmTokens.length > 0) {
-                const payload = {
-                    notification: {
-                        title: `New message from ${senderName}`,
-                        body: text.trim(),
-                    },
-                    data: {
-                        type: 'NEW_MESSAGE',
-                        chatId: chatId,
-                    }
-                };
-                // Send to all devices registered for this user.
-                await admin.messaging().sendToDevice(recipientProfile.fcmTokens, payload);
             }
         } catch (notificationError) {
             // Log only the error if notifications fail, but don't crash the function.
@@ -6635,7 +6578,7 @@ exports.setAdminClaim = onCall(async (request) => {
 
 // Internal helper function to handle sending push notifications.
 const sendPushNotification = async (userId, payload) => {
-    logger.info(`[Push Send Debug] Initiating push notification for User ID: ${userId}`); // <-- ADD THIS LINE
+    logger.info(`[Push Send Debug] Initiating push notification for User ID: ${userId}`);
     const db = admin.firestore();
     const userRef = db.collection("creators").doc(userId);
 
@@ -6647,12 +6590,12 @@ const sendPushNotification = async (userId, payload) => {
         }
 
         const tokens = userDoc.data().fcmTokens || [];
-        logger.info(`[Push Send Debug] Found ${tokens.length} tokens for User ID: ${userId}`, { tokens }); // <-- ADD THIS LINE
+        logger.info(`[Push Send Debug] Found ${tokens.length} tokens for User ID: ${userId}`, { tokens });
         if (tokens.length === 0) {
-            return; // No tokens, nothing to do.
+            return;
         }
 
-        // Use sendEachForMulticast which is robust and provides detailed results.
+        // THIS IS THE PROVEN, WORKING PAYLOAD STRUCTURE
         const message = {
             notification: {
                 title: payload.title,
@@ -6661,25 +6604,20 @@ const sendPushNotification = async (userId, payload) => {
             data: {
                 link: payload.link || '/',
             },
-            
-             // --- SURGICAL FIX: ADD THIS BLOCK ---
             android: {
-                ttl: 48 * 3600 * 1000, // 48 hours in milliseconds
+                ttl: 48 * 3600 * 1000,
             },
             apns: {
                 headers: {
-                    // Set APNS expiration to 48 hours from now
                     'apns-expiration': String(Math.floor(Date.now() / 1000) + (48 * 3600)),
                 },
             },
-            
             tokens: tokens,
         };
 
         const response = await admin.messaging().sendEachForMulticast(message);
-        logger.info(`[Push Send Debug] FCM response for User ID: ${userId}`, { response: JSON.stringify(response) }); // <-- ADD THIS LINE
+        logger.info(`[Push Send Debug] FCM response for User ID: ${userId}`, { response: JSON.stringify(response) });
         
-        // --- THIS IS THE FIX: Cleanup logic for stale/invalid tokens ---
         const tokensToDelete = []
         response.responses.forEach((result, index) => {
             if (!result.success) {
@@ -6687,14 +6625,12 @@ const sendPushNotification = async (userId, payload) => {
                 logger.warn(`Failed to send notification to a token for user ${userId}`, { errorCode: error.code });
                 if (error.code === 'messaging/registration-token-not-registered' ||
                     error.code === 'messaging/invalid-registration-token') {
-                    // This token is invalid, so we schedule it for deletion.
                     tokensToDelete.push(tokens[index]);
                 }
             }
         });
 
         if (tokensToDelete.length > 0) {
-            // Remove the invalid tokens from the user's document.
             await userRef.update({
                 fcmTokens: admin.firestore.FieldValue.arrayRemove(...tokensToDelete)
             });
@@ -6702,7 +6638,6 @@ const sendPushNotification = async (userId, payload) => {
         }
 
     } catch (error) {
-        // This log will now only catch fatal errors, not individual token failures.
         logger.error(`A fatal error occurred while sending push notifications to user ${userId}`, {
             errorMessage: error.message,
             errorCode: error.code,

@@ -45,8 +45,7 @@ const messaging = firebase.messaging();
 
 // HANDLER 1: This robust handler correctly processes the notification payload.
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message: ', payload);
-
+  
   // THE FIX: All required data (title, body, link) is reliably present
   // inside the `payload.notification` object. We use it as the single source of truth.
   const notificationTitle = payload.notification.title;
@@ -55,8 +54,9 @@ messaging.onBackgroundMessage((payload) => {
     icon: '/icons/icon-192x192.png',
     badge: '/icons/badge-72x72.png', // This restores the app icon badge
     data: {
-      // The `data` property from the FCM message is nested here by the time it arrives.
-      link: payload.notification.data.link 
+      // This is the correct path. It safely checks for a link at the top level 
+      // of the payload and provides a default if one is missing.
+      link: payload.data?.link || '/'
     }
   };
 
