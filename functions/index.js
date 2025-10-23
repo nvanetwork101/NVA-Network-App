@@ -9,7 +9,9 @@ const {onRequest} = require("firebase-functions/v2/https");
 
 // The Firebase Admin SDK to access Firestore.
 const admin = require("firebase-admin");
-admin.initializeApp(); // THIS IS THE CORRECT, DEFAULT INITIALIZATION
+admin.initializeApp({
+    databaseURL: "https://nvanetworkapp-default-rtdb.firebaseio.com/"
+});
 
 const PLATFORM_FEE_PERCENTAGE = 0.07; // 7% platform fee
 
@@ -2034,7 +2036,6 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
         throw new HttpsError("unauthenticated", "You must be logged in to send a message.");
     }
 
-    // THE FIX: Destructure 'replyTo' from the request data as well.
     const { chatId, text, replyTo } = request.data;
     if (!chatId || !text || !text.trim()) {
         throw new HttpsError("invalid-argument", "Missing chatId or message text.");
@@ -2048,19 +2049,18 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
         senderId: uid,
         text: text.trim(),
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        // THE FIX: Add the 'replyTo' object to the message if it exists, otherwise set to null.
         replyTo: replyTo || null,
     };
 
     try {
-        let chatData; // Define chatData outside the transaction to access it later
+        let chatData; 
 
         await db.runTransaction(async (transaction) => {
             const chatDoc = await transaction.get(chatRef);
             if (!chatDoc.exists) {
                 throw new HttpsError("not-found", "The chat conversation does not exist.");
             }
-            chatData = chatDoc.data(); // Assign value to the outer variable
+            chatData = chatDoc.data(); 
             const otherParticipantId = chatData.participants.find(p => p !== uid);
 
             transaction.set(messageRef, newMessage);
@@ -2075,25 +2075,29 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
             });
         });
 
-        // --- START: ADDED NOTIFICATION LOGIC ---
+        // --- START: DIAGNOSTIC NOTIFICATION LOGIC ---
         try {
+            logger.info(`[Chat ${chatId}] Starting notification process.`);
             const otherParticipantId = chatData.participants.find(p => p !== uid);
-            if (!otherParticipantId) return; // Safety check
+            if (!otherParticipantId) {
+                logger.warn(`[Chat ${chatId}] Could not find other participant. Aborting notifications.`);
+                return { success: true, message: "Message sent, but recipient not found for notification." };
+            }
+            logger.info(`[Chat ${chatId}] Recipient ID: ${otherParticipantId}. Sender ID: ${uid}.`);
 
-            // 1. Get profiles for sender name and recipient token
             const senderDoc = await db.collection('creators').doc(uid).get();
             const senderName = senderDoc.exists ? senderDoc.data().creatorName : 'Someone';
             const recipientDoc = await db.collection('creators').doc(otherParticipantId).get();
             const recipientProfile = recipientDoc.exists ? recipientDoc.data() : null;
+            logger.info(`[Chat ${chatId}] Fetched profiles. Sender: ${senderName}, Recipient profile exists: ${!!recipientProfile}`);
 
-            // 2. Check recipient's real-time online status
             const rtdb = admin.database();
             const recipientStatusSnap = await rtdb.ref(`/status/${otherParticipantId}`).get();
             const isOnline = recipientStatusSnap.exists() && recipientStatusSnap.val().state === 'online';
+            logger.info(`[Chat ${chatId}] Recipient online status: ${isOnline}.`);
 
             if (isOnline) {
-                // 3a. Create an in-app ticker notification if the user is online.
-                // The frontend is responsible for not showing this toast if the user is already in this specific chat.
+                logger.info(`[Chat ${chatId}] Recipient is online. Creating ticker notification.`);
                 const notificationRef = db.collection('notifications').doc();
                 await notificationRef.set({
                     recipientId: otherParticipantId,
@@ -2106,8 +2110,9 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
                     isBroadcast: false,
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
+                logger.info(`[Chat ${chatId}] Ticker notification created successfully.`);
             } else if (recipientProfile && recipientProfile.fcmToken) {
-                // 3b. Send a push notification if the user is offline and has a token.
+                logger.info(`[Chat ${chatId}] Recipient is offline and has FCM token. Preparing push notification.`);
                 const payload = {
                     notification: {
                         title: `New message from ${senderName}`,
@@ -2119,24 +2124,30 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
                     }
                 };
                 await admin.messaging().sendToDevice(recipientProfile.fcmToken, payload);
+                logger.info(`[Chat ${chatId}] Push notification sent successfully.`);
+            } else {
+                logger.warn(`[Chat ${chatId}] No notification sent. Recipient is offline and has no FCM token, or profile does not exist.`);
             }
         } catch (notificationError) {
-            logger.error(`Message sent for chat '${chatId}', but failed to send notifications.`, notificationError);
+            logger.error(`[Chat ${chatId}] CRITICAL ERROR during notification process.`, {
+                errorMessage: notificationError.message,
+                errorStack: notificationError.stack,
+                chatId: chatId,
+                senderId: uid,
+            });
         }
-        // --- END: ADDED NOTIFICATION LOGIC ---
+        // --- END: DIAGNOSTIC NOTIFICATION LOGIC ---
 
         return { success: true, message: "Message sent." };
+
     } catch (error) {
-        logger.error(`Error in sendChatMessagePrivate transaction for user '${uid}' in chat '${chatId}':`, error);
+        logger.error(`Error in sendChatMessagePrivate for user '${uid}' in chat '${chatId}':`, error);
         if (error instanceof HttpsError) throw error;
         throw new HttpsError("internal", "An unexpected error occurred while sending the message.");
     }
 });
 
-// --- END: REVISED CHAT MESSAGE SENDING FUNCTION ---
- 
-        // --- START: NEW FUNCTION TO BE ADDED ---
-
+  
         // --- START: NEW FUNCTION FOR UNREAD MESSAGE INDICATOR ---
 
 exports.updateChatLastSeen = onCall(async (request) => {

@@ -91,11 +91,13 @@ const NavigationBar = (props) => {
                             <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
                         </svg>
                     </button>
-                    
-                    {/* --- Creator Connect Button --- */}
-                    <button className="navButton" onClick={() => setActiveScreen('CreatorConnect')}>
-                        <span className={activeScreen === 'CreatorConnect' ? 'activeNavButtonText navButtonText' : 'navButtonText'}>Creator Connect</span>
-                    </button>
+
+                    {/* --- Admin Button (Conditionally Rendered) --- */}
+                    {creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && (
+                        <button className="navButton" onClick={() => setActiveScreen('AdminDashboard')}>
+                            <span className={activeScreen === 'AdminDashboard' ? 'activeNavButtonText navButtonText' : 'navButtonText'}>Admin</span>
+                        </button>
+                    )}
                 </>
             ) : (
                 <button className="navButton" onClick={() => setActiveScreen('CreatorConnect')}>
@@ -130,25 +132,30 @@ const NavigationBar = (props) => {
                     padding: '10px'
                 }}>
                     {currentUser && currentUser.emailVerified && (
-                        <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('SupportUsScreen'); setShowMoreMenu(false); }}>
-                            <span className="navButtonText">Support Hub</span>
-                        </button>
+                        <>
+                            <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('SupportUsScreen'); setShowMoreMenu(false); }}>
+                                <span className="navButtonText">Support Hub</span>
+                            </button>
+                            <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('CreatorConnect'); setShowMoreMenu(false); }}>
+                                <span className="navButtonText">Creator Connect</span>
+                            </button>
+                            <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('Contact'); setShowMoreMenu(false); }}>
+                                <span className="navButtonText">Contact</span>
+                            </button>
+                        </>
                     )}
+                
+                    <div style={{ borderTop: '1px solid #333', margin: '5px 0' }}></div>
+                    
                     <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('About'); setShowMoreMenu(false); }}>
                         <span className="navButtonText">About</span>
                     </button>
-                    <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('Contact'); setShowMoreMenu(false); }}>
-                        <span className="navButtonText">Contact</span>
-                    </button>
-                
-                    <div style={{ borderTop: '1px solid #333', margin: '5px 0' }}></div>
                     <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('PrivacyPolicy'); setShowMoreMenu(false); }}>
                         <span className="navButtonText">Privacy Policy</span>
                     </button>
                     <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('TermsOfService'); setShowMoreMenu(false); }}>
                         <span className="navButtonText">Terms of Service</span>
                     </button>
-                
                 </div>
             )}
         </div>
