@@ -522,23 +522,15 @@ useEffect(() => {
 
     const requestPermissionAndSaveToken = async () => {
         try {
-            // 1. If permission has not been asked, request it.
             if (Notification.permission === 'default') {
                 const permission = await Notification.requestPermission();
                 if (permission !== 'granted') {
-                    // User denied permission, so we stop here.
                     return;
                 }
             }
 
-            // 2. If permission is granted (either now or previously), get and save the token.
             if (Notification.permission === 'granted') {
-                // --- THIS IS THE DEFINITIVE FIX ---
-                // First, we wait for our PWA's service worker to be ready and active.
                 const swRegistration = await navigator.serviceWorker.ready;
-
-                // Then, we explicitly pass that service worker registration to getToken.
-                // This tells Firebase exactly which worker to use, preventing the conflict.
                 const currentToken = await getToken(messaging, {
                     vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0',
                     serviceWorkerRegistration: swRegistration
@@ -560,14 +552,32 @@ useEffect(() => {
 
     // This listener handles incoming messages when the app is in the foreground.
     const unsubscribeOnMessage = onMessage(messaging, (payload) => {
-        console.log("Foreground push received. Toast will be handled by the useNotifications hook.", payload);
+        console.log("Foreground push received:", payload);
+
+        // --- THIS IS THE FIX FOR THE IN-APP TICKER ---
+        // Check if the incoming message is a chat message by looking at the link.
+        if (payload.data && payload.data.link && payload.data.link.startsWith('/chat/')) {
+            // Manually construct a notification object for the toast queue.
+            // This bypasses the database and prevents inbox flooding.
+            const newToast = {
+                id: `chat-${Date.now()}`, // A unique ID for the toast
+                title: payload.notification.title,
+                body: payload.notification.body,
+                link: payload.data.link,
+                type: 'NEW_CHAT_MESSAGE', // Mimic the type for consistency
+                isBroadcast: false,
+            };
+
+            // Add the manually created toast to the queue to be displayed.
+            setToastQueue(prevQueue => [...prevQueue, newToast]);
+        }
     });
 
     return () => {
         unsubscribeOnMessage();
     };
 
-}, [currentUser]);
+}, [currentUser]); // The dependency is correct.
 // ======================== END: PUSH NOTIFICATION SETUP ========================
     
      
