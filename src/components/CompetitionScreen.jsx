@@ -14,6 +14,8 @@ import EnlargedPhotoViewer from './EnlargedPhotoViewer';
 
 // --- CSS Styles for the "Times Square" Theme ---
 const TimesSquareStyles = `
+  @import url('https://fonts.googleapis.com/css2?family=Galgo+Condensed&display=swap');
+
   @keyframes pulse-indigo {
     0% { text-shadow: 0 0 5px #4B0082, 0 0 10px #4B0082, 0 0 15px #8A2BE2, 0 0 20px #8A2BE2; }
     50% { text-shadow: 0 0 10px #4B0082, 0 0 15px #9400D3, 0 0 20px #9400D3, 0 0 25px #9932CC; }
@@ -27,14 +29,14 @@ const TimesSquareStyles = `
 
   .neon-indigo-text {
     color: #E6E6FA;
-    font-family: 'Arial Black', Gadget, sans-serif;
+    font-family: 'Galgo Condensed', sans-serif;
     font-weight: bold;
     text-shadow: 0 0 5px #4B0082, 0 0 10px #4B0082, 0 0 15px #8A2BE2, 0 0 20px #8A2BE2;
     animation: pulse-indigo 4s infinite ease-in-out;
   }
   
   .billboard-panel {
-    background-color: rgba(26, 26, 26, 0.6);
+    background-color: rgba(0, 0, 0, 0.7);
     border: 1px solid #4B0082;
     box-shadow: 0 0 15px rgba(75, 0, 130, 0.5);
     border-radius: 8px;
@@ -195,21 +197,22 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                     <div className="billboard-panel">
                         {competition.flyerImageUrl && (
                             <img 
-                                src={competition.flyerImageUrl} 
+                                src={competition.flyerImageUrl_highRes || competition.flyerImageUrl} 
                                 alt={competition.title}
                                 onClick={handleFlyerClick}
-                                style={{ width: '100%', display: 'block', borderRadius: '4px', cursor: 'pointer' }}
+                                style={{ width: '100%', maxHeight: '25vh', objectFit: 'contain', display: 'block', borderRadius: '4px', cursor: 'pointer' }}
                             />
-                        )}
-                        {competition.flyerLinkUrl && (
-                            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '15px' }}>
-                                <a href={competition.flyerLinkUrl} target="_blank" rel="noopener noreferrer" className="button" style={{ backgroundColor: '#4B0082' }}>
-                                    <span className="buttonText light">{competition.flyerLinkDescription || 'Learn More'}</span>
-                                </a>
-                            </div>
                         )}
                     </div>
                     
+                   {competition.flyerLinkUrl && (
+                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '15px' }}>
+                            <a href={competition.flyerLinkUrl} target="_blank" rel="noopener noreferrer" className="button" style={{ backgroundColor: '#4B0082' }}>
+                                <span className="buttonText light">{competition.flyerLinkDescription || 'Learn More'}</span>
+                            </a>
+                        </div>
+                    )}
+
                     {competition.noticeText && (
                         <div className="dashboardSection" style={{padding: '10px', border: '1px solid #FFD700', margin: '0 0 10px 0'}}>
                             <p className="dashboardSectionTitle" style={{fontSize: '14px', marginBottom: '5px'}}>Notice</p>
@@ -233,7 +236,9 @@ function CompetitionScreen({ showMessage, setActiveScreen, currentUser, creatorP
                                 </p>
                             </div>
                         )}
-                        <button className="button" onClick={handlePrizesClick} style={{flex: 1, margin: 0, backgroundColor: '#3A3A3A'}}><span className="buttonText light">View Prizes & Rules</span></button>
+                        <div className="dashboardItem" onClick={handlePrizesClick} style={{flex: 1, textAlign: 'center', padding: '10px', border: '1px solid #8A2BE2', borderRadius: '8px', cursor: 'pointer'}}>
+                            <p style={{margin: 0, color: '#FFFFFF', fontWeight: 'bold'}}>View Prizes & Rules</p>
+                        </div>
                     </div>
                 </div>
 

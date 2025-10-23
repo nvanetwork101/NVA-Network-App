@@ -37,8 +37,27 @@ const ChatMessageScreen = ({
 
     const formatMessageTimestamp = (timestamp) => {
         if (!timestamp || !timestamp.toDate) return '';
-        const date = timestamp.toDate();
-        return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const messageDate = timestamp.toDate();
+        const now = new Date();
+
+        // Check if the message was sent today
+        if (messageDate.getFullYear() === now.getFullYear() &&
+            messageDate.getMonth() === now.getMonth() &&
+            messageDate.getDate() === now.getDate()) {
+            return messageDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        }
+
+        // Check if the message was sent yesterday
+        const yesterday = new Date();
+        yesterday.setDate(now.getDate() - 1);
+        if (messageDate.getFullYear() === yesterday.getFullYear() &&
+            messageDate.getMonth() === yesterday.getMonth() &&
+            messageDate.getDate() === yesterday.getDate()) {
+            return `Yesterday ${messageDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+        }
+
+        // Older than yesterday
+        return `${messageDate.toLocaleDateString()} ${messageDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
     };
 
   // --- NEW: ReactionPills Component ---

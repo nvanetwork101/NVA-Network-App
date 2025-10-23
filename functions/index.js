@@ -2053,12 +2053,14 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
     };
 
     try {
+        let chatData; // Define chatData outside the transaction to access it later
+
         await db.runTransaction(async (transaction) => {
             const chatDoc = await transaction.get(chatRef);
             if (!chatDoc.exists) {
                 throw new HttpsError("not-found", "The chat conversation does not exist.");
             }
-            const chatData = chatDoc.data();
+            chatData = chatDoc.data(); // Assign value to the outer variable
             const otherParticipantId = chatData.participants.find(p => p !== uid);
 
             transaction.set(messageRef, newMessage);
@@ -2072,6 +2074,56 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
                 unreadBy: admin.firestore.FieldValue.arrayUnion(otherParticipantId)
             });
         });
+
+        // --- START: ADDED NOTIFICATION LOGIC ---
+        try {
+            const otherParticipantId = chatData.participants.find(p => p !== uid);
+            if (!otherParticipantId) return; // Safety check
+
+            // 1. Get profiles for sender name and recipient token
+            const senderDoc = await db.collection('creators').doc(uid).get();
+            const senderName = senderDoc.exists ? senderDoc.data().creatorName : 'Someone';
+            const recipientDoc = await db.collection('creators').doc(otherParticipantId).get();
+            const recipientProfile = recipientDoc.exists ? recipientDoc.data() : null;
+
+            // 2. Check recipient's real-time online status
+            const rtdb = admin.database();
+            const recipientStatusSnap = await rtdb.ref(`/status/${otherParticipantId}`).get();
+            const isOnline = recipientStatusSnap.exists() && recipientStatusSnap.val().state === 'online';
+
+            if (isOnline) {
+                // 3a. Create an in-app ticker notification if the user is online.
+                // The frontend is responsible for not showing this toast if the user is already in this specific chat.
+                const notificationRef = db.collection('notifications').doc();
+                await notificationRef.set({
+                    recipientId: otherParticipantId,
+                    type: 'NEW_MESSAGE',
+                    title: `New message from ${senderName}`,
+                    body: text.trim(),
+                    entityId: chatId,
+                    senderId: uid,
+                    isRead: false,
+                    isBroadcast: false,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+            } else if (recipientProfile && recipientProfile.fcmToken) {
+                // 3b. Send a push notification if the user is offline and has a token.
+                const payload = {
+                    notification: {
+                        title: `New message from ${senderName}`,
+                        body: text.trim(),
+                    },
+                    data: {
+                        type: 'NEW_MESSAGE',
+                        chatId: chatId,
+                    }
+                };
+                await admin.messaging().sendToDevice(recipientProfile.fcmToken, payload);
+            }
+        } catch (notificationError) {
+            logger.error(`Message sent for chat '${chatId}', but failed to send notifications.`, notificationError);
+        }
+        // --- END: ADDED NOTIFICATION LOGIC ---
 
         return { success: true, message: "Message sent." };
     } catch (error) {
@@ -4254,7 +4306,7 @@ exports.createBookingAndPledge = onCall(async (request) => {
             if (!contentDetails) {
                 throw new HttpsError("invalid-argument", "Missing content details for a new booking.");
             }
-            const { title, mainUrl, flyerImageUrl, description } = contentDetails; 
+            const { title, mainUrl, flyerImageUrl, flyerImageUrl_highRes, description } = contentDetails;
 
             // Implement the resilient validation logic to check Title OR Description
             if (!title && !description) {
@@ -4264,6 +4316,7 @@ exports.createBookingAndPledge = onCall(async (request) => {
             finalTitle = title || description; // Use title, or description as a fallback
             finalMainUrl = mainUrl || ''; 
             finalFlyerImageUrl = flyerImageUrl || '';
+            finalFlyerImageUrl_highRes = flyerImageUrl_highRes || flyerImageUrl || ''; // Prioritize high-res, fallback to standard
             finalDescription = description || ''; // Ensure finalDescription is set
         }
 
@@ -4302,7 +4355,8 @@ exports.createBookingAndPledge = onCall(async (request) => {
 
                     destinationUrl: isVideoUrl ? '' : finalMainUrl,
                     adVideoUrl: isVideoUrl ? finalMainUrl : '',
-                    flyerImageUrl: finalFlyerImageUrl
+                    flyerImageUrl: finalFlyerImageUrl,
+                    flyerImageUrl_highRes: finalFlyerImageUrl_highRes
                 },
                 contentSubmittedAt: admin.firestore.FieldValue.serverTimestamp()
             });

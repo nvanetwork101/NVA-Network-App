@@ -61,7 +61,7 @@ function PromotedSlot({ showMessage, handleVideoPress, currentUser }) {
         } else if (content.destinationUrl) {
             window.open(content.destinationUrl, '_blank');
         
-        // Priority 3: Handle Image-Only promotions (THE DEFINITIVE FIX)
+         // Priority 3: Handle Image-Only promotions
         } else if (content.flyerImageUrl) {
             // Use the high-resolution URL if it exists, otherwise fall back to the standard one.
             const imageUrl = content.flyerImageUrl_highRes || content.flyerImageUrl;
