@@ -2102,7 +2102,7 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
                     isBroadcast: false,
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
-            } else if (recipientProfile && recipientProfile.fcmToken) {
+            } else if (recipientProfile && Array.isArray(recipientProfile.fcmTokens) && recipientProfile.fcmTokens.length > 0) {
                 const payload = {
                     notification: {
                         title: `New message from ${senderName}`,
@@ -2113,7 +2113,8 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
                         chatId: chatId,
                     }
                 };
-                await admin.messaging().sendToDevice(recipientProfile.fcmToken, payload);
+                // Send to all devices registered for this user.
+                await admin.messaging().sendToDevice(recipientProfile.fcmTokens, payload);
             }
         } catch (notificationError) {
             // Log only the error if notifications fail, but don't crash the function.
