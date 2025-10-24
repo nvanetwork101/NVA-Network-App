@@ -4,20 +4,20 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   build: {
-    sourcemap: true, // Enable source maps for debugging
+    sourcemap: true,
   },
   plugins: [
     react(),
-    // Add the PWA plugin configuration
     VitePWA({
       registerType: 'prompt',
-      // THE DEFINITIVE FIX: Use the correct singular property 'strategy'
+      // --- THE DEFINITIVE FIX ---
+      // 1. The strategy remains 'injectManifest' because we have a custom service worker.
       strategy: 'injectManifest',
-      // THE DEFINITIVE FIX: Point to the correct source file
-      srcDir: 'public',
+      // 2. We REMOVE 'srcDir: 'public'' entirely. The plugin now correctly looks in the project root.
+      // 3. We explicitly name our service worker file, which is now in the root.
       filename: 'firebase-messaging-sw.js',
+      // --- END OF FIX ---
       injectManifest: {
-        // This tells the plugin to find and cache all our app's files
         globPatterns: ['**/*.{js,css,html,ico,png,svg}']
       },
       manifest: {
