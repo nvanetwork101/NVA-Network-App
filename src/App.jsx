@@ -549,18 +549,24 @@ useEffect(() => {
     // 3. Set up the foreground message listener.
     const unsubscribeOnMessage = onMessage(messaging, (payload) => {
         console.log("Foreground message received:", payload);
-        
-        // This is the corrected logic for the in-app ticker, based on the
-        // other developer's accurate analysis of the payload structure.
-        if (payload.notification && payload.notification.data && payload.notification.data.link && payload.notification.data.link.startsWith('/chat/')) {
+
+        // --- NEW ROBUST FOREGROUND HANDLER ---
+        // This handles ANY notification that arrives while the app is open.
+        // It correctly reads the title/body from `notification` and the link from `data`.
+        if (payload.notification && payload.notification.title && payload.notification.body && payload.data && payload.data.link) {
+            
             const newToast = {
-                id: `chat-${Date.now()}`,
+                // Use the unique messageId from the payload if it exists, otherwise generate one.
+                id: payload.messageId || `fg-${Date.now()}`, 
                 title: payload.notification.title,
                 body: payload.notification.body,
-                link: payload.notification.data.link,
-                type: 'NEW_CHAT_MESSAGE',
+                link: payload.data.link,
+                // We can extract more details from the payload in the future if needed
+                type: 'FOREGROUND_MESSAGE', 
                 isBroadcast: false,
             };
+
+            // Add the newly constructed toast to the queue for display.
             setToastQueue(prevQueue => [...prevQueue, newToast]);
         }
     });
