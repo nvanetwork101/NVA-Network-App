@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, query, orderBy, updateDoc, setDoc, deleteDoc, where } from '../firebase';
     import formatCurrency from '../utils/formatCurrency';
 
-    function AdminSiteManagerScreen({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile }) {
+    function AdminSiteManagerScreen({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile, allUsers }) {
     const [socialLinks, setSocialLinks] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -36,7 +36,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
 
     const [isRecalibrating, setIsRecalibrating] = useState(false);
     const [isCleaningTokens, setIsCleaningTokens] = useState(false);
-
+    const [isRecalibratingBadge, setIsRecalibratingBadge] = useState(false); // <-- ADD THIS LINE
     
     // --- STATE FOR PAYOUT HISTORY ---
     const [payoutHistory, setPayoutHistory] = useState([]);
@@ -275,6 +275,88 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     };
     const handleRunAudit = async () => { setIsAuditing(true); setAuditResults("Starting data integrity audit..."); showMessage("Starting data integrity audit..."); try { const auditFunction = httpsCallable(functions, 'runDataIntegrityAudit'); const result = await auditFunction(); setAuditResults(result.data.summary); showMessage("Audit complete! See results below."); } catch (error) { const errorMessage = `Audit failed: ${error.message}`; setAuditResults({ error: errorMessage }); showMessage(errorMessage); } finally { setIsAuditing(false); } };
      
+        const handleRecalibrateBadge = () => {
+        const RecalibrateBadgeComponent = () => {
+            const [searchTerm, setSearchTerm] = useState('');
+            const [selectedUser, setSelectedUser] = useState(null);
+
+            const searchResults = searchTerm.length < 2 ? [] : allUsers
+                .filter(user => 
+                    user.creatorName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    user.email?.toLowerCase().includes(searchTerm.toLowerCase())
+                )
+                .slice(0, 5);
+
+            const executeRecalibration = async (userId) => {
+                setShowConfirmationModal(false);
+                setIsRecalibratingBadge(true);
+                showMessage(`Recalibrating badge for user: ${userId}...`);
+                try {
+                    const recalibrateFunction = httpsCallable(functions, 'recalculateUnreadNotifications');
+                    const result = await recalibrateFunction({ targetUserId: userId });
+                    showMessage(result.data.message);
+                } catch (error) {
+                    showMessage(`Error: ${error.message}`);
+                } finally {
+                    setIsRecalibratingBadge(false);
+                }
+            };
+
+            if (selectedUser) {
+                return (
+                    <div>
+                        <p>Are you sure you want to recalibrate the notification badge for this user?</p>
+                        <div className="adminDashboardItem" style={{margin: '20px 0', backgroundColor: '#1A1A1A'}}>
+                            <img src={selectedUser.profilePictureUrl || 'https://placehold.co/40x40'} alt="profile" style={{width: 40, height: 40, borderRadius: '50%', marginRight: 15}} />
+                            <div style={{flexGrow: 1}}>
+                                <p className="adminDashboardItemTitle">{selectedUser.creatorName}</p>
+                                <p style={{fontSize: 12, color: '#AAA'}}>{selectedUser.id}</p>
+                            </div>
+                        </div>
+                        <div className="confirmationModalButtons">
+                            <button className="confirmationButton cancel" onClick={() => setSelectedUser(null)}>Back to Search</button>
+                            <button className="confirmationButton confirm" style={{backgroundColor: '#6A5ACD'}} onClick={() => executeRecalibration(selectedUser.id)}>Confirm & Recalibrate</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div>
+                    <p>Search for a user by name or email to fix their ghost notification badge.</p>
+                    <div className="formGroup" style={{margin: '20px 0'}}>
+                        <input 
+                            type="text" 
+                            className="formInput" 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Start typing to search for a user..."
+                            style={{borderColor: '#FFD700'}}
+                        />
+                    </div>
+                    {searchResults.length > 0 && (
+                        <div className="dashboardContentList">
+                            {searchResults.map(user => (
+                                <div key={user.id} className="adminDashboardItem" style={{cursor: 'pointer'}} onClick={() => setSelectedUser(user)}>
+                                    <img src={user.profilePictureUrl || 'https://placehold.co/40x40'} alt="profile" style={{width: 40, height: 40, borderRadius: '50%', marginRight: 15}} />
+                                    <div style={{flexGrow: 1}}>
+                                        <p className="adminDashboardItemTitle">{user.creatorName}</p>
+                                        <p style={{fontSize: 12, color: '#AAA'}}>{user.email}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        setConfirmationTitle("Recalibrate User Notification Badge");
+        setConfirmationMessage(<RecalibrateBadgeComponent />);
+        setOnConfirmationAction(() => () => {}); 
+        setShowConfirmationModal(true);
+    };
+
        const handleClearPinnedContent = () => {
         // This component will be rendered inside the confirmation modal
         const ConfirmationComponent = () => {
@@ -669,6 +751,16 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
                                 <span className="buttonText">{isCleaning ? 'Processing...' : 'Backfill Follower Data'}</span>
                             </button>
                         </div>
+                        
+                        <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
+                            <button className="button" onClick={handleRecalibrateBadge} style={{ backgroundColor: '#6A5ACD' }} disabled={isRecalibratingBadge}>
+                                <span className="buttonText">{isRecalibratingBadge ? 'Working...' : 'Recalibrate User Notification Badge'}</span>
+                            </button>
+                            <p className="paragraph" style={{color: '#AAA', fontSize: '14px', marginTop: '10px'}}>
+                                Fixes any user's account if their notification bell shows a count but their inbox is empty.
+                            </p>
+                        </div>
+                        
                         <div style={{ borderTop: '1px solid #444', paddingTop: '20px', marginBottom: '20px' }}>
                             <button className="button" onClick={handleFcmTokenCleanup} style={{ backgroundColor: '#1E90FF' }} disabled={isCleaningTokens}>
                                 <span className="buttonText">{isCleaningTokens ? 'Cleaning...' : 'Clean Up FCM Tokens'}</span>

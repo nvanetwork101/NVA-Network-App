@@ -118,6 +118,24 @@ import UpdatePrompt from './components/UpdatePrompt';
 function App() {
   // --- PWA UPDATE FIX: Logic to handle the update prompt ---
   const { needRefresh, handleUpdate } = usePWAUpdate();
+  
+   // THIS IS THE NEW, MORE POWERFUL UPDATE FUNCTION
+  const forcefulUpdate = async () => {
+    if (needRefresh) {
+      // 1. Tell the new service worker to take over.
+      await handleUpdate();
+
+      // 2. Programmatically delete all old caches.
+      if (window.caches) {
+        const keys = await window.caches.keys();
+        await Promise.all(keys.map(key => window.caches.delete(key)));
+      }
+      
+      // 3. Force a hard reload, bypassing the browser cache.
+      window.location.reload();
+    }
+  };
+  
   // --- END OF PWA UPDATE FIX ---
 
   // --- STATE MANAGEMENT ---
@@ -547,28 +565,11 @@ useEffect(() => {
     setupNotifications();
 
     // 3. Set up the foreground message listener.
+    // THE DEFINITIVE FIX: This listener's only job is to log that a push was received
+    // while the app was open. It NO LONGER creates a toast, which prevents duplicates.
+    // The useNotifications hook is now the single source of truth for displaying all toasts.
     const unsubscribeOnMessage = onMessage(messaging, (payload) => {
-        console.log("Foreground message received:", payload);
-
-        // --- NEW ROBUST FOREGROUND HANDLER ---
-        // This handles ANY notification that arrives while the app is open.
-        // It correctly reads the title/body from `notification` and the link from `data`.
-        if (payload.notification && payload.notification.title && payload.notification.body && payload.data && payload.data.link) {
-            
-            const newToast = {
-                // Use the unique messageId from the payload if it exists, otherwise generate one.
-                id: payload.messageId || `fg-${Date.now()}`, 
-                title: payload.notification.title,
-                body: payload.notification.body,
-                link: payload.data.link,
-                // We can extract more details from the payload in the future if needed
-                type: 'FOREGROUND_MESSAGE', 
-                isBroadcast: false,
-            };
-
-            // Add the newly constructed toast to the queue for display.
-            setToastQueue(prevQueue => [...prevQueue, newToast]);
-        }
+        console.log("Foreground push notification received, but toast is handled by Firestore listener:", payload);
     });
 
     return () => {
@@ -1120,7 +1121,7 @@ return (
             showInstallButton={!isStandalone}
             // --- PWA UPDATE PROPS ---
             needRefresh={needRefresh}
-            onUpdate={handleUpdate}
+            onUpdate={forcefulUpdate}
           />
           <div className="container">
             {/* Step 3: Use the original authLoading for the quick, text-based loader during navigation. */}

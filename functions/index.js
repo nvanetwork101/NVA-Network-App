@@ -10,7 +10,8 @@ const {onRequest} = require("firebase-functions/v2/https");
 // The Firebase Admin SDK to access Firestore.
 const admin = require("firebase-admin");
 admin.initializeApp({
-    databaseURL: "https://nvanetworkapp-default-rtdb.firebaseio.com/"
+    databaseURL: "https://nvanetworkapp-default-rtdb.firebaseio.com/",
+    storageBucket: "nvanetworkapp.firebasestorage.app"
 });
 
 const PLATFORM_FEE_PERCENTAGE = 0.07; // 7% platform fee
@@ -59,8 +60,13 @@ exports.sendNotificationOnCreate = onDocumentCreated("notifications/{notificatio
         }
 
         const message = {
-            notification: { title: title, body: body },
-            data: { link: link || '/' },
+            notification: {
+                title: title,
+                body: body,
+            },
+            data: {
+                link: link || '/'
+            },
             tokens: tokens,
         };
 
@@ -362,7 +368,7 @@ exports.approvePledge = onCall(async (request) => {
             ...payload,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         });
         const userRef = db.collection("creators").doc(payload.userId);
         await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
@@ -481,24 +487,61 @@ exports.approvePledge = onCall(async (request) => {
   }
 });
 
+    // --- GHOST BADGE REPAIR UTILITY (ADMIN TOOL) ---
+exports.recalculateUnreadNotifications = onCall(async (request) => {
+    // Security Check: Only an admin can run this function.
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+
+    const { targetUserId } = request.data;
+    if (!targetUserId) {
+        throw new HttpsError("invalid-argument", "The function must be called with a 'targetUserId'.");
+    }
+
+    const db = admin.firestore();
+    const userRef = db.collection("creators").doc(targetUserId);
+    const notificationsRef = db.collection("notifications");
+
+    try {
+        // 1. Query for the target user's actual unread notifications using correct Admin SDK syntax.
+        const unreadQuery = notificationsRef
+            .where("userId", "==", targetUserId)
+            .where("isRead", "==", false);
+        
+        const snapshot = await unreadQuery.get(); // Correct Admin SDK method
+
+        // 2. The real count is the number of documents found.
+        const correctCount = snapshot.size;
+
+        // 3. Overwrite the incorrect value on the target user's profile.
+        await userRef.update({ unreadNotificationCount: correctCount });
+
+        logger.info(`Admin '${request.auth.uid}' recalibrated notification count for user '${targetUserId}' to ${correctCount}.`);
+        return { success: true, message: `Badge count for user ${targetUserId} has been corrected to ${correctCount}.` };
+
+    } catch (error) {
+        logger.error(`Error recalculating notifications for user ${targetUserId}`, { error });
+        throw new HttpsError("internal", "An error occurred during recalculation.");
+    }
+});
+
 // =====================================================================
 // =========== FINAL, PRODUCTION DATA INTEGRITY AUDIT TOOL =============
 // =====================================================================
-exports.runDataIntegrityAudit = onCall(async (request) => {
+exports.runDataIntegrityAudit = onCall({timeoutSeconds: 540}, async (request) => {
     if (request.auth.token.admin !== true) {
         throw new HttpsError("permission-denied", "You must be an admin to run the data audit.");
     }
 
     const uid = request.auth.uid;
-    logger.info(`Admin '${uid}' initiated a full data integrity audit and cleanup.`);
+    logger.info(`Admin '${uid}' initiated a partial data integrity audit.`);
     const db = admin.firestore();
     const bucket = admin.storage().bucket();
     const summary = {
         orphanedDocumentsDeleted: 0,
         orphanedStorageFilesDeleted: 0,
-        followerCountsCorrected: 0,
-        followingCountsCorrected: 0,
-        staleFollowReferencesRemoved: 0
+        // Follower counts are no longer processed by this function
     };
 
     try {
@@ -515,7 +558,6 @@ exports.runDataIntegrityAudit = onCall(async (request) => {
             'paymentPledges': { field: 'userId', check: 'field' },
             'reports': { field: 'reporterId', check: 'field' },
             'comments': { field: 'userId', check: 'field' },
-            // THE FIX: For the 'likes' collection, we specify to check the document ID.
             'likes': { field: null, check: 'document_id' }
         };
 
@@ -530,9 +572,9 @@ exports.runDataIntegrityAudit = onCall(async (request) => {
             for (const doc of snapshot.docs) {
                 let idToCheck = null;
                 if (auditRule.check === 'document_id') {
-                    idToCheck = doc.id; // Check the document's ID
+                    idToCheck = doc.id;
                 } else {
-                    idToCheck = doc.data()[auditRule.field]; // Check the specified field
+                    idToCheck = doc.data()[auditRule.field];
                 }
 
                 if (idToCheck && !validUserIds.has(idToCheck)) {
@@ -550,7 +592,7 @@ exports.runDataIntegrityAudit = onCall(async (request) => {
             logger.info(`Audit Step 2: Cleaned up collection group '${col}'.`);
         }
 
-        // Step 3: Clean up orphaned Storage files with logic that handles both folder and filename conventions.
+        // Step 3: Clean up orphaned Storage files
         const storagePrefixes = ['profile_pictures', 'content_thumbnails', 'campaign_thumbnails', 'opportunity_flyers', 'promo_flyers', 'creator_uploads', 'competition_entries'];
         let orphanedFilesDeleted = 0;
 
@@ -563,31 +605,19 @@ exports.runDataIntegrityAudit = onCall(async (request) => {
                 const pathParts = file.name.split('/');
                 let userIdInPath = null;
 
-                // THE FIX: Check for both storage patterns.
-                // Pattern 1: prefix/USER_ID/filename.jpg (e.g., profile_pictures)
                 if (pathParts.length > 1) {
                     const potentialUserId = pathParts[1];
-                    if (validUserIds.has(potentialUserId)) {
-                        // This is a valid file belonging to an active user, do nothing.
-                        return; 
-                    }
-                    // If the folder name is NOT a valid user ID, it might be an orphan.
+                    if (validUserIds.has(potentialUserId)) { return; }
                     userIdInPath = potentialUserId;
                 }
 
-                // Pattern 2: prefix/USER_ID_filename.jpg (e.g., content_thumbnails)
-                // This runs only if the folder pattern didn't find a valid user.
                 if (!userIdInPath) {
                     const filename = pathParts[pathParts.length - 1];
                     const userIdMatch = filename.split('_')[0];
-                    if (validUserIds.has(userIdMatch)) {
-                        // This is a valid file, do nothing.
-                        return;
-                    }
+                    if (validUserIds.has(userIdMatch)) { return; }
                     userIdInPath = userIdMatch;
                 }
                 
-                // If after checking both patterns, the extracted ID is not in the valid list, mark for deletion.
                 if (userIdInPath && !validUserIds.has(userIdInPath)) {
                     filesToDelete.push(file);
                 }
@@ -608,57 +638,6 @@ exports.runDataIntegrityAudit = onCall(async (request) => {
         summary.orphanedStorageFilesDeleted = orphanedFilesDeleted;
         logger.info(`Audit Step 3: Completed storage cleanup. Deleted ${orphanedFilesDeleted} orphaned files.`);
         
-        // THIS IS THE FIX: The closing brace for the main 'try' block was moved from here...
-
-        // Step 4: Recalculate all Follower/Following Counts and clean stale references
-        for (const doc of creatorsSnapshot.docs) {
-            const creatorRef = doc.ref;
-            let needsUpdate = false;
-            const updates = {};
-            
-            const followingSnapshot = await creatorRef.collection('following').get();
-            let actualFollowingCount = 0;
-            let followingBatch = db.batch();
-            for (const followingDoc of followingSnapshot.docs) {
-                if (validUserIds.has(followingDoc.id)) {
-                    actualFollowingCount++;
-                } else {
-                    summary.staleFollowReferencesRemoved++;
-                    followingBatch.delete(followingDoc.ref);
-                }
-            }
-            await followingBatch.commit();
-
-            const followersSnapshot = await creatorRef.collection('followers').get();
-            let actualFollowerCount = 0;
-            let followersBatch = db.batch();
-            for (const followerDoc of followersSnapshot.docs) {
-                if (validUserIds.has(followerDoc.id)) {
-                    actualFollowerCount++;
-                } else {
-                    summary.staleFollowReferencesRemoved++;
-                    followersBatch.delete(followerDoc.ref);
-                }
-            }
-            await followersBatch.commit();
-            
-            if (doc.data().followingCount !== actualFollowingCount) {
-                updates.followingCount = actualFollowingCount;
-                summary.followingCountsCorrected++;
-                needsUpdate = true;
-            }
-             if (doc.data().followerCount !== actualFollowerCount) {
-                updates.followerCount = actualFollowerCount;
-                summary.followerCountsCorrected++;
-                needsUpdate = true;
-            }
-
-            if (needsUpdate) {
-                await creatorRef.update(updates);
-            }
-        }
-        logger.info(`Audit Step 4: Follower/Following counts corrected.`);
-
         logger.info("Data integrity audit completed successfully.", summary);
         return { success: true, summary: summary };
 
@@ -666,7 +645,6 @@ exports.runDataIntegrityAudit = onCall(async (request) => {
         logger.error("Error during data integrity audit:", error);
         throw new HttpsError("internal", "An error occurred during the audit process.", error.message);
     }
-    // ...to here, at the end of the function before the 'catch' block.
 });
 
     // =====================================================================
@@ -1615,7 +1593,7 @@ exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/dat
             ...notificationPayload,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         });
         await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
     }
@@ -1794,18 +1772,19 @@ exports.onPledgeDelete = onDocumentDeleted("paymentPledges/{pledgeId}", async (e
         messageBody = `Your Promoted Status booking was cancelled. Please contact support for details.`;
     }
 
-    const notificationPayload = {
-        userId: userId,
-        title: "Pledge Denied",
-        body: messageBody,
-        link: "/Contact",
-        deliveryType: ["inbox", "push"],
-        notificationType: "PLEDGE_DENIED",
-        sound: true,
-        isRead: false,
-        status: "pending",
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-    };
+    // Based on the requirements, chat messages are Push and Toast, but not permanent Inbox notifications.
+        const notificationPayload = {
+            userId: recipientId,
+            title: `New Message from ${senderName}`,
+            body: text.substring(0, 100),
+            link: `/chat/${chatId}`,
+            deliveryType: ["push", "toast"], // THE FIX: "inbox" is removed.
+            notificationType: "NEW_CHAT_MESSAGE",
+            sound: false, // Per requirements
+            isRead: false,
+            status: "pending",
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
+        };
 
     // Write the single notification document and update the user's badge.
     await db.collection("notifications").add(notificationPayload);
@@ -1836,7 +1815,7 @@ exports.onNewFollower = onDocumentCreated("creators/{creatorId}/followers/{follo
             sound: true,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         };
 
         // Write the single notification document and update the user's badge.
@@ -1883,7 +1862,7 @@ exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId
             sound: false, // Per requirements
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         };
 
         // Write the single notification document. Our new system will handle the push delivery.
@@ -2324,7 +2303,7 @@ exports.markChatAsRead = onCall(async (request) => {
             ...notificationPayload,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         });
         await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
     }
@@ -2427,7 +2406,7 @@ async function endCampaignAndApplyCooldown(campaignRef, campaignData, db, endRea
         sound: false,
         isRead: false,
         status: "pending",
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
+        timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
     };
     batch.set(db.collection("notifications").doc(), notificationPayload);
 
@@ -3495,7 +3474,7 @@ exports.removeReportedContent = onCall(async (request) => {
                 contentId: contentId, // Preserving special functionality
                 isRead: false,
                 status: "pending",
-                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
             };
             batch.set(notificationRef, notificationPayload);
 
@@ -3849,7 +3828,7 @@ exports.approveOpportunity = onCall(async (request) => {
             sound: true,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         };
 
         await db.collection("notifications").add(notificationPayload);
@@ -3891,7 +3870,7 @@ exports.rejectOpportunity = onCall(async (request) => {
             sound: false,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         };
         await db.collection("notifications").add(notificationPayload);
         // Note: We do not increment the badge count for rejections, preserving original behavior.
@@ -3938,7 +3917,7 @@ exports.endOpportunityByAdmin = onCall(async (request) => {
             sound: true,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         };
 
         await db.collection("notifications").add(notificationPayload);
@@ -4192,7 +4171,7 @@ exports.rejectStatusContent = onCall(async (request) => {
             sound: true,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         };
 
         await db.collection("notifications").add(notificationPayload);
@@ -4423,7 +4402,7 @@ exports.checkPromotedStatusExpirations = onSchedule("every 1 hours", async (even
                     sound: false,
                     isRead: false,
                     status: "pending",
-                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                    timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
                 };
                 
                 // Add notification creation to a promise array to run after the batch
@@ -4774,7 +4753,7 @@ exports.checkResultsRevelations = onSchedule("every 1 minutes", async (event) =>
                                 sound: true,
                                 isRead: false,
                                 status: "pending",
-                                createdAt: admin.firestore.FieldValue.serverTimestamp()
+                                timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
                             };
                             
                             batch.set(db.collection("notifications").doc(), notificationPayload);
@@ -5277,7 +5256,7 @@ exports.triggerManualAutomation = onCall(async (request) => {
             ...payload,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         });
         const userToNotifyRef = db.collection("creators").doc(payload.userId);
         await userToNotifyRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
@@ -5415,7 +5394,7 @@ exports.approveStatusContent = onCall(async (request) => {
             sound: true,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
         };
 
         await db.collection("notifications").add(notificationPayload);

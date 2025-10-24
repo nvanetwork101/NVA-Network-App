@@ -51,7 +51,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
 const functions = getFunctions(app);
-const messaging = getMessaging(app);
+let messaging; // We will initialize this later, manually.
 // const analytics = getAnalytics(app);
 
 // --- UTILITY FUNCTIONS ---

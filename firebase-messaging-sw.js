@@ -16,6 +16,13 @@ const firebaseConfig = {
   measurementId: "G-6RNS6DH3G0"
 };
 
+  // --- AGGRESSIVE UPDATE LOGIC ---
+// This forces the new service worker to activate as soon as it's finished installing.
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+// --- END AGGRESSIVE UPDATE ---
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
@@ -31,10 +38,15 @@ if (!firebase.apps.length) {
 }
 const messaging = firebase.messaging();
 
-// --- THIS IS THE DEFINITIVE FIX ---
 messaging.onBackgroundMessage((payload) => {
-  // When the app is in the background, FCM places all data, including the
-  // title and body, inside the `payload.data` object. We must read from there.
+  // --- HARDENED PUSH HANDLER ---
+  // This safety check prevents the service worker from crashing if a malformed
+  // push is received (e.g., from the Firebase Console without a title).
+  if (!payload.data || !payload.data.title) {
+    console.warn("Received a background message without a data payload or title. Ignoring.");
+    return;
+  }
+
   const notificationTitle = payload.data.title;
   const notificationOptions = {
     body: payload.data.body,
@@ -45,10 +57,8 @@ messaging.onBackgroundMessage((payload) => {
     }
   };
 
-  // This now passes a valid title and body, which will produce a correct, audible notification.
   return self.registration.showNotification(notificationTitle, notificationOptions);
 });
-// --- END OF FIX ---
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

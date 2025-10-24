@@ -730,6 +730,7 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                 {selectedAdminSubScreen === 'SiteManagement' && (
             <AdminSiteManagerScreen 
                 {...{showMessage, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile}} 
+                allUsers={allUsers} // <-- ADD THIS PROP
                  onReconcileUsers={() => {
             setConfirmationTitle("Reconcile Auth & Firestore Users?");
             setConfirmationMessage("This will scan for and delete any user profiles in the database that no longer have a matching Authentication account. This is useful for clearing 'ghost' users. Proceed?");
