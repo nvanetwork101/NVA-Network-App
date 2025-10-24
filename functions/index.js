@@ -2404,30 +2404,38 @@ exports.markChatAsRead = onCall(async (request) => {
         throw new HttpsError("internal", "An unexpected error occurred while submitting your request.");
     }
 });
-async function endCampaignAndApplyCooldown(campaignRef, campaignData, db) {
+async function endCampaignAndApplyCooldown(campaignRef, campaignData, db, endReasonMessage) {
     const batch = db.batch();
     batch.update(campaignRef, { status: "ended" });
+    
     const broadcast = {
         broadcastType: "CAMPAIGN_ENDED",
         message: `The campaign "${campaignData.title}" by ${campaignData.creatorName} has concluded.`,
-        link: "/AllCampaigns", timestamp: new Date(),
+        link: "/AllCampaigns",
+        timestamp: new Date(),
     };
     batch.set(db.collection("broadcast_notifications").doc(), broadcast);
 
-    // Add private notification for the creator
-    const creatorNotification = {
+    // Create a new-style notification document
+    const notificationPayload = {
         userId: campaignData.creatorId,
-        type: 'CAMPAIGN_ENDED',
-        message: `Your campaign "${campaignData.title}" has successfully completed.`,
-        link: '/CreatorDashboard',
+        title: "Campaign Concluded",
+        body: endReasonMessage, // Use the specific message passed to the function
+        link: "/CreatorDashboard",
+        deliveryType: ["inbox"], // Inbox only, no push
+        notificationType: "CAMPAIGN_ENDED",
+        sound: false,
         isRead: false,
-        timestamp: new Date()
+        status: "pending",
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
     };
-    batch.set(db.collection("notifications").doc(), creatorNotification);
+    batch.set(db.collection("notifications").doc(), notificationPayload);
+
     const creatorRef = db.collection("creators").doc(campaignData.creatorId);
     const cooldownDate = new Date();
     cooldownDate.setDate(cooldownDate.getDate() + 30);
     batch.update(creatorRef, { canCreateCampaignAfter: cooldownDate });
+    
     await batch.commit();
     logger.info(`Campaign '${campaignRef.id}' ended. Cooldown applied.`);
 }
@@ -2437,16 +2445,23 @@ exports.endCampaignEarly = onCall(async (request) => {
     if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in."); }
     const { campaignId, appId } = request.data;
     if (!campaignId || !appId) { throw new HttpsError("invalid-argument", "Missing 'campaignId' or 'appId'."); }
+    
     const db = admin.firestore();
     const campaignRef = db.collection(`artifacts/${appId}/public/data/campaigns`).doc(campaignId);
+    
     try {
         const campaignDoc = await campaignRef.get();
         if (!campaignDoc.exists) { throw new HttpsError("not-found", "Campaign not found."); }
+        
         const campaignData = campaignDoc.data();
         if (campaignData.creatorId !== uid) { throw new HttpsError("permission-denied", "Not the owner."); }
         if (campaignData.status !== 'active') { throw new HttpsError("failed-precondition", "Not active."); }
         if (campaignData.raised < campaignData.goal) { throw new HttpsError("failed-precondition", "Goal not reached."); }
-        await endCampaignAndApplyCooldown(campaignRef, campaignData, db);
+        
+        // Define the specific message for this action
+        const endReason = `Your campaign "${campaignData.title}" has successfully completed.`;
+        await endCampaignAndApplyCooldown(campaignRef, campaignData, db, endReason);
+        
         return { success: true, message: "Campaign ended successfully!" };
     } catch (error) {
         logger.error(`Error ending campaign '${campaignId}'`, { error });
@@ -2518,41 +2533,26 @@ exports.checkCampaignExpirations = onSchedule("every 1 hours", async (event) => 
     try {
         const snapshot = await expiredCampaignsQuery.get();
         if (snapshot.empty) return null;
-        const batch = db.batch();
+
+        // Process each campaign individually to ensure the helper function is called correctly.
         for (const doc of snapshot.docs) {
             const campaignData = doc.data();
-            batch.update(doc.ref, { status: "ended" });
-            const broadcast = {
-                broadcastType: "CAMPAIGN_ENDED",
-                message: `The campaign "${campaignData.title}" by ${campaignData.creatorName} has concluded.`,
-                link: "/AllCampaigns",
-                timestamp: new Date(),
-            };
-            batch.set(db.collection("broadcast_notifications").doc(), broadcast);
-
-            // Add private notification for the creator
-            const creatorNotification = {
-                userId: campaignData.creatorId,
-                type: 'CAMPAIGN_ENDED_DURATION',
-                message: `Your campaign "${campaignData.title}" has reached its end date and is now completed.`,
-                link: '/CreatorDashboard',
-                isRead: false,
-                timestamp: new Date()
-            };
-            batch.set(db.collection("notifications").doc(), creatorNotification);
-            const creatorRef = db.collection("creators").doc(campaignData.creatorId);
-            const cooldownDate = new Date();
-            cooldownDate.setDate(cooldownDate.getDate() + 30);
-            batch.update(creatorRef, { canCreateCampaignAfter: cooldownDate });
+            const campaignRef = doc.ref;
+            
+            // Define the specific reason for this campaign ending.
+            const endReason = `Your campaign "${campaignData.title}" has reached its end date and is now completed.`;
+            
+            // Call the single, authoritative helper function we fixed in the previous step.
+            await endCampaignAndApplyCooldown(campaignRef, campaignData, db, endReason);
         }
-        await batch.commit();
+        
         logger.info(`Processed ${snapshot.size} expired campaigns.`);
         return null;
     } catch (error) {
         logger.error("Error during campaign expiration check", { error });
         return null;
     }
-});
+});;
 
 exports.oEmbedProxy = onCall(async (request) => {
   const fetch = require("node-fetch");
@@ -3879,15 +3879,23 @@ exports.rejectOpportunity = onCall(async (request) => {
     await opportunityRef.update({ status: 'rejected' });
 
     const posterId = opportunityDoc.data().postedByUid;
-    const notification = {
-        userId: posterId,
-        type: 'OPPORTUNITY_REJECTED',
-        message: `Your opportunity "${opportunityDoc.data().title}" was not approved.`,
-        link: '/MyListings',
-        isRead: false,
-        timestamp: new Date()
-    };
-    await db.collection("notifications").add(notification);
+    if (posterId) {
+        const posterRef = db.collection("creators").doc(posterId);
+        const notificationPayload = {
+            userId: posterId,
+            title: "Opportunity Update",
+            body: `Your opportunity "${opportunityDoc.data().title}" was not approved.`,
+            link: "/MyListings",
+            deliveryType: ["inbox"], // This does not send a push, only an inbox message.
+            notificationType: "OPPORTUNITY_REJECTED",
+            sound: false,
+            isRead: false,
+            status: "pending",
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        await db.collection("notifications").add(notificationPayload);
+        // Note: We do not increment the badge count for rejections, preserving original behavior.
+    }
 
     return { success: true, message: "Opportunity rejected. The user has been notified." };
 });
