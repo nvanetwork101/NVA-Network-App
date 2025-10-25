@@ -537,14 +537,20 @@ function App() {
 
        // ======================= START: PUSH NOTIFICATION SETUP =======================
 useEffect(() => {
-    // THE DEFINITIVE FIX: Exit if there's no user OR if the messaging service isn't ready yet.
     if (!currentUser || !messagingInstance) return;
 
     const setupNotifications = async () => {
         try {
-            const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
-                const currentToken = await getToken(messagingInstance, { // <-- Use messagingInstance
+            // FINAL FIX: Only request permission if it hasn't been granted or denied yet.
+            if (Notification.permission === 'default') {
+                console.log("Notification permission is default. Requesting permission...");
+                await Notification.requestPermission();
+            }
+
+            // Proceed only if permission is granted.
+            if (Notification.permission === 'granted') {
+                console.log("Notification permission is granted. Acquiring token...");
+                const currentToken = await getToken(messagingInstance, {
                     vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0',
                 });
 
@@ -553,23 +559,29 @@ useEffect(() => {
                     await saveTokenFunction({ token: currentToken });
                     console.log("FCM Token acquired and saved successfully.");
                 }
+            } else {
+                console.log("Notification permission was not granted.");
             }
         } catch (error) {
-            console.error("An error occurred while getting the FCM token.", error);
+            console.error("An error occurred during notification setup.", error);
         }
     };
 
-    setupNotifications();
+    // Add a small delay to give the messaging instance a moment to stabilize on mobile.
+    const timer = setTimeout(() => {
+        setupNotifications();
+    }, 1000); // 1-second delay
 
-    const unsubscribeOnMessage = onMessage(messagingInstance, (payload) => { // <-- Use messagingInstance
+    const unsubscribeOnMessage = onMessage(messagingInstance, (payload) => {
         console.log("Foreground push notification received, but toast is handled by Firestore listener:", payload);
     });
 
     return () => {
+        clearTimeout(timer);
         unsubscribeOnMessage();
     };
 
-}, [currentUser, messagingInstance]); // <-- ADD 'messagingInstance' TO THE DEPENDENCY ARRAY
+}, [currentUser, messagingInstance]);
 // ======================== END: PUSH NOTIFICATION SETUP ========================
     
      
