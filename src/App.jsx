@@ -408,7 +408,7 @@ function App() {
               case 'user': if (id) { if (user && id === user.uid) { setActiveScreen('CreatorDashboard'); } else { setSelectedUserId(id); setActiveScreen('UserProfile'); } navigated = true; } break;
               case 'competition': setActiveScreen('CompetitionScreen'); navigated = true; break;
               case 'promotedStatus': if (id) { setActiveScreen('Home'); navigated = true; } break;
-              case 'content': if (id) { (async () => { try { const appId = "production-app-id"; let docSnap = await getDoc(doc(db, "artifacts", appId, "public", "data", "content_items", id)); if (docSnap.exists()) { const item = { id: docSnap.id, ...docSnap.data() }; handleVideoPress(item.embedUrl || item.mainUrl, item); } else { docSnap = await getDoc(doc(db, "events", id)); if (docSnap.exists() && docSnap.data().status === 'completed') { setDeepLinkedReplayId(id); setActiveScreen('Discover'); } else { showMessage("Shared content could not be found."); } } } catch (error) { showMessage("Error loading shared content."); } })(); navigated = true; } break;
+              case 'content': if (id) { (async () => { try { const appId = import.meta.env.VITE_APP_ID; let docSnap = await getDoc(doc(db, "artifacts", appId, "public", "data", "content_items", id)); if (docSnap.exists()) { const item = { id: docSnap.id, ...docSnap.data() }; handleVideoPress(item.embedUrl || item.mainUrl, item); } else { docSnap = await getDoc(doc(db, "events", id)); if (docSnap.exists() && docSnap.data().status === 'completed') { setDeepLinkedReplayId(id); setActiveScreen('Discover'); } else { showMessage("Shared content could not be found."); } } } catch (error) { showMessage("Error loading shared content."); } })(); navigated = true; } break;
             }
           }
 
@@ -619,7 +619,7 @@ useEffect(() => {
         if (!id) return;
 
         try {
-            const appId = "production-app-id";
+            const appId = import.meta.env.VITE_APP_ID;
             const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
             const docSnap = await getDoc(contentRef);
 
