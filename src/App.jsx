@@ -22,8 +22,8 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from './firebase.js';
 import { httpsCallable } from 'firebase/functions';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
-// import { messaging } from './firebase.js'; // <-- REMOVE OR COMMENT OUT THIS LINE
-import { functions, app } from './firebase.js'; // <-- ENSURE 'app' IS IMPORTED
+// import { messaging } from './firebase.js'; // REMOVE THIS LINE
+import { functions, app } from './firebase.js'; // ENSURE 'app' IS IMPORTED
 
 // Import all your components
 import Header from './components/Header';
@@ -690,7 +690,7 @@ useEffect(() => {
         const initializeMessaging = async () => {
           if ('serviceWorker' in navigator) {
             try {
-              const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+              const registration = await navigator.service-worker.register('/firebase-messaging-sw.js');
               const messagingService = getMessaging(app, { serviceWorkerRegistration: registration });
               setMessagingInstance(messagingService);
               console.log('Firebase Messaging service initialized successfully.');
@@ -700,7 +700,7 @@ useEffect(() => {
           }
         };
         initializeMessaging();
-    }, []); // Empty dependency array ensures this runs only once.
+    }, []); // Empty array ensures this runs only once.
 
     useEffect(() => {
     const openModalHandler = (event) => {

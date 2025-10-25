@@ -2005,7 +2005,7 @@ exports.hideChatForUser = onCall(async (request) => {
     }
 });
 
-// Soft-deletes a single message and updates the parent chat document.
+// Soft-deletes a single message within a private chat.
 exports.deleteChatMessagePrivate = onCall(async (request) => {
     const uid = request.auth.uid;
     if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in."); }
@@ -2014,9 +2014,7 @@ exports.deleteChatMessagePrivate = onCall(async (request) => {
     if (!chatId || !messageId) { throw new HttpsError("invalid-argument", "Missing chatId or messageId."); }
 
     const db = admin.firestore();
-    const chatRef = db.doc(`chats/${chatId}`);
-    const messageRef = chatRef.collection("messages").doc(messageId);
-
+    const messageRef = db.doc(`chats/${chatId}/messages/${messageId}`);
     try {
         const messageDoc = await messageRef.get();
         if (!messageDoc.exists) {
@@ -2027,59 +2025,16 @@ exports.deleteChatMessagePrivate = onCall(async (request) => {
             throw new HttpsError("permission-denied", "You can only delete your own messages.");
         }
         
-        // --- START: DEFINITIVE, RESEARCHED FIX ---
-
-        // Step 1: Soft-delete the target message.
+        // Perform the simple soft delete. No other logic.
         await messageRef.update({
             text: "This message was deleted",
             isDeleted: true
         });
 
-        // Step 2: Fetch the top TWO latest messages using a simple, valid query.
-        const latestMessagesQuery = chatRef.collection("messages")
-            .orderBy("timestamp", "desc")
-            .limit(2);
-        
-        const latestSnapshot = await latestMessagesQuery.get();
-        let newLatestMessageData = null;
-
-        // Step 3: Apply logic to determine the new latest message.
-        if (latestSnapshot.size > 1) {
-            // If we have 2 or more messages, the first is the one we just deleted.
-            // The second document is the new, correct preview message.
-            const newLatestDoc = latestSnapshot.docs[1];
-            if (newLatestDoc.data().isDeleted !== true) {
-                 newLatestMessageData = newLatestDoc.data();
-            }
-        }
-        // If size is 0 or 1, newLatestMessageData remains null, correctly clearing the preview.
-
-        // Step 4: Update the parent chat document with the result.
-        if (newLatestMessageData) {
-            await chatRef.update({
-                lastMessage: {
-                    senderId: newLatestMessageData.senderId,
-                    text: newLatestMessageData.text
-                },
-                lastMessageTimestamp: newLatestMessageData.timestamp
-            });
-        } else {
-            // If no valid messages are left, clear the preview.
-            await chatRef.update({
-                lastMessage: null,
-                lastMessageTimestamp: null
-            });
-        }
-        // --- END: DEFINITIVE, RESEARCHED FIX ---
-
-        return { success: true, message: "Message deleted and chat preview updated." };
+        return { success: true, message: "Message deleted." };
 
     } catch (error) {
-        logger.error(`FATAL Error deleting private chat message '${messageId}' by user '${uid}'`, {
-            errorMessage: error.message,
-            errorCode: error.code,
-            stack: error.stack
-        });
+        logger.error(`Error during simple delete for private chat message '${messageId}'`, { errorMessage: error.message });
         if (error instanceof HttpsError) throw error;
         throw new HttpsError("internal", "An unexpected error occurred.");
     }
@@ -2177,42 +2132,78 @@ exports.updateChatLastSeen = onCall(async (request) => {
     }
 });
 
-// --- END: NEW FUNCTION FOR UNREAD MESSAGE INDICATOR ---
+  
+// =====================================================================
+// ============ START: AUTOMATIC CHAT PREVIEW SYNCHRONIZER V2 ===========
+// =====================================================================
 
-exports.updateTypingStatus = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in.");
-    }
-
-    const { chatId, isTyping } = request.data;
-    if (!chatId || typeof isTyping !== 'boolean') {
-        throw new HttpsError("invalid-argument", "Missing chatId or isTyping status.");
-    }
-
+// This is the core logic that will be shared by all three triggers.
+const synchronizeChatPreviewLogic = async (chatId) => {
     const db = admin.firestore();
-    const chatRef = db.collection("chats").doc(chatId);
+    const chatRef = db.doc(`chats/${chatId}`);
+    const messagesRef = chatRef.collection("messages");
+
+    logger.info(`Synchronizing chat preview for chat '${chatId}'.`);
 
     try {
-        // --- THIS IS THE FIX ---
-        // Using .set() with { merge: true } is more robust than .update().
-        // It will create the 'typing' map field if it doesn't exist,
-        // and it will only update the key for the current user,
-        // leaving other users' typing statuses untouched.
-        await chatRef.set({
-            typing: {
-                [uid]: isTyping
-            }
-        }, { merge: true });
+        // THE DEFINITIVE FIX: Use a simple, VALID query to get the most recent messages.
+        const latestMessagesQuery = messagesRef
+            .orderBy("timestamp", "desc")
+            .limit(10); // Fetch a small buffer to find the latest non-deleted one.
+        
+        const snapshot = await latestMessagesQuery.get();
 
-        return { success: true };
+        // Now, find the first message in the results that is NOT deleted.
+        const newLatestMessageDoc = snapshot.docs.find(doc => doc.data().isDeleted !== true);
+
+        if (newLatestMessageDoc) {
+            // If we found a valid message, update the preview.
+            const newLatestMessage = newLatestMessageDoc.data();
+            await chatRef.update({
+                lastMessage: {
+                    senderId: newLatestMessage.senderId,
+                    text: newLatestMessage.text
+                },
+                lastMessageTimestamp: newLatestMessage.timestamp
+            });
+            logger.info(`Successfully updated chat preview for '${chatId}'.`);
+        } else {
+            // If no valid messages were found in the last 10, the chat is effectively empty.
+            await chatRef.update({
+                lastMessage: null,
+                lastMessageTimestamp: null
+            });
+            logger.info(`Chat '${chatId}' has no recent valid messages. Cleared chat preview.`);
+        }
+        return null;
+
     } catch (error) {
-        logger.warn(`Could not update typing status for user '${uid}' in chat '${chatId}'.`, { error: error.message });
-        return { success: false, message: "Could not update status." };
+        logger.error(`FATAL Error synchronizing chat preview for '${chatId}':`, {
+            errorMessage: error.message,
+            stack: error.stack
+        });
+        return null;
     }
+};
+
+// Trigger for when a NEW message is CREATED.
+exports.synchronizeOnMessageCreate = onDocumentCreated("chats/{chatId}/messages/{messageId}", (event) => {
+    return synchronizeChatPreviewLogic(event.params.chatId);
 });
 
-// --- END: NEW FUNCTION TO BE ADDED ---
+// Trigger for when a message is UPDATED (e.g., soft-deleted).
+exports.synchronizeOnMessageUpdate = onDocumentUpdated("chats/{chatId}/messages/{messageId}", (event) => {
+    return synchronizeChatPreviewLogic(event.params.chatId);
+});
+
+// Trigger for when a message is hard-DELETED.
+exports.synchronizeOnMessageDelete = onDocumentDeleted("chats/{chatId}/messages/{messageId}", (event) => {
+    return synchronizeChatPreviewLogic(event.params.chatId);
+});
+
+// =====================================================================
+// ============== END: AUTOMATIC CHAT PREVIEW SYNCHRONIZER V2 ============
+// =====================================================================
 
     // --- START: NEW FUNCTION TO BE ADDED ---
 
