@@ -1,109 +1,80 @@
 // src/App.jsx
 
-import PromotedStatusScreen from './components/PromotedStatusScreen';
-import BookStatusScreen from './components/BookStatusScreen';
-import ContentPlayerModal from './components/ContentPlayerModal';
-import NotificationInboxScreen from './components/NotificationInboxScreen';
 import notificationSound from './Notification 2.mp3';
-
-import PostSubmissionUpsellScreen from './components/PostSubmissionUpsellScreen';
-import MyFollowsScreen from './components/MyFollowsScreen';
-import FollowersScreen from './components/FollowersScreen';
-
-import { useState, useEffect, useCallback } from 'react';
-import PremiumPerksScreen from './components/PremiumPerksScreen';
-import FollowingFeedScreen from './components/FollowingFeedScreen';
-
-import SubscriptionPledgeScreen from './components/SubscriptionPledgeScreen';
-import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, updateDoc } from "firebase/firestore"; // CORRECT: getDoc and updateDoc are imported
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, updateDoc } from "firebase/firestore";
 import { getDatabase, ref, onValue, onDisconnect, set, serverTimestamp } from "firebase/database";
-import BlockedListScreen from './components/BlockedListScreen';
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from './firebase.js';
 import { httpsCallable } from 'firebase/functions';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
-// import { messaging } from './firebase.js'; // <-- REMOVE OR COMMENT OUT THIS LINE
-import { functions, app } from './firebase.js'; // <-- ENSURE 'app' IS IMPORTED
+import { functions, app } from './firebase.js';
 
-// Import all your components
+// MODALS & CORE UI (Loaded immediately)
+import ContentPlayerModal from './components/ContentPlayerModal';
 import Header from './components/Header';
 import NavigationBar from './components/NavigationBar';
-
-// Core Screens
-import HomeScreen from './components/HomeScreen';
-import AboutScreen from './components/AboutScreen';
-import NvaNetworkChartsScreen from './components/NvaNetworkChartsScreen';
-import ContactScreen from './components/ContactScreen';
-import CompetitionScreen from './components/CompetitionScreen';
-
-import PrivacyPolicyScreen from './components/PrivacyPolicyScreen';
-import TermsOfServiceScreen from './components/TermsOfServiceScreen';
-
-import DiscoverScreen from './components/DiscoverScreen';
-import DiscoverUsersScreen from './components/DiscoverUsersScreen';
-
-// Auth Flow
-import LoginScreen from './components/LoginScreen';
-import CreatorSignUpScreen from './components/CreatorSignUpScreen';
-import UserSignUpScreen from './components/UserSignUpScreen';
-import VerifyEmailScreen from './components/VerifyEmailScreen';
-import ForgotPasswordScreen from './components/ForgotPasswordScreen';
-import SuspendedScreen from './components/SuspendedScreen';
-import BannedScreen from './components/BannedScreen';
-
-// Crowdfunding Flow
-import CreateCampaignScreen from './components/CreateCampaignScreen';
-import AllCampaignsScreen from './components/AllCampaignsScreen';
-import CampaignDetailsScreen from './components/CampaignDetailsScreen';
-import DonationPledgeScreen from './components/DonationPledgeScreen';
-import PendingConfirmationScreen from './components/PendingConfirmationScreen';
-
-// Support & Perks Flow
-import SupportUsScreen from './components/SupportUsScreen';
-import AdvertiserPerksScreen from './components/AdvertiserPerksScreen';
-
-// Creator Connect Flow
-import CreatorConnectScreen from './components/CreatorConnectScreen';
-import OpportunityDetailsScreen from './components/OpportunityDetailsScreen';
-import PostOpportunityForm from './components/PostOpportunityForm';
-import MyListingsScreen from './components/MyListingsScreen';
-import SavedOpportunitiesScreen from './components/SavedOpportunitiesScreen';
-import AdminOpportunityDetailsScreen from './components/AdminOpportunityDetailsScreen';
-
-// User & Creator Screens
 import ProfilePictureModal from './components/ProfilePictureModal';
-import UserProfileScreen from './components/UserProfileScreen';
-import CreatorDashboardScreen from './components/CreatorDashboardScreen';
-import MyContentLibraryScreen from './components/MyContentLibraryScreen';
 import VideoPlayerModal from './components/VideoPlayerModal';
-
-// Admin Screens & Modals
-import AdminDashboardScreen from './components/AdminDashboardScreen';
-import AdminReportReviewScreen from './components/AdminReportReviewScreen';
-import AdminContentManagerScreen from './components/AdminContentManagerScreen';
-import AdminCurationModal from './components/AdminCurationModal';
-import AdminCompetitionManager from './components/AdminCompetitionManager';
-import AdminCampaignDetailsScreen from './components/AdminCampaignDetailsScreen';
-import AdminEventManagerScreen from './components/AdminEventManagerScreen';
-import AdminSiteManagerScreen from './components/AdminSiteManagerScreen';
-import AnalyticsDashboardScreen from './components/AnalyticsDashboardScreen';
-import AdminStatusReviewScreen from './components/AdminStatusReviewScreen';
-
-import AdminModerationCenter from './components/AdminModerationCenter';
-import AdminModerationQueue from './components/AdminModerationQueue';
-import AdminAppealsQueue from './components/AdminAppealsQueue';
 import SuspensionModal from './components/SuspensionModal';
 import ConfirmationModal from './components/ConfirmationModal';
 import ReportContentModal from './components/ReportContentModal';
 import CommentsModal from './components/CommentsModal';
 import ContentAppealModal from './components/ContentAppealModal';
 import LikesModal from './components/LikesModal';
-
 import ImageViewerModal from './components/ImageViewerModal';
 
-// --- Chat System Screens ---
-import ChatListScreen from './components/ChatListScreen';
-import ChatMessageScreen from './components/ChatMessageScreen';
+// LAZY-LOADED SCREENS (Loaded on demand)
+const PromotedStatusScreen = lazy(() => import('./components/PromotedStatusScreen'));
+const BookStatusScreen = lazy(() => import('./components/BookStatusScreen'));
+const NotificationInboxScreen = lazy(() => import('./components/NotificationInboxScreen'));
+const PostSubmissionUpsellScreen = lazy(() => import('./components/PostSubmissionUpsellScreen'));
+const MyFollowsScreen = lazy(() => import('./components/MyFollowsScreen'));
+const FollowersScreen = lazy(() => import('./components/FollowersScreen'));
+const PremiumPerksScreen = lazy(() => import('./components/PremiumPerksScreen'));
+const FollowingFeedScreen = lazy(() => import('./components/FollowingFeedScreen'));
+const SubscriptionPledgeScreen = lazy(() => import('./components/SubscriptionPledgeScreen'));
+const BlockedListScreen = lazy(() => import('./components/BlockedListScreen'));
+const HomeScreen = lazy(() => import('./components/HomeScreen'));
+const AboutScreen = lazy(() => import('./components/AboutScreen'));
+const NvaNetworkChartsScreen = lazy(() => import('./components/NvaNetworkChartsScreen'));
+const ContactScreen = lazy(() => import('./components/ContactScreen'));
+const CompetitionScreen = lazy(() => import('./components/CompetitionScreen'));
+const PrivacyPolicyScreen = lazy(() => import('./components/PrivacyPolicyScreen'));
+const TermsOfServiceScreen = lazy(() => import('./components/TermsOfServiceScreen'));
+const DiscoverScreen = lazy(() => import('./components/DiscoverScreen'));
+const DiscoverUsersScreen = lazy(() => import('./components/DiscoverUsersScreen'));
+const LoginScreen = lazy(() => import('./components/LoginScreen'));
+const CreatorSignUpScreen = lazy(() => import('./components/CreatorSignUpScreen'));
+const UserSignUpScreen = lazy(() => import('./components/UserSignUpScreen'));
+const VerifyEmailScreen = lazy(() => import('./components/VerifyEmailScreen'));
+const ForgotPasswordScreen = lazy(() => import('./components/ForgotPasswordScreen'));
+const SuspendedScreen = lazy(() => import('./components/SuspendedScreen'));
+const BannedScreen = lazy(() => import('./components/BannedScreen'));
+const CreateCampaignScreen = lazy(() => import('./components/CreateCampaignScreen'));
+const AllCampaignsScreen = lazy(() => import('./components/AllCampaignsScreen'));
+const CampaignDetailsScreen = lazy(() => import('./components/CampaignDetailsScreen'));
+const DonationPledgeScreen = lazy(() => import('./components/DonationPledgeScreen'));
+const PendingConfirmationScreen = lazy(() => import('./components/PendingConfirmationScreen'));
+const SupportUsScreen = lazy(() => import('./components/SupportUsScreen'));
+const AdvertiserPerksScreen = lazy(() => import('./components/AdvertiserPerksScreen'));
+const CreatorConnectScreen = lazy(() => import('./components/CreatorConnectScreen'));
+const OpportunityDetailsScreen = lazy(() => import('./components/OpportunityDetailsScreen'));
+const PostOpportunityForm = lazy(() => import('./components/PostOpportunityForm'));
+const MyListingsScreen = lazy(() => import('./components/MyListingsScreen'));
+const SavedOpportunitiesScreen = lazy(() => import('./components/SavedOpportunitiesScreen'));
+const AdminOpportunityDetailsScreen = lazy(() => import('./components/AdminOpportunityDetailsScreen'));
+const UserProfileScreen = lazy(() => import('./components/UserProfileScreen'));
+const CreatorDashboardScreen = lazy(() => import('./components/CreatorDashboardScreen'));
+const MyContentLibraryScreen = lazy(() => import('./components/MyContentLibraryScreen'));
+const AdminDashboardScreen = lazy(() => import('./components/AdminDashboardScreen'));
+const AdminReportReviewScreen = lazy(() => import('./components/AdminReportReviewScreen'));
+const AdminCampaignDetailsScreen = lazy(() => import('./components/AdminCampaignDetailsScreen'));
+const AdminEventManagerScreen = lazy(() => import('./components/AdminEventManagerScreen'));
+const AnalyticsDashboardScreen = lazy(() => import('./components/AnalyticsDashboardScreen'));
+const AdminStatusReviewScreen = lazy(() => import('./components/AdminStatusReviewScreen'));
+const ChatListScreen = lazy(() => import('./components/ChatListScreen'));
+const ChatMessageScreen = lazy(() => import('./components/ChatMessageScreen'));
 
 import IosInstallPrompt from './components/IosInstallPrompt'; // <-- ADD THIS LINE
 
@@ -1170,7 +1141,9 @@ return (
                   <p className="heading">Loading...</p>
                 </div>
             ) : (
-                renderScreen()
+                <Suspense fallback={<div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}><p className="heading">Loading...</p></div>}>
+                  {renderScreen()}
+                </Suspense>
             )}
           </div>
           {!['Suspended', 'Banned'].includes(activeScreen) && (
