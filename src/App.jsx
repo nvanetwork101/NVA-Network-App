@@ -687,21 +687,19 @@ useEffect(() => {
   }, []);
 
     useEffect(() => {
-        // --- SERVICE WORKER FLUSH: Temporarily disabled to unregister old workers ---
-        // const initializeMessaging = async () => {
-        //   if ('serviceWorker' in navigator) {
-        //     try {
-        //       const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-        //       const messagingService = getMessaging(app, { serviceWorkerRegistration: registration });
-        //       setMessagingInstance(messagingService);
-        //       console.log('Firebase Messaging service initialized successfully.');
-        //     } catch (error) {
-        //       console.error('Service Worker registration or Messaging init failed:', error);
-        //     }
-        //   }
-        // };
-        // initializeMessaging();
-        console.log('Service worker registration is temporarily disabled for a flush deploy.');
+        const initializeMessaging = async () => {
+          if ('serviceWorker' in navigator) {
+            try {
+              const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+              const messagingService = getMessaging(app, { serviceWorkerRegistration: registration });
+              setMessagingInstance(messagingService);
+              console.log('Firebase Messaging service initialized successfully.');
+            } catch (error) {
+              console.error('Service Worker registration or Messaging init failed:', error);
+            }
+          }
+        };
+        initializeMessaging();
     }, []); // Empty dependency array ensures this runs only once.
 
     useEffect(() => {
