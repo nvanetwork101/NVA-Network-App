@@ -2005,7 +2005,7 @@ exports.hideChatForUser = onCall(async (request) => {
     }
 });
 
-// Soft-deletes a single message within a private chat.
+// Soft-deletes a single message and updates the parent chat document.
 exports.deleteChatMessagePrivate = onCall(async (request) => {
     const uid = request.auth.uid;
     if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in."); }
@@ -2014,23 +2014,72 @@ exports.deleteChatMessagePrivate = onCall(async (request) => {
     if (!chatId || !messageId) { throw new HttpsError("invalid-argument", "Missing chatId or messageId."); }
 
     const db = admin.firestore();
-    const messageRef = db.doc(`chats/${chatId}/messages/${messageId}`);
+    const chatRef = db.doc(`chats/${chatId}`);
+    const messageRef = chatRef.collection("messages").doc(messageId);
+
     try {
         const messageDoc = await messageRef.get();
-        if (!messageDoc.exists) return { success: true };
+        if (!messageDoc.exists) {
+            return { success: true, message: "Message already deleted." };
+        }
 
-        // SECURITY RULE: Only the original sender can delete their own message.
         if (messageDoc.data().senderId !== uid) {
             throw new HttpsError("permission-denied", "You can only delete your own messages.");
         }
         
-        // Perform the soft delete.
+        // --- START: DEFINITIVE, RESEARCHED FIX ---
+
+        // Step 1: Soft-delete the target message.
         await messageRef.update({
             text: "This message was deleted",
             isDeleted: true
         });
-        return { success: true, message: "Message deleted." };
+
+        // Step 2: Fetch the top TWO latest messages using a simple, valid query.
+        const latestMessagesQuery = chatRef.collection("messages")
+            .orderBy("timestamp", "desc")
+            .limit(2);
+        
+        const latestSnapshot = await latestMessagesQuery.get();
+        let newLatestMessageData = null;
+
+        // Step 3: Apply logic to determine the new latest message.
+        if (latestSnapshot.size > 1) {
+            // If we have 2 or more messages, the first is the one we just deleted.
+            // The second document is the new, correct preview message.
+            const newLatestDoc = latestSnapshot.docs[1];
+            if (newLatestDoc.data().isDeleted !== true) {
+                 newLatestMessageData = newLatestDoc.data();
+            }
+        }
+        // If size is 0 or 1, newLatestMessageData remains null, correctly clearing the preview.
+
+        // Step 4: Update the parent chat document with the result.
+        if (newLatestMessageData) {
+            await chatRef.update({
+                lastMessage: {
+                    senderId: newLatestMessageData.senderId,
+                    text: newLatestMessageData.text
+                },
+                lastMessageTimestamp: newLatestMessageData.timestamp
+            });
+        } else {
+            // If no valid messages are left, clear the preview.
+            await chatRef.update({
+                lastMessage: null,
+                lastMessageTimestamp: null
+            });
+        }
+        // --- END: DEFINITIVE, RESEARCHED FIX ---
+
+        return { success: true, message: "Message deleted and chat preview updated." };
+
     } catch (error) {
+        logger.error(`FATAL Error deleting private chat message '${messageId}' by user '${uid}'`, {
+            errorMessage: error.message,
+            errorCode: error.code,
+            stack: error.stack
+        });
         if (error instanceof HttpsError) throw error;
         throw new HttpsError("internal", "An unexpected error occurred.");
     }

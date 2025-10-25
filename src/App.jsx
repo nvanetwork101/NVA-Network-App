@@ -22,8 +22,8 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, db } from './firebase.js';
 import { httpsCallable } from 'firebase/functions';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
-import { messaging } from './firebase.js';
-import { functions } from './firebase.js'; // This line is also needed
+// import { messaging } from './firebase.js'; // <-- REMOVE OR COMMENT OUT THIS LINE
+import { functions, app } from './firebase.js'; // <-- ENSURE 'app' IS IMPORTED
 
 // Import all your components
 import Header from './components/Header';
@@ -116,6 +116,7 @@ import { usePWAUpdate } from './hooks/usePWAUpdate';
 import UpdatePrompt from './components/UpdatePrompt';
 
 function App() {
+  const [messagingInstance, setMessagingInstance] = useState(null); // <-- ADD THIS LINE
   // --- PWA UPDATE FIX: Logic to handle the update prompt ---
   const { needRefresh, handleUpdate } = usePWAUpdate();
   
@@ -536,18 +537,14 @@ function App() {
 
        // ======================= START: PUSH NOTIFICATION SETUP =======================
 useEffect(() => {
-    // Exit if there's no user or the Firebase messaging object isn't ready.
-    if (!currentUser || !messaging) return;
+    // THE DEFINITIVE FIX: Exit if there's no user OR if the messaging service isn't ready yet.
+    if (!currentUser || !messagingInstance) return;
 
     const setupNotifications = async () => {
         try {
-            // 1. Request permission if needed.
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
-                // 2. Get the token. This simple call is now safe because we previously
-                // fixed the underlying service worker conflict. The Firebase SDK
-                // will correctly find our single, dedicated service worker.
-                const currentToken = await getToken(messaging, {
+                const currentToken = await getToken(messagingInstance, { // <-- Use messagingInstance
                     vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0',
                 });
 
@@ -564,11 +561,7 @@ useEffect(() => {
 
     setupNotifications();
 
-    // 3. Set up the foreground message listener.
-    // THE DEFINITIVE FIX: This listener's only job is to log that a push was received
-    // while the app was open. It NO LONGER creates a toast, which prevents duplicates.
-    // The useNotifications hook is now the single source of truth for displaying all toasts.
-    const unsubscribeOnMessage = onMessage(messaging, (payload) => {
+    const unsubscribeOnMessage = onMessage(messagingInstance, (payload) => { // <-- Use messagingInstance
         console.log("Foreground push notification received, but toast is handled by Firestore listener:", payload);
     });
 
@@ -576,7 +569,7 @@ useEffect(() => {
         unsubscribeOnMessage();
     };
 
-}, [currentUser]);
+}, [currentUser, messagingInstance]); // <-- ADD 'messagingInstance' TO THE DEPENDENCY ARRAY
 // ======================== END: PUSH NOTIFICATION SETUP ========================
     
      
@@ -692,6 +685,22 @@ useEffect(() => {
     window.addEventListener('openReportModal', openModalHandler);
     return () => window.removeEventListener('openReportModal', openModalHandler);
   }, []);
+
+    useEffect(() => {
+        const initializeMessaging = async () => {
+          if ('serviceWorker' in navigator) {
+            try {
+              const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+              const messagingService = getMessaging(app, { serviceWorkerRegistration: registration });
+              setMessagingInstance(messagingService);
+              console.log('Firebase Messaging service initialized successfully.');
+            } catch (error) {
+              console.error('Service Worker registration or Messaging init failed:', error);
+            }
+          }
+        };
+        initializeMessaging();
+    }, []); // Empty dependency array ensures this runs only once.
 
     useEffect(() => {
     const openModalHandler = (event) => {
@@ -993,6 +1002,25 @@ useEffect(() => {
       // Step 2: If there's no active toast, process the next item from the queue.
       if (!currentToast && toastQueue.length > 0) {
           const nextToast = toastQueue[0];
+
+          // --- START: DEFINITIVE CHAT TOAST SUPPRESSION FIX ---
+          // Check if the incoming notification is for a chat message.
+          const isChatMessage = nextToast.link && nextToast.link.startsWith('/chat');
+          
+          // Check if the user is currently on a screen where the toast would be redundant.
+          const isUserInChatContext = activeScreen === 'ChatList' || activeScreen === 'ChatMessageScreen';
+
+          // If both are true, suppress the toast and move to the next item in the queue.
+          if (isChatMessage && isUserInChatContext) {
+              // We still need to mark it as "seen" to prevent it from showing up later.
+              markToastAsSeen(nextToast.id);
+              // And we must remove it from the queue.
+              setToastQueue(prev => prev.slice(1));
+              // Exit this effect run, preventing the toast from being set.
+              return; 
+          }
+          // --- END: DEFINITIVE CHAT TOAST SUPPRESSION FIX ---
+
           setCurrentToast(nextToast);
           
           const mutedPrivateTypes = ['NEW_COMMENT'];
@@ -1016,7 +1044,7 @@ useEffect(() => {
           markToastAsSeen(nextToast.id);
       }
   // The stable dependencies that correctly drive the toast logic
-  }, [notifications, currentToast, toastQueue, markToastAsSeen]);
+  }, [notifications, currentToast, toastQueue, markToastAsSeen, activeScreen]); // <-- 'activeScreen' is added as a dependency
 
    const renderScreen = () => {
     
