@@ -39,21 +39,15 @@ if (!firebase.apps.length) {
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  // --- HARDENED PUSH HANDLER ---
-  // This safety check prevents the service worker from crashing if a malformed
-  // push is received (e.g., from the Firebase Console without a title).
-  if (!payload.data || !payload.data.title) {
-    console.warn("Received a background message without a data payload or title. Ignoring.");
-    return;
-  }
+  console.log('[firebase-messaging-sw.js] Received background message ', payload);
 
+  // All the necessary information is now guaranteed to be in the 'data' payload.
   const notificationTitle = payload.data.title;
   const notificationOptions = {
     body: payload.data.body,
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/badge-72x72.png',
+    icon: '/icon-192x192.png', // Correct path for icons in the public folder
     data: {
-      link: payload.data.link || '/'
+      link: payload.data.link || '/' // Pass the link to the notification's data property
     }
   };
 

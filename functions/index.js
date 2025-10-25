@@ -60,11 +60,11 @@ exports.sendNotificationOnCreate = onDocumentCreated("notifications/{notificatio
         }
 
         const message = {
-            notification: {
+            // This is now a "data-only" message. It has no 'notification' or 'webpush' property.
+            // This guarantees that onBackgroundMessage in the service worker will be triggered.
+            data: {
                 title: title,
                 body: body,
-            },
-            data: {
                 link: link || '/'
             },
             tokens: tokens,
