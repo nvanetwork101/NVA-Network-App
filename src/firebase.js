@@ -4,7 +4,8 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { 
-    getFirestore,
+    initializeFirestore,
+    persistentLocalCache,
     addDoc,
     collection,
     doc,
@@ -20,9 +21,7 @@ import {
     onSnapshot,
     increment,
     runTransaction,
-    // --- ADD THIS LINE ---
     startAfter
-    // ---------------------
 } from "firebase/firestore";
 import { 
     getStorage,
@@ -48,7 +47,11 @@ const firebaseConfig = {
 // --- INITIALIZE FIREBASE ---
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+// THE DEFINITIVE FIX: Force Firestore to use a more stable connection method.
+const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  localCache: persistentLocalCache({})
+});
 const storage = getStorage(app);
 const functions = getFunctions(app);
 let messaging; // We will initialize this later, manually.
