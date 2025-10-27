@@ -39,19 +39,31 @@ if (!firebase.apps.length) {
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
+  console.log('[SW] Background message received:', payload);
 
-  // All the necessary information is now guaranteed to be in the 'data' payload.
+  if (!payload.data || !payload.data.title) {
+    console.error('[SW] Payload is missing data or title. Cannot display notification.');
+    return;
+  }
+
   const notificationTitle = payload.data.title;
   const notificationOptions = {
     body: payload.data.body,
-    icon: '/icon-192x192.png', // Correct path for icons in the public folder
+    icon: '/icon-192x192.png',
     data: {
-      link: payload.data.link || '/' // Pass the link to the notification's data property
+      link: payload.data.link || '/'
     }
   };
 
-  return self.registration.showNotification(notificationTitle, notificationOptions);
+  console.log('[SW] Attempting to show notification with title:', notificationTitle);
+
+  const notificationPromise = self.registration.showNotification(notificationTitle, notificationOptions);
+  
+  notificationPromise.catch(error => {
+    console.error('[SW] Error showing notification:', error);
+  });
+
+  return notificationPromise;
 });
 
 self.addEventListener('notificationclick', (event) => {

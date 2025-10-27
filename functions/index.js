@@ -6582,21 +6582,43 @@ exports.markAllNotificationsAsRead = onCall(async (request) => {
     const userRef = db.collection("creators").doc(uid);
     const notificationsRef = db.collection("notifications");
 
-    // Reset the counter first for immediate UI feedback.
-    await userRef.update({ unreadNotificationCount: 0 });
-
-    // In the background, mark all the documents as read.
     const query = notificationsRef.where("userId", "==", uid).where("isRead", "==", false);
     const snapshot = await query.get();
+
     if (snapshot.empty) {
+        // If there are no unread notifications, ensure the badge is zero.
+        await userRef.update({ unreadNotificationCount: 0 });
         return { success: true, message: "No unread notifications to mark." };
     }
-    const batch = db.batch();
+
+    // Process in chunks of 499 to stay under the 500-write limit per batch.
+    const batchSize = 499;
+    let commitPromises = [];
+    let batch = db.batch();
+    let writeCount = 0;
+
     snapshot.forEach(doc => {
         batch.update(doc.ref, { isRead: true });
+        writeCount++;
+        if (writeCount === batchSize) {
+            commitPromises.push(batch.commit());
+            batch = db.batch();
+            writeCount = 0;
+        }
     });
-    await batch.commit();
 
+    // Commit any remaining writes in the last batch.
+    if (writeCount > 0) {
+        commitPromises.push(batch.commit());
+    }
+
+    // Wait for all batches to complete.
+    await Promise.all(commitPromises);
+
+    // ONLY after all documents have been successfully marked as read, reset the counter.
+    await userRef.update({ unreadNotificationCount: 0 });
+
+    logger.info(`User '${uid}' marked ${snapshot.size} notifications as read.`);
     return { success: true, message: `Marked ${snapshot.size} notifications as read.` };
 });
 

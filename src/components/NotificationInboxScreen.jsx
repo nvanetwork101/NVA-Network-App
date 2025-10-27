@@ -6,11 +6,7 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
     const [inboxNotifications, setInboxNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (markAllAsRead) {
-            markAllAsRead();
-        }
-    }, [markAllAsRead]);
+    // This useEffect is now removed. The logic has been moved to the handleClearRead button.
 
     useEffect(() => {
         if (!currentUser) {
@@ -48,13 +44,9 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
         return () => unsubscribe();
     }, [currentUser]);
 
-    const handleClearRead = async () => {
-        try {
-            const deleteReadNotifications = httpsCallable(functions, 'deleteReadNotifications');
-            await deleteReadNotifications();
-            // UI will update automatically via the onSnapshot listener.
-        } catch (error) {
-            console.error("Error clearing read notifications:", error);
+    const handleClearRead = () => {
+        if (markAllAsRead) {
+            markAllAsRead();
         }
     };
 

@@ -197,15 +197,17 @@ function App() {
     
     const [unreadChatCount, setUnreadChatCount] = useState(0); // For the chat icon badge
 
-    const markAllAsRead = () => {
-    notifications.forEach(notification => {
-      if (!notification.isBroadcast && !notification.isRead) {
-        // We use the existing function from our hook to ensure consistency.
-              
-        markNotificationAsRead(notification.id);
-      }
-    });
-  };
+    const markAllAsRead = async () => {
+        try {
+            // This makes a SINGLE, powerful call to the correct backend function.
+            const markAllFunction = httpsCallable(functions, 'markAllNotificationsAsRead');
+            await markAllFunction();
+            // The onSnapshot listener in NotificationInboxScreen will handle the UI update.
+        } catch (error) {
+            console.error("Error marking all notifications as read:", error);
+            showMessage("An error occurred. Please try again.");
+        }
+    };
 
   const [isAudioPrimed, setIsAudioPrimed] = useState(false);
 
