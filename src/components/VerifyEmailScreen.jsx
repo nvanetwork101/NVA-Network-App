@@ -39,9 +39,11 @@ const VerifyEmailScreen = ({ currentUser, showMessage, setActiveScreen, handleLo
 
             // Step 3: Check the reloaded, live user object for verification status.
             if (auth.currentUser.emailVerified) {
-                showMessage("Verification successful! Logging you in...");
-                // Navigate away. The main listener in App.jsx will now see the verified user and proceed.
-                setActiveScreen('Home');
+                showMessage("Verification successful! Reloading...");
+                // THE DEFINITIVE FIX: Force a full page reload.
+                // This guarantees that the main onAuthStateChanged listener in App.jsx
+                // will re-run from a clean state, see the verified user, and fetch their profile data correctly.
+                window.location.reload();
             } else {
                 showMessage("Email has not been verified yet. Please click the link in your email.");
             }
