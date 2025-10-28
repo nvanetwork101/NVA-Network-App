@@ -71,7 +71,7 @@
         "function": "generateSharePreviewV2"
       },
       {
-        "source": "**",
+        "source": "!/__/**",
         "destination": "/index.html"
       }
     ]

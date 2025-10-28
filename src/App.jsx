@@ -357,10 +357,30 @@ function App() {
     let unsubProfile = () => {};
     let unsubFollowing = () => {};
 
-    console.log('[DIAGNOSTIC] 4. Main authentication useEffect is RUNNING.');
-
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      console.log('[DIAGNOSTIC] 5. onAuthStateChanged listener has FIRED.');
+      
+      // --- START: DEFINITIVE EMAIL VERIFICATION HANDLER ---
+      // This logic now runs INSIDE the auth listener, giving it priority.
+      const params = new URLSearchParams(window.location.search);
+      const mode = params.get('mode');
+      const actionCode = params.get('oobCode');
+
+      if (mode === 'verifyEmail' && actionCode) {
+        try {
+          await applyActionCode(auth, actionCode);
+          showMessage("Your email has been successfully verified! Please log in.");
+        } catch (error) {
+          console.error("Error applying email verification code:", error);
+          showMessage("Failed to verify email. The link may be invalid or expired.");
+        } finally {
+          window.history.replaceState({}, document.title, "/");
+          // Force a full reload to ensure a clean state after verification.
+          window.location.href = '/'; 
+          return; // Stop execution to prevent race conditions.
+        }
+      }
+      // --- END: DEFINITIVE EMAIL VERIFICATION HANDLER ---
+      
       // 1. Always clean up previous listeners and start the loading state.
       unsubProfile();
       unsubFollowing();
@@ -369,7 +389,6 @@ function App() {
       try {
         // 2. Handle the case where NO user is logged in.
         if (!user) {
-          console.log('[DIAGNOSTIC] 6a. No user is logged in.');
           setCurrentUser(null);
           setCreatorProfile(null);
           setHasNewFollowerContent(false);
