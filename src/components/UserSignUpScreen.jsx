@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { auth, db } from '../firebase'; // Import auth and db from your firebase config
+import { auth, functions } from '../firebase'; // Import auth and functions
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions'; // Import the httpsCallable function
 
 const UserSignUpScreen = ({ showMessage, setActiveScreen }) => {
     const [email, setEmail] = useState('');
@@ -22,21 +22,17 @@ const UserSignUpScreen = ({ showMessage, setActiveScreen }) => {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
-            await sendEmailVerification(user);
-            const creatorRef = doc(db, "creators", user.uid);
-            await setDoc(creatorRef, {
+
+            // Call the secure Cloud Function to create the user profile document.
+            const createUserProfile = httpsCallable(functions, 'createUserProfile');
+            await createUserProfile({
+                uid: user.uid,
                 email: user.email,
-                creatorName: user.email.split('@')[0] || "", // Default name from email
-                bio: "",
-                categories: [],
-                existingWorkLink: "",
-                profilePictureUrl: '',
-                createdAt: new Date().toISOString(),
-                role: 'user', // Explicitly set role to 'user'
-                banned: false,
-                followerCount: 0,
-                followingCount: 0
+                role: 'user' // Specify the role for this sign-up screen
             });
+
+            // NOW, send the verification email.
+            await sendEmailVerification(user);
 
             showMessage(`Account created successfully for ${email}! Please check your inbox to verify your account.`);
             setActiveScreen('VerifyEmail');
@@ -52,6 +48,7 @@ const UserSignUpScreen = ({ showMessage, setActiveScreen }) => {
                 errorMessage = "Password is too weak. Please choose a stronger password.";
             }
             showMessage(errorMessage);
+            return; // <-- THIS IS THE FIX. It stops the function here.
         }
     };
 

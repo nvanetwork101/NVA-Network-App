@@ -33,7 +33,7 @@ service cloud.firestore {
                        !exists(/databases/$(database)/documents/creators/$(userId)/blockedBy/$(request.auth.uid))
                      );
 
-      allow create: if request.auth.uid == userId && request.resource.data.uid == request.auth.uid;
+      allow create: if request.auth.uid == userId;
 
       allow update: if
         // Rule 1: A moderator can update any field.
@@ -145,14 +145,17 @@ service cloud.firestore {
     }
 
     match /notifications/{notificationId} {
-      // FIX #2: Split 'read' into 'get' and 'list'.
-      // 'get' is for a single document and must match the user's ID.
-      allow get: if isAuthenticated() && request.auth.uid == resource.data.userId;
-      // 'list' is for querying and is required by the notification hook in App.jsx.
-      allow list: if isAuthenticated();
-      // Allow a user to update their own notification, but ONLY to change the 'isRead' status.
+      // THE DEFINITIVE FIX: Combine 'get' and 'list' into a single 'read' rule.
+      // This rule now guarantees that any query against this collection MUST include
+      // a 'where("userId", "==", request.auth.uid)' clause, which our app's query does.
+      // This makes the query valid and secure.
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+
+      // The update rule remains the same.
       allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
-      allow create, delete: if false; // Deletes are handled by a backend function
+      
+      // Create and delete rules remain the same.
+      allow create, delete: if false;
     }
 
     match /broadcast_notifications/{notificationId} {

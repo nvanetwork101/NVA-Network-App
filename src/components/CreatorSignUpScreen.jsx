@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { auth, db } from '../firebase'; // Import auth and db from your firebase config
+import { auth, functions } from '../firebase'; // Import auth and functions
 import { createUserWithEmailAndPassword, sendEmailVerification } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions'; // Import the httpsCallable function
 
 const CreatorSignUpScreen = ({ showMessage, setActiveScreen }) => {
     const [email, setEmail] = useState('');
@@ -33,24 +33,22 @@ const CreatorSignUpScreen = ({ showMessage, setActiveScreen }) => {
         try {
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
             const user = userCredential.user;
-            await sendEmailVerification(user);
-            
-            const creatorRef = doc(db, "creators", user.uid);
-            // This ensures every new creator has the necessary count fields, preventing future data integrity problems.
-            await setDoc(creatorRef, { 
-                email: user.email, 
-                creatorName: creatorName, 
-                bio: bio, 
-                categories: selectedCategories, 
-                existingWorkLink: existingWorkLink, 
-                profilePictureUrl: '', 
-                createdAt: new Date().toISOString(), 
-                role: 'creator', 
-                banned: false,
-                followerCount: 0,
-                followingCount: 0
+
+            // Call the secure Cloud Function to create the creator profile document.
+            const createUserProfile = httpsCallable(functions, 'createUserProfile');
+            await createUserProfile({
+                uid: user.uid,
+                email: user.email,
+                role: 'creator', // Specify the role for this sign-up screen
+                creatorName: creatorName,
+                bio: bio,
+                categories: selectedCategories,
+                existingWorkLink: existingWorkLink
             });
-            
+
+            // NOW, send the verification email.
+            await sendEmailVerification(user);
+
             showMessage(`Creator "${creatorName}" signed up! Please check your inbox to verify your account.`);
             setActiveScreen('VerifyEmail'); // Redirect to a screen prompting them to check their email
         } catch (error) {

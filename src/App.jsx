@@ -4,7 +4,7 @@ import notificationSound from './Notification 2.mp3';
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, updateDoc } from "firebase/firestore";
 import { getDatabase, ref, onValue, onDisconnect, set, serverTimestamp } from "firebase/database";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, applyActionCode } from "firebase/auth";
 import { auth, db } from './firebase.js';
 import { httpsCallable } from 'firebase/functions';
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
@@ -344,6 +344,29 @@ function App() {
 
         // 3. A user object EXISTS. Set it in the state immediately. This prevents all infinite loops.
         setCurrentUser(user);
+
+        // --- START: EMAIL VERIFICATION FIX ---
+        // Check URL for email verification action code
+        const params = new URLSearchParams(window.location.search);
+        const mode = params.get('mode');
+        const actionCode = params.get('oobCode');
+
+        if (mode === 'verifyEmail' && actionCode) {
+            try {
+                await applyActionCode(auth, actionCode);
+                await user.reload(); // Refresh user state to get emailVerified === true
+                showMessage("Your email has been successfully verified! Welcome.");
+                // Clean the URL to prevent the code from being re-applied on refresh
+                window.history.replaceState({}, document.title, window.location.pathname);
+                // The user is now verified, so we can set their state and move on.
+                // We will let the rest of this useEffect continue, which will now find a verified user.
+            } catch (error) {
+                console.error("Error verifying email:", error);
+                showMessage("Failed to verify email. The link may be expired or invalid.");
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+        // --- END: EMAIL VERIFICATION FIX ---
 
         // 4. Handle the case where the user is NOT VERIFIED.
         if (!user.emailVerified) {

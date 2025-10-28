@@ -16,6 +16,81 @@ admin.initializeApp({
 
 const PLATFORM_FEE_PERCENTAGE = 0.07; // 7% platform fee
 
+    // =====================================================================
+// ============ START: SECURE USER PROFILE CREATION ====================
+// =====================================================================
+exports.createUserProfile = onCall(async (request) => {
+    // This function is automatically authenticated by onCall
+    const { uid, email, role, creatorName, bio, categories, existingWorkLink } = request.data;
+    const callingUid = request.auth.uid;
+
+    // Security Check: The UID in the request must match the UID of the authenticated user.
+    if (callingUid !== uid) {
+        throw new HttpsError("permission-denied", "You can only create a profile for your own account.");
+    }
+    
+    if (!uid || !email || !role) {
+        throw new HttpsError("invalid-argument", "Missing required user information (uid, email, role).");
+    }
+
+    const db = admin.firestore();
+    const userRef = db.collection("creators").doc(uid);
+
+    try {
+        const doc = await userRef.get();
+        if (doc.exists) {
+            logger.warn(`User '${uid}' tried to create a profile that already exists.`);
+            return { success: true, message: "Profile already exists." };
+        }
+
+        let userProfileData;
+
+        // Build the data object based on the 'role' provided by the client.
+        if (role === 'creator') {
+            userProfileData = {
+                email: email,
+                creatorName: creatorName || email.split('@')[0],
+                bio: bio || "",
+                categories: categories || [],
+                existingWorkLink: existingWorkLink || "",
+                profilePictureUrl: '',
+                createdAt: new Date().toISOString(),
+                role: 'creator',
+                banned: false,
+                followerCount: 0,
+                followingCount: 0,
+                unreadNotificationCount: 0
+            };
+        } else { // Default to 'user' role
+            userProfileData = {
+                email: email,
+                creatorName: email.split('@')[0],
+                bio: "",
+                categories: [],
+                existingWorkLink: "",
+                profilePictureUrl: '',
+                createdAt: new new Date().toISOString(),
+                role: 'user',
+                banned: false,
+                followerCount: 0,
+                followingCount: 0,
+                unreadNotificationCount: 0
+            };
+        }
+
+        await userRef.set(userProfileData);
+        logger.info(`Successfully created '${role}' profile for user '${uid}'.`);
+        return { success: true, message: "User profile created successfully." };
+
+    } catch (error) {
+        logger.error(`Error creating profile for user '${uid}':`, error);
+        throw new HttpsError("internal", "An unexpected error occurred while creating the user profile.");
+    }
+});
+// =====================================================================
+// ============== END: SECURE USER PROFILE CREATION ====================
+// =====================================================================
+
   // =====================================================================
 // ============ START: NEW COLLECTION-TRIGGERED NOTIFICATION SYSTEM ====
 // =====================================================================
