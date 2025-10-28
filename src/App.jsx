@@ -91,6 +91,44 @@ function App() {
   // --- PWA UPDATE FIX: Logic to handle the update prompt ---
   const { needRefresh, handleUpdate } = usePWAUpdate();
   
+
+  // ======================= START: DEFINITIVE EMAIL ACTION HANDLER ========================
+  useEffect(() => {
+    console.log('[DIAGNOSTIC] 1. Top-level useEffect for email action is RUNNING.');
+    // This effect runs ONLY ONCE when the app first loads to handle
+    // an email verification link, preventing any race conditions.
+    const handleEmailAction = async () => {
+        const params = new URLSearchParams(window.location.search);
+        const mode = params.get('mode');
+        const actionCode = params.get('oobCode');
+
+        // If the URL does not contain the verification code, do nothing.
+        if (mode !== 'verifyEmail' || !actionCode) {
+            console.log('[DIAGNOSTIC] 2. No verification code found in URL. Exiting email handler.');
+            return;
+        }
+        console.log('[DIAGNOSTIC] 3. Verification code FOUND in URL. Attempting to apply...');
+
+        try {
+            // Apply the verification code to Firebase.
+            await applyActionCode(auth, actionCode);
+            showMessage("Your email has been successfully verified! Please log in.");
+        } catch (error) {
+            console.error("Error verifying email from action code:", error);
+            showMessage("Failed to verify email. The link may be invalid or expired.");
+        } finally {
+            // CRITICAL: No matter the result, sign the user out to force a clean state.
+            await signOut(auth);
+            // Clean the URL and redirect to the login screen for a clear next step.
+            window.history.replaceState({}, document.title, "/");
+            setActiveScreen('Login');
+        }
+    };
+
+    handleEmailAction();
+  }, []); // The empty dependency array [] ensures this runs only once on mount.
+  // ======================== END: DEFINITIVE EMAIL ACTION HANDLER =========================
+      
    // THIS IS THE NEW, MORE POWERFUL UPDATE FUNCTION
   const forcefulUpdate = async () => {
     if (needRefresh) {
@@ -319,7 +357,10 @@ function App() {
     let unsubProfile = () => {};
     let unsubFollowing = () => {};
 
+    console.log('[DIAGNOSTIC] 4. Main authentication useEffect is RUNNING.');
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      console.log('[DIAGNOSTIC] 5. onAuthStateChanged listener has FIRED.');
       // 1. Always clean up previous listeners and start the loading state.
       unsubProfile();
       unsubFollowing();
@@ -328,6 +369,7 @@ function App() {
       try {
         // 2. Handle the case where NO user is logged in.
         if (!user) {
+          console.log('[DIAGNOSTIC] 6a. No user is logged in.');
           setCurrentUser(null);
           setCreatorProfile(null);
           setHasNewFollowerContent(false);
@@ -345,29 +387,7 @@ function App() {
         // 3. A user object EXISTS. Set it in the state immediately. This prevents all infinite loops.
         setCurrentUser(user);
 
-        // --- START: EMAIL VERIFICATION FIX ---
-        // Check URL for email verification action code
-        const params = new URLSearchParams(window.location.search);
-        const mode = params.get('mode');
-        const actionCode = params.get('oobCode');
-
-        if (mode === 'verifyEmail' && actionCode) {
-            try {
-                await applyActionCode(auth, actionCode);
-                await user.reload(); // Refresh user state to get emailVerified === true
-                showMessage("Your email has been successfully verified! Welcome.");
-                // Clean the URL to prevent the code from being re-applied on refresh
-                window.history.replaceState({}, document.title, window.location.pathname);
-                // The user is now verified, so we can set their state and move on.
-                // We will let the rest of this useEffect continue, which will now find a verified user.
-            } catch (error) {
-                console.error("Error verifying email:", error);
-                showMessage("Failed to verify email. The link may be expired or invalid.");
-                window.history.replaceState({}, document.title, window.location.pathname);
-            }
-        }
-        // --- END: EMAIL VERIFICATION FIX ---
-
+        
         // 4. Handle the case where the user is NOT VERIFIED.
         if (!user.emailVerified) {
           setCreatorProfile(null);
