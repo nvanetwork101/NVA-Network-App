@@ -8,6 +8,15 @@ const appId = 'production-app-id';
 import ShareButton from './ShareButton';
 const extractVideoInfo = (url) => {
     if (!url || typeof url !== 'string') return { embedUrl: null, isVertical: false, platform: 'unknown' };
+
+    // --- NEW FACEBOOK LOGIC ---
+    if (url.includes('facebook.com') || url.includes('fb.watch')) {
+        const encodedFbUrl = encodeURIComponent(url);
+        // Returns the special player URL that Facebook requires for embedding.
+        return { embedUrl: `https://www.facebook.com/plugins/video.php?href=${encodedFbUrl}&show_text=false&autoplay=true&mute=1`, isVertical: false, platform: 'facebook' };
+    }
+    // --- END NEW LOGIC ---
+
     const ytShortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
     if (ytShortsMatch) {
         return { embedUrl: `https://www.youtube.com/embed/${ytShortsMatch[1]}?autoplay=1&rel=0`, isVertical: true, platform: 'youtube' };
@@ -18,7 +27,6 @@ const extractVideoInfo = (url) => {
     }
     const tiktokMatch = url.match(/tiktok\.com\/.*\/video\/(\d+)/);
     if (tiktokMatch) {
-        // This is the fix: create a proper iframe embed URL.
         return { embedUrl: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}`, isVertical: true, platform: 'tiktok' };
     }
     return { embedUrl: url, isVertical: false, platform: 'unknown' };
