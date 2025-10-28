@@ -573,7 +573,7 @@ function DiscoverScreen({
                                 <span className="categoryTabText">More...</span>
                             </button>
                             {showMore && (
-                                <div className="more-content-dropdown" style={{ width: 'max-content' }}>
+                                <div className="more-content-dropdown" style={{ width: 'max-content', left: '50%', transform: 'translateX(-50%)' }}>
                                     {categories.slice(2).map(c => (
                                         <button
                                             key={c.id}

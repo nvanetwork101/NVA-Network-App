@@ -103,14 +103,15 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
                       This properly constrains all video types within the modal.
                     */}
                     <div className={`
-                        w-full h-full 
-                        md:w-auto md:h-auto 
-                        ${isVertical ? 'md:h-full md:aspect-[9/16]' : 'md:h-full md:aspect-video'}
+                        ${platform === 'facebook' 
+                            ? 'w-full aspect-video' 
+                            : `w-full h-full md:w-auto md:h-auto ${isVertical ? 'md:h-full md:aspect-[9/16]' : 'md:h-full md:aspect-video'}`
+                        }
                     `}>
                         <iframe
                             src={embedUrl}
                             className="w-full h-full border-none"
-                            allow="autoplay; encrypted-media"
+                            allow="autoplay; encrypted-media; picture-in-picture;"
                             allowFullScreen
                             title="Embedded Video Content"
                         />
