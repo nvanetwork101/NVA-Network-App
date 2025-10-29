@@ -94,7 +94,6 @@ function App() {
 
   // ======================= START: DEFINITIVE EMAIL ACTION HANDLER ========================
   useEffect(() => {
-    console.log('[DIAGNOSTIC] 1. Top-level useEffect for email action is RUNNING.');
     // This effect runs ONLY ONCE when the app first loads to handle
     // an email verification link, preventing any race conditions.
     const handleEmailAction = async () => {
@@ -102,24 +101,18 @@ function App() {
         const mode = params.get('mode');
         const actionCode = params.get('oobCode');
 
-        // If the URL does not contain the verification code, do nothing.
         if (mode !== 'verifyEmail' || !actionCode) {
-            console.log('[DIAGNOSTIC] 2. No verification code found in URL. Exiting email handler.');
-            return;
+            return; // No verification code found, exit silently.
         }
-        console.log('[DIAGNOSTIC] 3. Verification code FOUND in URL. Attempting to apply...');
 
         try {
-            // Apply the verification code to Firebase.
             await applyActionCode(auth, actionCode);
             showMessage("Your email has been successfully verified! Please log in.");
         } catch (error) {
             console.error("Error verifying email from action code:", error);
             showMessage("Failed to verify email. The link may be invalid or expired.");
         } finally {
-            // CRITICAL: No matter the result, sign the user out to force a clean state.
             await signOut(auth);
-            // Clean the URL and redirect to the login screen for a clear next step.
             window.history.replaceState({}, document.title, "/");
             setActiveScreen('Login');
         }
@@ -358,78 +351,46 @@ function App() {
     let unsubFollowing = () => {};
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      
-      // --- START: DEFINITIVE EMAIL VERIFICATION HANDLER ---
-      // This logic now runs INSIDE the auth listener, giving it priority.
-      const params = new URLSearchParams(window.location.search);
-      const mode = params.get('mode');
-      const actionCode = params.get('oobCode');
-
-      if (mode === 'verifyEmail' && actionCode) {
-        try {
-          await applyActionCode(auth, actionCode);
-          showMessage("Your email has been successfully verified! Please log in.");
-        } catch (error) {
-          console.error("Error applying email verification code:", error);
-          showMessage("Failed to verify email. The link may be invalid or expired.");
-        } finally {
-          window.history.replaceState({}, document.title, "/");
-          // Force a full reload to ensure a clean state after verification.
-          window.location.href = '/'; 
-          return; // Stop execution to prevent race conditions.
-        }
-      }
-      // --- END: DEFINITIVE EMAIL VERIFICATION HANDLER ---
-      
-      // 1. Always clean up previous listeners and start the loading state.
       unsubProfile();
       unsubFollowing();
       setAuthLoading(true);
 
       try {
-        // 2. Handle the case where NO user is logged in.
         if (!user) {
           setCurrentUser(null);
           setCreatorProfile(null);
           setHasNewFollowerContent(false);
           setNotificationBadgeCount(0);
-          const path = window.location.pathname;
-          if (path === '/' || path === '') {
-            const protectedScreens = ['CreatorDashboard', 'AdminDashboard', 'MyListings', 'SavedOpportunities', 'CreateCampaign', 'PostOpportunityForm', 'MyFeed'];
-            if (protectedScreens.includes(activeScreen)) {
-              setActiveScreen('Home');
-            }
-          }
-          return; // Exit the try block, the 'finally' will still run.
+          return;
         }
 
-        // 3. A user object EXISTS. Set it in the state immediately. This prevents all infinite loops.
+        // THE DEFINITIVE FIX: Force a reload of the user object from Firebase servers.
+        // This defeats the race condition by ensuring we have the latest 'emailVerified' status.
+        await user.reload();
+        
+        // Now that we have the fresh user object, we can proceed with our checks.
         setCurrentUser(user);
 
-        
-        // 4. Handle the case where the user is NOT VERIFIED.
         if (!user.emailVerified) {
           setCreatorProfile(null);
           setActiveScreen('VerifyEmail');
-          return; // Exit, 'finally' will run.
+          return;
         }
 
-        // 5. If we reach here, the user is LOGGED IN and VERIFIED. Proceed with fetching their profile.
         const userDocRef = doc(db, "creators", user.uid);
         const docSnap = await getDoc(userDocRef);
 
         if (!docSnap.exists()) {
           showMessage("User profile not found. Logging out.");
-          signOut(auth);
+          await signOut(auth);
           return;
         }
 
         const profileData = docSnap.data();
 
-        // Handle Banned or Suspended users
         if (profileData.banned) {
           setActiveScreen('Banned');
-          signOut(auth);
+          await signOut(auth);
           return;
         }
         if (profileData.suspendedUntil && profileData.suspendedUntil.toDate() > new Date()) {
@@ -440,7 +401,6 @@ function App() {
           return;
         }
 
-        // This is a valid, active user. Set up their live data listeners.
         await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
 
         unsubProfile = onSnapshot(userDocRef, (snap) => {
@@ -455,7 +415,6 @@ function App() {
         const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
         unsubFollowing = onSnapshot(q, (snapshot) => setHasNewFollowerContent(!snapshot.empty));
 
-        // Handle initial routing for the logged-in user.
         if (!routingDoneRef.current) {
           routingDoneRef.current = true;
           const path = window.location.pathname;
@@ -465,7 +424,6 @@ function App() {
           if (parts.length > 0) {
             const screen = parts[0];
             const id = parts[1];
-            // (The entire deep-linking switch statement remains unchanged and goes here)
             switch (screen) {
               case 'opportunity': if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); navigated = true; } break;
               case 'discover': setActiveScreen('Discover'); navigated = true; break;
@@ -485,12 +443,10 @@ function App() {
         }
 
       } catch (error) {
-        // 6. If any error occurs anywhere in the process, log it and sign the user out.
         console.error("A critical error occurred during authentication:", error);
         showMessage("An error occurred. Please log in again.");
-        signOut(auth);
+        await signOut(auth);
       } finally {
-        // 7. This block is GUARANTEED to run, no matter what happens, ensuring the loading screen always hides.
         setAuthLoading(false);
         setIsInitialLoad(false);
       }
@@ -1024,16 +980,11 @@ useEffect(() => {
 
          // --- GUARANTEED NAVIGATION FOR PLEDGE FLOW ---
   useEffect(() => {
-    // This effect runs whenever pledgeContext is set, directing the user to the correct screen.
-    if (pledgeContext && pledgeContext.type) {
-        // Direct premium subscriptions AND event ticket purchases to the pledge screen.
-        if (pledgeContext.type === 'premium' || pledgeContext.type === 'eventTicket') {
-             handleNavigate('SubscriptionPledge');
-        } else {
-             // All other types (like donations) go to the general support hub.
-             handleNavigate('SupportUsScreen');
-        }
+    // This effect now ONLY handles navigation that is not initiated by a button click.
+    if (pledgeContext && (pledgeContext.type === 'premium' || pledgeContext.type === 'eventTicket')) {
+        handleNavigate('SubscriptionPledge');
     }
+    // The 'donation' type is now handled by the button in CampaignDetailsScreen, so it is removed from here.
   }, [pledgeContext]);
 
         // New Code to Add

@@ -61,13 +61,24 @@ const UserProfileScreen = ({
     const [isUpdatingRole, setIsUpdatingRole] = useState(false);
 
     useEffect(() => {
-        if (!selectedUserId) { setActiveScreen('DiscoverUsers'); return; }
-        
+        if (!selectedUserId) {
+            setActiveScreen('DiscoverUsers');
+            return;
+        }
+
+        // Set all loading states to true at the beginning.
+        setLoadingProfile(true);
+        setLoadingContent(true);
+        setIsFollowLoading(true);
+        setIsBlockLoading(true);
+
+        // --- CONSOLIDATED DATA FETCHING ---
         const userDocRef = doc(db, "creators", selectedUserId);
         const unsubscribeProfile = onSnapshot(userDocRef, (userDocSnap) => {
             if (userDocSnap.exists()) {
                 const profileData = { id: userDocSnap.id, ...userDocSnap.data() };
                 setProfile(profileData);
+                // Trigger the single content fetch after the profile is loaded.
                 fetchContentLibrary(profileData.id, profileData.pinnedContent || []);
             } else {
                 showMessage("This user profile could not be found.");
@@ -79,29 +90,34 @@ const UserProfileScreen = ({
         const campaignsRef = collection(db, `artifacts/production-app-id/public/data/campaigns`);
         const q = query(campaignsRef, where("creatorId", "==", selectedUserId), where("status", "==", "active"), limit(1));
         const unsubscribeCampaign = onSnapshot(q, (snapshot) => {
-            if (!snapshot.empty) {
-                setActiveCampaign({ id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
-            } else {
-                setActiveCampaign(null);
-            }
+            setActiveCampaign(snapshot.empty ? null : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
         });
 
         let unsubscribeFollow = () => {};
         let unsubscribeBlock = () => {};
         if (currentUser) {
             const followDocRef = doc(db, "creators", selectedUserId, "followers", currentUser.uid);
-            unsubscribeFollow = onSnapshot(followDocRef, (snap) => setIsFollowing(snap.exists()));
-            setIsFollowLoading(false);
+            unsubscribeFollow = onSnapshot(followDocRef, (snap) => {
+                setIsFollowing(snap.exists());
+                setIsFollowLoading(false);
+            });
 
             const blockDocRef = doc(db, "creators", currentUser.uid, "blockedUsers", selectedUserId);
-            unsubscribeBlock = onSnapshot(blockDocRef, (snap) => setIsBlocked(snap.exists()));
-            setIsBlockLoading(false);
+            unsubscribeBlock = onSnapshot(blockDocRef, (snap) => {
+                setIsBlocked(snap.exists());
+                setIsBlockLoading(false);
+            });
         } else {
             setIsFollowLoading(false);
             setIsBlockLoading(false);
         }
 
-        return () => { unsubscribeProfile(); unsubscribeCampaign(); unsubscribeFollow(); unsubscribeBlock(); };
+        return () => {
+            unsubscribeProfile();
+            unsubscribeCampaign();
+            unsubscribeFollow();
+            unsubscribeBlock();
+        };
     }, [selectedUserId, currentUser]);
 
     const fetchContentLibrary = async (userId, pinnedIds) => {
