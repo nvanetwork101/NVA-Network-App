@@ -8,18 +8,16 @@ export default defineConfig({
   },
   plugins: [
     react(),
-    VitePWA({
+     VitePWA({
       registerType: 'prompt',
-      // --- THE DEFINITIVE FIX ---
-      // 1. The strategy remains 'injectManifest' because we have a custom service worker.
-      strategy: 'injectManifest',
-      // 2. We REMOVE 'srcDir: 'public'' entirely. The plugin now correctly looks in the project root.
-      // 3. We explicitly name our service worker file, which is now in the root.
-      filename: 'firebase-messaging-sw.js',
-      // --- END OF FIX ---
+      // THE DEFINITIVE FIX: We disable service worker generation entirely.
+      // The plugin will now ONLY generate the manifest.json file.
+      strategies: 'injectManifest',
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+        globPatterns: [] // No files will be precached by the PWA plugin.
       },
+      // We explicitly tell the plugin NOT to generate a service worker.
+      selfDestroying: true,
       manifest: {
         name: 'NVA Network',
         short_name: 'NVA Network',
