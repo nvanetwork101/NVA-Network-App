@@ -700,17 +700,12 @@ useEffect(() => {
         const initializeMessaging = async () => {
           if ('serviceWorker' in navigator) {
             try {
-              // THE DEFINITIVE FIX: We manually register our service worker.
-              // This ensures no other plugin can interfere with it.
               const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-              console.log('Service Worker registered with scope:', registration.scope);
-              
-              const messagingService = getMessaging(app);
+              const messagingService = getMessaging(app, { serviceWorkerRegistration: registration });
               setMessagingInstance(messagingService);
               console.log('Firebase Messaging service initialized successfully.');
-
             } catch (error) {
-              console.error('Service Worker registration or Firebase Messaging init failed:', error);
+              console.error('Service Worker registration or Messaging init failed:', error);
             }
           }
         };
