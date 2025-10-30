@@ -4297,14 +4297,21 @@ exports.endPromotedStatusByAdmin = onCall(async (request) => {
 
     const bookingDoc = await bookingRef.get();
     if (!bookingDoc.exists) { throw new HttpsError("not-found", "Booking not found."); }
-
-    await bookingRef.update({ status: 'expired' });
-
+    
     const bookingData = bookingDoc.data();
     const posterId = bookingData.postedByUid;
 
+    // Use a batch to ensure all writes succeed together.
+    const batch = db.batch();
+
+    // 1. Update the booking status.
+    batch.update(bookingRef, { status: 'expired' });
+
+    // 2. Create the notification if there is a user to notify.
     if (posterId) {
         const posterRef = db.collection("creators").doc(posterId);
+        const notificationRef = db.collection("notifications").doc(); // Create a new doc ref for the notification
+
         const notificationPayload = {
             userId: posterId,
             title: "Ad Status Update",
@@ -4315,14 +4322,17 @@ exports.endPromotedStatusByAdmin = onCall(async (request) => {
             sound: true,
             isRead: false,
             status: "pending",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected from createdAt
         };
-
-        await db.collection("notifications").add(notificationPayload);
-        await posterRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        
+        batch.set(notificationRef, notificationPayload);
+        batch.update(posterRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
     }
 
-    return { success: true, message: "Promoted Status has been taken down." };
+    // 3. Commit all changes at once.
+    await batch.commit();
+
+    return { success: true, message: "Promoted Status has been taken down and the user has been notified." };
 });
 
 exports.createBookingAndPledge = onCall(async (request) => {

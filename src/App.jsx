@@ -94,32 +94,37 @@ function App() {
 
   // ======================= START: DEFINITIVE EMAIL ACTION HANDLER ========================
   useEffect(() => {
-    // This effect runs ONLY ONCE when the app first loads to handle
-    // an email verification link, preventing any race conditions.
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    const actionCode = params.get('oobCode');
+
+    if (!actionCode) return; // If there's no code, do nothing.
+
     const handleEmailAction = async () => {
-        const params = new URLSearchParams(window.location.search);
-        const mode = params.get('mode');
-        const actionCode = params.get('oobCode');
-
-        if (mode !== 'verifyEmail' || !actionCode) {
-            return; // No verification code found, exit silently.
+      try {
+        if (mode === 'verifyEmail') {
+          await applyActionCode(auth, actionCode);
+          showMessage("Your email has been successfully verified! Please log in.");
+          await signOut(auth); // Ensure clean state
+          setActiveScreen('Login');
+        } else if (mode === 'resetPassword') {
+          // If it's a password reset, pass the code to the ForgotPasswordScreen
+          // and switch to that screen.
+          setActionCode(actionCode); // A new state we will add
+          setActiveScreen('ForgotPassword');
         }
-
-        try {
-            await applyActionCode(auth, actionCode);
-            showMessage("Your email has been successfully verified! Please log in.");
-        } catch (error) {
-            console.error("Error verifying email from action code:", error);
-            showMessage("Failed to verify email. The link may be invalid or expired.");
-        } finally {
-            await signOut(auth);
-            window.history.replaceState({}, document.title, "/");
-            setActiveScreen('Login');
-        }
+      } catch (error) {
+        console.error(`Error handling action code for mode '${mode}':`, error);
+        showMessage("Invalid or expired link. Please try again.");
+        setActiveScreen('Login'); // Default to login on error
+      } finally {
+        // Clean the URL to prevent the code from being re-used.
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
     };
 
     handleEmailAction();
-  }, []); // The empty dependency array [] ensures this runs only once on mount.
+  }, []); // Empty dependency array ensures this runs only once.
   // ======================== END: DEFINITIVE EMAIL ACTION HANDLER =========================
       
    // THIS IS THE NEW, MORE POWERFUL UPDATE FUNCTION
@@ -212,7 +217,9 @@ function App() {
   const [contentForLikes, setContentForLikes] = useState(null);
   const [openCommentsOnLoad, setOpenCommentsOnLoad] = useState(false); // <-- Add this line
 
-   const [showImageViewerModal, setShowImageViewerModal] = useState(false);
+  const [showImageViewerModal, setShowImageViewerModal] = useState(false);
+  const [actionCode, setActionCode] = useState(null);
+  
   const [imageViewerData, setImageViewerData] = useState({ imageUrl: '', description: '' }); 
 
     const [hasNewFollowerContent, setHasNewFollowerContent] = useState(false);

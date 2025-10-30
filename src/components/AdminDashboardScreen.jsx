@@ -499,7 +499,8 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                             <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isUserManagementExpanded ? 'max-h-[5000px]' : 'max-h-0'}`}>
                                 <div className="pt-4 border-t" style={{ borderColor: '#3A3A3A', marginTop: '1rem' }}>
                                     <div className="formGroup"><label className="formLabel">Search Users:</label><input type="text" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Search by name or email" /></div>
-                                    <div className="formGroup"><label className="formLabel">Filter by Role or Status:</label>
+                                    <div className="formGroup"><label className="formLabel">Filter by Role or Status:</label>                                    
+                                        
                                         <select className="formInput" value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
                                             <option value="All">All Roles & Statuses</option>
                                             <optgroup label="By Role">
@@ -573,6 +574,13 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                                                             </>;
                                                         })()}
                                                     </div>
+                                                
+                                                    {user.canCreateCampaignAfter && user.canCreateCampaignAfter.toDate() > new Date() && (
+                                                                    <button className="adminActionButton" onClick={() => handleLiftCooldown(user)} style={{backgroundColor: '#9370DB', width: '120px'}}>
+                                                                        Lift Cooldown
+                                                                    </button>
+                                                                )}
+                                                
                                                 </div>
                                             );
                                         })}
