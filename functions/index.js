@@ -6850,31 +6850,59 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
         ogTitle = ogTitle ? ogTitle.replace(/"/g, '&quot;') : "NVA Network";
         ogDescription = ogDescription ? ogDescription.substring(0, 150).replace(/"/g, '&quot;') + '...' : "The Nexus of Viral Ascent - Discover, Compete, Connect.";
 
-    } catch (error) {
+     } catch (error) {
         logger.error(`Error fetching social preview for path '${path}':`, error);
         debugMessage = `<!-- NVA DEBUG: A database error occurred: ${error.message} -->`;
     }
 
-    // TEMPORARY DEBUG LOG: Log the final tags before they are rendered into HTML
-    logger.info(`[DEBUG SSR] FINAL TAGS`, { ogTitle, ogDescription, ogImage, finalUrl, debugMessage });
+    // --- NEW LOGIC: Distinguish between Bots and Humans ---
 
-    const html = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8"><title>${ogTitle}</title>${debugMessage}
-        <meta property="og:title" content="${ogTitle}" />
-        <meta property="og:description" content="${ogDescription}" />
-        <meta property="og:image" content="${ogImage}" />
-        <meta property="og:url" content="${finalUrl}" />
-        <meta property="og:type" content="website" />
-        <meta name="twitter:card" content="summary_large_image" />
-        <script>window.location.href = "${finalUrl}";</script>
-      </head>
-      <body><p>${ogDescription}</p></body>
-      </html>`;
+    // 1. Define what looks like a Social Crawler (Bot)
+    const userAgent = request.headers['user-agent'] || '';
+    const isBot = /facebookexternalhit|twitterbot|linkedinbot|whatsapp|telegram|pinterest|slackbot|vkshare|w3c_validator/i.test(userAgent.toLowerCase());
 
-    response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
-    response.status(200).send(html);
+    if (isBot) {
+        // 2. IF BOT: Serve lightweight HTML with Meta Tags ONLY (No Redirect Loop)
+        const html = `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8"><title>${ogTitle}</title>${debugMessage}
+                <meta property="og:title" content="${ogTitle}" />
+                <meta property="og:description" content="${ogDescription}" />
+                <meta property="og:image" content="${ogImage}" />
+                <meta property="og:url" content="${finalUrl}" />
+                <meta property="og:type" content="website" />
+                <meta name="twitter:card" content="summary_large_image" />
+            </head>
+            <body></body>
+            </html>`;
+        
+        response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+        response.status(200).send(html);
+    } else {
+        // 3. IF HUMAN: Fetch the Real App and Inject Tags (Fixes Endless Loading)
+        try {
+            // Fetch the index.html from the hosting layer
+            const indexResponse = await fetch('https://nvanetworkapp.com/index.html');
+            let indexHtml = await indexResponse.text();
+
+            // Replace the placeholders in your index.html with the dynamic data
+            indexHtml = indexHtml
+                .replace(/__OG_TITLE__/g, ogTitle)
+                .replace(/__OG_DESCRIPTION__/g, ogDescription)
+                .replace(/__OG_IMAGE_URL__/g, ogImage)
+                .replace(/__OG_URL__/g, finalUrl);
+
+            // Send the modified full app
+            response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+            response.status(200).send(indexHtml);
+
+        } catch (fetchError) {
+            console.error("Error serving app shell:", fetchError);
+            // Fallback: Just send a basic redirect if the fetch fails (unlikely)
+            response.redirect(finalUrl);
+        }
+    }
 });
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---

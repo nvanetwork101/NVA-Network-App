@@ -301,6 +301,34 @@ function App() {
     setActiveScreen(newScreen);
   }, [activeScreen]);
 
+    // ======================= START: POST-LOGIN REDIRECT FIX =======================
+  useEffect(() => {
+    // This effect runs whenever the User or the Active Screen changes.
+    // It fixes the issue where users get "stuck" on the Login/SignUp screen after success.
+    
+    if (currentUser && !authLoading) {
+      // List of screens that logged-in users should NOT be seeing
+      const guestScreens = ['Login', 'UserSignUp', 'CreatorSignUp', 'ForgotPassword', 'VerifyEmail'];
+      
+      if (guestScreens.includes(activeScreen)) {
+        // 1. Calculate if this is a brand new user (created in the last 30 seconds)
+        const creationTime = new Date(currentUser.metadata.creationTime).getTime();
+        const now = new Date().getTime();
+        const isNewUser = (now - creationTime) < 30000; 
+
+        // 2. Redirect accordingly
+        if (isNewUser) {
+           console.log("New user detected, redirecting to Dashboard.");
+           setActiveScreen('CreatorDashboard');
+        } else {
+           console.log("Returning user detected, redirecting to Home.");
+           setActiveScreen('Home');
+        }
+      }
+    }
+  }, [currentUser, authLoading, activeScreen]);
+  // ======================== END: POST-LOGIN REDIRECT FIX ========================
+
   const handleLogout = async () => {
     try {
       await signOut(auth);
