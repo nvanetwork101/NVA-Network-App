@@ -6,6 +6,19 @@ importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-comp
 
 workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
 
+// --- SPA NAVIGATION FALLBACK (Fixes Facebook/External Link Loading) ---
+// This tells the Service Worker to serve index.html for any unknown route (like /content/123)
+// FIX: Removed leading slash to match Vite's build manifest format
+const handler = workbox.precaching.createHandlerBoundToURL('index.html');
+const navigationRoute = new workbox.routing.NavigationRoute(handler, {
+  denylist: [
+    /^\/_/,             // Exclude URLs starting with _ (Firebase internal)
+    /\/[^/?]+\.[^/]+$/, // Exclude URLs with file extensions (images, css, js)
+  ],
+});
+workbox.routing.registerRoute(navigationRoute);
+// ---------------------------------------------------------------------
+
 const firebaseConfig = {
   apiKey: "AIzaSyBo3DM-4ZwrZdzcYQAMWAVHu70vWUdB7J4",
   authDomain: "nvanetworkapp.firebaseapp.com",

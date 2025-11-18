@@ -362,6 +362,63 @@ function App() {
       unsubFollowing();
       setAuthLoading(true);
 
+      // 1. HANDLE ROUTING LOGIC FIRST (Regardless of Auth Status)
+      if (!routingDoneRef.current) {
+          routingDoneRef.current = true;
+          const path = window.location.pathname;
+          const parts = path.split('/').filter(Boolean);
+          
+          if (parts.length > 0) {
+            const screen = parts[0];
+            const id = parts[1];
+            
+            switch (screen) {
+              case 'opportunity': 
+                if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); } 
+                break;
+              case 'discover': 
+                setActiveScreen('Discover'); 
+                break;
+              case 'user': 
+                if (id) { 
+                   if (user && id === user.uid) { setActiveScreen('CreatorDashboard'); } 
+                   else { setSelectedUserId(id); setActiveScreen('UserProfile'); } 
+                } 
+                break;
+              case 'competition': 
+                setActiveScreen('CompetitionScreen'); 
+                break;
+              case 'promotedStatus': 
+                if (id) { setActiveScreen('Home'); } 
+                break;
+              case 'content': 
+                if (id) { 
+                  (async () => { 
+                    try { 
+                      const appId = import.meta.env.VITE_APP_ID; 
+                      let docSnap = await getDoc(doc(db, "artifacts", appId, "public", "data", "content_items", id)); 
+                      if (docSnap.exists()) { 
+                        const item = { id: docSnap.id, ...docSnap.data() }; 
+                        handleVideoPress(item.embedUrl || item.mainUrl, item); 
+                      } else { 
+                        docSnap = await getDoc(doc(db, "events", id)); 
+                        if (docSnap.exists() && docSnap.data().status === 'completed') { 
+                          setDeepLinkedReplayId(id); 
+                          setActiveScreen('Discover'); 
+                        } else { 
+                          showMessage("Shared content could not be found."); 
+                        } 
+                      } 
+                    } catch (error) { 
+                      showMessage("Error loading shared content."); 
+                    } 
+                  })(); 
+                } 
+                break;
+            }
+          }
+      }
+
       try {
         if (!user) {
           setCurrentUser(null);
@@ -372,10 +429,8 @@ function App() {
         }
 
         // THE DEFINITIVE FIX: Force a reload of the user object from Firebase servers.
-        // This defeats the race condition by ensuring we have the latest 'emailVerified' status.
         await user.reload();
         
-        // Now that we have the fresh user object, we can proceed with our checks.
         setCurrentUser(user);
 
         if (!user.emailVerified) {
@@ -422,31 +477,13 @@ function App() {
         const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
         unsubFollowing = onSnapshot(q, (snapshot) => setHasNewFollowerContent(!snapshot.empty));
 
-        if (!routingDoneRef.current) {
-          routingDoneRef.current = true;
-          const path = window.location.pathname;
-          const parts = path.split('/').filter(Boolean);
-          let navigated = false;
-
-          if (parts.length > 0) {
-            const screen = parts[0];
-            const id = parts[1];
-            switch (screen) {
-              case 'opportunity': if (id) { setSelectedOpportunity({ id }); setActiveScreen('OpportunityDetails'); navigated = true; } break;
-              case 'discover': setActiveScreen('Discover'); navigated = true; break;
-              case 'user': if (id) { if (user && id === user.uid) { setActiveScreen('CreatorDashboard'); } else { setSelectedUserId(id); setActiveScreen('UserProfile'); } navigated = true; } break;
-              case 'competition': setActiveScreen('CompetitionScreen'); navigated = true; break;
-              case 'promotedStatus': if (id) { setActiveScreen('Home'); navigated = true; } break;
-              case 'content': if (id) { (async () => { try { const appId = import.meta.env.VITE_APP_ID; let docSnap = await getDoc(doc(db, "artifacts", appId, "public", "data", "content_items", id)); if (docSnap.exists()) { const item = { id: docSnap.id, ...docSnap.data() }; handleVideoPress(item.embedUrl || item.mainUrl, item); } else { docSnap = await getDoc(doc(db, "events", id)); if (docSnap.exists() && docSnap.data().status === 'completed') { setDeepLinkedReplayId(id); setActiveScreen('Discover'); } else { showMessage("Shared content could not be found."); } } } catch (error) { showMessage("Error loading shared content."); } })(); navigated = true; } break;
-            }
-          }
-
-          if (!navigated) {
+        // Handle "New User" redirection if they just signed up and landed on Home
+        // (This only runs if routing above didn't already change the screen)
+        if (activeScreen === 'Home') {
             const creationTime = new Date(user.metadata.creationTime);
             const lastSignInTime = new Date(user.metadata.lastSignInTime);
             const isNewUser = (lastSignInTime.getTime() - creationTime.getTime()) < 10000;
-            setActiveScreen(isNewUser ? 'CreatorDashboard' : 'Home');
-          }
+            if (isNewUser) setActiveScreen('CreatorDashboard');
         }
 
       } catch (error) {
