@@ -18,6 +18,7 @@ const ChatMessageScreen = ({
     const longPressTimer = useRef();
 
     const inputRef = useRef(null); // --- KEYBOARD FIX: Ref for the message input ---
+    const isTypingRef = useRef(false); // --- Gate to prevent multiple typing updates ---
 
     const [newMessage, setNewMessage] = useState('');
     const [otherParticipantProfile, setOtherParticipantProfile] = useState(null);
@@ -97,12 +98,6 @@ const ChatMessageScreen = ({
             const diffInSeconds = Math.floor((now - date) / 1000);
             if (diffInSeconds < 120) return 'Online';
             const diffInMinutes = Math.floor(diffInSeconds / 60);
-            
-            const formatMessageTimestamp = (timestamp) => {
-        if (!timestamp || !timestamp.toDate) return '';
-        const date = timestamp.toDate();
-        return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-        };
             
             if (diffInMinutes < 60) return `Active ${diffInMinutes}m ago`;
             const diffInHours = Math.floor(diffInMinutes / 60);
@@ -217,15 +212,16 @@ const ChatMessageScreen = ({
         };
     }, [chatId]);
 
+    const otherParticipantUid = chatDetails?.participants.find(uid => uid !== currentUser?.uid);
+
     // Effect for fetching the other participant's profile details
     useEffect(() => {
-        const participantId = chatDetails?.participants.find(uid => uid !== currentUser?.uid);
-        if (!participantId) return;
-        const profileRef = doc(db, 'creators', participantId);
+        if (!otherParticipantUid) return;
+        const profileRef = doc(db, 'creators', otherParticipantUid);
         const unsubscribeProfile = onSnapshot(profileRef, docSnap => setOtherParticipantProfile(docSnap.exists() ? docSnap.data() : null));
         return () => unsubscribeProfile();
-    }, [chatDetails, currentUser]);
-    
+    }, [otherParticipantUid]);
+
     // Effect for client-side message filtering (for the search feature)
     useEffect(() => { 
         setFilteredMessages(searchText.trim() === '' ? messages : messages.filter(msg => !msg.isDeleted && msg.text.toLowerCase().includes(searchText.toLowerCase()))); 
@@ -287,8 +283,9 @@ const ChatMessageScreen = ({
             await sendChatMessageFunction(payload);
 
             // --- TYPING INDICATOR FIX: Immediately clear typing status on send ---
+            isTypingRef.current = false;
             if (typingTimer.current) clearTimeout(typingTimer.current);
-            httpsCallable(functions, 'updateTypingStatus')({ chatId: chatId, isTyping: false });
+            httpsCallable(functions, 'updateTypingStatus')({ chatId: chatId, isTyping: false }).catch(() => {});
 
             // Clear the input fields on success.
             setNewMessage('');
@@ -372,23 +369,25 @@ const ChatMessageScreen = ({
         const newText = e.target.value;
         setNewMessage(newText);
 
-        // Clear any existing "stopped typing" timer
         if (typingTimer.current) {
             clearTimeout(typingTimer.current);
         }
 
-        // Signal that we are typing now
         const updateStatus = httpsCallable(functions, 'updateTypingStatus');
-        updateStatus({ chatId: chatId, isTyping: true });
+        
+        // Only execute database request once when typing begins
+        if (!isTypingRef.current) {
+            isTypingRef.current = true;
+            updateStatus({ chatId: chatId, isTyping: true }).catch(() => {});
+        }
 
-        // Set a new timer. If it finishes, it means we've stopped typing.
         typingTimer.current = setTimeout(() => {
-            updateStatus({ chatId: chatId, isTyping: false });
+            isTypingRef.current = false;
+            updateStatus({ chatId: chatId, isTyping: false }).catch(() => {});
         }, 2000); // 2-second delay
     };
     // --- END: NEW CODE TO ADD FOR TYPING INDICATOR ---
 
-    const otherParticipantUid = chatDetails?.participants.find(uid => uid !== currentUser?.uid);
     const finalOtherUserDetails = { ...(chatDetails?.participantDetails?.[otherParticipantUid] || {}), ...(otherParticipantProfile || {}) };
 
     // --- THIS IS THE FIX: The variables are now correctly placed before the return statement ---
@@ -565,7 +564,7 @@ const ChatMessageScreen = ({
                     <button type="button" className="button" style={{ marginRight: '10px', background: 'transparent', padding: '8px' }} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
                         <svg fill="#FFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path></svg>
                     </button>
-                   <input ref={inputRef} type="text" value={newMessage} onChange={handleTypingChange} placeholder="Type a message..." className="formInput" style={{ flex: 1, marginRight: '10px', borderRadius: '20px' }} disabled={isSending} onFocus={() => setShowEmojiPicker(false)} />
+                   <input ref={inputRef} type="text" value={newMessage} onChange={handleTypingChange} placeholder="Type a message..." className="formInput" style={{ flex: 1, marginRight: '10px', borderRadius: '20px' }} onFocus={() => setShowEmojiPicker(false)} />
                     <button type="submit" className="button" style={{ borderRadius: '50%', width: '44px', height: '44px', padding: 0 }} disabled={!newMessage.trim() || isSending}>
                        <svg fill={isSending ? "#555" : "#0A0A0A"} viewBox="0 0 24 24" style={{ width: '24px', height: '24px', margin: 'auto' }}><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
                     </button>
