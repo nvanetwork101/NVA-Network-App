@@ -1,7 +1,7 @@
 // src/App.jsx
 
 import notificationSound from './Notification 2.mp3';
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense, useRef } from 'react';
 import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, updateDoc } from "firebase/firestore";
 import { getDatabase, ref, onValue, onDisconnect, set, serverTimestamp } from "firebase/database";
 import { onAuthStateChanged, signOut, applyActionCode } from "firebase/auth";
@@ -14,15 +14,12 @@ import { functions, app } from './firebase.js';
 import ContentPlayerModal from './components/ContentPlayerModal';
 import Header from './components/Header';
 import NavigationBar from './components/NavigationBar';
-import ProfilePictureModal from './components/ProfilePictureModal';
 import VideoPlayerModal from './components/VideoPlayerModal';
-import SuspensionModal from './components/SuspensionModal';
 import ConfirmationModal from './components/ConfirmationModal';
 import ReportContentModal from './components/ReportContentModal';
 import CommentsModal from './components/CommentsModal';
 import ContentAppealModal from './components/ContentAppealModal';
 import LikesModal from './components/LikesModal';
-import ImageViewerModal from './components/ImageViewerModal';
 
 // LAZY-LOADED SCREENS (Loaded on demand)
 const PromotedStatusScreen = lazy(() => import('./components/PromotedStatusScreen'));
@@ -80,11 +77,9 @@ import IosInstallPrompt from './components/IosInstallPrompt'; // <-- ADD THIS LI
 
 import { useNotifications } from './hooks/useNotifications';
 import NotificationToast from './components/NotificationToast';
-import { useRef } from 'react';
 
 // --- PWA UPDATE FIX: Import our new custom hook and the component ---
 import { usePWAUpdate } from './hooks/usePWAUpdate';
-import UpdatePrompt from './components/UpdatePrompt';
 
 function App() {
   const [messagingInstance, setMessagingInstance] = useState(null); // <-- ADD THIS LINE
@@ -292,65 +287,44 @@ function App() {
 
   // The new navigation handler that tracks screen history AND syncs with browser history
   const handleNavigate = useCallback((newScreen) => {
-    if (newScreen !== activeScreen) {
-      setPreviousScreen(activeScreen);
-      // This is the fix: Push a new state to the browser's history stack
-      // This makes the browser's back button aware of in-app navigation
-      window.history.pushState({ screen: newScreen }, '');
-    }
-    setActiveScreen(newScreen);
-  }, [activeScreen]);
+    setActiveScreen(prevScreen => {
+      if (newScreen !== prevScreen) {
+        setPreviousScreen(prevScreen);
+        // This is the fix: Push a new state to the browser's history stack
+        window.history.pushState({ screen: newScreen }, '');
+      }
+      return newScreen;
+    });
+  }, []);
 
-    // ======================= START: POST-LOGIN REDIRECT FIX =======================
+  // ======================= START: POST-LOGIN REDIRECT FIX =======================
   useEffect(() => {
-    // This effect runs whenever the User or the Active Screen changes.
-    // It fixes the issue where users get "stuck" on the Login/SignUp screen after success.
-    
     if (currentUser && !authLoading) {
-      // List of screens that logged-in users should NOT be seeing
       const guestScreens = ['Login', 'UserSignUp', 'CreatorSignUp', 'ForgotPassword', 'VerifyEmail'];
-      
       if (guestScreens.includes(activeScreen)) {
-        // 1. Calculate if this is a brand new user (created in the last 30 seconds)
         const creationTime = new Date(currentUser.metadata.creationTime).getTime();
-        const now = new Date().getTime();
-        const isNewUser = (now - creationTime) < 30000; 
-
-        // 2. Redirect accordingly
-        if (isNewUser) {
-           console.log("New user detected, redirecting to Dashboard.");
-           setActiveScreen('CreatorDashboard');
-        } else {
-           console.log("Returning user detected, redirecting to Home.");
-           setActiveScreen('Home');
-        }
+        const isNewUser = (new Date().getTime() - creationTime) < 30000; 
+        setActiveScreen(isNewUser ? 'CreatorDashboard' : 'Home');
       }
     }
   }, [currentUser, authLoading, activeScreen]);
   // ======================== END: POST-LOGIN REDIRECT FIX ========================
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       await signOut(auth);
-      // --- THE DEFINITIVE FIX ---
-      // Force a full page reload. This action by the browser guarantees that all component
-      // states, active listeners, and in-memory data are completely wiped out,
-      // preventing any possibility of a race condition.
       window.location.href = '/';
     } catch (error) {
       console.error("Logout failed:", error);
       showMessage("An error occurred during logout.");
     }
-  };
+  }, []);
 
-  const handleVideoPress = (url, item) => {
-    // THE FIX: Remove the faulty currentUser check.
-    // The VideoPlayerModal itself will handle what a non-logged-in user can or cannot do (e.g., comment).
-    // This function's only job is to open the modal.
+  const handleVideoPress = useCallback((url, item) => {
     setCurrentVideoUrl(url);
     setCurrentContentItem(item);
     setShowVideoModal(true);
-  };
+  }, []);
 
     const handleInstallClick = () => {
     // If the app is already installed, do nothing.
@@ -505,15 +479,6 @@ function App() {
         const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
         unsubFollowing = onSnapshot(q, (snapshot) => setHasNewFollowerContent(!snapshot.empty));
 
-        // Handle "New User" redirection if they just signed up and landed on Home
-        // (This only runs if routing above didn't already change the screen)
-        if (activeScreen === 'Home') {
-            const creationTime = new Date(user.metadata.creationTime);
-            const lastSignInTime = new Date(user.metadata.lastSignInTime);
-            const isNewUser = (lastSignInTime.getTime() - creationTime.getTime()) < 10000;
-            if (isNewUser) setActiveScreen('CreatorDashboard');
-        }
-
       } catch (error) {
         console.error("A critical error occurred during authentication:", error);
         showMessage("An error occurred. Please log in again.");
@@ -612,9 +577,16 @@ useEffect(() => {
 
             // Proceed only if permission is granted.
             if (Notification.permission === 'granted') {
-                console.log("Notification permission is granted. Acquiring token...");
+                console.log("Notification permission is granted. Ensuring Service Worker is active...");
+                
+                // Ensure service worker is fully ready and activated before asking for a token
+                if ('serviceWorker' in navigator) {
+                    await navigator.serviceWorker.ready;
+                }
+
+                console.log("Acquiring token...");
                 const currentToken = await getToken(messagingInstance, {
-                    vapidKey: 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0',
+                    vapidKey: import.meta.env.VITE_FCM_VAPID_KEY || 'BEZWeaGgXfqqK2CT8VAkbHssB_uQN3we9XxunByTBl2mERHHu8q9E_ZGOv9cG0f369hBBNm8WITA6fncyIjnam0',
                 });
 
                 if (currentToken) {
@@ -829,8 +801,10 @@ useEffect(() => {
 
       // --- VIDEO MODAL BACK BUTTON HANDLING ---
     useEffect(() => {
-        const handleModalCloseOnBack = () => {
-            setShowVideoModal(false);
+        const handleModalCloseOnBack = (event) => {
+            if (!event.state || event.state.modal !== 'video') {
+                setShowVideoModal(false);
+            }
         };
 
         if (showVideoModal) {
@@ -843,6 +817,10 @@ useEffect(() => {
         // Cleanup function
         return () => {
             window.removeEventListener('popstate', handleModalCloseOnBack);
+            // If the modal unmounts via 'X' button instead of back button, clean history
+            if (showVideoModal && window.history.state?.modal === 'video') {
+                window.history.back();
+            }
         };
     }, [showVideoModal]);  
        
@@ -1062,6 +1040,14 @@ useEffect(() => {
         // New Code to Add
   // --- Notification Toast System Logic ---
 useEffect(() => {
+      // Manage Memory Leak: Clean up processed IDs that no longer exist in notifications
+      if (processedToastIds.current.size > 100) {
+          const activeIds = new Set(notifications.map(n => n.id));
+          for (const id of processedToastIds.current) {
+              if (!activeIds.has(id)) processedToastIds.current.delete(id);
+          }
+      }
+
       // Step 1: Add new, unseen notifications to the queue.
       const newNotifications = notifications.filter(n => !processedToastIds.current.has(n.id));
       if (newNotifications.length > 0) {
@@ -1176,11 +1162,10 @@ useEffect(() => {
       case 'ChatList': return <ChatListScreen currentUser={currentUser} setActiveScreen={handleNavigate} setSelectedChatId={setSelectedChatId} showMessage={showMessage} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
       case 'ChatMessageScreen': return <ChatMessageScreen chatId={selectedChatId} currentUser={currentUser} creatorProfile={creatorProfile} setActiveScreen={handleNavigate} showMessage={showMessage} setSelectedUserId={setSelectedUserId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
 
-      case 'Home': default: return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
-    
       case 'PrivacyPolicy': return <PrivacyPolicyScreen setActiveScreen={handleNavigate} />;
       case 'TermsOfService': return <TermsOfServiceScreen setActiveScreen={handleNavigate} />;
 
+      case 'Home': default: return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
     }
   };
 
@@ -1200,7 +1185,9 @@ return (
             src="/loading-video.mp4" 
             autoPlay 
             muted 
-            playsInline 
+            playsInline
+            onEnded={() => setIsInitialLoad(false)}
+            onError={() => setIsInitialLoad(false)} 
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
         </div>
@@ -1233,7 +1220,7 @@ return (
                 </Suspense>
             )}
           </div>
-          {!['Suspended', 'Banned'].includes(activeScreen) && (
+          {!['Suspended', 'Banned', 'ChatMessageScreen'].includes(activeScreen) && (
             <NavigationBar
               activeScreen={activeScreen}
               setActiveScreen={handleNavigate}

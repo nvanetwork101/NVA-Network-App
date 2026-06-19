@@ -140,7 +140,7 @@ const ChatListScreen = ({
         return () => {
             Object.values(unsubscribers).forEach(unsub => unsub());
         };
-    }, [filteredChats, currentUser]);
+    }, [JSON.stringify(filteredChats.map(chat => chat.id)), currentUser?.uid]);
 
 
     const handleChatSelect = (chatId) => {

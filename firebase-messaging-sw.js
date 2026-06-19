@@ -8,15 +8,21 @@ workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
 
 // --- SPA NAVIGATION FALLBACK (Fixes Facebook/External Link Loading) ---
 // This tells the Service Worker to serve index.html for any unknown route (like /content/123)
-// FIX: Removed leading slash to match Vite's build manifest format
-const handler = workbox.precaching.createHandlerBoundToURL('index.html');
-const navigationRoute = new workbox.routing.NavigationRoute(handler, {
-  denylist: [
-    /^\/_/,             // Exclude URLs starting with _ (Firebase internal)
-    /\/[^/?]+\.[^/]+$/, // Exclude URLs with file extensions (images, css, js)
-  ],
-});
-workbox.routing.registerRoute(navigationRoute);
+// FIX: We check if index.html is actually cached before registering the route.
+// This prevents the "Uncaught non-precached-url" error during Development.
+const precacheList = self.__WB_MANIFEST || [];
+const isIndexCached = precacheList.some(entry => entry.url === 'index.html' || entry.url === '/index.html');
+
+if (isIndexCached) {
+  const handler = workbox.precaching.createHandlerBoundToURL('index.html');
+  const navigationRoute = new workbox.routing.NavigationRoute(handler, {
+    denylist: [
+      /^\/_/,             // Exclude URLs starting with _ (Firebase internal)
+      /\/[^/?]+\.[^/]+$/, // Exclude URLs with file extensions (images, css, js)
+    ],
+  });
+  workbox.routing.registerRoute(navigationRoute);
+}
 // ---------------------------------------------------------------------
 
 const firebaseConfig = {
