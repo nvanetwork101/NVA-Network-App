@@ -2,7 +2,7 @@
 
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { 
     initializeFirestore,
     persistentLocalCache,
@@ -47,6 +47,7 @@ const firebaseConfig = {
 // --- INITIALIZE FIREBASE ---
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
 // THE DEFINITIVE FIX: Force Firestore to use a more stable connection method.
 const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
@@ -93,10 +94,11 @@ const extractVideoInfo = (url) => {
 export { 
     app, 
     auth, 
+    googleProvider,
     db, 
     storage, 
     functions, 
-    messaging, // <-- THIS LINE IS ADDED
+    messaging,
     // analytics, // Temporarily disabled to prevent console errors
     // Firestore Functions
     addDoc,

@@ -1,5 +1,6 @@
 // FORCED UPDATE: 2025-10-04 23:59
 // The Cloud Functions for Firebase SDK to create Cloud Functions and set up triggers.
+const {FieldValue} = require("firebase-admin/firestore"); // <-- ADD THIS LINE
 const {onValueWritten} = require("firebase-functions/v2/database");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentUpdated, onDocumentDeleted, onDocumentCreated} = require("firebase-functions/v2/firestore");
@@ -6850,59 +6851,292 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
         ogTitle = ogTitle ? ogTitle.replace(/"/g, '&quot;') : "NVA Network";
         ogDescription = ogDescription ? ogDescription.substring(0, 150).replace(/"/g, '&quot;') + '...' : "The Nexus of Viral Ascent - Discover, Compete, Connect.";
 
-     } catch (error) {
+    } catch (error) {
         logger.error(`Error fetching social preview for path '${path}':`, error);
         debugMessage = `<!-- NVA DEBUG: A database error occurred: ${error.message} -->`;
     }
 
-    // --- NEW LOGIC: Distinguish between Bots and Humans ---
+    // TEMPORARY DEBUG LOG: Log the final tags before they are rendered into HTML
+    logger.info(`[DEBUG SSR] FINAL TAGS`, { ogTitle, ogDescription, ogImage, finalUrl, debugMessage });
 
-    // 1. Define what looks like a Social Crawler (Bot)
-    const userAgent = request.headers['user-agent'] || '';
-    const isBot = /facebookexternalhit|twitterbot|linkedinbot|whatsapp|telegram|pinterest|slackbot|vkshare|w3c_validator/i.test(userAgent.toLowerCase());
+    const html = `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8"><title>${ogTitle}</title>${debugMessage}
+        <meta property="og:title" content="${ogTitle}" />
+        <meta property="og:description" content="${ogDescription}" />
+        <meta property="og:image" content="${ogImage}" />
+        <meta property="og:url" content="${finalUrl}" />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <script>window.location.href = "${finalUrl}";</script>
+      </head>
+      <body><p>${ogDescription}</p></body>
+      </html>`;
 
-    if (isBot) {
-        // 2. IF BOT: Serve lightweight HTML with Meta Tags ONLY (No Redirect Loop)
-        const html = `
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8"><title>${ogTitle}</title>${debugMessage}
-                <meta property="og:title" content="${ogTitle}" />
-                <meta property="og:description" content="${ogDescription}" />
-                <meta property="og:image" content="${ogImage}" />
-                <meta property="og:url" content="${finalUrl}" />
-                <meta property="og:type" content="website" />
-                <meta name="twitter:card" content="summary_large_image" />
-            </head>
-            <body></body>
-            </html>`;
+    response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+    response.status(200).send(html);
+});
+// =====================================================================
+// ======================= NVA ENROLLMENT SYSTEM =======================
+// =====================================================================
+
+// Callable function for a user to submit their enrollment application.
+exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to apply.");
+    }
+    const { selectedOptions, totalAmount, phoneNumber } = request.data; 
+    if (!selectedOptions || !Array.isArray(selectedOptions) || selectedOptions.length === 0) {
+        throw new HttpsError("invalid-argument", "You must select at least one program.");
+    }
+
+    const db = admin.firestore();
+    const userRef = db.doc(`creators/${uid}`);
+    const enrollmentRef = db.doc(`enrollmentApplications/${uid}`);
+    const configRef = db.doc('settings/enrollmentConfig');
+
+    try {
+        const [userDoc, enrollmentDoc, configDoc] = await Promise.all([
+            userRef.get(),
+            enrollmentRef.get(),
+            configRef.get()
+        ]);
+
+        if (!userDoc.exists) {
+            throw new HttpsError("not-found", "Your user profile could not be found.");
+        }
+        if (enrollmentDoc.exists && !['declined', 'cancelled'].includes(enrollmentDoc.data().status)) {
+            throw new HttpsError("already-exists", "You already have a pending or approved application.");
+        }
+        if (!configDoc.exists) {
+            throw new HttpsError("failed-precondition", "Enrollment configuration is not available.");
+        }
+
+        const userData = userDoc.data();
+        const config = configDoc.data();
+
+        // --- Profile Completeness Validation ---
+        if (config.requireProfilePhoto && !userData.profilePictureUrl) {
+            throw new HttpsError("failed-precondition", "A profile picture is required to apply.");
+        }
+        if (config.requirePhone && !phoneNumber) { 
+            throw new HttpsError("failed-precondition", "A phone number is required to apply.");
+        }
+        if (config.requireExperience && (!userData.bio || userData.bio.length < 10)) {
+            throw new HttpsError("failed-precondition", "Your bio/experience is required (minimum 10 characters).");
+        }
+
+        const applicationData = {
+            userId: uid,
+            userName: userData.creatorName || userData.email.split('@')[0],
+            userEmail: userData.email,
+            profilePictureUrl: userData.profilePictureUrl || null,
+            phone: phoneNumber || null,
+            bio: userData.bio || "",
+            selectedOptions,
+            totalAmount: totalAmount || 0,
+            status: "pending",
+            submittedAt: FieldValue.serverTimestamp(),
+            history: [{
+                status: "pending",
+                timestamp: new Date().toISOString(),
+                actor: "user"
+            }]
+        };
+
+        await enrollmentRef.set(applicationData, { merge: true });
+        logger.info(`User '${uid}' successfully submitted an enrollment application.`);
+        return { success: true, message: "Application submitted for review." };
+
+    } catch (error) {
+        logger.error(`Error in submitEnrollmentApplication for user '${uid}':`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred.");
+    }
+});
+
+// Admin-only function to approve an application.
+exports.approveEnrollmentApplication = onCall({ enforceAppCheck: false }, async (request) => {
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+    const { targetUserId } = request.data;
+    if (!targetUserId) {
+        throw new HttpsError("invalid-argument", "Missing targetUserId.");
+    }
+
+    const db = admin.firestore();
+    const enrollmentRef = db.doc(`enrollmentApplications/${targetUserId}`);
+
+    await enrollmentRef.update({
+        status: "approved",
+        history: FieldValue.arrayUnion({
+            status: "approved",
+            timestamp: new Date().toISOString(),
+            actor: request.auth.uid
+        })
+    });
+    
+    logger.info(`Admin '${request.auth.uid}' approved enrollment for user '${targetUserId}'.`);
+    return { success: true };
+});
+
+// Admin-only function to decline an application.
+exports.declineEnrollmentApplication = onCall({ enforceAppCheck: false }, async (request) => {
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+    const { targetUserId, reason } = request.data;
+    if (!targetUserId) {
+        throw new HttpsError("invalid-argument", "Missing targetUserId.");
+    }
+
+    const db = admin.firestore();
+    const enrollmentRef = db.doc(`enrollmentApplications/${targetUserId}`);
+
+    await enrollmentRef.update({
+        status: "declined",
+        history: FieldValue.arrayUnion({
+            status: "declined",
+            timestamp: new Date().toISOString(),
+            actor: request.auth.uid,
+            reason: reason || null
+        })
+    });
+
+    logger.info(`Admin '${request.auth.uid}' declined enrollment for user '${targetUserId}'.`);
+    return { success: true };
+});
+
+// Callable function for a user to submit their payment details (Saves base64 directly to GCS).
+exports.submitEnrollmentPayment = onCall({ enforceAppCheck: false }, async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    const { paymentId, screenshotBase64 } = request.data;
+    if (!paymentId || !screenshotBase64) {
+        throw new HttpsError("invalid-argument", "Missing payment ID or screenshot payload.");
+    }
+    
+    const db = admin.firestore();
+    const bucket = admin.storage().bucket();
+    const enrollmentRef = db.doc(`enrollmentApplications/${uid}`);
+
+    try {
+        const mimeTypeMatch = screenshotBase64.match(/^data:(image\/\w+);base64,/);
+        const mimeType = mimeTypeMatch ? mimeTypeMatch[1] : 'image/png';
+        const extension = mimeType.split('/')[1] || 'png';
+        const base64Data = screenshotBase64.replace(/^data:image\/\w+;base64,/, "");
+        const buffer = Buffer.from(base64Data, 'base64');
         
-        response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
-        response.status(200).send(html);
-    } else {
-        // 3. IF HUMAN: Fetch the Real App and Inject Tags (Fixes Endless Loading)
+        const filePath = `enrollment_payments/${uid}/payment_proof_${Date.now()}.${extension}`;
+        const file = bucket.file(filePath);
+
+        await file.save(buffer, {
+            metadata: { contentType: mimeType },
+            public: true
+        });
+
+        const screenshotUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+
+        await enrollmentRef.update({
+            status: "paymentPending",
+            paymentDetails: {
+                paymentId,
+                screenshotUrl,
+                submittedAt: new Date().toISOString()
+            },
+            history: FieldValue.arrayUnion({
+                status: "paymentPending",
+                timestamp: new Date().toISOString(),
+                actor: "user"
+            })
+        });
+
+        logger.info(`User '${uid}' successfully submitted payment details.`);
+        return { success: true, verified: false };
+
+    } catch (error) {
+        logger.error(`Error in submitEnrollmentPayment for user '${uid}':`, error);
+        throw new HttpsError("internal", error.message);
+    }
+});
+
+// Admin-only function to verify a payment and enroll the user.
+exports.verifyEnrollmentPayment = onCall({ enforceAppCheck: false }, async (request) => {
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+    const { targetUserId } = request.data;
+    if (!targetUserId) {
+        throw new HttpsError("invalid-argument", "Missing targetUserId.");
+    }
+
+    const db = admin.firestore();
+    const enrollmentRef = db.doc(`enrollmentApplications/${targetUserId}`);
+
+    await enrollmentRef.update({
+        status: "enrolled",
+        history: FieldValue.arrayUnion({
+            status: "enrolled",
+            timestamp: new Date().toISOString(),
+            actor: request.auth.uid
+        })
+    });
+
+    logger.info(`Admin '${request.auth.uid}' verified payment and enrolled user '${targetUserId}'.`);
+    return { success: true };
+});
+
+// Firestore trigger that runs when a user's status becomes 'enrolled'.
+exports.onEnrollmentEnrolled = onDocumentUpdated("enrollmentApplications/{userId}", async (event) => {
+    const dataBefore = event.data.before.data();
+    const dataAfter = event.data.after.data();
+
+    if (dataBefore.status !== "enrolled" && dataAfter.status === "enrolled") {
+        const userId = event.params.userId;
+        const db = admin.firestore();
+        const userRef = db.doc(`creators/${userId}`);
+        
+        logger.info(`User '${userId}' status changed to 'enrolled'. Syncing profile and claims.`);
+
         try {
-            // Fetch the index.html from the hosting layer
-            const indexResponse = await fetch('https://nvanetworkapp.com/index.html');
-            let indexHtml = await indexResponse.text();
+            await userRef.update({
+                isClassMember: true,
+                badges: FieldValue.arrayUnion("Class Member")
+            });
 
-            // Replace the placeholders in your index.html with the dynamic data
-            indexHtml = indexHtml
-                .replace(/__OG_TITLE__/g, ogTitle)
-                .replace(/__OG_DESCRIPTION__/g, ogDescription)
-                .replace(/__OG_IMAGE_URL__/g, ogImage)
-                .replace(/__OG_URL__/g, finalUrl);
+            await admin.auth().setCustomUserClaims(userId, { classMember: true });
+            logger.info(`Successfully updated profile and claims for enrolled user '${userId}'.`);
 
-            // Send the modified full app
-            response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
-            response.status(200).send(indexHtml);
-
-        } catch (fetchError) {
-            console.error("Error serving app shell:", fetchError);
-            // Fallback: Just send a basic redirect if the fetch fails (unlikely)
-            response.redirect(finalUrl);
+        } catch (error) {
+            logger.error(`Failed to sync profile/claims for enrolled user '${userId}'.`, error);
         }
     }
+    return null;
+});
+
+// Admin-only function to retrieve a list of applications.
+exports.getEnrollmentApplications = onCall({ enforceAppCheck: false }, async (request) => {
+    if (request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin.");
+    }
+    const { statusFilter } = request.data;
+    const db = admin.firestore();
+    let q = db.collection('enrollmentApplications');
+
+    if (statusFilter && statusFilter !== 'all') {
+        q = q.where('status', '==', statusFilter);
+    }
+    q = q.orderBy('submittedAt', 'desc').limit(50);
+
+    const snapshot = await q.get();
+    const applications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    return { applications };
 });
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---

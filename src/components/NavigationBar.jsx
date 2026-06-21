@@ -1,6 +1,4 @@
-import React, { useState } from 'react';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '../firebase';
+import { useState } from 'react';
 import NotificationBell from './NotificationBell';
 
 const NavigationBar = (props) => {
@@ -9,7 +7,6 @@ const NavigationBar = (props) => {
         setActiveScreen, 
         currentUser, 
         creatorProfile, 
-        showMessage, 
         hasNewFollowerContent, 
         unreadCount,
         unreadChatCount

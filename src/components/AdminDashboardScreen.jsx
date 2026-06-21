@@ -1,7 +1,8 @@
 // src/components/AdminDashboardScreen.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react'; // <-- MODIFIED
 import { db, functions, httpsCallable, collection, onSnapshot, query, where, orderBy, doc, updateDoc, deleteDoc, limit } from '../firebase';
+import AdminEnrollmentManager from './AdminEnrollmentManager'; // <-- ADD THIS LINE
 import AdminModerationCenter from './AdminModerationCenter';
 import AdminContentManagerScreen from './AdminContentManagerScreen';
 import AdminCompetitionManager from './AdminCompetitionManager';
@@ -83,8 +84,9 @@ const AdminDashboardScreen = ({
     const [payoutRequestsSearchTerm, setPayoutRequestsSearchTerm] = useState('');
 
     // State for Notification Badges
-    const [pendingReportsCount, setPendingReportsCount] = useState(0);
-    const [pendingAppealsCount, setPendingAppealsCount] = useState(0);
+const [pendingReportsCount, setPendingReportsCount] = useState(0);
+const [pendingAppealsCount, setPendingAppealsCount] = useState(0);
+const [pendingEnrollmentCount, setPendingEnrollmentCount] = useState(0); // <-- ADD THIS LINE
 
     const [newSubmissionsCount, setNewSubmissionsCount] = useState(0);
 
@@ -127,12 +129,14 @@ const AdminDashboardScreen = ({
         // --- THIS IS THE FIX ---
         // Queries restricted to 'admin' or 'authority' roles.
         if (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') {
-            unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'pending')), (s) => setPendingCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
-            unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'active')), (s) => setActiveCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
-            unsubscribers.push(onSnapshot(query(collection(db, "promotedStatuses"), where('status', '==', 'content_review_pending')), (s) => setPendingStatuses(s.docs.map(d=>({id:d.id,...d.data()})))));
-            unsubscribers.push(onSnapshot(query(collection(db, "reports"), where("status", "==", "pending")), (s) => setPendingReportsCount(s.size)));
-            unsubscribers.push(onSnapshot(query(collection(db, "appeals"), where("status", "==", "pending")), (s) => setPendingAppealsCount(s.size)));
-        }
+        unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'pending')), (s) => setPendingCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
+        unsubscribers.push(onSnapshot(query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('status', '==', 'active')), (s) => setActiveCampaigns(s.docs.map(d=>({id:d.id,...d.data()})))));
+        unsubscribers.push(onSnapshot(query(collection(db, "promotedStatuses"), where('status', '==', 'content_review_pending')), (s) => setPendingStatuses(s.docs.map(d=>({id:d.id,...d.data()})))));
+        unsubscribers.push(onSnapshot(query(collection(db, "reports"), where("status", "==", "pending")), (s) => setPendingReportsCount(s.size)));
+        unsubscribers.push(onSnapshot(query(collection(db, "appeals"), where("status", "==", "pending")), (s) => setPendingAppealsCount(s.size)));
+        // --- ADD THIS LINE ---
+        unsubscribers.push(onSnapshot(query(collection(db, "enrollmentApplications"), where("status", "in", ["pending", "paymentPending"])), (s) => setPendingEnrollmentCount(s.size)));
+    }
         
         // Queries restricted to 'admin' role only.
         if (creatorProfile.role === 'admin') {
@@ -384,12 +388,17 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
             <div className="screenContainer">
                 <p className="heading">Admin Dashboard</p>
                <div className="admin-nav-container">
-                    <button className={`admin-nav-button ${selectedAdminSubScreen === 'Overview' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('Overview')}>
-                        Overview {pendingOverviewCount > 0 && <span style={{color: '#DC3545', fontWeight: 'bold'}}>({pendingOverviewCount})</span>}
-                    </button>
-                    <button className={`admin-nav-button ${selectedAdminSubScreen === 'ModerationCenter' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('ModerationCenter')}>
-                        Moderation {(pendingReportsCount + pendingAppealsCount) > 0 && <span style={{color: '#DC3545', fontWeight: 'bold'}}>({pendingReportsCount + pendingAppealsCount})</span>}
-                    </button>
+    <button className={`admin-nav-button ${selectedAdminSubScreen === 'Overview' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('Overview')}>
+        Overview {pendingOverviewCount > 0 && <span style={{color: '#DC3545', fontWeight: 'bold'}}>({pendingOverviewCount})</span>}
+    </button>
+    {/* --- ADD THIS BUTTON --- */}
+    <button className={`admin-nav-button ${selectedAdminSubScreen === 'Enrollments' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('Enrollments')}>
+        Enrollments {pendingEnrollmentCount > 0 && <span style={{color: '#DC3545', fontWeight: 'bold'}}>({pendingEnrollmentCount})</span>}
+    </button>
+    {/* --- END ADDITION --- */}
+    <button className={`admin-nav-button ${selectedAdminSubScreen === 'ModerationCenter' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('ModerationCenter')}>
+        Moderation {(pendingReportsCount + pendingAppealsCount) > 0 && <span style={{color: '#DC3545', fontWeight: 'bold'}}>({pendingReportsCount + pendingAppealsCount})</span>}
+    </button>
                                                        
                     <button className={`admin-nav-button ${selectedAdminSubScreen === 'ContentManagement' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('ContentManagement')}>
                         Curation {(pendingOpportunities.length + pendingStatuses.length) > 0 && <span style={{color: '#DC3545', fontWeight: 'bold'}}>({pendingOpportunities.length + pendingStatuses.length})</span>}
@@ -412,8 +421,9 @@ const handleUpdateRequestStatus = (requestId, newStatus) => {
                     <button className="admin-nav-button" onClick={() => setActiveScreen('AnalyticsDashboard')}>Analytics</button>
                 </div>
 
-                {selectedAdminSubScreen === 'Overview' && (
-                    <>
+                {selectedAdminSubScreen === 'Enrollments' && <AdminEnrollmentManager showMessage={showMessage} setActiveScreen={setActiveScreen} setSelectedUserId={setSelectedUserId} />}
+{selectedAdminSubScreen === 'Overview' && (
+    <>
                         {/* --- START: NEW PAYOUT REQUESTS SECTION (ADMIN ONLY) --- */}
                         {creatorProfile.role === 'admin' && (
                             <section className="dashboardSection" style={{border: '2px solid #00FF00'}}>

@@ -19,11 +19,11 @@ const extractVideoInfo = (url) => {
 
     const ytShortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/);
     if (ytShortsMatch) {
-        return { embedUrl: `https://www.youtube.com/embed/${ytShortsMatch[1]}?autoplay=1&rel=0`, isVertical: true, platform: 'youtube' };
+        return { embedUrl: `https://www.youtube.com/embed/${ytShortsMatch[1]}`, isVertical: true, platform: 'youtube' };
     }
     const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/);
     if (ytMatch) {
-        return { embedUrl: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0`, isVertical: false, platform: 'youtube' };
+        return { embedUrl: `https://www.youtube.com/embed/${ytMatch[1]}`, isVertical: false, platform: 'youtube' };
     }
     const tiktokMatch = url.match(/tiktok\.com\/.*\/video\/(\d+)/);
     if (tiktokMatch) {
@@ -47,12 +47,14 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
     useEffect(() => {
         if (!contentItem?.id) return;
         const itemId = contentItem.originalContentId || contentItem.id;
-        const docPath = contentItem?.eventTitle ? `events/${itemId}` : `artifacts/${appId}/public/data/content_items/${itemId}`;
+        const currentAppId = import.meta.env.VITE_APP_ID || appId;
+        const docPath = contentItem?.eventTitle ? `events/${itemId}` : `artifacts/${currentAppId}/public/data/content_items/${itemId}`;
         const unsubContent = onSnapshot(doc(db, docPath), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 setLiveContentItem({ id: docSnap.id, ...data });
-                if (data.creatorId && data.creatorId !== creatorProfile?.id) {
+                if (data.creatorId) {
+                    // Pull profile only once during first fetch or change of ID, bypassing trigger dependencies
                     getDoc(doc(db, "creators", data.creatorId)).then(creatorSnap => {
                         if (creatorSnap.exists()) setCreatorProfile({ id: creatorSnap.id, ...creatorSnap.data() });
                     });
@@ -60,7 +62,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, showMes
             }
         });
         return () => unsubContent();
-    }, [contentItem, creatorProfile?.id]);
+    }, [contentItem?.id, contentItem?.originalContentId, contentItem?.eventTitle]);
 
     useEffect(() => {
         if (!liveContentItem || !currentUser || viewCountedRef.current || currentUser.uid === liveContentItem.creatorId) return;

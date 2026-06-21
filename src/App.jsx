@@ -2,7 +2,7 @@
 
 import notificationSound from './Notification 2.mp3';
 import { useState, useEffect, useCallback, lazy, Suspense, useRef } from 'react';
-import { doc, getDoc, onSnapshot, collection, query, where, orderBy, limit, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, onSnapshot, collection, query, where, orderBy, limit, updateDoc } from "firebase/firestore";
 import { getDatabase, ref, onValue, onDisconnect, set, serverTimestamp } from "firebase/database";
 import { onAuthStateChanged, signOut, applyActionCode } from "firebase/auth";
 import { auth, db } from './firebase.js';
@@ -28,13 +28,15 @@ const NotificationInboxScreen = lazy(() => import('./components/NotificationInbo
 const PostSubmissionUpsellScreen = lazy(() => import('./components/PostSubmissionUpsellScreen'));
 const MyFollowsScreen = lazy(() => import('./components/MyFollowsScreen'));
 const FollowersScreen = lazy(() => import('./components/FollowersScreen'));
+const EnrollmentHubScreen = lazy(() => import('./components/EnrollmentHubScreen'));
+const EnrollmentPaymentScreen = lazy(() => import('./components/EnrollmentPaymentScreen'));
 const PremiumPerksScreen = lazy(() => import('./components/PremiumPerksScreen'));
 const FollowingFeedScreen = lazy(() => import('./components/FollowingFeedScreen'));
 const SubscriptionPledgeScreen = lazy(() => import('./components/SubscriptionPledgeScreen'));
 const BlockedListScreen = lazy(() => import('./components/BlockedListScreen'));
 const HomeScreen = lazy(() => import('./components/HomeScreen'));
 const AboutScreen = lazy(() => import('./components/AboutScreen'));
-const NvaNetworkChartsScreen = lazy(() => import('./components/NvaNetworkChartsScreen'));
+
 const ContactScreen = lazy(() => import('./components/ContactScreen'));
 const CompetitionScreen = lazy(() => import('./components/CompetitionScreen'));
 const PrivacyPolicyScreen = lazy(() => import('./components/PrivacyPolicyScreen'));
@@ -42,8 +44,7 @@ const TermsOfServiceScreen = lazy(() => import('./components/TermsOfServiceScree
 const DiscoverScreen = lazy(() => import('./components/DiscoverScreen'));
 const DiscoverUsersScreen = lazy(() => import('./components/DiscoverUsersScreen'));
 const LoginScreen = lazy(() => import('./components/LoginScreen'));
-const CreatorSignUpScreen = lazy(() => import('./components/CreatorSignUpScreen'));
-const UserSignUpScreen = lazy(() => import('./components/UserSignUpScreen'));
+const SignUpScreen = lazy(() => import('./components/SignUpScreen'));
 const VerifyEmailScreen = lazy(() => import('./components/VerifyEmailScreen'));
 const ForgotPasswordScreen = lazy(() => import('./components/ForgotPasswordScreen'));
 const SuspendedScreen = lazy(() => import('./components/SuspendedScreen'));
@@ -167,8 +168,6 @@ function App() {
   const [currentVideoUrl, setCurrentVideoUrl] = useState('');
   const [currentContentItem, setCurrentContentItem] = useState(null);
   const [countdownText, setCountdownText] = useState('');
-  const [liveThumbnail, setLiveThumbnail] = useState('');
-
   // --- THIS IS THE FIX: State for the Top Creators feature ---
   const [featuredContentSlots, setFeaturedContentSlots] = useState(null);
   // -----------------------------------------------------------
@@ -212,10 +211,7 @@ function App() {
   const [contentForLikes, setContentForLikes] = useState(null);
   const [openCommentsOnLoad, setOpenCommentsOnLoad] = useState(false); // <-- Add this line
 
-  const [showImageViewerModal, setShowImageViewerModal] = useState(false);
   const [actionCode, setActionCode] = useState(null);
-  
-  const [imageViewerData, setImageViewerData] = useState({ imageUrl: '', description: '' }); 
 
     const [hasNewFollowerContent, setHasNewFollowerContent] = useState(false);
 
@@ -225,7 +221,6 @@ function App() {
   const [currentToast, setCurrentToast] = useState(null);
   const processedToastIds = useRef(new Set()); // Use a ref to prevent re-renders
   const notificationSoundRef = useRef(null);
-  const unreadCount = notifications.filter(n => !n.isBroadcast && !n.isRead).length;
   const [notificationBadgeCount, setNotificationBadgeCount] = useState(0);
     
     const [unreadChatCount, setUnreadChatCount] = useState(0); // For the chat icon badge
@@ -300,7 +295,7 @@ function App() {
   // ======================= START: POST-LOGIN REDIRECT FIX =======================
   useEffect(() => {
     if (currentUser && !authLoading) {
-      const guestScreens = ['Login', 'UserSignUp', 'CreatorSignUp', 'ForgotPassword', 'VerifyEmail'];
+      const guestScreens = ['Login', 'SignUp', 'ForgotPassword', 'VerifyEmail'];
       if (guestScreens.includes(activeScreen)) {
         const creationTime = new Date(currentUser.metadata.creationTime).getTime();
         const isNewUser = (new Date().getTime() - creationTime) < 30000; 
@@ -444,13 +439,25 @@ function App() {
         const userDocRef = doc(db, "creators", user.uid);
         const docSnap = await getDoc(userDocRef);
 
+        let profileData;
         if (!docSnap.exists()) {
-          showMessage("User profile not found. Logging out.");
-          await signOut(auth);
-          return;
+          // Auto-create basic profile for new users (handles Google sign-up race condition)
+          profileData = {
+            uid: user.uid,
+            email: user.email,
+            displayName: user.displayName || '',
+            photoURL: user.photoURL || '',
+            role: 'user',
+            createdAt: new Date(),
+            lastLoginTimestamp: new Date(),
+            banned: false,
+            suspendedUntil: null,
+            unreadNotificationCount: 0
+          };
+          await setDoc(userDocRef, profileData);
+        } else {
+          profileData = docSnap.data();
         }
-
-        const profileData = docSnap.data();
 
         if (profileData.banned) {
           setActiveScreen('Banned');
@@ -519,22 +526,15 @@ function App() {
     const connectedRef = ref(dbRT, '.info/connected');
     const unsubscribe = onValue(connectedRef, (snap) => {
         if (snap.val() === true) {
-            // --- This is the definitive, robust setup ---
-            // 1. Set the server-side disconnect handler FIRST.
-            // If the user closes the tab, the server will set them to offline.
-            onDisconnect(myStatusRef).set(isOfflineForDB);
-
-            // 2. THEN, set the user's status to online.
-            set(myStatusRef, isOnlineForDB);
+            onDisconnect(myStatusRef).set(isOfflineForDB).catch(() => {});
+            set(myStatusRef, isOnlineForDB).catch(() => {});
         }
     });
 
-    // Cleanup function for when the user logs out.
     return () => {
         unsubscribe();
         if (currentUser) {
-            // Explicitly set the user to offline on graceful logout.
-            set(myStatusRef, isOfflineForDB);
+            set(myStatusRef, isOfflineForDB).catch(() => {});
         }
     };
   }, [currentUser]);
@@ -1119,18 +1119,19 @@ useEffect(() => {
       case 'About': return <AboutScreen setActiveScreen={handleNavigate} />;
       case 'BlockedList': return <BlockedListScreen currentUser={currentUser} setActiveScreen={handleNavigate} showMessage={showMessage} />;
       case 'Login': return <LoginScreen setActiveScreen={handleNavigate} showMessage={showMessage} />;
-      case 'CreatorSignUp': return <CreatorSignUpScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
+      case 'SignUp': return <SignUpScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'VerifyEmail': return <VerifyEmailScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={handleNavigate} handleLogout={handleLogout} />;
-      case 'UserSignUp': return <UserSignUpScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'ForgotPassword': return <ForgotPasswordScreen showMessage={showMessage} setActiveScreen={handleNavigate} actionCode={actionCode} />;
       case 'CreateCampaign': return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} />;
       case 'AllCampaigns': return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={handleNavigate} setSelectedCampaignId={setSelectedCampaignId} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
       case 'CampaignDetails': return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={handleNavigate} selectedCampaignId={selectedCampaignId} currentUser={currentUser} setPledgeContext={setPledgeContext} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
       case 'DonationPledge': return <DonationPledgeScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
       case 'SubscriptionPledge': return <SubscriptionPledgeScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} selectedCurrency={selectedCurrency} currencyRates={currencyRates} />;
+      case 'EnrollmentPayment': return <EnrollmentPaymentScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} />;
       case 'PendingConfirmation': return <PendingConfirmationScreen showMessage={showMessage} setActiveScreen={handleNavigate} pledgeIdForConfirmation={pledgeIdForConfirmation} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
       case 'SupportUsScreen': return <SupportUsScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} setPledgeContext={setPledgeContext} liveEvent={liveEvent} />;
       case 'PremiumPerks': return <PremiumPerksScreen setActiveScreen={handleNavigate} currentUser={currentUser} showMessage={showMessage} setPledgeContext={setPledgeContext} />;
+      case 'EnrollmentHub': return <EnrollmentHubScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />;
       case 'AdvertiserPerks': return <AdvertiserPerksScreen setActiveScreen={handleNavigate} />;
       case 'CreatorConnect': return <CreatorConnectScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setSelectedOpportunity={setSelectedOpportunity} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
       case 'OpportunityDetails': return <OpportunityDetailsScreen showMessage={showMessage} setActiveScreen={handleNavigate} selectedOpportunity={selectedOpportunity} />;
@@ -1157,15 +1158,13 @@ useEffect(() => {
       case 'PostSubmissionUpsell': return <PostSubmissionUpsellScreen showMessage={showMessage} setActiveScreen={handleNavigate} opportunityToPromote={opportunityToPromote} setOpportunityToPromote={setOpportunityToPromote} />;
       case 'AnalyticsDashboard': return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'Contact': return <ContactScreen setActiveScreen={handleNavigate} showMessage={showMessage} currentUser={currentUser} />;
-      case 'NvaNetworkCharts': return <NvaNetworkChartsScreen setActiveScreen={handleNavigate} />;
+
       case 'NotificationInbox': return <NotificationInboxScreen setActiveScreen={handleNavigate} currentUser={currentUser} dismissNotification={dismissNotification} markNotificationAsRead={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
       case 'ChatList': return <ChatListScreen currentUser={currentUser} setActiveScreen={handleNavigate} setSelectedChatId={setSelectedChatId} showMessage={showMessage} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
       case 'ChatMessageScreen': return <ChatMessageScreen chatId={selectedChatId} currentUser={currentUser} creatorProfile={creatorProfile} setActiveScreen={handleNavigate} showMessage={showMessage} setSelectedUserId={setSelectedUserId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
-
       case 'PrivacyPolicy': return <PrivacyPolicyScreen setActiveScreen={handleNavigate} />;
       case 'TermsOfService': return <TermsOfServiceScreen setActiveScreen={handleNavigate} />;
-
-      case 'Home': default: return <HomeScreen currentUser={currentUser} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
+      case 'Home': default: return <HomeScreen currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
     }
   };
 
@@ -1220,17 +1219,16 @@ return (
                 </Suspense>
             )}
           </div>
-          {!['Suspended', 'Banned', 'ChatMessageScreen'].includes(activeScreen) && (
+                      {!['Suspended', 'Banned', 'SignUp', 'ChatMessageScreen'].includes(activeScreen) && (
             <NavigationBar
               activeScreen={activeScreen}
               setActiveScreen={handleNavigate}
               currentUser={currentUser}
               creatorProfile={creatorProfile}
-              showMessage={showMessage}
               hasNewFollowerContent={hasNewFollowerContent}
-          unreadCount={notificationBadgeCount}
-          unreadChatCount={unreadChatCount} // <-- NEW PROP ADDED HERE
-        />
+              unreadCount={notificationBadgeCount}
+              unreadChatCount={unreadChatCount}
+            />
           )}
 
           {/* All modals and toasts remain here */}

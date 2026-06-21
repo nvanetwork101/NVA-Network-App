@@ -89,5 +89,30 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const link = event.notification.data.link || '/';
   const fullUrl = new URL(link, self.location.origin).href;
-  event.waitUntil(clients.openWindow(fullUrl));
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // 1. If a window is already open on this exact link, focus it
+      for (let i = 0; i < windowClients.length; i++) {
+        const client = windowClients[i];
+        if (client.url === fullUrl && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // 2. Otherwise, navigate any open window of our site to the new path and focus it
+      if (windowClients.length > 0) {
+        const client = windowClients[0];
+        if ('navigate' in client) {
+          client.navigate(fullUrl);
+        }
+        if ('focus' in client) {
+          return client.focus();
+        }
+      }
+      // 3. Fallback: If no tabs are open, spawn a new window
+      if (clients.openWindow) {
+        return clients.openWindow(fullUrl);
+      }
+    })
+  );
 });

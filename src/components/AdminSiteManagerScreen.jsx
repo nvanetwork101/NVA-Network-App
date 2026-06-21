@@ -38,6 +38,23 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     const [isCleaningTokens, setIsCleaningTokens] = useState(false);
     const [isRecalibratingBadge, setIsRecalibratingBadge] = useState(false); // <-- ADD THIS LINE
     
+    // --- STATE FOR ENROLLMENT CONFIG ---
+    const [enrollmentConfig, setEnrollmentConfig] = useState({
+        filmClubOpen: true,
+        docuSeriesOpen: true,
+        filmClubFee: 2500,
+        docuSeriesFee: 500,
+        bothDiscount: 0,
+        mmgNumber: '',
+        mmgInstructions: '',
+        requireProfilePhoto: true,
+        requireExperience: true,
+        requirePhone: true,
+        autoVerifyPayments: false
+    });
+    const [isEnrollmentConfigLoading, setIsEnrollmentConfigLoading] = useState(true);
+    const [hasEnrollmentChanges, setHasEnrollmentChanges] = useState(false);
+    
     // --- STATE FOR PAYOUT HISTORY ---
     const [payoutHistory, setPayoutHistory] = useState([]);
     const [payoutHistorySearchTerm, setPayoutHistorySearchTerm] = useState('');
@@ -111,11 +128,20 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
             setIsLoadingLegalContent(false);
         });
 
+        const enrollmentConfigDocRef = doc(db, "settings", "enrollmentConfig");
+        const unsubEnrollmentConfig = onSnapshot(enrollmentConfigDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                setEnrollmentConfig(docSnap.data());
+            }
+            setIsEnrollmentConfigLoading(false);
+        });
+
         return () => {
             unsubSocial();
             unsubSupport();
             unsubLayout();
             unsubLegal();
+            unsubEnrollmentConfig();
         };
     }, []);
 
@@ -150,6 +176,11 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
         const handleLegalContentChange = (field, value) => {
         setLegalContent(prev => ({ ...prev, [field]: value }));
         setHasLegalContentChanges(true);
+    };
+
+    const handleEnrollmentConfigChange = (field, value) => {
+        setEnrollmentConfig(prev => ({ ...prev, [field]: value }));
+        setHasEnrollmentChanges(true);
     };
 
     const handleAddPerk = (type) => {
@@ -193,6 +224,20 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
                 await setDoc(legalContentDocRef, { ...legalContent, lastUpdatedAt: new Date().toISOString() }, { merge: true });
                 showMessage("Legal documents saved successfully!");
                 setHasLegalContentChanges(false);
+            } catch (error) { showMessage(`Error: ${error.message}`); }
+        } else if (section === 'enrollmentConfig') {
+            if (!hasEnrollmentChanges) { setIsSaving(false); return; }
+            showMessage("Saving Enrollment configurations...");
+            try {
+                const enrollmentConfigDocRef = doc(db, "settings", "enrollmentConfig");
+                await setDoc(enrollmentConfigDocRef, {
+                    ...enrollmentConfig,
+                    filmClubFee: parseFloat(enrollmentConfig.filmClubFee) || 0,
+                    docuSeriesFee: parseFloat(enrollmentConfig.docuSeriesFee) || 0,
+                    bothDiscount: parseFloat(enrollmentConfig.bothDiscount) || 0
+                }, { merge: true });
+                showMessage("Enrollment settings saved successfully!");
+                setHasEnrollmentChanges(false);
             } catch (error) { showMessage(`Error: ${error.message}`); }
         } else {
             if (!hasChanges) { setIsSaving(false); return; }
@@ -552,6 +597,89 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
             </div>
 
             <div className="dashboardSection"><div className="flex justify-between items-center mb-4"><p className="dashboardSectionTitle" style={{marginBottom: 0}}>Social Links Manager</p><button className="button" onClick={() => handleSaveChanges('siteSettings')} disabled={!hasChanges || isSaving}><span className="buttonText">{isSaving ? 'Saving...' : 'Save Changes'}</span></button></div><div className="dashboardContentList">{socialLinks.map((link, index) => (<div key={link.name || index} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}><div className="flex justify-between items-center"><p className="adminDashboardItemTitle">{link.name}</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{link.isEnabled ? 'Visible' : 'Hidden'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={link.isEnabled} onChange={(e) => handleUpdateField(`${index}-isEnabled`, e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${link.isEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${link.isEnabled ? 'transform translate-x-6' : ''}`}></div></div></label></div><div className="formGroup" style={{marginBottom: 0}}><label className="formLabel" style={{fontSize: '12px', color: '#AAA'}}>URL:</label><input type="url" className="formInput" value={link.url} onChange={(e) => handleUpdateField(`${index}-url`, e.target.value)} placeholder={`Enter full URL for ${link.name}`} /></div></div>))}</div></div>
+            
+            {/* --- START: ENROLLMENT CONFIG MANAGER --- */}
+            <div className="dashboardSection" style={{ border: '2px solid #FFD700', marginTop: '20px' }}>
+                <div className="flex justify-between items-center mb-4">
+                    <p className="dashboardSectionTitle" style={{ marginBottom: 0, color: '#FFD700' }}>Enrollment Configuration</p>
+                    <button className="button" onClick={() => handleSaveChanges('enrollmentConfig')} disabled={!hasEnrollmentChanges || isSaving}>
+                        <span className="buttonText">{isSaving ? 'Saving...' : 'Save Settings'}</span>
+                    </button>
+                </div>
+                {isEnrollmentConfigLoading ? <p>Loading enrollment settings...</p> : (
+                    <>
+                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Film Club Open</p>
+                            <label className="flex items-center cursor-pointer">
+                                <span className="mr-3 text-sm font-medium text-gray-300">{enrollmentConfig.filmClubOpen ? 'Open' : 'Closed'}</span>
+                                <div className="relative">
+                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.filmClubOpen} onChange={(e) => handleEnrollmentConfigChange('filmClubOpen', e.target.checked)} />
+                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.filmClubOpen ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.filmClubOpen ? 'transform translate-x-6' : ''}`}></div>
+                                </div>
+                            </label>
+                        </div>
+                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Docu-Series Open</p>
+                            <label className="flex items-center cursor-pointer">
+                                <span className="mr-3 text-sm font-medium text-gray-300">{enrollmentConfig.docuSeriesOpen ? 'Open' : 'Closed'}</span>
+                                <div className="relative">
+                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.docuSeriesOpen} onChange={(e) => handleEnrollmentConfigChange('docuSeriesOpen', e.target.checked)} />
+                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.docuSeriesOpen ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.docuSeriesOpen ? 'transform translate-x-6' : ''}`}></div>
+                                </div>
+                            </label>
+                        </div>
+                        <div className="formGroup"><label className="formLabel">Film Club Fee (GYD):</label><input type="number" className="formInput" value={enrollmentConfig.filmClubFee || ''} onChange={(e) => handleEnrollmentConfigChange ? handleSupportContentChange() : setEnrollmentConfig(prev => ({ ...prev, filmClubFee: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
+                        <div className="formGroup"><label className="formLabel">Docu-Series Fee (GYD):</label><input type="number" className="formInput" value={enrollmentConfig.docuSeriesFee || ''} onChange={(e) => setEnrollmentConfig(prev => ({ ...prev, docuSeriesFee: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
+                        <div className="formGroup"><label className="formLabel">Bundle Discount (GYD):</label><input type="number" className="formInput" value={enrollmentConfig.bothDiscount || ''} onChange={(e) => setEnrollmentConfig(prev => ({ ...prev, bothDiscount: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
+                        <div className="formGroup"><label className="formLabel">MMG Phone Number:</label><input type="text" className="formInput" value={enrollmentConfig.mmgNumber || ''} onChange={(e) => setEnrollmentConfig(prev => ({ ...prev, mmgNumber: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
+                        <div className="formGroup"><label className="formLabel">MMG Payment Instructions:</label><textarea className="formTextarea" value={enrollmentConfig.mmgInstructions || ''} onChange={(e) => setEnrollmentConfig(prev => ({ ...prev, mmgInstructions: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
+                        <hr style={{ borderColor: '#444', margin: '20px 0' }} />
+                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Require Profile Photo to Apply</p>
+                            <label className="flex items-center cursor-pointer">
+                                <div className="relative">
+                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.requireProfilePhoto} onChange={(e) => handleEnrollmentConfigChange('requireProfilePhoto', e.target.checked)} />
+                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.requireProfilePhoto ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.requireProfilePhoto ? 'transform translate-x-6' : ''}`}></div>
+                                </div>
+                            </label>
+                        </div>
+                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Require Experience/Bio to Apply</p>
+                            <label className="flex items-center cursor-pointer">
+                                <div className="relative">
+                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.requireExperience} onChange={(e) => handleEnrollmentConfigChange('requireExperience', e.target.checked)} />
+                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.requireExperience ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.requireExperience ? 'transform translate-x-6' : ''}`}></div>
+                                </div>
+                            </label>
+                        </div>
+                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Require Phone Number to Apply</p>
+                            <label className="flex items-center cursor-pointer">
+                                <div className="relative">
+                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.requirePhone} onChange={(e) => handleEnrollmentConfigChange('requirePhone', e.target.checked)} />
+                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.requirePhone ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.requirePhone ? 'transform translate-x-6' : ''}`}></div>
+                                </div>
+                            </label>
+                        </div>
+                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Auto-Verify Payments (Not Recommended)</p>
+                            <label className="flex items-center cursor-pointer">
+                                <div className="relative">
+                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.autoVerifyPayments} onChange={(e) => handleEnrollmentConfigChange('autoVerifyPayments', e.target.checked)} />
+                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.autoVerifyPayments ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.autoVerifyPayments ? 'transform translate-x-6' : ''}`}></div>
+                                </div>
+                            </label>
+                        </div>
+                    </>
+                )}
+            </div>
+            {/* --- END: ENROLLMENT CONFIG MANAGER --- */}
             
             <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}>
                 <div className="flex justify-between items-center mb-4">

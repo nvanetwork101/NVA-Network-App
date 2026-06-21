@@ -144,7 +144,9 @@ const CreatorDashboardScreen = ({
     selectedCurrency
 }) => {
     // --- STATE AND CONSTANTS ---
-    const [payoutStatuses, setPayoutStatuses] = useState({});
+const [payoutStatuses, setPayoutStatuses] = useState({});
+const [enrollmentStatus, setEnrollmentStatus] = useState(null); // <-- ADD THIS LINE
+const [isEnrollmentLoading, setIsEnrollmentLoading] = useState(true); // <-- ADD THIS LINE
     
     const [creatorCampaigns, setCreatorCampaigns] = useState([]);
     const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -216,13 +218,29 @@ const CreatorDashboardScreen = ({
 }, [currentUser, creatorProfile]); // Add creatorProfile to dependency array
     
     useEffect(() => {
-        if (!currentUser) return;
-        const campaignsQuery = query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('creatorId', '==', currentUser.uid), orderBy('createdAt', 'desc'));
-        const unsubCampaigns = onSnapshot(campaignsQuery, (snapshot) => {
-            setCreatorCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-        });
-        return () => unsubCampaigns();
-    }, [currentUser, appId]);
+    if (!currentUser) return;
+    const campaignsQuery = query(collection(db, `artifacts/${appId}/public/data/campaigns`), where('creatorId', '==', currentUser.uid), orderBy('createdAt', 'desc'));
+    const unsubCampaigns = onSnapshot(campaignsQuery, (snapshot) => {
+        setCreatorCampaigns(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    // --- ADD THIS ENTIRE UNSUBSCRIBER ---
+    const enrollmentRef = doc(db, "enrollmentApplications", currentUser.uid);
+    const unsubEnrollment = onSnapshot(enrollmentRef, (docSnap) => {
+        if (docSnap.exists()) {
+            setEnrollmentStatus(docSnap.data());
+        } else {
+            setEnrollmentStatus(null);
+        }
+        setIsEnrollmentLoading(false);
+    });
+    // --- END ADDITION ---
+
+    return () => {
+        unsubCampaigns();
+        unsubEnrollment(); // <-- ADD THIS LINE
+    };
+}, [currentUser, appId]);
 
     useEffect(() => {
         if (creatorProfile) {
@@ -474,6 +492,24 @@ const CreatorDashboardScreen = ({
                 {/* ... Profile section remains unchanged ... */}
                 <p className="heading">Dashboard</p>
                 <p className="subHeading">Welcome, {creatorProfile.creatorName || currentUser.email}!</p>
+
+{/* === START: NVA ENROLLMENT STATUS PANEL === */}
+{!isEnrollmentLoading && enrollmentStatus && (
+    <div className="dashboardSection" style={{ border: '1px solid #FFD700', backgroundColor: 'rgba(255, 215, 0, 0.05)' }}>
+        <p className="dashboardSectionTitle" style={{ color: '#FFD700' }}>Film Club Enrollment Status</p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '15px' }}>
+            <p className="dashboardItem" style={{ margin: 0 }}>
+                Your application status is: <strong style={{ textTransform: 'capitalize' }}>{enrollmentStatus.status}</strong>
+            </p>
+            {enrollmentStatus.status === 'approved' && (
+                <button className="dashboardButton" onClick={() => setActiveScreen('EnrollmentPayment')}>
+                    Make Payment
+                </button>
+            )}
+        </div>
+    </div>
+)}
+{/* === END: NVA ENROLLMENT STATUS PANEL === */}
                  <div className="dashboardSection">
                     <div className="flex justify-between items-center">
                     <p className="dashboardSectionTitle" style={{marginBottom: 0}}>Your Profile</p>

@@ -1,6 +1,6 @@
 // src/components/HomeScreen.jsx
 
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { doc, getDoc, collection, query, where, orderBy, onSnapshot, limit } from "firebase/firestore";
 
@@ -12,7 +12,7 @@ import CompetitionHomeScreenBanner from './CompetitionHomeScreenBanner';
 import PromotedSlot from './PromotedSlot';
 
 // --- Main HomeScreen Component ---
-    const HomeScreen = ({ currentUser, showMessage, handleVideoPress, handleLogout, setActiveScreen, activeCompetition }) => {
+    const HomeScreen = ({ currentUser, creatorProfile, showMessage, handleVideoPress, handleLogout, setActiveScreen, activeCompetition }) => {
     // --- STATE & REFS ---
     const [rawLayout, setRawLayout] = useState(null);
     const [rawAutomatedSlots, setRawAutomatedSlots] = useState(null); // <<< ADD THIS LINE
@@ -24,6 +24,7 @@ import PromotedSlot from './PromotedSlot';
     const [isLayoutLoading, setIsLayoutLoading] = useState(true);
     const [isLiveFeedLoading, setIsLiveFeedLoading] = useState(true);
     const [adminLiveFeed, setAdminLiveFeed] = useState([]);
+    const [enrollmentConfig, setEnrollmentConfig] = useState(null); // <-- ADD THIS LINE
     const [creatorFeaturedFeed, setCreatorFeaturedFeed] = useState([]);
     const [blockList, setBlockList] = useState(new Set());
     const [realtimeContent, setRealtimeContent] = useState(new Map());
@@ -44,6 +45,11 @@ import PromotedSlot from './PromotedSlot';
         });
         // --- ADD THIS BLOCK END ---
 
+        const enrollmentConfigRef = doc(db, "settings", "enrollmentConfig");
+        const unsubEnrollmentConfig = onSnapshot(enrollmentConfigRef, (docSnap) => {
+            setEnrollmentConfig(docSnap.exists() ? docSnap.data() : null);
+        });
+
         const liveFeedQuery = query(collection(db, `artifacts/${appId}/public/data/content_items`), where('isActive', '==', true), where('contentType', '==', 'Live Feed'), orderBy('createdAt', 'desc'), limit(20));
         const unsubLiveFeed = onSnapshot(liveFeedQuery, (snapshot) => setAdminLiveFeed(snapshot.docs.map(d => ({ id: d.id, ...d.data() }))));
         
@@ -61,8 +67,7 @@ import PromotedSlot from './PromotedSlot';
             setBlockList(new Set()); 
         }
 
-        // MODIFIED: Added unsubAutomatedSlots to the cleanup function
-        return () => { unsubLayout(); unsubAutomatedSlots(); unsubLiveFeed(); unsubCreatorFeatured(); unsubBlockList(); };
+        return () => { unsubLayout(); unsubAutomatedSlots(); unsubEnrollmentConfig(); unsubLiveFeed(); unsubCreatorFeatured(); unsubBlockList(); };
     }, [currentUser]);
 
     // EFFECT 2: Sets up real-time listeners for content items based on the layout.
@@ -107,7 +112,7 @@ import PromotedSlot from './PromotedSlot';
         return () => {
             unsubscribers.forEach(unsub => unsub());
         };
-    }, [rawLayout, rawAutomatedSlots]); // MODIFIED: Dependency array now includes rawAutomatedSlots
+    }, [JSON.stringify(rawLayout), JSON.stringify(rawAutomatedSlots)]); // MODIFIED: stringify keys to prevent infinite loops
 
     // EFFECT 3: Processes the layout with the latest real-time data.
     useEffect(() => {
@@ -261,22 +266,41 @@ import PromotedSlot from './PromotedSlot';
 
     // --- RENDER LOGIC ---
     return (
-        <div className="screenContainer">
-            <PromotedSlot showMessage={showMessage} handleVideoPress={handleVideoPress} currentUser={currentUser} />
-            
-            <CompetitionHomeScreenBanner setActiveScreen={setActiveScreen} activeCompetition={activeCompetition} />
+    <div className="screenContainer">
+        <PromotedSlot showMessage={showMessage} handleVideoPress={handleVideoPress} currentUser={currentUser} />
+        
+        <CompetitionHomeScreenBanner setActiveScreen={setActiveScreen} activeCompetition={activeCompetition} />
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-                <p className="sectionTitle" style={{ margin: 0, fontSize: '18px' }}>Featured Highlights</p>
-                <div className="topRightButtonContainer" style={{ position: 'static' }}>
-                    {/* THE FIX: This button is now only rendered if the value from settings/homeScreenLayout is true */}
-                    {currentUser && rawLayout?.showNvaCharts && (
-                        <button className="topButton" onClick={() => setActiveScreen('NvaNetworkCharts')}>NVA Network Charts</button>
-                    )}
-                    <button className="topButton" onClick={() => setActiveScreen('SupportUsScreen')}>Support Us</button>
-                    {currentUser ? (<button className="topButton" onClick={handleLogout}>Logout</button>) : (<button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>)}
-                </div>
+        {/* --- NEW: Dynamic Film Club Enrollment Banner --- */}
+        {currentUser && (enrollmentConfig?.filmClubOpen || enrollmentConfig?.docuSeriesOpen) && !creatorProfile?.isClassMember && (
+            <div className="enrollmentBanner" onClick={() => setActiveScreen('EnrollmentHub')} style={{
+                background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
+                color: '#0A0A0A',
+                padding: '15px',
+                borderRadius: '12px',
+                marginTop: '15px',
+                marginBottom: '10px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 15px rgba(255, 215, 0, 0.25)',
+                textAlign: 'center',
+                fontWeight: '700'
+            }}>
+                <p style={{ margin: 0, fontSize: '15px', textTransform: 'uppercase', letterSpacing: '1px' }}>✨ NVA Film Club Enrollment is Open! ✨</p>
+                <p style={{ margin: '5px 0 0', fontSize: '13px', opacity: 0.9, fontWeight: '500' }}>Click here to apply for Acting Classes & the Docu-Series Challenges</p>
             </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
+            <p className="sectionTitle" style={{ margin: 0, fontSize: '18px' }}>Featured Highlights</p>
+            <div className="topRightButtonContainer" style={{ position: 'static' }}>
+                {/* --- REPURPOSED: Convert Obsolete Charts Button to Watchlist --- */}
+                {currentUser && (
+                    <button className="topButton" onClick={() => setActiveScreen('SavedOpportunities')}>My Watchlist</button>
+                )}
+                <button className="topButton" onClick={() => setActiveScreen('SupportUsScreen')}>Support Us</button>
+                {currentUser ? (<button className="topButton" onClick={handleLogout}>Logout</button>) : (<button className="topButton" onClick={() => setActiveScreen('Login')}>Login</button>)}
+            </div>
+        </div>
             <div className="carousel-wrapper">
                 {displayFeatured.length > 3 && (<><button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button><button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button></>)}
                 <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
@@ -290,7 +314,7 @@ import PromotedSlot from './PromotedSlot';
                 </div>
             </div>
 
-            <div className="sectionHeaderWithButton"><p className="sectionTitle">Trending</p>{!currentUser && (<div style={{display: 'flex', gap: '10px'}}><button className="sectionHeaderButton" onClick={() => setActiveScreen('UserSignUp')}>User Sign Up</button><button className="sectionHeaderButton" onClick={() => setActiveScreen('CreatorSignUp')}>Creator Sign Up</button></div>)}</div>
+            <div className="sectionHeaderWithButton"><p className="sectionTitle">Trending</p>            {!currentUser && (<button className="sectionHeaderButton" onClick={() => setActiveScreen('SignUp')}>Join NVA Network</button>)}</div>
             {/* CORRECTED: The JSX for the trending grid is now fixed, removing the stray bracket */}
             {isLayoutLoading ? <p style={{color: 'white'}}>Loading trending...</p> : (
                 <div className="contentGrid">

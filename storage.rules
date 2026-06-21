@@ -67,6 +67,9 @@ service firebase.storage {
     match /creator_uploads/{userId}/{allPaths=**} {
       allow write: if isAuthenticated() && request.auth.uid == userId;
     }
+    match /enrollment_payments/{userId}/{allPaths=**} {
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
     match /competition_entries/{compId}/{userId}/{allPaths=**} {
       allow write: if isAuthenticated() && request.auth.uid == userId;
     }
