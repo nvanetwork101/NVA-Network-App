@@ -232,6 +232,11 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    match /enrollmentApplications/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || isAuthority());
+      allow write: if false; // All writes are secured via Cloud Functions
+    }
+
     match /promotedStatuses/{statusId} {
         // FIX: Allow ANY user, including guests, to see the list of active promotions.
         allow list: if true;

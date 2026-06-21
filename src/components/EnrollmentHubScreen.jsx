@@ -94,24 +94,17 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
             return;
         }
 
-        try {
-          if (config?.requirePhone && !phoneInput.trim()) {
+        if (config?.requirePhone && !phoneInput.trim()) {
             showMessage("Please enter your phone number to apply.");
             return;
         }
+
         try {
             const submitApplication = httpsCallable(functions, 'submitEnrollmentApplication');
             await submitApplication({
                 selectedOptions: selectedOptions,
                 totalAmount: calculateTotal(),
-                phoneNumber: phoneInput.trim() // <-- PASS PHONE NUMBER DIRECTLY
-            });
-            setApplicationStatus('pending');
-            showMessage("Application submitted! Pending admin review.");
-        } catch (error) {  const submitApplication = httpsCallable(functions, 'submitEnrollmentApplication');
-            await submitApplication({
-                selectedOptions: selectedOptions,
-                totalAmount: calculateTotal()
+                phoneNumber: phoneInput.trim()
             });
             setApplicationStatus('pending');
             showMessage("Application submitted! Pending admin review.");
