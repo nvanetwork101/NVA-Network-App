@@ -16,6 +16,13 @@ html, body {
   background-color: #0A0A0A;
 }
 
+/* Globals: Shrinks the entire app UI by 15% on mobile screens to fit better */
+@media (max-width: 768px) {
+  body {
+    zoom: 0.85; 
+  }
+}
+
 /* The React root element now simply fills the screen. */
 #root {
   height: 100%;
