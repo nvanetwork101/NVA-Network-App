@@ -7,9 +7,7 @@
     <title>NVA Network</title>
     <link href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&display=swap" rel="stylesheet">  
     
-    </head>
-
-      <!-- START: Open Graph / Social Media Meta Tags (Machine-Readable Placeholders) -->
+    <!-- START: Open Graph / Social Media Meta Tags (Machine-Readable Placeholders) -->
     <meta property="og:title" content="__OG_TITLE__" />
     <meta property="og:description" content="__OG_DESCRIPTION__" />
     <meta property="og:image" content="__OG_IMAGE_URL__" />
@@ -18,9 +16,29 @@
     <meta name="twitter:card" content="summary_large_image" />
     <!-- END: Open Graph / Social Media Meta Tags -->
 
+    <!-- NVA GHOST RIDER FACE TRACKING ENGINE -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script>
+      window.startNvaFaceTracker = function(videoElement) {
+        if (!videoElement) return;
+        const faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+        faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        faceMesh.onResults((results) => {
+          if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+            const nose = results.multiFaceLandmarks[0][1]; // Nose tip landmark
+            window.dispatchEvent(new CustomEvent('faceTrackingData', { detail: { x: nose.x * 100, y: nose.y * 100 } }));
+          }
+        });
+        const camera = new Camera(videoElement, { onFrame: async () => { await faceMesh.send({image: videoElement}); }, width: 640, height: 480 });
+        camera.start();
+        return camera;
+      };
+    </script>
+  </head>
+
   <body>
     <div id="root"></div>
-    
-<script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

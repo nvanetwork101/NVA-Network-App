@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import NotificationBell from './NotificationBell';
 
 const NavigationBar = (props) => {
@@ -7,15 +7,27 @@ const NavigationBar = (props) => {
         setActiveScreen, 
         currentUser, 
         creatorProfile, 
-        hasNewFollowerContent, 
         unreadCount,
         unreadChatCount
     } = props;
 
     const [showMoreMenu, setShowMoreMenu] = useState(false);
+    const navRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (navRef.current && !navRef.current.contains(event.target)) {
+                setShowMoreMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
     
     return (
-        <div className="navigationBar" style={{
+        <div className="navigationBar" ref={navRef} style={{
             position: 'relative',
             display: 'flex',
             justifyContent: 'center',
@@ -33,7 +45,7 @@ const NavigationBar = (props) => {
                     boxShadow: activeScreen === 'Home' ? '0 0 10px #FFD700' : 'none'
                 }}
             >
-                <svg height="24px" width="24px" viewBox="0 0 24 24" fill="#0A0A0A">
+                <svg height="18px" width="18px" viewBox="0 0 24 24" fill="#0A0A0A">
                     <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
                 </svg>
             </button>
@@ -42,20 +54,6 @@ const NavigationBar = (props) => {
                 <>
                     {/* --- Notifications Button --- */}
                     <NotificationBell count={unreadCount} onClick={() => setActiveScreen('NotificationInbox')} isActive={activeScreen === 'NotificationInbox'} />
-                    
-                    {/* --- My Feed Button --- */}
-                    <button 
-                        className="navButton" 
-                        onClick={() => setActiveScreen('MyFeed')} 
-                        style={{ backgroundColor: '#0A0A0A', border: '1px solid #FFD700', position: 'relative' }}
-                    >
-                        {hasNewFollowerContent && (
-                            <span style={{ position: 'absolute', top: '2px', right: '5px', width: '10px', height: '10px', backgroundColor: '#DC3545', borderRadius: '50%', border: '1px solid #FFF' }}></span>
-                        )}
-                        <svg height="24px" width="24px" viewBox="0 0 24 24" fill={activeScreen === 'MyFeed' ? '#FFFFFF' : '#FFD700'} style={{ transition: 'fill 0.2s ease-in-out' }}>
-                            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
-                        </svg>
-                    </button>
 
                     {/* --- Chat Button --- */}
                     <button 
@@ -90,7 +88,7 @@ const NavigationBar = (props) => {
                     </button>
 
                     {/* --- Admin Button (Conditionally Rendered) --- */}
-                    {creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && (
+                    {creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority' || creatorProfile.role === 'super_admin') && (
                         <button className="navButton" onClick={() => setActiveScreen('AdminDashboard')}>
                             <span className={activeScreen === 'AdminDashboard' ? 'activeNavButtonText navButtonText' : 'navButtonText'}>Admin</span>
                         </button>
@@ -130,9 +128,6 @@ const NavigationBar = (props) => {
                 }}>
                     {currentUser && currentUser.emailVerified && (
                         <>
-                            <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('SupportUsScreen'); setShowMoreMenu(false); }}>
-                                <span className="navButtonText">Support Hub</span>
-                            </button>
                             <button className="navButton" style={{width: '100%'}} onClick={() => { setActiveScreen('CreatorConnect'); setShowMoreMenu(false); }}>
                                 <span className="navButtonText">Creator Connect</span>
                             </button>

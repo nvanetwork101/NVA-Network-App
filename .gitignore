@@ -1,29 +1,31 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-functions/service-account-key.json
-UPDATING WEBSITE.txt
 node_modules/
+dist/
+.firebase/
+firestore-debug.log
+ui-debug.log
 
-.firebase/hosting.*.cache
+# Private Keys & SSH
+*.key
+*.pub
+*.pem
+
+# Credentials in Text Files
+*.txt
+
+# Environmental Secrets
+.env
+.env.local
+.env.development
+.env.production
+
+# Firebase Service Accounts
+*.json
+!package.json
+!package-lock.json
+!firebase.json
+
+functions/service-account.json
+*.key
+*.pub
+*.txt
+.env.production

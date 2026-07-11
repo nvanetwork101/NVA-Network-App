@@ -1,10 +1,28 @@
-// src/components/UserProfileScreen.jsx
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db, functions, doc, onSnapshot, collection, query, where, getDocs, orderBy, limit, httpsCallable, updateDoc, getDoc, setDoc } from '../firebase';
 import { Timestamp } from 'firebase/firestore';
-import ProfilePictureModal from './ProfilePictureModal'; 
-import RoleBadge from './RoleBadge'; // <-- ADD THIS IMPORT
+import ProfilePictureModal from './ProfilePictureModal';
+import { compressImage, uploadToR2 } from '../utils/r2Upload';
+
+// --- THE NVA TOKEN CATALOG ---
+const GIFT_TOKENS = [
+    { id: 'spotlight', name: 'Warm Spotlight', price: 500, actorReceives: 425, platformFee: 75, icon: '🔦' },
+    { id: 'popcorn', name: 'Golden Popcorn', price: 1000, actorReceives: 850, platformFee: 150, icon: '🍿' },
+    { id: 'flare', name: 'Rainbow Flare', price: 2500, actorReceives: 2125, platformFee: 375, icon: '🌈' },
+    { id: 'chair', name: "Director's Chair", price: 5000, actorReceives: 4250, platformFee: 750, icon: '🎬' },
+    { id: 'producer', name: 'The Executive Producer', price: 10000, actorReceives: 8500, platformFee: 1500, icon: '💎' },
+];
+
+const MMG_NUMBER = "592-672-3204"; 
+import RoleBadge from './RoleBadge'; 
+import formatCurrency from '../utils/formatCurrency';
+
+// --- Shared Role Colors Map ---
+const ROLE_COLORS = {
+    'Comedian': '#FF4500', 'Craft': '#D2691E', 'Health & Fitness': '#20B2AA',
+    'Designer': '#FF1493', 'Influencer': '#00BFFF', 'Poet': '#9370DB',
+    'Musician': '#32CD32', 'Filmmaker': '#FFD700', 'Actor': '#DC143C'
+};
 
 // --- Reusable Child Component for Stats ---
 import ShareButton from './ShareButton';
@@ -20,7 +38,7 @@ const ContentStats = ({ item, currentUser, showMessage }) => {
     );
 
     return (
-        <div style={{ padding: '0 10px 10px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '5px', color: '#AAA', fontSize: '12px', background: '#2A2A2A', borderBottomLeftRadius: '10px', borderBottomRightRadius: '10px' }}>
+        <div style={{ padding: '0 10px 10px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '5px', color: '#AAA', fontSize: '12px', background: 'transparent', marginTop: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
                 <span>{(item.viewCount || 0).toLocaleString()}</span>
@@ -30,12 +48,105 @@ const ContentStats = ({ item, currentUser, showMessage }) => {
     );
 };
 
+// --- GLOBAL 30-DAY GIFT BADGE RENDERER ---
+const renderGlobalPatronGifts = (profile) => {
+    if (!profile || !profile.receivedGifts || !Array.isArray(profile.receivedGifts)) return null;
+
+    const now = Date.now();
+    const activeGiftsMap = {};
+
+    profile.receivedGifts.forEach(g => {
+        const expiry = new Date(g.expiresAt).getTime();
+        if (now < expiry) {
+            activeGiftsMap[g.giftName] = (activeGiftsMap[g.giftName] || 0) + 1;
+        }
+    });
+
+    const activeKeys = Object.keys(activeGiftsMap);
+    if (activeKeys.length === 0) return null;
+
+    const PROFILE_GIFT_TOKENS = [
+        { name: 'Warm Spotlight', icon: '🔦' },
+        { name: 'Golden Popcorn', icon: '🍿' },
+        { name: 'Rainbow Flare', icon: '🌈' },
+        { name: "Director's Chair", icon: '🎬' },
+        { name: 'The Executive Producer', icon: '💎' },
+    ];
+
+    return (
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '10px', justifyContent: 'center' }}>
+            {PROFILE_GIFT_TOKENS.map(token => {
+                const count = activeGiftsMap[token.name] || 0;
+                if (count === 0) return null;
+                return (
+                    <div key={token.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(255, 215, 0, 0.1)', border: '1px solid rgba(255, 215, 0, 0.2)', borderRadius: '6px', padding: '2px 6px', fontSize: '11px' }}>
+                        <span>{token.icon}</span>
+                        <span style={{ color: '#FFD700', fontWeight: 'bold' }}>x{count}</span>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+// --- SLEEK PATRON STRIPE RENDERER ---
+const renderPatronStripe = (profile) => {
+    if (!profile) return null;
+    
+    if (profile.patronStripeExpiry) {
+        const expiry = new Date(profile.patronStripeExpiry).getTime();
+        if (Date.now() > expiry) return null;
+    } else {
+        return null;
+    }
+
+    const userBadges = profile.badges || [];
+    let stripeColor = null;
+    let stripeText = "";
+    let isLegend = false;
+
+    if (userBadges.includes('Patron of the Arts (Legend)')) {
+        isLegend = true;
+        stripeText = "Legend";
+    } else if (userBadges.includes('Patron of the Arts (Gold)')) {
+        stripeColor = '#D4AF37';
+        stripeText = "Gold";
+    } else if (userBadges.includes('Patron of the Arts (Silver)')) {
+        stripeColor = '#C0C0C0';
+        stripeText = "Silver";
+    } else if (userBadges.includes('Patron of the Arts (Bronze)')) {
+        stripeColor = '#CD7F32';
+        stripeText = "Bronze";
+    }
+
+    if (!stripeColor && !isLegend) return null;
+
+    return (
+        <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            background: isLegend ? 'linear-gradient(90deg, #FF0000, #FF7F00, #FFFF00, #00FF00, #0000FF, #4B0082, #8B00FF)' : stripeColor,
+            color: isLegend ? '#FFF' : '#000',
+            fontSize: '9px',
+            fontWeight: '900',
+            padding: '2px 6px',
+            borderRadius: '4px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            boxShadow: isLegend ? '0 0 8px rgba(255,255,255,0.4)' : `0 0 6px ${stripeColor}55`,
+            verticalAlign: 'middle',
+            lineHeight: '1'
+        }}>
+            {stripeText}
+        </span>
+    );
+};
 
 const UserProfileScreen = ({ 
     selectedUserId, 
     setActiveScreen,
     setSelectedCampaignId,
-    setSelectedChatId, // <-- ADD THIS NEW PROP
+    setSelectedChatId,
     showMessage, 
     currentUser, 
     creatorProfile, 
@@ -44,21 +155,102 @@ const UserProfileScreen = ({
     setConfirmationTitle, 
     setConfirmationMessage, 
     handleVideoPress,
-    previousScreen
+    previousScreen,
+    currencyRates,
+    selectedCurrency,
+    shouldOpenGiftModalOnLoad,
+    setShouldOpenGiftModalOnLoad
 }) => {
     const [profile, setProfile] = useState(null);
+
+    // --- GIFT MODAL STATE ---
+    const [isGiftModalOpen, setIsGiftModalOpen] = useState(false);
+    const [giftTokens, setGiftTokens] = useState(GIFT_TOKENS);
+    const [selectedToken, setSelectedToken] = useState(GIFT_TOKENS[0]);
+
+    // Live-sync creator gift tokens from database
+    useEffect(() => {
+        if (!isGiftModalOpen) return;
+        const unsub = onSnapshot(doc(db, "settings", "tokenEconomics"), (snap) => {
+            if (snap.exists() && snap.data().giftTokens) {
+                const gTokens = snap.data().giftTokens;
+                setGiftTokens(gTokens);
+                setSelectedToken(prev => gTokens.find(t => t.id === prev.id) || gTokens[0]);
+            }
+        });
+        return () => unsub();
+    }, [isGiftModalOpen]);
+    const [isAnonymous, setIsAnonymous] = useState(false);
+    const [paymentId, setPaymentId] = useState('');
+    const [screenshotBase64, setScreenshotBase64] = useState(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitSuccess, setSubmitSuccess] = useState(false);
+    const [successMode, setSuccessMode] = useState('earnings');
+
+    const submitGiftPledge = async () => {
+        if (!paymentId || !screenshotBase64) {
+            showMessage("Please provide Payment ID and Receipt Screenshot.");
+            return;
+        }
+        setIsSubmitting(true);
+        try {
+            const pledgeRef = doc(collection(db, "paymentPledges"));
+            await setDoc(pledgeRef, {
+                pledgeId: paymentId,
+                internalId: pledgeRef.id,
+                userId: currentUser.uid,
+                userName: creatorProfile?.creatorName || currentUser.email,
+                paymentType: 'giftToken',
+                amount: selectedToken?.price || 0,
+                status: 'pending',
+                targetUserId: profile.id,
+                targetActorName: profile.creatorName || '',
+                giftName: selectedToken?.name || 'Gift',
+                isAnonymous: isAnonymous,
+                screenshotUrl: screenshotBase64,
+                createdAt: new Date().toISOString()
+            });
+            setIsGiftModalOpen(false);
+            setPaymentId('');
+            setScreenshotBase64(null);
+            setSuccessMode('mmg');
+            setSubmitSuccess(true);
+            showMessage(`Pledge Received! Once verified, your gift will be delivered.`);
+            setTimeout(() => setSubmitSuccess(false), 3000);
+        } catch (error) {
+            console.error("Gift error:", error);
+            showMessage("Failed to process gift.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+    
     const [loadingProfile, setLoadingProfile] = useState(true);
-    const [activeCampaign, setActiveCampaign] = useState(null);
     const [isFollowing, setIsFollowing] = useState(false);
     const [isFollowLoading, setIsFollowLoading] = useState(true);
     const [isBlocked, setIsBlocked] = useState(false);
     const [isBlockLoading, setIsBlockLoading] = useState(true);
     const [pinnedContent, setPinnedContent] = useState([]);
     const [allContent, setAllContent] = useState([]);
+    const [arenaMovies, setArenaMovies] = useState([]); // THE FIX: Track Arena films separately
     const [loadingContent, setLoadingContent] = useState(true);
     const [showPfpModal, setShowPfpModal] = useState(false);
-    
+    const [enrollmentStatus, setEnrollmentStatus] = useState(null); 
     const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+    
+    // --- R2 UPLOAD STATES ---
+    const [isUploadingPfp, setIsUploadingPfp] = useState(false);
+    const hiddenFileInput = useRef(null);
+    
+    // --- LIGHTBOX STATE ---
+    const [selectedExhibitionImage, setSelectedExhibitionImage] = useState(null);
+
+    useEffect(() => {
+        if (shouldOpenGiftModalOnLoad) {
+            setIsGiftModalOpen(true);
+            setShouldOpenGiftModalOnLoad(false); 
+        }
+    }, [shouldOpenGiftModalOnLoad, setShouldOpenGiftModalOnLoad]);
 
     useEffect(() => {
         if (!selectedUserId) {
@@ -66,19 +258,16 @@ const UserProfileScreen = ({
             return;
         }
 
-        // Set all loading states to true at the beginning.
         setLoadingProfile(true);
         setLoadingContent(true);
         setIsFollowLoading(true);
         setIsBlockLoading(true);
 
-        // --- CONSOLIDATED DATA FETCHING ---
         const userDocRef = doc(db, "creators", selectedUserId);
         const unsubscribeProfile = onSnapshot(userDocRef, (userDocSnap) => {
             if (userDocSnap.exists()) {
                 const profileData = { id: userDocSnap.id, ...userDocSnap.data() };
                 setProfile(profileData);
-                // Trigger the single content fetch after the profile is loaded.
                 fetchContentLibrary(profileData.id, profileData.pinnedContent || []);
             } else {
                 showMessage("This user profile could not be found.");
@@ -87,10 +276,9 @@ const UserProfileScreen = ({
             setLoadingProfile(false);
         });
 
-        const campaignsRef = collection(db, `artifacts/production-app-id/public/data/campaigns`);
-        const q = query(campaignsRef, where("creatorId", "==", selectedUserId), where("status", "==", "active"), limit(1));
-        const unsubscribeCampaign = onSnapshot(q, (snapshot) => {
-            setActiveCampaign(snapshot.empty ? null : { id: snapshot.docs[0].id, ...snapshot.docs[0].data() });
+        const enrollmentAppRef = doc(db, "enrollmentApplications", selectedUserId);
+        const unsubscribeEnrollment = onSnapshot(enrollmentAppRef, (snap) => {
+            setEnrollmentStatus(snap.exists() ? snap.data() : null);
         });
 
         let unsubscribeFollow = () => {};
@@ -112,11 +300,18 @@ const UserProfileScreen = ({
             setIsBlockLoading(false);
         }
 
+        // THE FIX: Listen for this user's films in the Arena (Movies collection)
+        const arenaQuery = query(collection(db, "movies"), where("creatorId", "==", selectedUserId));
+        const unsubArena = onSnapshot(arenaQuery, (snap) => {
+            setArenaMovies(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
         return () => {
             unsubscribeProfile();
-            unsubscribeCampaign();
+            unsubscribeEnrollment();
             unsubscribeFollow();
             unsubscribeBlock();
+            unsubArena(); // FIXED: Clean up Arena listener
         };
     }, [selectedUserId, currentUser]);
 
@@ -150,17 +345,16 @@ const UserProfileScreen = ({
         }
     };
     
-    // ====================== START: MODIFIED CODE BLOCK (ADMIN HANDLERS) ======================
     const handleFollowToggle = async () => {
         if (!currentUser) {
             showMessage("Please log in to follow creators.");
             setActiveScreen('Login');
             return;
         }
-        if (isFollowLoading) return; // Prevent double-clicks
+        if (isFollowLoading) return; 
 
         setIsFollowLoading(true);
-        const newFollowState = !isFollowing; // Determine the action we are about to take
+        const newFollowState = !isFollowing; 
 
         try {
             const toggleFollowFunction = httpsCallable(functions, 'toggleFollow');
@@ -168,16 +362,14 @@ const UserProfileScreen = ({
                 targetUserId: selectedUserId, 
                 isFollowing: newFollowState 
             });
-            // No need to show a success message here, as the UI will update instantly
-            // via the onSnapshot listener, which is a better user experience.
         } catch (error) {
             showMessage(`An error occurred: ${error.message}`);
             console.error("Error toggling follow:", error);
-            // The onSnapshot listener will automatically revert the UI if the backend call fails.
         } finally {
             setIsFollowLoading(false);
         }
     };
+    
     const handleToggleBlock = async () => {
         if (!currentUser) {
             showMessage("Please log in to block users.");
@@ -192,7 +384,6 @@ const UserProfileScreen = ({
             const toggleBlockUserCallable = httpsCallable(functions, 'toggleBlockUser');
             const result = await toggleBlockUserCallable({ targetUserId: selectedUserId });
             showMessage(result.data.message);
-            // If the user was just blocked, navigate away from their profile.
             if (!isBlocked) { 
                 setActiveScreen('DiscoverUsers');
             }
@@ -205,83 +396,101 @@ const UserProfileScreen = ({
     };
 
     const handleMessageClick = async () => {
-    if (!currentUser || !creatorProfile) {
-        showMessage("Please log in to send messages.");
-        setActiveScreen('Login');
-        return;
-    }
+        if (!currentUser || !creatorProfile) {
+            showMessage("Please log in to send messages.");
+            setActiveScreen('Login');
+            return;
+        }
 
-    const targetUserUid = profile.id;
-    if (currentUser.uid === targetUserUid) {
-        showMessage("You cannot start a conversation with yourself.");
-        return;
-    }
+        const targetUserUid = profile.id;
+        if (currentUser.uid === targetUserUid) {
+            showMessage("You cannot start a conversation with yourself.");
+            return;
+        }
 
-    const participants = [currentUser.uid, targetUserUid].sort();
-    const chatId = participants.join('_');
-    
-    try {
-        const chatDocRef = doc(db, 'chats', chatId);
-
-        // This is the core data needed to CREATE a chat document.
-        const initialChatData = {
-            participants: participants,
-            createdAt: Timestamp.now(),
-            participantDetails: {
-                [currentUser.uid]: {
-                    creatorName: creatorProfile.creatorName || "Unknown User",
-                    profilePictureUrl: creatorProfile.profilePictureUrl || null
-                },
-                [targetUserUid]: {
-                    creatorName: profile.creatorName,
-                    profilePictureUrl: profile.profilePictureUrl || null
-                }
-            },
-            // Set hiddenFor to an empty array on creation
-            hiddenFor: []
-        };
-
-        // THE FIX: Use setDoc with {merge: true}.
-        // If the chat doesn't exist, it creates it. The `create` rule in firestore.rules allows this.
-        // If the chat *does* exist, it merges these fields, which effectively does nothing if the data is the same.
-        // This single, robust operation avoids the failing `getDoc` call entirely.
-        await setDoc(chatDocRef, initialChatData, { merge: true });
-
-        // Proceed to the chat screen
-        setSelectedChatId(chatId);
-        setActiveScreen('ChatMessageScreen');
-
-    } catch (error) {
-        console.error("Error starting chat:", error);
-        showMessage("Could not start a conversation. Please check your Firestore Rules for the 'chats' collection.");
-    }
-};
-
-const handleShareClick = async () => {
-    const shareUrl = `${window.location.origin}/user/${profile.id}`;
-    if (navigator.share) {
+        const participants = [currentUser.uid, targetUserUid].sort();
+        const chatId = participants.join('_');
+        
         try {
-            await navigator.share({
-                title: profile.creatorName,
-                text: `Check out ${profile.creatorName}'s profile on NVA Network!`,
-                url: shareUrl
-            });
+            const chatDocRef = doc(db, 'chats', chatId);
+
+            const initialChatData = {
+                participants: participants,
+                createdAt: Timestamp.now(),
+                participantDetails: {
+                    [currentUser.uid]: {
+                        creatorName: creatorProfile.creatorName || "Unknown User",
+                        profilePictureUrl: creatorProfile.profilePictureUrl || null
+                    },
+                    [targetUserUid]: {
+                        creatorName: profile.creatorName,
+                        profilePictureUrl: profile.profilePictureUrl || null
+                    }
+                },
+                hiddenFor: []
+            };
+
+            await setDoc(chatDocRef, initialChatData, { merge: true });
+
+            setSelectedChatId(chatId);
+            setActiveScreen('ChatMessageScreen');
         } catch (error) {
-            if (error.name !== 'AbortError') {
-                console.error("Sharing failed:", error);
-                showMessage("Could not share profile at this time.");
+            console.error("Error starting chat:", error);
+            showMessage("Could not start a conversation. Please check your Firestore Rules for the 'chats' collection.");
+        }
+    };
+
+    const handleShareClick = async () => {
+        const shareUrl = `${window.location.origin}/user/${profile.id}`;
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: profile.creatorName,
+                    text: `Check out ${profile.creatorName}'s profile on NVA Network!`,
+                    url: shareUrl
+                });
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.error("Sharing failed:", error);
+                    showMessage("Could not share profile at this time.");
+                }
+            }
+        } else {
+            try {
+                await navigator.clipboard.writeText(shareUrl);
+                showMessage("Profile URL copied to clipboard!");
+            } catch (err) {
+                console.error('Failed to copy: ', err);
+                showMessage("Could not copy URL. Your browser may not support this feature.");
             }
         }
-    } else {
-        try {
-            await navigator.clipboard.writeText(shareUrl);
-            showMessage("Profile URL copied to clipboard!");
-        } catch (err) {
-            console.error('Failed to copy: ', err);
-            showMessage("Could not copy URL. Your browser may not support this feature.");
+    };
+
+    const handleShareGallery = async (e) => {
+        e.stopPropagation();
+        // INJECTED ?view=gallery parameter for Backend SSR Crawler Interception
+        const shareUrl = `${window.location.origin}/user/${profile.id}?view=gallery#gallery`;
+        const text = `🎨 Check out my creative Exhibition Room on NVA Network! View my custom design gallery:`;
+        
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: `${profile.creatorName}'s Exhibition`,
+                    text: text,
+                    url: shareUrl
+                });
+            } catch (error) {
+                if (error.name !== 'AbortError') console.error(error);
+            }
+        } else {
+            try {
+                await navigator.clipboard.writeText(shareUrl);
+                showMessage("Exhibition link copied!");
+            } catch (err) {
+                showMessage("Could not copy link.");
+            }
         }
-    }
-};
+    };
     
     const handleRoleChange = async (newRole) => { /* ... existing logic ... */ };
     
@@ -335,135 +544,641 @@ const handleShareClick = async () => {
         });
         setShowConfirmationModal(true);
     };
-    // ======================= END: MODIFIED CODE BLOCK (ADMIN HANDLERS) =======================
+
+    const handlePfpUpload = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        setIsUploadingPfp(true);
+        showMessage("Compressing and uploading to Cloudflare R2...");
+        
+        try {
+            // 1. Native Client-Side Compression
+            const compressedFile = await compressImage(file, 1080, 0.85);
+            
+            // 2. Exact static overwrite path (Zero dust rule)
+            const r2Path = `profile_pictures/user_${currentUser.uid}.jpg`;
+            
+            // 3. Backend Handshake & Direct PUT
+            const publicUrl = await uploadToR2(compressedFile, r2Path, functions);
+            
+            // 4. Update Firestore Profile
+            const userRef = doc(db, 'creators', currentUser.uid);
+            await updateDoc(userRef, { profilePictureUrl: publicUrl });
+            
+            showMessage("Profile picture instantly updated via R2!");
+        } catch (error) {
+            console.error("Avatar R2 upload failed:", error);
+            showMessage(`Upload failed: ${error.message}`);
+        } finally {
+            setIsUploadingPfp(false);
+            event.target.value = null; // Clear input
+        }
+    };
 
     if (loadingProfile) { return <div className="screenContainer"><p className="heading">Loading Profile...</p></div>; }
     if (!profile) return null;
 
-    const canManageUser = creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && currentUser?.uid !== profile.id;
+    const canManageUser = creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority' || creatorProfile.role === 'super_admin') && currentUser?.uid !== profile.id;
     const isSuspended = profile.suspendedUntil && profile.suspendedUntil.toDate() > new Date();
+
+    // Centralize roleColor derivation
+    const roleColor = ROLE_COLORS[profile.creatorField] || '#444444';
+
+    const modernRewardsStyles = `
+        .rewards-stats-card { background: rgba(30, 30, 30, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 20px; display: flex; justify-content: space-between; margin-top: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
+        .rewards-stat-col { text-align: center; flex: 1; border-right: 1px solid rgba(255, 255, 255, 0.1); }
+        .rewards-stat-col:last-child { border-right: none; }
+        .rewards-stat-value { font-size: 24px; font-weight: bold; color: #00FFFF; margin: 0; }
+        .rewards-stat-value.gold { color: #FFD700; }
+        .rewards-stat-label { font-size: 11px; color: #AAA; text-transform: uppercase; margin-top: 5px; letter-spacing: 0.5px; }
+        .gift-btn { width: 100%; background: linear-gradient(135deg, #8A2BE2, #E539A1); color: white; border: none; padding: 15px; border-radius: 12px; font-size: 16px; font-weight: bold; margin-top: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: transform 0.2s; box-shadow: 0 4px 15px rgba(138, 43, 226, 0.4); }
+        .gift-btn:active { transform: scale(0.98); }
+        .leaderboard-card { background: rgba(20, 20, 20, 0.8); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 12px; padding: 20px; margin-top: 20px; }
+        .leaderboard-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 10px; margin-bottom: 15px; }
+        .leaderboard-title { color: #FFF; font-size: 14px; font-weight: bold; margin: 0; display: flex; align-items: center; gap: 8px; }
+        .leaderboard-subtitle { color: #888; font-size: 11px; margin: 0; }
+        .leaderboard-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+        .leaderboard-row:last-child { border-bottom: none; }
+        .rank-circle { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; margin-right: 12px; }
+        .rank-1 { background: #FFD700; color: #000; }
+        .rank-2 { background: #C0C0C0; color: #000; }
+        .rank-3 { background: #CD7F32; color: #000; }
+        .rank-other { background: #333; color: #AAA; }
+        .supporter-info { display: flex; align-items: center; }
+        .supporter-name { color: #DDD; font-size: 14px; font-weight: 500; }
+        .supporter-amount { color: #FFD700; font-size: 14px; font-weight: bold; }
+        .how-it-works-box { border: 1px dashed rgba(255, 255, 255, 0.2); border-radius: 12px; padding: 20px; margin-top: 20px; background: rgba(0,0,0,0.2); }
+        .step-row { display: flex; align-items: flex-start; gap: 15px; margin-bottom: 15px; }
+        .step-number { background: rgba(255, 255, 255, 0.1); color: #FFF; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; flex-shrink: 0; }
+        .step-text h4 { color: #FFF; font-size: 13px; margin: 0 0 3px 0; }
+        .step-text p { color: #888; font-size: 11px; margin: 0; }
+        .patron-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
+        .patron-tier { background: rgba(255, 255, 255, 0.05); padding: 12px; border-radius: 8px; text-align: left; }
+        .tier-name { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #FFF; font-weight: bold; margin-bottom: 4px; }
+        .tier-price { font-size: 11px; color: #888; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        /* ====== UNIFIED ATELIER CSS ====== */
+        .atelier-container {
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+        .atelier-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            width: 100%;
+        }
+        @media (max-width: 1024px) {
+            .atelier-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        }
+        .atelier-card {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            background: #111111;
+            border: 1px solid #333;
+        }
+        .atelier-card:hover { transform: translateY(-4px); box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+        .atelier-card img { width: 100%; height: auto; display: block; transition: transform 0.5s ease; }
+        .atelier-card:hover img { transform: scale(1.05); }
+        .pinned-card { border: 2px solid #FFD700 !important; box-shadow: 0 0 20px rgba(255, 215, 0, 0.2); }
+        .pinned-card::before { content: 'PINNED'; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: #FFD700; color: #000; font-size: 8px; font-weight: 900; padding: 2px 10px; border-radius: 100px; z-index: 10; }
+
+        /* ===== STUDIO GALLERY (PINTEREST MASONRY) ===== */
+        .studio-gallery-grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 100px; gap: 12px; margin-top: 15px; }
+        .lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); backdrop-filter: blur(10px); z-index: 9999; display: flex; align-items: center; justify-content: center; cursor: zoom-out; padding: 20px; }
+        .lightbox-image { max-width: 100%; max-height: 100vh; object-fit: contain; border-radius: 8px; box-shadow: 0 10px 50px rgba(0,0,0,0.8); }
+        .gallery-slot { background: rgba(0,0,0,0.5); border-radius: 16px; overflow: hidden; position: relative; border: 1px solid rgba(255,255,255,0.05); }
+        .gallery-slot img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }
+        .gallery-slot:hover img { transform: scale(1.05); }
+        .slot-0 { grid-column: span 2; grid-row: span 3; } 
+        .slot-1 { grid-column: span 2; grid-row: span 1; } 
+        .slot-2 { grid-column: span 1; grid-row: span 2; } 
+        .slot-3 { grid-column: span 1; grid-row: span 2; } 
+        .slot-4 { grid-column: span 4; grid-row: span 1; } 
+        @media (max-width: 768px) { .studio-gallery-grid { grid-auto-rows: 70px; gap: 8px; } }
+
+        /* ====== GIFT MODAL INTERFACE ====== */
+        .gift-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; z-index: 1200; padding: 16px; }
+.gift-modal { background: linear-gradient(180deg, #111111 0%, #050505 100%); border: 1px solid rgba(255,215,0,0.15); border-radius: 24px; width: 100%; max-width: 440px; max-height: 90vh; overflow-y: auto; padding: 32px; box-shadow: 0 30px 60px rgba(0,0,0,0.9), inset 0 1px 1px rgba(255,255,255,0.05); text-align: left; }
+
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+.modal-close { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #FFF; font-size: 18px; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all 0.2s; }
+.modal-close:hover { background: #DC3545; border-color: #DC3545; transform: scale(1.05); }
+
+/* Sleek Token Cards */
+.token-card { display: flex; align-items: center; gap: 16px; padding: 14px 16px; border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); background: rgba(25,25,25,0.4); text-align: left; position: relative; overflow: hidden; }
+.token-card:hover { background: rgba(255,215,0,0.03); border-color: rgba(255,215,0,0.3); transform: translateY(-2px); }
+.token-card.selected { background: linear-gradient(90deg, rgba(255,215,0,0.1) 0%, rgba(255,215,0,0.02) 100%); border-color: #FFD700; box-shadow: 0 0 20px rgba(255,215,0,0.1); }
+.token-card.selected::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #FFD700; border-radius: 4px 0 0 4px; }
+
+.token-icon { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(0,0,0,0.5)); border: 1px solid rgba(255,255,255,0.05); box-shadow: inset 0 2px 5px rgba(255,255,255,0.1); }
+.token-info { flex: 1; }
+.token-name { font-size: 15px; font-weight: 800; color: #FFFFFF; margin: 0 0 4px 0; letter-spacing: 0.02em; }
+.token-breakdown { font-size: 10px; color: #888; margin: 0; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.token-price { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 900; color: #FFD700; flex-shrink: 0; background: rgba(0,0,0,0.5); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(255,215,0,0.2); }
+
+/* Premium Breakdown Box */
+.breakdown-detail { background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 20px; margin: 20px 0; text-align: left; }
+.breakdown-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; font-weight: 600; }
+.breakdown-row.border { border-bottom: 1px dashed rgba(255,255,255,0.1); margin-bottom: 8px; padding-bottom: 12px; }
+.breakdown-label { color: #888; text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; }
+.breakdown-value { color: #FFF; font-family: 'JetBrains Mono', monospace; }
+.breakdown-value.negative { color: #F87171; }
+.breakdown-value.positive { color: #4ADE80; font-size: 14px; text-shadow: 0 0 10px rgba(74,222,128,0.3); }
+
+/* Modern Instructions */
+.mmg-instructions { background: rgba(0,255,255,0.03); border-left: 3px solid #00FFFF; border-radius: 0 12px 12px 0; padding: 16px; margin: 20px 0; font-size: 12px; text-align: left; line-height: 1.6; color: #CCC; }
+.mmg-instructions p { margin: 0 0 8px 0; }
+.mmg-instructions p:last-child { margin: 0; }
+.mmg-instructions strong { color: #00FFFF; font-family: 'JetBrains Mono', monospace; }
+
+/* THE GLASSMORPHIC EARNINGS BUTTON */
+        .earnings-btn {
+            width: 100%; padding: 16px; border-radius: 14px; font-size: 14px; font-weight: 900; cursor: pointer; transition: all 0.2s ease-out; text-transform: uppercase; letter-spacing: 0.05em;
+            background: rgba(255, 215, 0, 0.04); 
+            border: 1px solid rgba(255, 215, 0, 0.25); 
+            color: #FFD700; 
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.05);
+        }
+        .earnings-btn:hover:not(:disabled) {
+            background: rgba(255, 215, 0, 0.1);
+            border-color: rgba(255, 215, 0, 0.5);
+            box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);
+        }
+        .earnings-btn:active:not(:disabled) {
+            background: #FFD700; color: #000; border-color: #FFD700; box-shadow: 0 0 30px rgba(255,215,0,0.7); transform: scale(0.98);
+        }
+        .earnings-btn:disabled { opacity: 0.35; cursor: not-allowed; border-color: rgba(255,255,255,0.05); color: #666; background: rgba(255,255,255,0.02); }
+
+        .anon-toggle { display: flex; align-items: center; gap: 10px; margin: 16px 0; cursor: pointer; }
+.anon-toggle:hover { border: 1px solid rgba(255,255,255,0.1); }
+.anon-toggle span { font-size: 12px; color: #AAA; font-weight: 600; }
+
+/* Sleek Submit Button */
+.submit-btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%); color: #000; border: none; border-radius: 14px; font-size: 14px; font-weight: 900; cursor: pointer; transition: all 0.2s; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 8px; box-shadow: 0 10px 20px rgba(255,215,0,0.2); }
+.submit-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 25px rgba(255,215,0,0.3); }
+.submit-btn.cancel-btn { background: #1A1A1A; color: #FFF; border: 1px solid #333; box-shadow: none; }
+.submit-btn.cancel-btn:hover { background: #222; border-color: #444; }
+.success-state { text-align: center; padding: 30px 20px; }
+.success-check { width: 64px; height: 64px; background: rgba(74, 222, 128, 0.1); border: 2px solid #4ADE80; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 28px; color: #4ADE80; box-shadow: 0 0 30px rgba(74,222,128,0.2); }
+    `;
 
     return (
         <>
+            <style>{modernRewardsStyles}</style>
             <div className="screenContainer">
-                <div className="dashboardSection">
-                    <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
-                        <img src={profile.profilePictureUrl || 'https://placehold.co/100x100/555/FFF?text=P'} alt="Profile" style={{width: '80px', height: '80px', borderRadius: '50%', border: '2px solid #FFD700', objectFit: 'cover', cursor: 'pointer'}} onClick={() => setShowPfpModal(true)} />
-                        <div style={{flexGrow: 1, minWidth: 0}}>
-                            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '5px' }}>
-                                <p className="dashboardItem" style={{fontSize: '20px', fontWeight: 'bold', color: '#FFF', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>
-                                    {profile.creatorName}
-                                </p>
-                                <RoleBadge profile={profile} />
-                                {activeCampaign && (
-                                    <span className="user-search-campaign-badge" style={{cursor: 'pointer'}} onClick={() => {
-                                        setSelectedCampaignId(activeCampaign.id);
-                                        setActiveScreen('CampaignDetails');
-                                    }}>
-                                        Active Campaign
-                                    </span>
-                                )}
-                            </div>
-                            <p className="dashboardItem" style={{ color: '#AAA', margin: '0 0 10px 0' }}>
-                                Role: {profile.role}
-                            </p>
-                            <div className="follow-stats">
-                                <div className="follow-stat-item"><span className="follow-stat-value">{profile.followerCount || 0}</span><span className="follow-stat-label">Followers</span></div>
-                                <div className="follow-stat-item"><span className="follow-stat-value">{profile.followingCount || 0}</span><span className="follow-stat-label">Following</span></div>
-                            </div>
+                <div className="dashboardSection" style={{ border: 'none', background: 'transparent', padding: '10px 0' }}>
+                    {/* --- MODERN CENTERED PROFILE HEADER --- */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                            <img 
+                                src={profile.profilePictureUrl || 'https://placehold.co/120x120/555/FFF?text=P'} 
+                                alt="Profile" 
+                                style={{ 
+                                    width: '110px', 
+                                    height: '110px', 
+                                    borderRadius: '50%', 
+                                    border: '3px solid #FFD700', 
+                                    objectFit: 'cover', 
+                                    cursor: 'pointer', 
+                                    boxShadow: '0 0 20px rgba(255,215,0,0.3)', 
+                                    opacity: isUploadingPfp ? 0.3 : 1, 
+                                    transition: 'opacity 0.3s' 
+                                }} 
+                                onClick={() => {
+                                    if (currentUser && currentUser.uid === profile.id) {
+                                        // Owner triggers R2 upload pipeline
+                                        hiddenFileInput.current.click();
+                                    } else {
+                                        // Strangers trigger the zoom modal
+                                        setShowPfpModal(true);
+                                    }
+                                }} 
+                            />
+                            {isUploadingPfp && (
+                                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', color: '#FFD700', fontWeight: '900', fontSize: '11px', background: 'rgba(0,0,0,0.7)', padding: '6px 10px', borderRadius: '20px', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+                                    UPLOADING...
+                                </div>
+                            )}
+                            <input 
+                                type="file" 
+                                accept="image/*" 
+                                ref={hiddenFileInput} 
+                                style={{ display: 'none' }} 
+                                onChange={handlePfpUpload} 
+                            />
                         </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap', margin: '15px 0 5px 0' }}>
+                            <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#FFF' }}>
+                                {profile.creatorName}
+                            </span>
+                            {renderPatronStripe(profile)}
+                        </div>
+                        {/* 🛡️ ADMIN AUDIT PORTAL */}
+                        {creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority' || creatorProfile.role === 'super_admin') && profile.realName && (
+                            <p style={{ fontSize: '11px', color: '#888', margin: '-4px 0 10px 0', fontStyle: 'italic', textAlign: 'center', width: '100%' }}>
+                                🛡️ Admin View • Legal Name: {profile.realName}
+                            </p>
+                        )}
+                        <p style={{ color: '#AAA', fontSize: '13px', maxWidth: '85%', margin: '0 auto 10px auto', lineHeight: '1.4' }}>
+                            {profile.bio || "Welcome to my profile! Supporting the arts."}
+                        </p>
+                        
+                        {/* --- ATELIER & WELLNESS CUSTOM CTAs --- */}
+                        {profile.creatorField === 'Crafter / Designer' && (
+                            <button className="button" style={{ background: 'linear-gradient(135deg, #FFD700, #FFA500)', color: '#000', fontWeight: '900', borderRadius: '25px', padding: '8px 24px', margin: '10px 0', border: 'none', boxShadow: '0 4px 15px rgba(255, 215, 0, 0.3)' }} onClick={() => showMessage('Commission request system unlocking soon!')}>
+                                🎨 Commission Me
+                            </button>
+                        )}
+                        {profile.creatorField === 'Wellness Coach' && (
+                            <button className="button" style={{ background: 'linear-gradient(135deg, #00FFFF, #00BFFF)', color: '#000', fontWeight: '900', borderRadius: '25px', padding: '8px 24px', margin: '10px 0', border: 'none', boxShadow: '0 4px 15px rgba(0, 255, 255, 0.3)' }} onClick={() => showMessage('Consultation booking system unlocking soon!')}>
+                                🧘 Book Consultation
+                            </button>
+                        )}
+                        {(() => {
+                            const statusLower = enrollmentStatus?.status?.toLowerCase() || '';
+                            
+                            const isDocuSeries = statusLower !== '' && (() => {
+                                if (!enrollmentStatus) return false;
+                                const prog = (
+                                    enrollmentStatus.program || 
+                                    enrollmentStatus.type || 
+                                    enrollmentStatus.applicationType || 
+                                    enrollmentStatus.programType || 
+                                    enrollmentStatus.course || 
+                                    ''
+                                ).toLowerCase();
+                                const opts = enrollmentStatus.selectedOptions || [];
+                                const hasDocuOpt = opts.some(o => typeof o === 'string' && o.toLowerCase().includes('docu'));
+                                return prog.includes('docu') || prog.includes('series') || prog.includes('contestant') || prog.includes('competition') || hasDocuOpt;
+                            })();
+
+                            const isFilmClubUser = profile.isFilmClub || (!isDocuSeries && (
+                                statusLower === 'enrolled' || statusLower === 'approved' || statusLower === 'paid' || statusLower === 'success'
+                            ));
+
+                            const isContestantUser = profile.isContestant || 
+                                                     (profile.badges && profile.badges.includes('Contestant')) ||
+                                                     (isDocuSeries && (
+                                                         statusLower === 'enrolled' || statusLower === 'approved' || statusLower === 'paid' || statusLower === 'success'
+                                                     ));
+
+                            return (
+                                <>
+                                    <RoleBadge profile={{
+                                        ...profile,
+                                        isFilmClub: isFilmClubUser,
+                                        isContestant: isContestantUser
+                                    }} />
+                                    {renderGlobalPatronGifts(profile)}
+                                </>
+                            );
+                        })()}
                     </div>
 
-                    {currentUser && currentUser.uid !== selectedUserId && (
-    <div style={{display: 'flex', alignItems: 'center', gap: '10px', marginTop: '15px'}}>
-        <button 
-            className="button" 
-            onClick={handleFollowToggle} 
-            disabled={isFollowLoading}
-            style={{
-                margin: 0,
-                backgroundColor: isFollowing ? 'transparent' : '#FFD700',
-                border: '1px solid #FFD700',
-                flex: 1 /* Let this button grow */
-            }}
-        >
-            <span className="buttonText" style={{ color: isFollowing ? '#FFD700' : '#0A0A0A', fontWeight: 'bold' }}>
-                {isFollowLoading ? '...' : (isFollowing ? 'Following' : 'Follow')}
-            </span>
-        </button>
-        
-        {/* --- ICON BUTTONS --- */}
-        <button title="Message User" className="button" onClick={handleMessageClick} style={{margin: 0, backgroundColor: '#3A3A3A', flexShrink: 0, width: '44px', height: '44px', padding: '10px' }}>
-            <svg fill="#FFFFFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"></path></svg>
-        </button>
-         <button title="Share Profile" className="button" onClick={handleShareClick} style={{margin: 0, backgroundColor: '#3A3A3A', flexShrink: 0, width: '44px', height: '44px', padding: '10px' }}>
-           <svg fill="#FFFFFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"></path></svg>
-        </button>
-        {/* --- END ICON BUTTONS --- */}
+                    {/* --- REWARDS STATS BLOCK --- */}
+                    {creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority' || creatorProfile.role === 'super_admin') && (
+                        <div className="rewards-stats-card" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '15px 0' }}>
+                            <div className="rewards-stat-col">
+                                <p className="rewards-stat-value gold">
+                                    {formatCurrency(profile.totalEarnings || 0, selectedCurrency, currencyRates)}
+                                </p>
+                                <p className="rewards-stat-label">Main Earnings</p>
+                            </div>
+                            <div className="rewards-stat-col">
+                                <p className="rewards-stat-value" style={{ color: '#00FFFF' }}>
+                                    {formatCurrency(profile.boxOfficeLedger?.ticketSales || 0, selectedCurrency, currencyRates)}
+                                </p>
+                                <p className="rewards-stat-label">Ticket Sales</p>
+                            </div>
+                            <div className="rewards-stat-col">
+                                <p className="rewards-stat-value" style={{ color: '#FFD700' }}>
+                                    {formatCurrency(profile.boxOfficeLedger?.filmDonations || 0, selectedCurrency, currencyRates)}
+                                </p>
+                                <p className="rewards-stat-label">Arena Donations</p>
+                            </div>
+                            <div className="rewards-stat-col">
+                                <p className="rewards-stat-value" style={{ color: '#C084FC' }}>{profile.giftsReceived || 0}</p>
+                                <p className="rewards-stat-label">Gifts Received</p>
+                            </div>
+                        </div>
+                    )}
 
-        <button className="button" onClick={handleToggleBlock} disabled={isBlockLoading} style={{margin: 0, backgroundColor: isBlocked ? '#FF8C00' : '#DC3545', flex: 1 /* Let this button grow */ }}>
-            <span className="buttonText">{isBlockLoading ? '...' : (isBlocked ? 'Unblock' : 'Block')}</span>
-        </button>
-    </div>
-)}
-                    
-                    <div style={{borderTop: '1px solid #3A3A3A', paddingTop: '15px', marginTop: '15px'}}>
-                        <p className="dashboardItem"><strong>Bio:</strong> {profile.bio || "No bio provided."}</p>
-                        <p className="dashboardItem"><strong>Categories:</strong> {profile.categories?.length > 0 ? profile.categories.join(', ') : "No categories set."}</p>
+                    {/* --- SEND A GIFT BUTTON --- */}
+                    {currentUser && currentUser.uid !== profile.id && (
+                        <button className="gift-btn" onClick={() => setIsGiftModalOpen(true)}>
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                <path d="M20 6h-2.18c.11-.31.18-.65.18-1a2.5 2.5 0 0 0-5-1c-.59 0-1.12.26-1.5.67-.38-.41-.91-.67-1.5-.67a2.5 2.5 0 0 0-5 1c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zm-5-3c.83 0 1.5.67 1.5 1.5S15.83 5 15 5h-1.5V4c0-.83.67-1.5 1.5-1.5zM9 3.5c.83 0 1.5.67 1.5 1.5V5H9c-.83 0-1.5-.67-1.5-1.5S8.17 3.5 9 3.5zM4 8h7v3H4V8zm0 11v-6h7v8H4c-.55 0-1-.45-1-1zm16 0c0 .55-.45 1-1 1h-7v-8h8v7zm0-10h-8V8h7c.55 0 1 .45 1 1v1z"/>
+                            </svg>
+                            Send a Gift
+                        </button>
+                    )}
+                    <p style={{textAlign: 'center', fontSize: '10px', color: '#888', marginTop: '8px'}}>Gifts include votes for the bi-weekly competition + 15% platform fee</p>
+
+                    {/* --- SOCIAL-MEDIA ACTION BAR --- */}
+                    {currentUser && currentUser.uid !== selectedUserId && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '20px', width: '100%' }}>
+                            <button 
+                                onClick={handleFollowToggle} 
+                                disabled={isFollowLoading} 
+                                style={{ 
+                                    margin: 0, 
+                                    height: '38px', 
+                                    backgroundColor: isFollowing ? 'transparent' : 'rgba(255, 215, 0, 0.15)', 
+                                    border: isFollowing ? '1px solid rgba(255, 255, 255, 0.2)' : '1px solid rgba(255, 215, 0, 0.5)', 
+                                    borderRadius: '20px', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    cursor: 'pointer',
+                                    flex: 2
+                                }}
+                            >
+                                <span style={{ color: isFollowing ? '#FFFFFF' : '#FFD700', fontWeight: 'bold', fontSize: '13px' }}>
+                                    {isFollowLoading ? '...' : (isFollowing ? '✓ Following' : 'Follow')}
+                                </span>
+                            </button>
+
+                            <button 
+                                title="Message User" 
+                                onClick={handleMessageClick} 
+                                style={{ 
+                                    margin: 0, 
+                                    height: '38px', 
+                                    width: '38px', 
+                                    backgroundColor: '#222', 
+                                    border: '1px solid #444', 
+                                    borderRadius: '50%', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    cursor: 'pointer',
+                                    padding: 0
+                                }}
+                            >
+                                <svg fill="#FFFFFF" viewBox="0 0 24 24" style={{ width: '18px', height: '18px' }}><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"></path></svg>
+                            </button>
+
+                            <button 
+                                title="Share Profile" 
+                                onClick={handleShareClick} 
+                                style={{ 
+                                    margin: 0, 
+                                    height: '38px', 
+                                    width: '38px', 
+                                    backgroundColor: '#222', 
+                                    border: '1px solid #444', 
+                                    borderRadius: '50%', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    cursor: 'pointer',
+                                    padding: 0
+                                }}
+                            >
+                                <svg fill="#FFFFFF" viewBox="0 0 24 24" style={{ width: '18px', height: '18px' }}><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"></path></svg>
+                            </button>
+
+                            <button 
+                                title={isBlocked ? "Unblock User" : "Block User"} 
+                                onClick={handleToggleBlock} 
+                                disabled={isBlockLoading} 
+                                style={{ 
+                                    margin: 0, 
+                                    height: '38px', 
+                                    backgroundColor: isBlocked ? '#FF8C00' : 'rgba(220, 53, 69, 0.1)', 
+                                    border: isBlocked ? '1px solid #FF8C00' : '1px solid rgba(220, 53, 69, 0.4)', 
+                                    borderRadius: '20px', 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    cursor: 'pointer',
+                                    flex: 1
+                                }}
+                            >
+                                <span style={{ color: isBlocked ? '#000' : '#DC3545', fontWeight: 'bold', fontSize: '12px' }}>
+                                    {isBlockLoading ? '...' : (isBlocked ? 'Unblock' : 'Block')}
+                                </span>
+                            </button>
+                        </div>
+                    )}
+
+                    {/* --- FOLLOW STATS --- */}
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '30px', marginTop: '20px', padding: '15px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px' }}>
+                        <div className="follow-stat-item" style={{textAlign: 'center'}}><span style={{display: 'block', fontSize: '18px', fontWeight: 'bold', color: '#FFF'}}>{profile.followerCount || 0}</span><span style={{fontSize: '11px', color: '#888', textTransform: 'uppercase'}}>Followers</span></div>
+                        <div className="follow-stat-item" style={{textAlign: 'center'}}><span style={{display: 'block', fontSize: '18px', fontWeight: 'bold', color: '#FFF'}}>{profile.followingCount || 0}</span><span style={{fontSize: '11px', color: '#888', textTransform: 'uppercase'}}>Following</span></div>
                     </div>
                 </div>
 
+                {/* --- THE AUDIT PANELS (Wrapped in Staff Restriction) --- */}
+                {creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority') && (
+                    <>
+                        <div className="leaderboard-card">
+                            <div className="leaderboard-header">
+                                <p className="leaderboard-title"><span style={{color: '#E539A1'}}>♡</span> Top Supporters</p>
+                                <p className="leaderboard-subtitle">0 total</p>
+                            </div>
+                            <div className="leaderboard-row">
+                                <p style={{color: '#888', fontSize: '13px', fontStyle: 'italic'}}>Be the first to support this creator!</p>
+                            </div>
+                        </div>
+                        
+                        <div className="leaderboard-card">
+                            <div className="leaderboard-header">
+                                <p className="leaderboard-title"><span style={{color: '#FFD700'}}>🏆</span> This Week's Top Earners</p>
+                                <p className="leaderboard-subtitle">Bi-Weekly Competition</p>
+                            </div>
+                            {[1, 2, 3].map((rank) => (
+                                <div key={rank} className="leaderboard-row">
+                                    <div className="supporter-info">
+                                        <div className={`rank-circle rank-${rank}`}>{rank}</div>
+                                        <span className="supporter-name">Creator {rank}</span>
+                                    </div>
+                                    <span className="supporter-amount">---</span>
+                                </div>
+                            ))}
+                            <p style={{textAlign: 'center', fontSize: '10px', color: '#888', marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px'}}>Top performers qualify for the <strong>100K GYD</strong> bi-weekly prize</p>
+                        </div>
+
+                        <div className="how-it-works-box">
+                            <p className="leaderboard-title" style={{marginBottom: '15px'}}><span style={{color: '#00FFFF'}}>📈</span> How Creator Rewards Work</p>
+                            <div className="step-row"><div className="step-number">1</div><div className="step-text"><h4>Choose a Gift Token</h4><p>Warm Spotlight to Director's Chair — each includes competition votes</p></div></div>
+                            <div className="step-row"><div className="step-number">2</div><div className="step-text"><h4>Pay via MMG</h4><p>Send through Mobile Money Guyana and submit your receipt</p></div></div>
+                            <div className="step-row"><div className="step-number">3</div><div className="step-text"><h4>Verified in 24h</h4><p>Admin verifies receipt; gift is delivered instantly</p></div></div>
+                            <div className="step-row"><div className="step-number">4</div><div className="step-text"><h4>Earn Your Stripe</h4><p>Collect Patron badges as you support more creators</p></div></div>
+                            
+                            <p className="leaderboard-title" style={{marginTop: '25px', marginBottom: '10px'}}><span style={{color: '#FFF'}}>🎖️</span> Patron Tiers</p>
+                            <div className="patron-grid">
+                                <div className="patron-tier"><div className="tier-name"><div className="dot" style={{background: '#CD7F32'}}></div> Patron of the Arts</div><div className="tier-price">GYD $1,000+</div></div>
+                                <div className="patron-tier"><div className="tier-name"><div className="dot" style={{background: '#C0C0C0'}}></div> Silver Supporter</div><div className="tier-price">GYD $5,000+</div></div>
+                                <div className="patron-tier"><div className="tier-name"><div className="dot" style={{background: '#FFD700'}}></div> Gold Producer</div><div className="tier-price">GYD $15,000+</div></div>
+                                <div className="patron-tier"><div className="tier-name"><div className="dot" style={{background: '#00FFFF'}}></div> Legendary Benefactor</div><div className="tier-price">GYD $50,000+</div></div>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {/* --- MODERN GLASSMORPHIC ADMIN COMMAND HUB --- */}
                 {canManageUser && (
-                    <div className="dashboardSection" style={{border: '2px solid #DC3545'}}>
-                        <p className="dashboardSectionTitle">Admin Controls</p>
+                    <div style={{
+                        background: 'rgba(255, 0, 0, 0.05)',
+                        backdropFilter: 'blur(16px)',
+                        WebkitBackdropFilter: 'blur(16px)',
+                        border: '1px solid rgba(220, 53, 69, 0.3)',
+                        borderRadius: '24px',
+                        padding: '30px',
+                        marginTop: '40px',
+                        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.8)',
+                        position: 'relative',
+                        overflow: 'hidden'
+                    }}>
+                        {/* Control Panel Label */}
+                        <p style={{ color: '#DC3545', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '14px' }}>🛡️</span> INTERNAL STAFF COMMAND HUB
+                        </p>
+
                         {(() => {
-                            const isTargetAdminOrAuthority = profile.role === 'admin' || profile.role === 'authority';
+                            const isTargetAdminOrAuthority = profile.role === 'admin' || profile.role === 'authority' || profile.role === 'super_admin';
                             const viewerIsAuthority = creatorProfile.role === 'authority';
                             const isDisabled = viewerIsAuthority && isTargetAdminOrAuthority;
 
-                            return <>
-                                <div className="formGroup">
-                                    <label className="formLabel">Change Role:</label>
-                                    <select className="formInput" value={profile.role} onChange={(e) => handleRoleChange(e.target.value)} disabled={isDisabled || viewerIsAuthority}>
-                                        <option value="user">User</option>
-                                        <option value="creator">Creator</option>
-                                        <option value="authority">Authority</option>
-                                        {creatorProfile.role === 'admin' && <option value="admin">Admin</option>}
-                                    </select>
-                                </div>
-                                <div style={{display: 'flex', gap: '10px', marginTop: '15px'}}>
-                                    {isSuspended ? (
-                                        <button className="button" onClick={handleLiftSuspension} style={{flex: 1, margin: 0, backgroundColor: '#008000'}} disabled={isDisabled}>
-                                            <span className="buttonText">Lift Suspension</span>
-                                        </button>
-                                    ) : (
-                                        <button className="button" onClick={handleToggleBan} style={{flex: 1, margin: 0, backgroundColor: profile.banned ? '#008000' : '#DC3545'}} disabled={isDisabled}>
-                                            <span className="buttonText">{profile.banned ? 'Unban User' : 'Ban User'}</span>
-                                        </button>
-                                    )}
-                                    {/* Delete is an admin-only action */}
-                                    {creatorProfile.role === 'admin' && (
-                                        <button className="button" onClick={handleDeleteUser} style={{flex: 1, margin: 0, backgroundColor: '#a00000'}}>
-                                            <span className="buttonText">Permanently Delete User</span>
-                                        </button>
-                                    )}
-                                </div>
-                                {isDisabled && <p className="smallText" style={{textAlign: 'center', color: '#FFD700', marginTop: '10px'}}>Authorities cannot take administrative action against other Authorities or Admins.</p>}
-                            </>;
+                            return (
+                                <>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', alignItems: 'flex-end' }}>
+                                        {/* Dynamic Role Selector */}
+                                        <div className="formGroup" style={{ margin: 0 }}>
+                                            <label className="formLabel" style={{ fontSize: '10px', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '1px' }}>Privilege Assignment</label>
+                                            <select 
+                                                className="formInput" 
+                                                value={profile.role} 
+                                                onChange={(e) => handleRoleChange(e.target.value)} 
+                                                disabled={isDisabled || viewerIsAuthority}
+                                                style={{ 
+                                                    background: 'rgba(0,0,0,0.4)', 
+                                                    border: '1px solid rgba(255,255,255,0.1)', 
+                                                    borderRadius: '12px', 
+                                                    color: '#FFF', 
+                                                    padding: '12px',
+                                                    fontSize: '13px',
+                                                    fontWeight: 'bold',
+                                                    cursor: (isDisabled || viewerIsAuthority) ? 'not-allowed' : 'pointer'
+                                                }}
+                                            >
+                                                <option value="user">Standard User</option>
+                                                <option value="creator">Verified Creator</option>
+                                                <option value="authority">NVA Authority</option>
+                                                {(creatorProfile.role === 'admin' || creatorProfile.role === 'super_admin') && <option value="admin">System Admin</option>}
+                                            </select>
+                                        </div>
+
+                                        {/* Action Button Cluster */}
+                                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                            {isSuspended ? (
+                                                <button onClick={handleLiftSuspension} disabled={isDisabled} style={{ flex: 1, height: '45px', background: 'rgba(0, 255, 0, 0.1)', border: '1px solid rgba(0, 255, 0, 0.3)', borderRadius: '12px', color: '#00FF00', fontWeight: '900', fontSize: '11px', textTransform: 'uppercase', cursor: 'pointer' }}>
+                                                    Lift Suspension
+                                                </button>
+                                            ) : (
+                                                <button onClick={handleToggleBan} disabled={isDisabled} style={{ flex: 1, minWidth: '110px', height: '45px', background: 'rgba(220, 53, 69, 0.15)', border: '1px solid rgba(220, 53, 69, 0.4)', borderRadius: '12px', color: '#FF4D4D', fontWeight: '900', fontSize: '11px', textTransform: 'uppercase', cursor: 'pointer' }}>
+                                                    {profile.banned ? 'Unban User' : 'Ban User'}
+                                                </button>
+                                            )}
+
+                                            {/* OVERRIDE: Unlock Ledger Holds */}
+                                            {(profile.payoutLockUntil || allContent.some(f => f.type === 'premiere') || arenaMovies.some(f => f.type === 'premiere')) && (
+                                                <button 
+                                                    onClick={() => {
+                                                        setConfirmationTitle("🔓 Lift Payout Lock?");
+                                                        setConfirmationMessage(`You are about to force-unlock ${profile.creatorName}'s Box Office. This will immediately bypass the 72-hour security hold and takedown any live premieres.`);
+                                                        setOnConfirmationAction(() => async () => {
+                                                            try {
+                                                                const liftFunc = httpsCallable(functions, 'liftBoxOfficeCooldown');
+                                                                const result = await liftFunc({ targetUserId: profile.id });
+                                                                showMessage(result.data.message);
+                                                            } catch(e) { showMessage("Override Failed: " + e.message); }
+                                                        });
+                                                        setShowConfirmationModal(true);
+                                                    }} 
+                                                    style={{ flex: 1.2, minWidth: '140px', height: '45px', background: 'rgba(255, 140, 0, 0.15)', border: '1px solid rgba(255, 140, 0, 0.5)', borderRadius: '12px', color: '#FFA500', fontWeight: '900', fontSize: '11px', textTransform: 'uppercase', cursor: 'pointer', boxShadow: '0 0 15px rgba(255, 140, 0, 0.1)' }}
+                                                >
+                                                    🔓 Lift Lock
+                                                </button>
+                                            )}
+
+                                            {(creatorProfile.role === 'admin' || creatorProfile.role === 'super_admin') && (
+                                                <button onClick={handleDeleteUser} style={{ flex: 0.8, minWidth: '80px', height: '45px', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '12px', color: '#888', fontWeight: '900', fontSize: '11px', textTransform: 'uppercase', cursor: 'pointer' }}>
+                                                    Delete
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {isDisabled && <p style={{ textAlign: 'center', color: '#FFD700', fontSize: '10px', fontWeight: 'bold', marginTop: '20px', opacity: 0.8 }}>⚠️ HIGHER-TIER ACCOUNTS ARE PROTECTED FROM LOCAL MODIFICATIONS.</p>}
+                                </>
+                            );
                         })()}
                     </div>
                 )}
                 
-                <div className="profile-content-section">
-                    <p className="sectionTitle">Pinned Content</p>
+                {/* --- STUDIO GALLERY (Specific Roles Only) --- */}
+                {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach'].includes(profile?.creatorField) && profile?.studioGallery && Object.keys(profile.studioGallery).length > 0 && (
+                    <div className="atelier-container" style={{ background: `linear-gradient(180deg, ${roleColor}33 0%, #111111 100%)`, border: `1px solid ${roleColor}66`, marginTop: '30px' }} id="gallery">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <p className="sectionTitle" style={{ color: roleColor, margin: 0 }}>The Exhibition Room</p>
+                            <button 
+                                onClick={handleShareGallery}
+                                style={{ background: 'transparent', border: `1px solid ${roleColor}66`, color: roleColor, padding: '4px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            >
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+                                Share Gallery
+                            </button>
+                        </div>
+                        <div className="studio-gallery-grid">
+                            {[0, 1, 2, 3, 4].map((index) => {
+                                const imgUrl = profile.studioGallery[index];
+                                if (!imgUrl) return <div key={index} className={`gallery-slot slot-${index}`} style={{ background: 'rgba(255,255,255,0.02)', border: 'none' }} />; 
+                                return (
+                                    <div key={index} className={`gallery-slot slot-${index}`} onClick={() => setSelectedExhibitionImage(imgUrl)} style={{ cursor: 'zoom-in' }}>
+                                        <img src={imgUrl} alt={`Exhibition ${index}`} />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* --- PINNED CONTENT TINTED ATELIER --- */}
+                <div 
+                    className="atelier-container" 
+                    style={{ 
+                        background: `linear-gradient(180deg, ${roleColor}33 0%, #111111 100%)`, 
+                        border: `1px solid ${roleColor}66`,
+                        marginTop: '30px'
+                    }}
+                >
+                    <p className="sectionTitle" style={{ color: roleColor, marginBottom: '20px' }}>Pinned Content</p>
                     {loadingContent ? <p className="dashboardItem">Loading content...</p> : pinnedContent.length === 0 ? <p className="dashboardItem">This creator hasn't pinned any content yet.</p> : (
-                        <div className="contentGrid">
+                        <div className="atelier-grid">
                             {pinnedContent.map(item => (
-                                <div key={item.id} className="pinned-item-card">
-                                    <div onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)} style={{cursor: 'pointer'}}>
-                                        <div className="pinned-indicator-icon"><svg viewBox="0 0 24 24"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"></path></svg></div>
-                                        <img src={item.customThumbnailUrl} alt={item.title} className="pinned-item-thumbnail" />
-                                        <p className="contentTitle">{item.title}</p>
+                                <div key={item.id} className="atelier-card pinned-card">
+                                    <div onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                                        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000' }}>
+                                            <img src={item.customThumbnailUrl || item.imageUrl || 'https://placehold.co/400x225/111/333?text=NVA'} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                        </div>
+                                        <div style={{ padding: '12px' }}>
+                                            <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '900', color: '#FFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</p>
+                                            <p style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', fontWeight: '700' }}>{item.contentType}</p>
+                                        </div>
                                     </div>
                                     <ContentStats item={item} currentUser={currentUser} showMessage={showMessage} />
                                 </div>
@@ -472,15 +1187,28 @@ const handleShareClick = async () => {
                     )}
                 </div>
                 
-                <div className="profile-content-section">
-                    <p className="sectionTitle">All Content</p>
-                    {loadingContent ? <p className="dashboardItem">Loading content...</p> : allContent.length === 0 ? <p className="dashboardItem">This creator hasn't uploaded any other content.</p> : (
-                        <div className="contentGrid">
+                {/* --- CREATIVE PORTFOLIO TINTED ATELIER --- */}
+                <div 
+                    className="atelier-container" 
+                    style={{ 
+                        background: `linear-gradient(180deg, ${roleColor}1A 0%, #111111 100%)`, 
+                        border: `1px solid ${roleColor}4D`,
+                        marginTop: '30px'
+                    }}
+                >
+                    <p className="sectionTitle" style={{ color: roleColor, marginBottom: '20px' }}>Creative Portfolio</p>
+                    {loadingContent ? <p className="dashboardItem">Loading gallery...</p> : allContent.length === 0 ? <p className="dashboardItem">This creator hasn't uploaded any content yet.</p> : (
+                        <div className="atelier-grid">
                             {allContent.map(item => (
-                                <div key={item.id} className="contentCard">
-                                    <div onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)} style={{cursor: 'pointer'}}>
-                                        <img src={item.customThumbnailUrl} className="thumbnailPlaceholder" alt={item.title} style={{height: '100px', objectFit: 'cover'}} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/300x150/444/FFF?text=...'; }}/>
-                                        <p className="contentTitle">{item.title}</p>
+                                <div key={item.id} className="atelier-card">
+                                    <div onClick={() => handleVideoPress(item.embedUrl || item.mainUrl, item)}>
+                                        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000' }}>
+                                            <img src={item.customThumbnailUrl || item.imageUrl || 'https://placehold.co/400x225/111/333?text=NVA'} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                        </div>
+                                        <div style={{ padding: '12px' }}>
+                                            <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '900', color: '#FFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</p>
+                                            <p style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', fontWeight: '700' }}>{item.contentType}</p>
+                                        </div>
                                     </div>
                                     <ContentStats item={item} currentUser={currentUser} showMessage={showMessage} />
                                 </div>
@@ -490,7 +1218,7 @@ const handleShareClick = async () => {
                 </div>
 
                 <div style={{display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px'}}>
-                    {/* --- THIS IS THE FIX: Contextual Back Button --- */}
+                    {/* Contextual Back Button */}
                     {previousScreen === 'TopCreators' ? (
                         <button className="button button-contextual" onClick={() => setActiveScreen('TopCreators')}>
                             <span className="buttonText light">Back to Charts</span>
@@ -504,7 +1232,6 @@ const handleShareClick = async () => {
                             <span className="buttonText light">Back to Search</span>
                         </button>
                     )}
-                    {/* ------------------------------------------- */}
                     {canManageUser && (
                          <button className="button" onClick={() => setActiveScreen('AdminDashboard')} style={{ backgroundColor: '#555' }}>
                             <span className="buttonText light">Back to Admin</span>
@@ -513,6 +1240,208 @@ const handleShareClick = async () => {
                 </div>
             </div>
             {showPfpModal && profile && <ProfilePictureModal imageUrl={profile.profilePictureUrl || 'https://placehold.co/400x400/555/FFF?text=No+Image'} onClose={() => setShowPfpModal(false)} />}
+
+            {/* LIGHTBOX MODAL */}
+            {selectedExhibitionImage && (
+                <div className="lightbox-overlay" onClick={() => setSelectedExhibitionImage(null)}>
+                    <img src={selectedExhibitionImage} alt="Zoomed Exhibition" className="lightbox-image" onClick={(e) => e.stopPropagation()} />
+                    <button onClick={() => setSelectedExhibitionImage(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#FFF', fontSize: '24px', width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                </div>
+            )}
+
+            {/* ====== THE INTERACTIVE MMG GIFT MODAL ====== */}
+            {isGiftModalOpen && profile && (
+                <div className="gift-modal-overlay" onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation(); 
+                    if (!isSubmitting) setIsGiftModalOpen(false);
+                }}>
+                    <div className="gift-modal" onClick={e => e.stopPropagation()}>
+                        {!submitSuccess ? (
+                            <>
+                                <div className="modal-header">
+                                    <div>
+                                        <p style={{ color: '#737373', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>SEND A GIFT TO</p>
+                                        <h2 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 800, margin: '4px 0 0 0' }}>{profile.creatorName}</h2>
+                                    </div>
+                                    <button type="button" className="modal-close" onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation(); 
+                                        setIsGiftModalOpen(false);
+                                    }}>✕</button>
+                                </div>
+
+                                <p style={{ color: '#737373', fontSize: '12px', margin: '0 0 20px 0' }}>Select a Token. Gifts support the creator financially. Tap here to send a gift [1]!</p>
+
+                                <div style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '16px', paddingRight: '4px' }}>
+                                    {giftTokens.map(token => {
+                                        const platformFee = token.price * 0.15;
+                                        const actorReceives = token.price * 0.85;
+                                        return (
+                                            <div key={token.id} className={`token-card ${selectedToken.id === token.id ? 'selected' : ''}`} onClick={() => setSelectedToken(token)}>
+                                                <div className="token-icon">{token.icon}</div>
+                                                <div className="token-info">
+                                                    <p className="token-name">{token.name}</p>
+                                                    <p className="token-breakdown">Creator: {actorReceives.toLocaleString()} GYD | Platform: {platformFee.toLocaleString()} GYD (15%)</p>
+                                                </div>
+                                                <span className="token-price">{token.price.toLocaleString()}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Selected Breakdown */}
+                                <div className="breakdown-detail">
+                                    <div className="breakdown-row border">
+                                        <span className="breakdown-label">Token Price</span>
+                                        <span className="breakdown-value">{(selectedToken?.price || 0).toLocaleString()} GYD</span>
+                                    </div>
+                                    <div className="breakdown-row">
+                                        <span className="breakdown-label">Platform Fee (15%)</span>
+                                        <span className="breakdown-value negative">-{((selectedToken?.price || 0) * 0.15).toLocaleString()} GYD</span>
+                                    </div>
+                                    <div className="breakdown-row" style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px solid #2A2A2A' }}>
+                                        <span className="breakdown-label positive">Creator Receives</span>
+                                        <span className="breakdown-value positive">{((selectedToken?.price || 0) * 0.85).toLocaleString()} GYD ✓</span>
+                                    </div>
+                                </div>
+
+                                {/* THE NEW GLASSMORPHIC EARNINGS GIFT BUTTON */}
+                                <div style={{ marginBottom: '15px' }}>
+                                    <button 
+                                        type="button"
+                                        className="earnings-btn" 
+                                        disabled={isSubmitting || (creatorProfile?.totalEarnings || 0) < (selectedToken?.price || 0)}
+                                        onClick={async () => {
+                                            setIsSubmitting(true);
+                                            try {
+                                                const giftFunc = httpsCallable(functions, 'sendGiftWithEarnings');
+                                                await giftFunc({
+                                                    targetUserId: profile.id,
+                                                    giftName: selectedToken?.name || 'Gift',
+                                                    amount: selectedToken?.price || 0
+                                                });
+                                                setSubmitSuccess(true);
+                                                showMessage(`Your ${selectedToken?.name || 'Gift'} has been sent successfully!`);
+                                                setTimeout(() => {
+                                                    setSubmitSuccess(false);
+                                                    setIsGiftModalOpen(false);
+                                                }, 3000);
+                                            } catch (err) {
+                                                showMessage(`Gifting failed: ${err.message}`);
+                                            } finally {
+                                                setIsSubmitting(false);
+                                            }
+                                        }}
+                                    >
+                                        {isSubmitting ? 'Processing...' : `Send with Earnings — ${(selectedToken?.price || 0).toLocaleString()} GYD`}
+                                    </button>
+                                </div>
+
+                                {/* Anonymous Toggle */}
+                                <label className="anon-toggle">
+                                    <input type="checkbox" checked={isAnonymous} onChange={e => setIsAnonymous(e.target.checked)} />
+                                    <span>Gift anonymously (hide my name from public toasts)</span>
+                                </label>
+
+                                <div className="mmg-instructions">
+                                    <p><strong>📱 MMG Payment Instructions:</strong></p>
+                                    <p>1. Send <strong>{(selectedToken?.price || 0).toLocaleString()} GYD</strong> to <strong>{MMG_NUMBER}</strong></p>
+                                    <p>2. Copy the Transaction ID from your receipt</p>
+                                    <p>3. Paste the ID and upload your receipt screenshot below</p>
+                                </div>
+
+                                <div style={{ marginBottom: '12px' }}>
+                                    <label style={{ fontSize: '11px', color: '#737373', fontWeight: 600, display: 'block', marginBottom: '6px' }}>MMG Payment ID</label>
+                                    <input type="text" value={paymentId} onChange={e => setPaymentId(e.target.value)} placeholder="e.g. TXN12345678" 
+                                        style={{ width: '100%', background: '#0D0D0D', border: '1px solid #333', color: '#FFF', padding: '12px 16px', borderRadius: '10px', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s' }}
+                                        onFocus={e => e.target.style.borderColor = '#FFD700'}
+                                        onBlur={e => e.target.style.borderColor = '#333'} />
+                                </div>
+
+                                <div style={{ marginBottom: '16px' }}>
+                                    <label style={{ fontSize: '11px', color: '#737373', fontWeight: 600, display: 'block', marginBottom: '6px' }}>Receipt Screenshot</label>
+                                    <input type="file" accept="image/*" onChange={e => {
+                                        const file = e.target.files[0];
+                                        if (file) {
+                                            const reader = new FileReader();
+                                            reader.onloadend = () => setScreenshotBase64(reader.result);
+                                            reader.readAsDataURL(file);
+                                        }
+                                    }} style={{ fontSize: '12px', color: '#737373', width: '100%' }} />
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <button type="button" className="submit-btn" style={{ flex: 1, backgroundColor: '#333', color: '#888' }} onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation(); 
+                                        setIsGiftModalOpen(false);
+                                    }} disabled={isSubmitting}>Cancel</button>
+                                    <button type="button" className="submit-btn" style={{ flex: 2 }} onClick={submitGiftPledge} disabled={isSubmitting || !paymentId || !screenshotBase64}>
+                                        {isSubmitting ? 'Verifying...' : `Submit MMG Receipt — ${(selectedToken?.price || 0).toLocaleString()} GYD`}
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="success-state">
+                                <div className="success-check" style={{ margin: '0 auto 16px' }}>✓</div>
+                                <h3 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 900, margin: '0 0 12px 0', letterSpacing: '0.02em' }}>
+                                    {successMode === 'earnings' ? 'Transfer Complete!' : 'Gift Sent!'}
+                                </h3>
+                                <p style={{ color: '#AAA', fontSize: '14px', margin: 0, lineHeight: '1.6' }}>
+                                    {successMode === 'earnings' 
+                                        ? <>Your <strong style={{color: '#FFD700'}}>{selectedToken?.name || 'Gift'}</strong> has been securely transferred to {profile.creatorName}.</>
+                                        : "Your receipt has been submitted for verification. The gift will be delivered once approved."}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                    {/* CUSTOM EARNINGS CONFIRMATION MODAL OVERLAY */}
+                    {showEarningsConfirm && (
+                        <div className="gift-modal-overlay" style={{ zIndex: 1300, background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(15px)' }} onClick={(e) => { e.stopPropagation(); setShowEarningsConfirm(false); }}>
+                            <div className="gift-modal" style={{ maxWidth: '360px', border: '1px solid #FFD700', textAlign: 'center', boxShadow: '0 20px 80px rgba(0,0,0,0.9)' }} onClick={(e) => e.stopPropagation()}>
+                                <p style={{ color: '#FFD700', fontSize: '18px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '16px' }}>Authorize Transfer</p>
+                                <p style={{ color: '#FFF', fontSize: '14px', lineHeight: '1.5', marginBottom: '24px' }}>
+                                    Are you sure you want to deduct <strong style={{color: '#FFD700'}}>{(selectedToken?.price || 0).toLocaleString()} GYD</strong> from your earnings balance to send this gift?
+                                </p>
+                                <div style={{ display: 'flex', gap: '12px' }}>
+                                    <button className="submit-btn cancel-btn" onClick={(e) => { e.stopPropagation(); setShowEarningsConfirm(false); }} style={{ flex: 1, margin: 0 }}>Cancel</button>
+                                    <button 
+                                        className="submit-btn" 
+                                        style={{ flex: 1.5, margin: 0 }}
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            setShowEarningsConfirm(false);
+                                            setIsSubmitting(true);
+                                            try {
+                                                const giftFunc = httpsCallable(functions, 'sendGiftWithEarnings');
+                                                await giftFunc({
+                                                    targetUserId: profile.id,
+                                                    giftName: selectedToken?.name || 'Gift',
+                                                    amount: selectedToken?.price || 0
+                                                });
+                                                setSuccessMode('earnings');
+                                                setSubmitSuccess(true);
+                                                showMessage(`Your ${selectedToken?.name || 'Gift'} has been sent successfully!`);
+                                                setTimeout(() => {
+                                                    setSubmitSuccess(false);
+                                                    setIsGiftModalOpen(false);
+                                                }, 3000);
+                                            } catch (err) {
+                                                showMessage(`Gifting failed: ${err.message}`);
+                                            } finally {
+                                                setIsSubmitting(false);
+                                            }
+                                        }}
+                                    >
+                                        Confirm
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
         </>
     );
 };

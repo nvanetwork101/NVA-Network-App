@@ -6,27 +6,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- HELPER FUNCTIONS ---
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    function isAdmin() {
-      return isAuthenticated() && request.auth.token.admin == true;
-    }
-    function isAuthority() {
-      return isAuthenticated() && request.auth.token.authority == true;
-    }
-    function isModerator() {
-      return isAuthenticated() && isAdmin();
+    // --- SECURE, ZERO-COST SYSTEM HIERARCHY HELPERS (Exempt from 10-Get limit) ---
+    function isAuthenticated() { return request.auth != null; }
+    function isSuperAdmin() { return isAuthenticated() && request.auth.token.super_admin == true; }
+    function isAdmin() { return isAuthenticated() && (request.auth.token.admin == true || isSuperAdmin()); }
+    function isModerator() { return isAuthenticated() && (request.auth.token.authority == true || request.auth.token.moderator == true || isAdmin()); }
+
+    match /eventComments/{commentId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.userId || isModerator());
+      allow update: if false;
     }
 
     // --- COLLECTIONS ---
 
     match /creators/{userId} {
-      // ANY authenticated user can perform a LIST/QUERY on the collection.
-      allow list: if isAuthenticated();
-
-      // THIS IS THE FIX: A user can always get their OWN profile. For OTHER profiles, the blocklist check is enforced.
+      allow list: if true;
       allow get: if (request.auth.uid == userId) ||
                      (isAuthenticated() &&
                        !exists(/databases/$(database)/documents/creators/$(request.auth.uid)/blockedUsers/$(userId)) &&
@@ -36,56 +32,61 @@ service cloud.firestore {
       allow create: if request.auth.uid == userId;
 
       allow update: if
-        // Rule 1: A moderator can update any field.
         isModerator() ||
-        // Rule 2: A user can update their OWN profile with a specific set of allowed fields.
         (
           request.auth.uid == userId &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'creatorName', 'bio', 'categories', 'existingWorkLink', 'profilePictureUrl',
+            // Standard cosmetic fields allowed for client-side writes [1]
+            'creatorName', 'realName', 'bio', 'categories', 'creatorField', 'role', 'existingWorkLink', 'profilePictureUrl',
             'featuredVideoLink', 'pinnedContent', 'updatedAt', 'lastLoginTimestamp', 'lastSubmissionTimestamp', 'lastCommentTimestamp',
-            'followingCount', 'blockedUsers', 'blockedBy'
-          ])
+            'followingCount', 'blockedUsers', 'blockedBy', 'studioGallery',
+            'currentChallengeLink', 'currentChallengeThumbnail', 'teamTag',
+            'competitionStatus', 'isEliminated', 'isContestant',
+            'isLive', 'liveRoomType', 'latestNotification'
+          ]) &&
+          (
+            (request.resource.data.get('role', 'user') == resource.data.get('role', 'user')) ||
+            (
+              resource.data.get('role', 'user') != 'super_admin' &&
+              resource.data.get('role', 'user') != 'admin' &&
+              resource.data.get('role', 'user') != 'authority' &&
+              resource.data.get('role', 'user') != 'moderator' &&
+              (request.resource.data.role == 'creator' || request.resource.data.role == 'user')
+            )
+          )
         ) ||
-        // Rule 3: For another user's follow action.
         (
           request.auth.uid != userId &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followerCount', 'followingCount']) &&
           (
-            (request.resource.data.followerCount == resource.data.followerCount + 1 || request.resource.data.followerCount == resource.data.followerCount - 1) ||
-            (request.resource.data.followingCount == resource.data.followingCount + 1 || request.resource.data.followingCount == resource.data.followingCount - 1)
+            (request.resource.data.get('followerCount', 0) == resource.data.get('followerCount', 0) + 1 || request.resource.data.get('followerCount', 0) == resource.data.get('followerCount', 0) - 1) ||
+            (request.resource.data.get('followingCount', 0) == resource.data.get('followingCount', 0) + 1 || request.resource.data.get('followingCount', 0) == resource.data.get('followingCount', 0) - 1)
           )
+        ) ||
+        (
+          request.auth.uid != userId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['voteCount']) &&
+          request.resource.data.voteCount == resource.data.get('voteCount', 0) + 1
         );
 
        allow delete: if false;
 
-      // --- SUBCOLLECTIONS ---
      match /followers/{followerId} {
-        // Allow a user to read their own follower document from anyone's list (for the follow button).
-        // Also allow a user to read their entire list of followers (for the Followers screen).
         allow get: if isAuthenticated() && request.auth.uid == followerId;
         allow list: if isAuthenticated() && request.auth.uid == userId;
-        allow write: if false; // Writes are handled by the backend function
+        allow write: if false; 
       }
       match /following/{followedUserId} {
-        // Allow a user to read their own "following" list.
         allow read: if isAuthenticated() && request.auth.uid == userId;
-        allow write: if false; // Writes are handled by the backend function
+        allow write: if false; 
       }
-      // -----------------------------
-      // NEW: Rules for blocklists. Only the profile owner can write to these.
       match /blockedUsers/{blockedId} {
-        // THE FIX: Allow a user to read their own blocklist, AND allow them to read a single document
-        // from their list to check if another user is blocked.
         allow get: if isAuthenticated() && request.auth.uid == userId;
         allow list: if isAuthenticated() && request.auth.uid == userId;
         allow write: if isAuthenticated() && request.auth.uid == userId;
       }
       match /blockedBy/{blockerId} {
-        // FIX: The user writing to this subcollection (the blocker) must match the document ID they are creating.
-        // When User A blocks User B, this rule runs on User B's profile (`/creators/{userId=B}/blockedBy/{blockerId=A}`).
-        // It correctly allows the write because `request.auth.uid` (User A) matches the `blockerId` (User A).
-        allow read: if isAuthenticated() && request.auth.uid == userId; // Reading your own 'blockedBy' list is fine.
+        allow read: if isAuthenticated() && request.auth.uid == userId; 
         allow write: if isAuthenticated() && request.auth.uid == blockerId;
       }
       match /savedOpportunities/{opportunityId} {
@@ -102,65 +103,80 @@ service cloud.firestore {
     }
 
     match /{path=**}/chatMessages/{messageId} {
-    // Rule 1: Allow any authenticated user to read the chat.
        allow read: if isAuthenticated();
-
-    // Rule 2: No one can create messages directly. They MUST use the function.
        allow create: if false;
-
-    // Rule 3: Deletion is allowed by the author or a moderator.
        allow delete: if (isAuthenticated() && request.auth.uid == resource.data.userId) || isModerator();
     }
 
-    // --- ADD THIS ENTIRE NEW RULE BLOCK ---
     match /follows/{followId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && request.resource.data.followerId == request.auth.uid;
       allow delete: if isAuthenticated() && resource.data.followerId == request.auth.uid;
       allow update: if false;
     }
-    // ------------------------------------
 
     match /reports/{reportId} {
        allow create: if isAuthenticated() && request.resource.data.reporterId == request.auth.uid;
-
-       // Rule for Reading: Allow both Admins and Authorities to view the queue.
-       allow read, list: if isAuthority() || isAdmin();
-
-       // Rule for Writing: Only Admins can modify or delete reports.
-       allow update, delete: if isAdmin();
+       allow read, list, update, delete: if isModerator();
     }
-   match /payoutRequests/{request} {
-        // FIX: Add 'list' permission for Admins to query the collection.
-        allow list: if isAdmin();
-        allow get: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.creatorId);
+
+    match /payoutRequests/{requestId} {
+        allow list: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+        allow get: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+        allow create: if false; // LOCKED: All creations now strictly flow through requestPayout Cloud Function
+        allow update, delete: if isAdmin();
+    }
+
+    match /payoutHistory/{historyId} {
+        allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.userId);
         allow write: if isAdmin();
     }
+
     match /appeals/{appealId} {
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      // FIX: Allow both Admins and Authorities to read the queue.
-      allow read, list: if isAuthority() || isAdmin();
-      // FIX: Only allow Admins to modify appeals.
-      allow update, delete: if isAdmin();
+      allow read, list, update, delete: if isModerator();
     }
 
+    match /events/{eventId}/chatMessages/{messageId} {
+      allow read, write: if request.auth != null;
+    }
+    
     match /notifications/{notificationId} {
-      // THE DEFINITIVE FIX: Combine 'get' and 'list' into a single 'read' rule.
-      // This rule now guarantees that any query against this collection MUST include
-      // a 'where("userId", "==", request.auth.uid)' clause, which our app's query does.
-      // This makes the query valid and secure.
       allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
-
-      // The update rule remains the same.
       allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
-      
-      // Create and delete rules remain the same.
-      allow create, delete: if false;
+      allow create: if isAdmin();
+      allow delete: if false;
     }
 
     match /broadcast_notifications/{notificationId} {
       allow read: if true;
       allow write: if false;
+    }
+
+    match /live_arena/{document} {
+      allow read: if true;
+      allow write: if isModerator();
+    }
+
+    match /film_club_notices/{noticeId} {
+      allow read: if isAuthenticated() && (
+        get(/databases/$(database)/documents/creators/$(request.auth.uid)).data.get('isFilmClub', false) == true || 
+        isModerator()
+      );
+      allow write: if isModerator();
+    }
+
+    match /film_club_lounge/{msgId} {
+      allow read, create: if isAuthenticated() && (
+        get(/databases/$(database)/documents/creators/$(request.auth.uid)).data.get('isFilmClub', false) == true || 
+        isModerator()
+      );
+      allow update, delete: if isModerator();
+    }
+
+    match /filmClubWaitingList/{waitingId} {
+      allow create: if isAuthenticated();
+      allow read, write: if isModerator();
     }
 
     // =====================================================================
@@ -170,36 +186,39 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isModerator();
 
-      // --- Start of Corrected Sub-collection Rules ---
       match /likes/{userId} {
-          // Allow any authenticated user to read the full list of likes.
           allow list: if isAuthenticated();
-          // Allow any user to see if a specific user (themselves) liked it.
           allow get: if true;
-          // Disallow client-side writes; this is handled by the backend function.
           allow write: if false;
       }
 
       match /comments/{commentId} {
-        // Allow any authenticated user to read the full list of comments.
         allow read: if isAuthenticated();
-        // Disallow all client-side writes; this is handled by the backend function.
         allow write: if false;
       }
 
       match /mutedUsers/{userId} {
-        allow read: if isModerator();
+        allow read: if isAuthenticated();
         allow write: if false;
       }
-      // --- End of Corrected Sub-collection Rules ---
     }
     match /settings/currencyRates {
       allow read: if true;
     }
 
-    match /settings/{docId=**} {
+    // --- SUPER ADMIN SENSITIVE FINANCIAL BLOCKS ---
+    match /settings/commissions {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /settings/systemFinancials {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // THE FIX: Restrict the wildcard so it doesn't accidentally grant standard Admins access to Finance blocks
+    match /settings/{docId} {
       allow read: if true;
-      allow write: if isModerator();
+      allow write: if isAdmin() && docId != 'commissions' && docId != 'systemFinancials'; 
     }
 
     match /contactSubmissions/{submissionId} {
@@ -208,8 +227,7 @@ service cloud.firestore {
     }
 
     match /statistics/{path=**} {
-      // FIX: Grant read access to both Admins and Authorities.
-      allow read: if isAdmin() || isAuthority();
+      allow read: if isAdmin();
       allow write: if false;
     }
 
@@ -219,52 +237,76 @@ service cloud.firestore {
     }
 
     match /banRequests/{requestId} {
-      allow create: if isAuthority() && request.resource.data.requesterId == request.auth.uid;
+      allow create: if isModerator() && request.resource.data.requesterId == request.auth.uid;
       allow read, delete: if isAdmin();
       allow update: if false;
     }
 
     match /paymentPledges/{pledgeId} {
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      // FIX: Add 'list' permission for Admins to query the collection for the dashboard.
-      allow list: if isAdmin();
-      allow get: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+      allow list: if isAdmin() || 
+                  (isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.targetUserId == request.auth.uid)) ||
+                  (resource.data.status == 'approved' && resource.data.paymentType == 'giftToken');
+      allow get: if isAdmin() || 
+                 (isAuthenticated() && (resource.data.userId == request.auth.uid || resource.data.targetUserId == request.auth.uid)) ||
+                 (resource.data.status == 'approved' && resource.data.paymentType == 'giftToken');
       allow update, delete: if isAdmin();
     }
 
     match /enrollmentApplications/{userId} {
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || isAuthority());
-      allow write: if false; // All writes are secured via Cloud Functions
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isModerator());
+      allow write: if false;
+    }
+
+    match /movies/{movieId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() && isAdmin();
+      allow delete: if isAuthenticated() && (isAdmin() || resource.data.creatorId == request.auth.uid);
+    }
+    
+    match /movieReviews/{reviewId} {
+      allow read: if true;
+      allow create, update: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
+    }
+    
+    match /discussions/{discussionId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isModerator());
+    }
+
+    match /movieSuggestions/{suggestionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.suggestedBy == request.auth.uid;
+      allow update, delete: if isAuthenticated() && (isAdmin() || isModerator());
     }
 
     match /promotedStatuses/{statusId} {
-        // FIX: Allow ANY user, including guests, to see the list of active promotions.
         allow list: if true;
         allow get: if (resource.data.status == 'approved_and_scheduled') ||
                (isAuthenticated() && request.auth.uid == resource.data.postedByUid) ||
-               isAuthority() || isAdmin();
+               isModerator();
         allow write: if false;
     }
 
     match /opportunities/{opportunityId} {
-      // FIX: Allow ANY user, including guests, to list and view opportunities.
       allow list: if true;
       allow get: if true;
       allow create: if false;
-      allow update, delete: if isAuthenticated() && (request.auth.uid == resource.data.postedByUid || isModerator() || isAuthority());
+      allow update, delete: if isAuthenticated() && (request.auth.uid == resource.data.postedByUid || isModerator());
 
       match /comments/{commentId} {
         allow read: if isAuthenticated();
         allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
-        allow delete: if isAuthenticated() && (request.auth.uid == resource.data.userId || isModerator() || isAuthority());
+        allow delete: if isAuthenticated() && (request.auth.uid == resource.data.userId || isModerator());
         allow update: if false;
       }
     }
 
     match /competitions/{competitionId} {
-      // FIX: Allow ANY user, including guests, to see the list of competitions.
       allow list: if true;
-      allow get: if resource.data.status != 'Pending' || isModerator() || isAuthority();
+      allow get: if resource.data.status != 'Pending' || isModerator();
       allow create, update, delete: if isAdmin();
 
       match /entries/{entryId} {
@@ -279,40 +321,15 @@ service cloud.firestore {
       }
     }
 
-   // =====================================================================
-    // =================== RULES FOR CHAT SYSTEM v2 ========================
-    // =====================================================================
     match /chats/{chatId} {
-
-      // --- CHAT DOCUMENT RULES ---
-      
-      // GET: You can get a specific chat document if you are a participant.
       allow get: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      
-      // LIST (Query): You can query for chats, but your query MUST include `where('participants', 'array-contains', request.auth.uid)`.
-      // The rule here verifies that any document returned by the query is one you belong to. This is the critical rule that
-      // allows the ChatListScreen to work securely.
       allow list: if isAuthenticated();
-
-      // CREATE: You can create a new chat document, but only if you are one of the participants being added.
-      // This prevents you from creating chats for other people.
       allow create: if isAuthenticated() && request.auth.uid in request.resource.data.participants;
-      
-      // UPDATE: You can update a chat (e.g., to hide it from your view) only if you are a participant.
       allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      
-      // DELETE: No client-side deletes allowed. This must be handled by Cloud Functions.
       allow delete: if false;
 
-      // --- SUB-COLLECTION: MESSAGES ---
       match /messages/{messageId} {
-
-        // READ (Get, List): You can read any/all messages in a chat *if you are a participant of the parent chat document*.
-        // This is a secure rule because it fetches the parent document to verify your membership.
         allow read: if isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.participants.hasAny([request.auth.uid]);
-        
-        // WRITE (Create, Update, Delete): No direct client-side writing is allowed for messages.
-        // ALL message actions (sending, deleting, reacting) MUST go through a secure Cloud Function.
         allow write: if false;
       }
     }
@@ -324,66 +341,34 @@ service cloud.firestore {
         ((isAuthenticated() && (request.auth.uid == resource.data.creatorId || request.auth.uid == request.resource.data.creatorId)) || isModerator()) ||
         (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']));
 
-      // --- Start of Corrected Sub-collection Rules ---
       match /likes/{userId} {
-          // Allow any authenticated user to read the full list of likes.
           allow list: if isAuthenticated();
-          // Allow any user to see if a specific user (themselves) liked it.
           allow get: if true;
-          // Disallow client-side writes; this is handled by the backend function.
           allow write: if false;
       }
 
       match /comments/{commentId} {
-        // Allow any authenticated user to read the full list of comments.
         allow read: if isAuthenticated();
-        // Disallow all client-side writes; this is handled by the backend function.
         allow write: if false;
       }
-      // --- End of Corrected Sub-collection Rules ---
     }
 
     match /artifacts/{appId}/public/data/campaigns/{campaignId} {
-        // FIX: Allow ANY user, including guests, to list active campaigns.
         allow list: if true;
-        allow get: if (resource.data.status == 'active') || (isAuthenticated() && resource.data.creatorId == request.auth.uid) || isAuthority() || isAdmin();
+        allow get: if (resource.data.status == 'active') || (isAuthenticated() && resource.data.creatorId == request.auth.uid) || isModerator();
         allow create: if isAuthenticated() && request.resource.data.creatorId == request.auth.uid;
-        allow update: if isAuthority() || isAdmin() || (isAuthenticated() && resource.data.creatorId == request.auth.uid);
+        allow update: if isModerator() || (isAuthenticated() && resource.data.creatorId == request.auth.uid);
         allow delete: if false;
     }
-  } // This closes: match /databases/{database}/documents
-} // This closes: service cloud.firestore
 
-// =====================================================================
-// ===================== SERVICE: FIREBASE STORAGE =====================
-// =====================================================================
-service firebase.storage {
-  match /b/{bucket}/o {
-
-    function isAuthenticated() { return request.auth != null; }
-    function isAdmin() { return isAuthenticated() && request.auth.token.admin == true; }
-    function isAuthority() { return isAuthenticated() && request.auth.token.authority == true; }
-    function isModerator() { return isAuthenticated() && (isAdmin() || isAuthority()); }
-
-    // --- UNIFIED STORAGE RULES ---
-
-    // Default rule: Allow public read access to all files.
-    match /{allPaths=**} {
-      allow read;
+    // --- SUPER ADMIN EXCLUSIVE FINANCIAL LEDGERS ---
+    match /transactions/{txnId} {
+        allow read: if isSuperAdmin();
+        allow write: if false; 
     }
 
-    // Secure Write Rules: Only specific users can write to specific paths.
-    // The public 'read' from the rule above still applies.
-    match /curated_thumbnails/{allPaths=**} { allow write: if isModerator(); }
-    match /premiere_thumbnails/{allPaths=**} { allow write: if isModerator(); }
-    match /competition_flyers/{allPaths=**} { allow write: if isAdmin(); }
-
-    match /profile_pictures/{userId}/{fileName} { allow write: if isAuthenticated() && request.auth.uid == userId; }
-    match /content_thumbnails/{userId}/{fileName} { allow write: if isAuthenticated() && request.auth.uid == userId; }
-    match /campaign_thumbnails/{userId}/{fileName} { allow write: if isAuthenticated() && request.auth.uid == userId; }
-    match /opportunity_flyers/{userId}/{fileName} { allow write: if isAuthenticated() && request.auth.uid == userId; }
-    match /promo_flyers/{userId}/{allPaths=**} { allow write: if isAuthenticated() && request.auth.uid == userId; }
-    match /creator_uploads/{userId}/{fileName} { allow write: if isAuthenticated() && request.auth.uid == userId; }
-    match /competition_entries/{compId}/{userId}/{fileName} { allow write: if isAuthenticated() && request.auth.uid == userId; }
-  }
+    match /expenses/{expenseId} {
+        allow read, write: if isSuperAdmin();
+    }
+  } 
 }

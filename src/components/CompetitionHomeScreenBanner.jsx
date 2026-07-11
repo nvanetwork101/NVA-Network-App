@@ -51,20 +51,32 @@ function CompetitionHomeScreenBanner({ setActiveScreen }) {
     return (
         <div
             onClick={() => setActiveScreen('CompetitionScreen')}
-            className="header-live-button"
             style={{
-                width: 'auto',
-                maxWidth: '400px',
-                backgroundColor: 'rgba(0, 255, 255, 0.8)',
-                color: '#0A0A0A',
+                width: '95%',
+                maxWidth: '600px',
+                background: 'linear-gradient(90deg, #00FFFF 0%, #8A2BE2 100%)',
+                color: '#000',
                 cursor: 'pointer',
-                justifyContent: 'center',
-                margin: '0 auto 15px auto'
+                margin: '10px auto 20px auto',
+                padding: '12px 20px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                boxShadow: '0 0 20px rgba(0, 255, 255, 0.3)',
+                fontWeight: '900',
+                fontSize: '14px',
+                textTransform: 'uppercase',
+                letterSpacing: '1px'
             }}
         >
-            <span>🏆</span>
-            {/* The entire display is now driven by the pre-calculated server state */}
-            <span>{displayState.title}: {displayState.displayMessage} {renderCountdown()}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '20px' }}>🏆</span>
+                <span>{displayState.title}: {displayState.status}</span>
+            </div>
+            <div style={{ background: 'rgba(0,0,0,0.1)', padding: '4px 10px', borderRadius: '6px', fontFamily: 'monospace' }}>
+                {renderCountdown()}
+            </div>
         </div>
     );
 }

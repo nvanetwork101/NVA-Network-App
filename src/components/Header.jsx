@@ -1,56 +1,28 @@
-import React, { useState } from 'react'; // <-- ADD useState
+import React, { useState } from 'react';
 import HeaderLiveButton from './HeaderLiveButton';
 
-const CurrencySelector = ({ currencyRates, selectedCurrency, onCurrencyChange }) => {
-    if (!currencyRates) {
-        return null;
-    }
-    const supportedCurrencies = ['USD', 'GYD', 'CAD', 'GBP', 'EUR'];
-    const availableCurrencies = supportedCurrencies.filter(c => currencyRates[c]);
-
-    return (
-        <select
-            value={selectedCurrency}
-            onChange={(e) => onCurrencyChange(e.target.value)}
-            style={{
-                backgroundColor: '#FFD700', color: '#0A0A0A', padding: '8px 12px',
-                borderRadius: '25px', border: 'none', fontWeight: '600',
-                fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 5px rgba(0, 0, 0, 0.3)',
-                appearance: 'none', textAlign: 'center'
-            }}
-        >
-            {availableCurrencies.map(currency => (
-                <option key={currency} value={currency}>
-                    {currency}
-                </option>
-            ))}
-        </select>
-    );
-};
-
-// --- ADD needRefresh and onUpdate to the props ---
-function Header({ setActiveScreen, currencyRates, selectedCurrency, onCurrencyChange, isLive, countdownText, onInstallClick, showInstallButton, needRefresh, onUpdate }) {
+function Header({ setActiveScreen, isLive, countdownText, onInstallClick, showInstallButton, needRefresh, onUpdate, currentUser, onLogout }) {
   const [isUpdating, setIsUpdating] = useState(false);
 
   const handleUpdateButtonClick = () => {
     setIsUpdating(true);
-    onUpdate(); // This now calls the function from App.jsx
+    onUpdate();
   };
 
   return (
-    <div className="header">
-      <div className="header-content-left">
+    <div className="header" style={{ position: 'relative', display: 'flex', alignItems: 'center', minHeight: '95px', paddingRight: '100px', boxSizing: 'border-box' }}>
+      <div className="header-content-left" style={{ flex: 1, minWidth: 0 }}>
         <p className="tagline">Caribbean Content to a Global Stage.</p>
         <p className="headerTitle">NVA Network</p>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px' }}>
-          {/* The Live Button is untouched and will always show if there's an event */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+          {/* The Live Button is untouched */}
           <HeaderLiveButton 
               setActiveScreen={setActiveScreen} 
               isLive={isLive} 
               countdownText={countdownText} 
           />
           
-          {/* LOGIC 1: Show the Install button if the app is not installed */}
+          {/* Show the Install button if the app is not installed */}
           {showInstallButton && (
             <button
               onClick={onInstallClick}
@@ -66,7 +38,7 @@ function Header({ setActiveScreen, currencyRates, selectedCurrency, onCurrencyCh
             </button>
           )}
 
-          {/* LOGIC 2: If Install button is hidden AND an update is ready, show the Update button */}
+          {/* If Install button is hidden AND an update is ready, show the Update button */}
           {!showInstallButton && needRefresh && (
             <button
               onClick={handleUpdateButtonClick}
@@ -78,23 +50,46 @@ function Header({ setActiveScreen, currencyRates, selectedCurrency, onCurrencyCh
                 alignItems: 'center', gap: '8px'
               }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"></path></svg>
               <span>{isUpdating ? 'Updating...' : 'Update App'}</span>
             </button>
           )}
         </div>
       </div>
-      <div className="header-right-group">
+      
+      {/* ABSOLUTE PINNED CONTROLS TO NEVER SQUISH OR DROP OUT OF HEADER CONTAINER */}
+      <div className="header-right-group" style={{ position: 'absolute', right: '15px', top: '10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', zIndex: 10 }}>
         <img
           src="https://firebasestorage.googleapis.com/v0/b/nvanetworkapp.firebasestorage.app/o/NVA%20Network%20LOGO%203_BRIGHT%20BG.png?alt=media&token=95b8d741-2fbd-4fc1-af2f-42b95ff20eb1"
           alt="NVA Network Logo"
           className="headerLogo"
+          style={{ width: '76px', height: 'auto', objectFit: 'contain' }}
         />
-        <CurrencySelector 
-            currencyRates={currencyRates}
-            selectedCurrency={selectedCurrency}
-            onCurrencyChange={onCurrencyChange}
-        />
+        {currentUser ? (
+          <button
+            onClick={onLogout}
+            style={{
+              backgroundColor: '#FFD700', color: '#0A0A0A', padding: '5px 15px',
+              borderRadius: '25px', border: 'none', fontWeight: 'bold',
+              fontSize: '12px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.4)',
+              textAlign: 'center', whiteSpace: 'nowrap'
+            }}
+          >
+            Exit
+          </button>
+        ) : (
+          <button
+            onClick={() => setActiveScreen('Login')}
+            style={{
+              backgroundColor: 'transparent', color: '#00FFFF', padding: '4px 14px',
+              borderRadius: '25px', border: '2px solid #00FFFF', fontWeight: 'bold',
+              fontSize: '12px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0, 0, 0, 0.4)',
+              textAlign: 'center', whiteSpace: 'nowrap'
+            }}
+          >
+            Login
+          </button>
+        )}
       </div>
     </div>
   );

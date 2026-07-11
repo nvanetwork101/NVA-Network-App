@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { collection, query, orderBy, onSnapshot, where, limit } from "firebase/firestore";
 import { app, db } from '../firebase.js';
@@ -9,6 +9,7 @@ export const useNotifications = (currentUser) => {
     const [seenIds, setSeenIds] = useState(null); // Initialize as null to block evaluation during loading
     const [notifications, setNotifications] = useState([]); 
     const [isLoading, setIsLoading] = useState(true);
+    const sessionStartTime = useRef(new Date()); // Session baseline timestamp to prevent backlog toast storms
 
     const markToastAsSeen = useCallback(async (notificationId) => {
         if (!currentUser) return;
@@ -85,7 +86,13 @@ export const useNotifications = (currentUser) => {
         }
 
         const combined = [...privateNotifications, ...broadcastNotifications];
-        const unseen = combined.filter(n => !seenIds.has(n.id));
+        const unseen = combined.filter(n => {
+            if (seenIds.has(n.id)) return false;
+            
+            // Only toast notifications that were actually created after the app loaded
+            const notifTime = n.timestamp?.toDate ? n.timestamp.toDate() : new Date(n.timestamp);
+            return notifTime > sessionStartTime.current;
+        });
         const unique = Array.from(new Map(unseen.map(item => [item.id, item])).values());
         
         unique.sort((a, b) => {

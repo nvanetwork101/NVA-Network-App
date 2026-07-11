@@ -14,21 +14,36 @@ const NotificationToast = ({ notification, onClose, setActiveScreen }) => {
         return () => clearTimeout(timer);
     }, [onClose]);
 
-    // FIX 2: Create a new handler for clicks that checks for a link
+    // FIX 2: Parse pathways identically to the main inbox to handle deep routing
     const handleToastClick = () => {
-        // Check if there's a link and a navigation function
         if (notification.link && setActiveScreen) {
-            // Parse the link to get the screen name (e.g., "/MyListings" -> "MyListings")
-            const screenName = notification.link.startsWith('/')
-                ? notification.link.substring(1)
-                : notification.link;
-            
-            // Perform navigation if a valid screen name is found
-            if (screenName) {
-                setActiveScreen(screenName);
+            const path = notification.link;
+            const parts = path.split('/').filter(Boolean);
+            if (parts.length > 0) {
+                const screen = parts[0];
+                const id = parts[1];
+                switch (screen) {
+                    case 'user':
+                        if (id) window.dispatchEvent(new CustomEvent('navigateToUser', { detail: { id: id } }));
+                        break;
+                    case 'opportunity':
+                        if (id) window.dispatchEvent(new CustomEvent('navigateToOpportunity', { detail: { id: id } }));
+                        break;
+                    case 'content':
+                        if (id) window.dispatchEvent(new CustomEvent('navigateToContent', { detail: { id: id, openComments: true } }));
+                        break;
+                    case 'competition':
+                        setActiveScreen('CompetitionScreen');
+                        break;
+                    default:
+                        const screenName = screen.charAt(0).toUpperCase() + screen.slice(1);
+                        setActiveScreen(screenName);
+                        break;
+                }
+            } else {
+                setActiveScreen('Home');
             }
         }
-        // Close the toast regardless of navigation
         setIsVisible(false);
         setTimeout(onClose, 500);
     };

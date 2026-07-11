@@ -2,7 +2,7 @@
 
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, connectAuthEmulator } from "firebase/auth";
 import { 
     initializeFirestore,
     persistentLocalCache,
@@ -21,16 +21,18 @@ import {
     onSnapshot,
     increment,
     runTransaction,
-    startAfter
+    startAfter,
+    connectFirestoreEmulator
 } from "firebase/firestore";
 import { 
     getStorage,
     ref,
     uploadBytes,
-    getDownloadURL 
+    getDownloadURL,
+    connectStorageEmulator
 } from "firebase/storage";
 import { getAnalytics } from "firebase/analytics";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
 import { getMessaging } from "firebase/messaging";
 
 // Your web app's Firebase configuration using environment variables
@@ -57,6 +59,24 @@ const storage = getStorage(app);
 const functions = getFunctions(app);
 let messaging; // We will initialize this later, manually.
 // const analytics = getAnalytics(app);
+
+// --- EMULATOR CONFIGURATION FOR LOCAL TESTING ---
+// Points React to our localhost mock database if running a dev build or automated test
+const isLocalhost = typeof window !== "undefined" && (
+    window.location.hostname === "localhost" || 
+    window.location.hostname === "127.0.0.1"
+);
+
+const isTestEnv = import.meta.env.MODE === "test" || import.meta.env.DEV;
+
+// Commented out to connect local frontend back to live Production Server [1]
+// if (isLocalhost || isTestEnv) {
+//     console.log("⚙️ Connecting frontend services to local Firebase Emulators...");
+//     connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+//     connectFirestoreEmulator(db, "127.0.0.1", 8080);
+//     connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+//     connectStorageEmulator(storage, "127.0.0.1", 9199);
+// }
 
 // --- UTILITY FUNCTIONS ---
 const GENERIC_THUMBNAIL_PLACEHOLDER = 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA';

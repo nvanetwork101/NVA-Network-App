@@ -62,6 +62,26 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
     // --- STATE FOR DESTRUCTIVE ACTIONS ---
     const [isResetting, setIsResetting] = useState(false);
     const [resetConfirmationText, setResetConfirmationText] = useState('');
+    const [isPurgingFinancials, setIsPurgingFinancials] = useState(false); // [1]
+
+    const handlePurgeFinancials = () => {
+        setConfirmationTitle("🚨 Nuke Financial Ledgers?");
+        setConfirmationMessage("This will permanently delete all payment pledges, payout requests, payout history logs, transactions, and expenses, and reset all creator totalEarnings to 0. Are you absolutely sure? [1]");
+        setOnConfirmationAction(() => async () => {
+            setIsPurgingFinancials(true);
+            showMessage("Purging financial system records...");
+            try {
+                const purgeFinancialsCallable = httpsCallable(functions, 'purgeSystemFinancials');
+                const result = await purgeFinancialsCallable();
+                showMessage(result.data.message);
+            } catch (error) {
+                showMessage(`Error: ${error.message}`);
+            } finally {
+                setIsPurgingFinancials(false);
+            }
+        });
+        setShowConfirmationModal(true);
+    };
     
     const [isLoadingHistory, setIsLoadingHistory] = useState(true);
     const [isHistoryExpanded, setIsHistoryExpanded] = useState(false); // Start collapsed
@@ -147,8 +167,8 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
 
         // --- NEW EFFECT FOR PAYOUT HISTORY ---
     useEffect(() => {
-        // FIX: Only attempt to fetch payout history if the user is an admin.
-        if (creatorProfile.role === 'admin') {
+        // FIX: Allow both Admin and Super Admin roles to load payout history
+        if (creatorProfile.role === 'admin' || creatorProfile.role === 'super_admin') {
             const historyQuery = query(
                 collection(db, "payoutRequests"),
                 where("status", "in", ["paid", "dismissed"]),
@@ -562,125 +582,38 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
         <div className="screenContainer">
             <p className="heading">Site Management</p>
             
-            <div className="dashboardSection" style={{ border: '2px solid #00FF00', marginTop: '20px' }}>
+            {/* 1. SOCIAL LINKS MANAGER [1] */}
+            <div className="dashboardSection">
                 <div className="flex justify-between items-center mb-4">
-                    <p className="dashboardSectionTitle" style={{marginBottom: 0, color: '#00FF00'}}>Support Hub Content</p>
-                    <button className="button" onClick={() => handleSaveChanges('supportHub')} disabled={!hasSupportContentChanges || isSaving}>
-                        <span className="buttonText">{isSaving ? 'Saving...' : 'Save Hub Content'}</span>
+                    <p className="dashboardSectionTitle" style={{marginBottom: 0}}>Social Links Manager</p>
+                    <button className="button" onClick={() => handleSaveChanges('siteSettings')} disabled={!hasChanges || isSaving}>
+                        <span className="buttonText">{isSaving ? 'Saving...' : 'Save Changes'}</span>
                     </button>
                 </div>
-                {isLoadingSupportContent ? <p>Loading content...</p> : (
-                    <>
-                        <div className="formGroup"><label className="formLabel">Hub Main Title:</label><input type="text" className="formInput" value={supportHubContent.hubTitle} onChange={(e) => handleSupportContentChange('hubTitle', e.target.value)} /></div>
-                        <div className="formGroup"><label className="formLabel">Hub Subtitle:</label><textarea className="formTextarea" value={supportHubContent.hubSubtitle} onChange={(e) => handleSupportContentChange('hubSubtitle', e.target.value)} /></div>
-                        <hr style={{borderColor: '#444', margin: '20px 0'}}/>
-                        <div className="formGroup"><label className="formLabel">Premium Card Title:</label><input type="text" className="formInput" value={supportHubContent.card1Title} onChange={(e) => handleSupportContentChange('card1Title', e.target.value)} /></div>
-                        <div className="formGroup"><label className="formLabel">Premium Card Description:</label><input type="text" className="formInput" value={supportHubContent.card1Desc} onChange={(e) => handleSupportContentChange('card1Desc', e.target.value)} /></div>
-                        <div className="formGroup"><label className="formLabel">Advertiser Card Title:</label><input type="text" className="formInput" value={supportHubContent.card2Title} onChange={(e) => handleSupportContentChange('card2Title', e.target.value)} /></div>
-                        <div className="formGroup"><label className="formLabel">Advertiser Card Description:</label><input type="text" className="formInput" value={supportHubContent.card2Desc} onChange={(e) => handleSupportContentChange('card2Desc', e.target.value)} /></div>
-                        <div className="formGroup"><label className="formLabel">Campaign Card Title:</label><input type="text" className="formInput" value={supportHubContent.card3Title} onChange={(e) => handleSupportContentChange('card3Title', e.target.value)} /></div>
-                        <div className="formGroup"><label className="formLabel">Campaign Card Description:</label><input type="text" className="formInput" value={supportHubContent.card3Desc} onChange={(e) => handleSupportContentChange('card3Desc', e.target.value)} /></div>
-                        <hr style={{borderColor: '#444', margin: '20px 0'}}/>
-                        <div>
-                            <label className="formLabel">Premium Perks List:</label>
-                            {supportHubContent.premiumPerks?.map((perk, index) => (<div key={index} className="adminDashboardItem"><span className="flex-grow">{perk}</span><button onClick={() => handleRemovePerk('premium', index)} className="adminActionButton reject">Delete</button></div>))}
-                            <div className="flex items-end gap-4 mt-2"><input type="text" className="formInput flex-grow" value={newPremiumPerk} onChange={(e) => setNewPremiumPerk(e.target.value)} placeholder="Add new perk..." /><button onClick={() => handleAddPerk('premium')} className="button m-0"><span className="buttonText">Add</span></button></div>
+                <div className="dashboardContentList">
+                    {socialLinks.map((link, index) => (
+                        <div key={link.name || index} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}>
+                            <div className="flex justify-between items-center">
+                                <p className="adminDashboardItemTitle">{link.name}</p>
+                                <label className="flex items-center cursor-pointer">
+                                    <span className="mr-3 text-sm font-medium text-gray-300">{link.isEnabled ? 'Visible' : 'Hidden'}</span>
+                                    <div className="relative">
+                                        <input type="checkbox" className="sr-only" checked={link.isEnabled} onChange={(e) => handleUpdateField(`${index}-isEnabled`, e.target.checked)} />
+                                        <div className={`block w-14 h-8 rounded-full ${link.isEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div>
+                                        <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${link.isEnabled ? 'transform translate-x-6' : ''}`}></div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div className="formGroup" style={{marginBottom: 0}}>
+                                <label className="formLabel" style={{fontSize: '12px', color: '#AAA'}}>URL:</label>
+                                <input type="url" className="formInput" value={link.url} onChange={(e) => handleUpdateField(`${index}-url`, e.target.value)} placeholder={`Enter full URL for ${link.name}`} />
+                            </div>
                         </div>
-                        <hr style={{borderColor: '#444', margin: '20px 0'}}/>
-                        <div>
-                            <label className="formLabel">Advertiser Perks List:</label>
-                            {supportHubContent.advertiserPerks?.map((perk, index) => (<div key={index} className="adminDashboardItem"><span className="flex-grow">{perk}</span><button onClick={() => handleRemovePerk('advertiser', index)} className="adminActionButton reject">Delete</button></div>))}
-                            <div className="flex items-end gap-4 mt-2"><input type="text" className="formInput flex-grow" value={newAdvertiserPerk} onChange={(e) => setNewAdvertiserPerk(e.target.value)} placeholder="Add new perk..." /><button onClick={() => handleAddPerk('advertiser')} className="button m-0"><span className="buttonText">Add</span></button></div>
-                        </div>
-                    </>
-                )}
-            </div>
-
-            <div className="dashboardSection"><div className="flex justify-between items-center mb-4"><p className="dashboardSectionTitle" style={{marginBottom: 0}}>Social Links Manager</p><button className="button" onClick={() => handleSaveChanges('siteSettings')} disabled={!hasChanges || isSaving}><span className="buttonText">{isSaving ? 'Saving...' : 'Save Changes'}</span></button></div><div className="dashboardContentList">{socialLinks.map((link, index) => (<div key={link.name || index} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px'}}><div className="flex justify-between items-center"><p className="adminDashboardItemTitle">{link.name}</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{link.isEnabled ? 'Visible' : 'Hidden'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={link.isEnabled} onChange={(e) => handleUpdateField(`${index}-isEnabled`, e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${link.isEnabled ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${link.isEnabled ? 'transform translate-x-6' : ''}`}></div></div></label></div><div className="formGroup" style={{marginBottom: 0}}><label className="formLabel" style={{fontSize: '12px', color: '#AAA'}}>URL:</label><input type="url" className="formInput" value={link.url} onChange={(e) => handleUpdateField(`${index}-url`, e.target.value)} placeholder={`Enter full URL for ${link.name}`} /></div></div>))}</div></div>
-            
-            {/* --- START: ENROLLMENT CONFIG MANAGER --- */}
-            <div className="dashboardSection" style={{ border: '2px solid #FFD700', marginTop: '20px' }}>
-                <div className="flex justify-between items-center mb-4">
-                    <p className="dashboardSectionTitle" style={{ marginBottom: 0, color: '#FFD700' }}>Enrollment Configuration</p>
-                    <button className="button" onClick={() => handleSaveChanges('enrollmentConfig')} disabled={!hasEnrollmentChanges || isSaving}>
-                        <span className="buttonText">{isSaving ? 'Saving...' : 'Save Settings'}</span>
-                    </button>
+                    ))}
                 </div>
-                {isEnrollmentConfigLoading ? <p>Loading enrollment settings...</p> : (
-                    <>
-                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Film Club Open</p>
-                            <label className="flex items-center cursor-pointer">
-                                <span className="mr-3 text-sm font-medium text-gray-300">{enrollmentConfig.filmClubOpen ? 'Open' : 'Closed'}</span>
-                                <div className="relative">
-                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.filmClubOpen} onChange={(e) => handleEnrollmentConfigChange('filmClubOpen', e.target.checked)} />
-                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.filmClubOpen ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.filmClubOpen ? 'transform translate-x-6' : ''}`}></div>
-                                </div>
-                            </label>
-                        </div>
-                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Docu-Series Open</p>
-                            <label className="flex items-center cursor-pointer">
-                                <span className="mr-3 text-sm font-medium text-gray-300">{enrollmentConfig.docuSeriesOpen ? 'Open' : 'Closed'}</span>
-                                <div className="relative">
-                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.docuSeriesOpen} onChange={(e) => handleEnrollmentConfigChange('docuSeriesOpen', e.target.checked)} />
-                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.docuSeriesOpen ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.docuSeriesOpen ? 'transform translate-x-6' : ''}`}></div>
-                                </div>
-                            </label>
-                        </div>
-                        <div className="formGroup"><label className="formLabel">Film Club Fee (GYD):</label><input type="number" className="formInput" value={enrollmentConfig.filmClubFee || ''} onChange={(e) => handleEnrollmentConfigChange ? handleSupportContentChange() : setEnrollmentConfig(prev => ({ ...prev, filmClubFee: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
-                        <div className="formGroup"><label className="formLabel">Docu-Series Fee (GYD):</label><input type="number" className="formInput" value={enrollmentConfig.docuSeriesFee || ''} onChange={(e) => setEnrollmentConfig(prev => ({ ...prev, docuSeriesFee: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
-                        <div className="formGroup"><label className="formLabel">Bundle Discount (GYD):</label><input type="number" className="formInput" value={enrollmentConfig.bothDiscount || ''} onChange={(e) => setEnrollmentConfig(prev => ({ ...prev, bothDiscount: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
-                        <div className="formGroup"><label className="formLabel">MMG Phone Number:</label><input type="text" className="formInput" value={enrollmentConfig.mmgNumber || ''} onChange={(e) => setEnrollmentConfig(prev => ({ ...prev, mmgNumber: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
-                        <div className="formGroup"><label className="formLabel">MMG Payment Instructions:</label><textarea className="formTextarea" value={enrollmentConfig.mmgInstructions || ''} onChange={(e) => setEnrollmentConfig(prev => ({ ...prev, mmgInstructions: e.target.value })) || setHasEnrollmentChanges(true)} /></div>
-                        <hr style={{ borderColor: '#444', margin: '20px 0' }} />
-                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Require Profile Photo to Apply</p>
-                            <label className="flex items-center cursor-pointer">
-                                <div className="relative">
-                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.requireProfilePhoto} onChange={(e) => handleEnrollmentConfigChange('requireProfilePhoto', e.target.checked)} />
-                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.requireProfilePhoto ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.requireProfilePhoto ? 'transform translate-x-6' : ''}`}></div>
-                                </div>
-                            </label>
-                        </div>
-                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Require Experience/Bio to Apply</p>
-                            <label className="flex items-center cursor-pointer">
-                                <div className="relative">
-                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.requireExperience} onChange={(e) => handleEnrollmentConfigChange('requireExperience', e.target.checked)} />
-                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.requireExperience ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.requireExperience ? 'transform translate-x-6' : ''}`}></div>
-                                </div>
-                            </label>
-                        </div>
-                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Require Phone Number to Apply</p>
-                            <label className="flex items-center cursor-pointer">
-                                <div className="relative">
-                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.requirePhone} onChange={(e) => handleEnrollmentConfigChange('requirePhone', e.target.checked)} />
-                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.requirePhone ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.requirePhone ? 'transform translate-x-6' : ''}`}></div>
-                                </div>
-                            </label>
-                        </div>
-                        <div className="adminDashboardItem" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <p className="adminDashboardItemTitle" style={{ fontWeight: 'normal' }}>Auto-Verify Payments (Not Recommended)</p>
-                            <label className="flex items-center cursor-pointer">
-                                <div className="relative">
-                                    <input type="checkbox" className="sr-only" checked={enrollmentConfig.autoVerifyPayments} onChange={(e) => handleEnrollmentConfigChange('autoVerifyPayments', e.target.checked)} />
-                                    <div className={`block w-14 h-8 rounded-full ${enrollmentConfig.autoVerifyPayments ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${enrollmentConfig.autoVerifyPayments ? 'transform translate-x-6' : ''}`}></div>
-                                </div>
-                            </label>
-                        </div>
-                    </>
-                )}
             </div>
-            {/* --- END: ENROLLMENT CONFIG MANAGER --- */}
             
+            {/* 2. LEGAL CONTENT MANAGER [1] */}
             <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}>
                 <div className="flex justify-between items-center mb-4">
                     <p className="dashboardSectionTitle" style={{marginBottom: 0, color: '#00FFFF'}}>Legal Content Manager</p>
@@ -715,80 +648,7 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
                     </>
                 )}
             </div>
-            
-            <div className="dashboardSection"><p className="dashboardSectionTitle">Feature Toggles</p><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Show NVA Network Charts on Home Screen</p><label className="flex items-center cursor-pointer"><span className="mr-3 text-sm font-medium text-gray-300">{showNvaCharts ? 'Enabled' : 'Disabled'}</span><div className="relative"><input type="checkbox" className="sr-only" checked={showNvaCharts} onChange={(e) => handleUpdateField('showNvaCharts', e.target.checked)} /><div className={`block w-14 h-8 rounded-full ${showNvaCharts ? 'bg-green-500' : 'bg-gray-600'}`}></div><div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${showNvaCharts ? 'transform translate-x-6' : ''}`}></div></div></label></div></div>
-           {/* --- ADMIN ONLY SECTIONS --- */}
-            {creatorProfile.role === 'admin' && (
-                <>
-                    <div className="dashboardSection"><p className="dashboardSectionTitle">Monetization Settings</p><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Premium Subscription Price (USD)</p><input type="number" className="formInput" value={premiumPrice || ''} onChange={(e) => { setPremiumPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div><div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal'}}>Promoted Status Price (USD)</p><input type="number" className="formInput" value={promotedStatusPrice || ''} onChange={(e) => { setPromotedStatusPrice(e.target.value); setHasChanges(true); }} style={{width: '100px', textAlign: 'right'}} /></div>{currentUserRole === 'admin' && (<div className="adminDashboardItem"><p className="adminDashboardItemTitle" style={{fontWeight: 'normal', color: '#FFD700'}}>MMG Account Number</p><input type="text" className="formInput" value={mmgNumber} onChange={(e) => { setMmgNumber(e.target.value); setHasChanges(true); }} placeholder="Enter MMG number..." style={{width: '200px', textAlign: 'right'}} /></div>)}</div>
-                    
-                    <div className="dashboardSection" style={{marginTop: '20px'}}>
-                        <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsHistoryExpanded(!isHistoryExpanded)}>
-                            <p className="dashboardSectionTitle" style={{ marginBottom: 0 }}>Payout History ({payoutHistory.length})</p>
-                            <span className="text-xl font-bold text-white">{isHistoryExpanded ? '▼' : '▶'}</span>
-                        </div>
-                        <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isHistoryExpanded ? 'max-h-[5000px]' : 'max-h-0'}`}>
-                            <div className="pt-4 border-t mt-4" style={{borderColor: '#3A3A3A'}}>
-                                <div className="formGroup" style={{ marginBottom: '1rem' }}>
-                                    <input
-                                        type="text"
-                                        className="formInput"
-                                        placeholder="Search by campaign, creator, or legal name..."
-                                        value={payoutHistorySearchTerm}
-                                        onChange={(e) => setPayoutHistorySearchTerm(e.target.value)}
-                                    />
-                                </div>
-                                {isLoadingHistory ? <p>Loading history...</p> : payoutHistory.length === 0 ? <p className="dashboardItem">No processed payouts found.</p> : (
-                                    <div className="dashboardContentList" style={{maxHeight: '400px', overflowY: 'auto', paddingRight: '10px'}}>
-                                        {payoutHistory
-                                            .filter(req => 
-                                                req.campaignTitle?.toLowerCase().includes(payoutHistorySearchTerm.toLowerCase()) ||
-                                                req.creatorName?.toLowerCase().includes(payoutHistorySearchTerm.toLowerCase()) ||
-                                                req.legalName?.toLowerCase().includes(payoutHistorySearchTerm.toLowerCase())
-                                            )
-                                            .map((req, index) => (
-                                            <div key={req.id} style={{
-                                                padding: '15px 0',
-                                                borderBottom: index === payoutHistory.length - 1 ? 'none' : '1px solid #444'
-                                            }}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', marginBottom: '10px' }}>
-                                                    <div>
-                                                        <p className="adminDashboardItemTitle" style={{ margin: 0 }}>{req.campaignTitle}</p>
-                                                        <p className="text-sm" style={{ color: '#CCC', margin: 0 }}>by {req.creatorName} on {req.requestedAt?.toDate().toLocaleDateString()}</p>
-                                                    </div>
-                                                    <span style={{
-                                                        fontSize: '12px',
-                                                        fontWeight: 'bold',
-                                                        color: '#FFFFFF',
-                                                        backgroundColor: req.status === 'paid' ? '#28a745' : '#6c757d',
-                                                        padding: '5px 12px',
-                                                        borderRadius: '20px',
-                                                        textTransform: 'uppercase'
-                                                    }}>
-                                                        {req.status}
-                                                    </span>
-                                                </div>
-                                                <div style={{ fontSize: '14px', color: '#DDD', padding: '10px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                                                        <span><strong>Legal Name:</strong> {req.legalName || 'N/A'}</span>
-                                                        <span><strong>MMG Phone:</strong> {req.mmgPhoneNumber || 'N/A'}</span>
-                                                    </div>
-                                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed #555', paddingTop: '8px' }}>
-                                                        <span>Total Raised: {formatCurrency(req.amountRaised, 'USD', { USD: 1 })}</span>
-                                                        <span style={{ color: '#DC3545' }}>Fee: -{formatCurrency(req.amountRaised * 0.07, 'USD', { USD: 1 })}</span>
-                                                        <strong style={{ color: '#00FF00' }}>Net Payout: {formatCurrency(req.netAmount, 'USD', { USD: 1 })}</strong>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </>
-            )}
-            {/* --- END: PAYOUT HISTORY SECTION --- */}
+           {/* --- END: PAYOUT HISTORY SECTION --- */}
 
             <div className="dashboardSection" style={{marginTop: '20px'}}>
                 <p className="dashboardSectionTitle">Contact Form Submissions</p>
@@ -850,6 +710,17 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
                                 </p>
                                 <button className="button" onClick={handleResetAllData} style={{ backgroundColor: '#B22222', marginTop: '10px' }} disabled={isResetting}>
                                     <span className="buttonText">{isResetting ? 'DELETING...' : 'Initiate Full Data Reset'}</span>
+                                </button>
+                            </div>
+
+                            {/* Airtight Financial Purge Option [1] */}
+                            <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', borderTop: '1px solid rgba(220, 53, 69, 0.2)', marginTop: '20px', paddingTop: '20px'}}>
+                                <p className="adminDashboardItemTitle" style={{color: '#FFD700'}}>Purge & Reset System Financials</p>
+                                <p className="paragraph" style={{color: '#AAA', fontSize: '14px'}}>
+                                    This will permanently wipe all financial pledges, payout requests, history logs, transactions, and expenses. It resets all creator earnings and virtual token balances to zero [1].
+                                </p>
+                                <button className="button" onClick={handlePurgeFinancials} style={{ backgroundColor: '#DC3545', marginTop: '10px' }} disabled={isPurgingFinancials}>
+                                    <span className="buttonText">{isPurgingFinancials ? 'PURGING...' : 'Nuke Financial Ledgers'}</span>
                                 </button>
                             </div>
                         </div>

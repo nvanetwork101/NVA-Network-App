@@ -41,6 +41,7 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
                 eventTitle: '',
                 eventDescription: '',
                 liveStreamUrl: '',
+                trailerUrl: '', // Added trailerUrl
                 isTicketed: false,
                 ticketPrice: 10,
                 scheduledStartTime: '',
@@ -111,6 +112,7 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
                 eventTitle: eventData.eventTitle || '',
                 eventDescription: eventData.eventDescription || '',
                 liveStreamUrl: eventData.liveStreamUrl || '',
+                trailerUrl: eventData.trailerUrl || '', // Added trailerUrl
                 isTicketed: eventData.isTicketed || false,
                 ticketPrice: Number(eventData.ticketPrice) || 0,
                 thumbnailUrl: finalThumbnailUrl,
@@ -149,31 +151,49 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
                 
                 <div className="formGroup"><label className="formLabel">Embed URL (for live stream):</label><input type="url" name="liveStreamUrl" className="formInput" value={eventData.liveStreamUrl || ''} onChange={handleInputChange} placeholder="e.g., YouTube, Vimeo embed link" /></div>
 
-                {/* --- NEW PUBLISH CONTROL --- */}
-                <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px', background: '#222', padding: '10px', borderRadius: '8px', border: '1px solid #FFD700', marginTop: '20px'}}>
-                    <p className="formLabel" style={{marginBottom: 0}}>Publish To Public</p>
-                    <p className="smallText" style={{textAlign: 'left', color: '#AAA', margin: '0 0 5px 0'}}>When enabled, the automation will pick this event up and display it on the public billboard when its turn comes.</p>
-                    <label className="flex items-center cursor-pointer">
-                        <div className="relative">
-                            <input type="checkbox" name="isPublished" className="sr-only" checked={eventData.isPublished || false} onChange={handleInputChange} />
-                            <div className={`block w-14 h-8 rounded-full ${eventData.isPublished ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${eventData.isPublished ? 'transform translate-x-6' : ''}`}></div>
+                <div className="formGroup"><label className="formLabel">Trailer URL (Optional - Adds a Watch Trailer button):</label><input type="url" name="trailerUrl" className="formInput" value={eventData.trailerUrl || ''} onChange={handleInputChange} placeholder="e.g., YouTube, Vimeo trailer link" /></div>
+
+                {/* --- NVA PUBLISH CONTROL --- */}
+                <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '15px', background: '#0A0A0A', padding: '16px', borderRadius: '12px', border: eventData.isPublished ? '2px solid #00FF00' : '1px solid #333', marginTop: '20px', transition: 'all 0.3s'}}>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <p className="formLabel" style={{marginBottom: '4px', color: '#00FF00', fontSize: '14px', fontWeight: 'bold'}}>📡 Publish To Billboard</p>
+                            <p className="smallText" style={{color: '#888', margin: 0, fontSize: '12px'}}>Automation engine will cycle this into the global Live Banner.</p>
                         </div>
-                        <span className="ml-3 text-sm font-medium text-gray-300">{eventData.isPublished ? 'Published' : 'Draft'}</span>
-                    </label>
+                        <label className="flex items-center cursor-pointer">
+                            <div className="relative">
+                                <input type="checkbox" name="isPublished" className="sr-only" checked={eventData.isPublished || false} onChange={handleInputChange} />
+                                <div className={`block w-14 h-8 rounded-full transition-colors ${eventData.isPublished ? 'bg-[#00FF00]' : 'bg-gray-700'}`}></div>
+                                <div className={`dot absolute left-1 top-1 bg-black w-6 h-6 rounded-full transition-transform ${eventData.isPublished ? 'transform translate-x-6' : ''}`}></div>
+                            </div>
+                        </label>
+                    </div>
                 </div>
 
-                <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '10px', background: '#222', padding: '10px', borderRadius: '8px', border: '1px solid #444'}}>
-                    <p className="formLabel" style={{marginBottom: 0}}>Enable Ticket Sales</p>
-                    <label className="flex items-center cursor-pointer">
-                        <div className="relative">
-                            <input type="checkbox" name="isTicketed" className="sr-only" checked={eventData.isTicketed || false} onChange={handleInputChange} />
-                            <div className={`block w-14 h-8 rounded-full ${eventData.isTicketed ? 'bg-green-500' : 'bg-gray-600'}`}></div>
-                            <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${eventData.isTicketed ? 'transform translate-x-6' : ''}`}></div>
+                {/* --- NVA TICKET SALES CONTROL --- */}
+                <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '15px', background: '#0A0A0A', padding: '16px', borderRadius: '12px', border: eventData.isTicketed ? '2px solid #FFD700' : '1px solid #333', marginTop: '15px', transition: 'all 0.3s'}}>
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <p className="formLabel" style={{marginBottom: '4px', color: '#FFD700', fontSize: '14px', fontWeight: 'bold'}}>🎟️ Box Office Ticketing</p>
+                            <p className="smallText" style={{color: '#888', margin: 0, fontSize: '12px'}}>Gate this event. Viewers must purchase a ticket pledge.</p>
                         </div>
-                        <span className="ml-3 text-sm font-medium text-gray-300">{eventData.isTicketed ? 'Enabled' : 'Disabled'}</span>
-                    </label>
-                    <div className="adminDashboardItem" style={{padding: '0', background: 'none'}}><p className="formLabel" style={{marginBottom: 0, flexGrow: 1}}>Ticket Price (USD)</p><input type="number" name="ticketPrice" className="formInput" value={eventData.ticketPrice || ''} onChange={handleInputChange} style={{width: '100px', textAlign: 'right'}} disabled={!eventData.isTicketed}/></div>
+                        <label className="flex items-center cursor-pointer">
+                            <div className="relative">
+                                <input type="checkbox" name="isTicketed" className="sr-only" checked={eventData.isTicketed || false} onChange={handleInputChange} />
+                                <div className={`block w-14 h-8 rounded-full transition-colors ${eventData.isTicketed ? 'bg-[#FFD700]' : 'bg-gray-700'}`}></div>
+                                <div className={`dot absolute left-1 top-1 bg-black w-6 h-6 rounded-full transition-transform ${eventData.isTicketed ? 'transform translate-x-6' : ''}`}></div>
+                            </div>
+                        </label>
+                    </div>
+                    {eventData.isTicketed && (
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#1A1A1A', padding: '12px', borderRadius: '8px', border: '1px solid #444'}}>
+                            <p className="formLabel" style={{marginBottom: 0, color: '#FFF'}}>Ticket Price (USD)</p>
+                            <div className="flex items-center gap-2">
+                                <span style={{color: '#00FF00', fontWeight: 'bold', fontSize: '18px'}}>$</span>
+                                <input type="number" name="ticketPrice" className="formInput" value={eventData.ticketPrice || ''} onChange={handleInputChange} style={{width: '120px', textAlign: 'right', margin: 0, fontSize: '16px', fontWeight: 'bold', borderColor: '#00FF00'}} placeholder="10.00" />
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="formGroup">

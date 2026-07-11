@@ -329,3 +329,19 @@
     opacity: 1;
   }
 }
+
+/* Shrink navigation buttons */
+.navButton {
+    padding: 6px 12px !important; /* Reduces the inner spacing */
+    min-height: 35px !important;  /* Reduces the overall height */
+}
+
+/* Shrink the text inside buttons like "Creator Connect" and "Admin" */
+.navButtonText {
+    font-size: 12px !important; 
+}
+
+/* Make the gap between buttons slightly smaller */
+.navigationBar {
+    gap: 5px !important; 
+}

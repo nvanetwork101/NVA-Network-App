@@ -1,7 +1,7 @@
 // src/App.jsx
 
 import notificationSound from './Notification 2.mp3';
-import { useState, useEffect, useCallback, lazy, Suspense, useRef } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense, useRef, useMemo } from 'react';
 import { doc, getDoc, setDoc, onSnapshot, collection, query, where, orderBy, limit, updateDoc } from "firebase/firestore";
 import { getDatabase, ref, onValue, onDisconnect, set, serverTimestamp } from "firebase/database";
 import { onAuthStateChanged, signOut, applyActionCode } from "firebase/auth";
@@ -22,21 +22,17 @@ import ContentAppealModal from './components/ContentAppealModal';
 import LikesModal from './components/LikesModal';
 
 // LAZY-LOADED SCREENS (Loaded on demand)
-const PromotedStatusScreen = lazy(() => import('./components/PromotedStatusScreen'));
-const BookStatusScreen = lazy(() => import('./components/BookStatusScreen'));
+const CenterStageScreen = lazy(() => import('./components/CenterStageScreen'));
 const NotificationInboxScreen = lazy(() => import('./components/NotificationInboxScreen'));
-const PostSubmissionUpsellScreen = lazy(() => import('./components/PostSubmissionUpsellScreen'));
 const MyFollowsScreen = lazy(() => import('./components/MyFollowsScreen'));
 const FollowersScreen = lazy(() => import('./components/FollowersScreen'));
 const EnrollmentHubScreen = lazy(() => import('./components/EnrollmentHubScreen'));
 const EnrollmentPaymentScreen = lazy(() => import('./components/EnrollmentPaymentScreen'));
-const PremiumPerksScreen = lazy(() => import('./components/PremiumPerksScreen'));
+const FilmArenaScreen = lazy(() => import('./components/FilmArenaScreen'));
 const FollowingFeedScreen = lazy(() => import('./components/FollowingFeedScreen'));
-const SubscriptionPledgeScreen = lazy(() => import('./components/SubscriptionPledgeScreen'));
 const BlockedListScreen = lazy(() => import('./components/BlockedListScreen'));
 const HomeScreen = lazy(() => import('./components/HomeScreen'));
 const AboutScreen = lazy(() => import('./components/AboutScreen'));
-
 const ContactScreen = lazy(() => import('./components/ContactScreen'));
 const CompetitionScreen = lazy(() => import('./components/CompetitionScreen'));
 const PrivacyPolicyScreen = lazy(() => import('./components/PrivacyPolicyScreen'));
@@ -49,13 +45,7 @@ const VerifyEmailScreen = lazy(() => import('./components/VerifyEmailScreen'));
 const ForgotPasswordScreen = lazy(() => import('./components/ForgotPasswordScreen'));
 const SuspendedScreen = lazy(() => import('./components/SuspendedScreen'));
 const BannedScreen = lazy(() => import('./components/BannedScreen'));
-const CreateCampaignScreen = lazy(() => import('./components/CreateCampaignScreen'));
-const AllCampaignsScreen = lazy(() => import('./components/AllCampaignsScreen'));
-const CampaignDetailsScreen = lazy(() => import('./components/CampaignDetailsScreen'));
-const DonationPledgeScreen = lazy(() => import('./components/DonationPledgeScreen'));
 const PendingConfirmationScreen = lazy(() => import('./components/PendingConfirmationScreen'));
-const SupportUsScreen = lazy(() => import('./components/SupportUsScreen'));
-const AdvertiserPerksScreen = lazy(() => import('./components/AdvertiserPerksScreen'));
 const CreatorConnectScreen = lazy(() => import('./components/CreatorConnectScreen'));
 const OpportunityDetailsScreen = lazy(() => import('./components/OpportunityDetailsScreen'));
 const PostOpportunityForm = lazy(() => import('./components/PostOpportunityForm'));
@@ -65,20 +55,23 @@ const AdminOpportunityDetailsScreen = lazy(() => import('./components/AdminOppor
 const UserProfileScreen = lazy(() => import('./components/UserProfileScreen'));
 const CreatorDashboardScreen = lazy(() => import('./components/CreatorDashboardScreen'));
 const MyContentLibraryScreen = lazy(() => import('./components/MyContentLibraryScreen'));
+const PayoutRequestForm = lazy(() => import('./components/PayoutRequestForm')); // THE FIX: Import the form
 const AdminDashboardScreen = lazy(() => import('./components/AdminDashboardScreen'));
 const AdminReportReviewScreen = lazy(() => import('./components/AdminReportReviewScreen'));
-const AdminCampaignDetailsScreen = lazy(() => import('./components/AdminCampaignDetailsScreen'));
 const AdminEventManagerScreen = lazy(() => import('./components/AdminEventManagerScreen'));
 const AnalyticsDashboardScreen = lazy(() => import('./components/AnalyticsDashboardScreen'));
-const AdminStatusReviewScreen = lazy(() => import('./components/AdminStatusReviewScreen'));
 const ChatListScreen = lazy(() => import('./components/ChatListScreen'));
 const ChatMessageScreen = lazy(() => import('./components/ChatMessageScreen'));
+const MusicChartsScreen = lazy(() => import('./components/MusicChartsScreen'));
+const RoastRoomScreen = lazy(() => import('./components/RoastRoomScreen')); // NEW: LiveKit Roast Arena
+const LiveDirectoryScreen = lazy(() => import('./components/LiveDirectoryScreen')); // NEW: Global Directory
+const FilmClubHubScreen = lazy(() => import('./components/FilmClubHubScreen')); // NEW: Cinematic Classroom Hub
 
 import IosInstallPrompt from './components/IosInstallPrompt'; // <-- ADD THIS LINE
 
 import { useNotifications } from './hooks/useNotifications';
 import NotificationToast from './components/NotificationToast';
-
+import CompetitionHomeScreenBanner from './components/CompetitionHomeScreenBanner'; // THE FIX: Define the missing component
 // --- PWA UPDATE FIX: Import our new custom hook and the component ---
 import { usePWAUpdate } from './hooks/usePWAUpdate';
 
@@ -139,6 +132,13 @@ function App() {
       window.location.reload();
     }
   };
+
+  // THE MASTER CACHE BUSTER: Destroys the ghost cache hijacking your dashboard
+  useEffect(() => {
+    if (needRefresh) {
+      forcefulUpdate();
+    }
+  }, [needRefresh]);
   
   // --- END OF PWA UPDATE FIX ---
 
@@ -156,12 +156,18 @@ function App() {
   const [activeScreen, setActiveScreen] = useState('Home');
   const [activeCompetition, setActiveCompetition] = useState(null);
   const [previousScreen, setPreviousScreen] = useState(null);
+  const isProgrammaticPopRef = useRef(false); // <-- PREVENTS DUAL POPSTATE COLLISION
+  const [shouldOpenGiftModalOnLoad, setShouldOpenGiftModalOnLoad] = useState(false); // <-- ADD THIS GLOBAL COMMAND STATE
+  
+  // --- GLOBAL CREATOR GIFT MODAL STATE ---
+  const [showGiftingModal, setShowGiftingModal] = useState(false);
+  const [giftingRecipient, setGiftingRecipient] = useState(null);
   const [message, setMessage] = useState('');
   const [showIosInstallPrompt, setShowIosInstallPrompt] = useState(false); // <-- iOS PWA FIX
   const [liveEvent, setLiveEvent] = useState(null);
   const [isLive, setIsLive] = useState(false);
   
-  const [currencyRates, setCurrencyRates] = useState(null);
+  const [currencyRates] = useState({}); // Legacy Currency Rates deactivated [1]
   const [selectedCurrency, setSelectedCurrency] = useState('USD');
 
   const [showVideoModal, setShowVideoModal] = useState(false);
@@ -172,13 +178,26 @@ function App() {
   const [featuredContentSlots, setFeaturedContentSlots] = useState(null);
   // -----------------------------------------------------------
 
-  // State for navigating to specific content
-  const [selectedCampaignId, setSelectedCampaignId] = useState(null);
-  
-  const [deepLinkedReplayId, setDeepLinkedReplayId] = useState(null); // <-- ADD THIS LINE
+  // --- Master standalone ad banner state ---
+  const [headerAd, setHeaderAd] = useState(null);
 
-  const [selectedChatId, setSelectedChatId] = useState(null); // <-- ADD THIS LINE FOR CHAT
+  useEffect(() => {
+    let unsubscribe = () => {};
+    if (!authLoading) {
+      unsubscribe = onSnapshot(doc(db, "settings", "headerAd"), (snap) => {
+        if (snap.exists()) {
+          setHeaderAd(snap.data());
+        } else {
+          setHeaderAd(null);
+        }
+      });
+    }
+    return () => unsubscribe();
+  }, [authLoading]);
 
+  const [centerStageTargetId, setCenterStageTargetId] = useState(null);
+  const [deepLinkedReplayId, setDeepLinkedReplayId] = useState(null);
+  const [selectedChatId, setSelectedChatId] = useState(null);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [selectedOpportunity, setSelectedOpportunity] = useState(null);
   
@@ -188,15 +207,12 @@ function App() {
 
   // State for Admin Dashboard and Modals
   const [selectedAdminSubScreen, setSelectedAdminSubScreen] = useState('Overview');
-  const [selectedAdminCampaignId, setSelectedAdminCampaignId] = useState(null);
-  const [selectedStatus, setSelectedStatus] = useState(null);
   const [selectedCompAdmin, setSelectedCompAdmin] = useState(null);
   const [selectedReportGroup, setSelectedReportGroup] = useState(null);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [confirmationTitle, setConfirmationTitle] = useState('');
   const [confirmationMessage, setConfirmationMessage] = useState('');
   const [onConfirmationAction, setOnConfirmationAction] = useState(null);
-  const [opportunityToPromote, setOpportunityToPromote] = useState(null);
 
   const [showReportModal, setShowReportModal] = useState(false);
   const [contentToReport, setContentToReport] = useState(null);
@@ -261,24 +277,7 @@ function App() {
     }
   };
 
-    useEffect(() => {
-        // This now efficiently listens for the server-updated currency rates from Firestore.
-        // This makes zero calls to the external currency API.
-        let unsubscribe = () => {};
-
-        // THE DEFINITIVE FIX: Do not attach the listener until the initial auth check is complete.
-        if (!authLoading) {
-            const ratesDocRef = doc(db, "settings", "currencyRates");
-            unsubscribe = onSnapshot(ratesDocRef, (docSnap) => {
-                if (docSnap.exists() && docSnap.data().rates) {
-                    setCurrencyRates(docSnap.data().rates);
-                } else {
-                    console.warn("Currency rates document not found in Firestore!");
-                }
-            });
-        }
-        return () => unsubscribe(); // Cleanup listener on unmount
-    }, [authLoading]); // Dependency on authLoading ensures this runs when the state is ready.
+    // Legacy Currency Rates Firestore listener removed [1]
 
   // The new navigation handler that tracks screen history AND syncs with browser history
   const handleNavigate = useCallback((newScreen) => {
@@ -296,7 +295,8 @@ function App() {
   useEffect(() => {
     if (currentUser && !authLoading) {
       const guestScreens = ['Login', 'SignUp', 'ForgotPassword', 'VerifyEmail'];
-      if (guestScreens.includes(activeScreen)) {
+      // THE FIX: Ensure auto-redirects don't hijack the screen during a Gifting transition
+      if (guestScreens.includes(activeScreen) && !shouldOpenGiftModalOnLoad) {
         const creationTime = new Date(currentUser.metadata.creationTime).getTime();
         const isNewUser = (new Date().getTime() - creationTime) < 30000; 
         setActiveScreen(isNewUser ? 'CreatorDashboard' : 'Home');
@@ -388,6 +388,10 @@ function App() {
               case 'promotedStatus': 
                 if (id) { setActiveScreen('Home'); } 
                 break;
+              case 'CenterStage':
+                if (id) { setCenterStageTargetId(id); }
+                setActiveScreen('CenterStage');
+                break;
               case 'content': 
                 if (id) { 
                   (async () => { 
@@ -417,18 +421,23 @@ function App() {
       }
 
       try {
-        if (!user) {
-          setCurrentUser(null);
-          setCreatorProfile(null);
-          setHasNewFollowerContent(false);
-          setNotificationBadgeCount(0);
-          return;
-        }
+          if (!user) {
+            // THE FIX: Total State Purge on Logout to prevent Notification ghosting/leaks
+            setCurrentUser(null);
+            setCreatorProfile(null);
+            setHasNewFollowerContent(false);
+            setNotificationBadgeCount(0);
+            setUnreadChatCount(0);
+            setToastQueue([]);
+            processedToastIds.current.clear();
+            return;
+          }
 
-        // THE DEFINITIVE FIX: Force a reload of the user object from Firebase servers.
-        await user.reload();
-        
-        setCurrentUser(user);
+          // THE DEFINITIVE FIX: Force a reload of the user object from Firebase servers.
+          await user.reload();
+          await user.getIdToken(true); // <-- FORCE REFRESH TO SYNC NEW CLAIMS (E.G. ADMIN ROLE) INSTANTLY!
+          
+          setCurrentUser(user);
 
         if (!user.emailVerified) {
           setCreatorProfile(null);
@@ -472,13 +481,25 @@ function App() {
           return;
         }
 
-        await updateDoc(userDocRef, { lastLoginTimestamp: new Date() });
+        // Capture geographic region for sponsor analytics at $0 cost [1]
+        const userRegion = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown';
+        await updateDoc(userDocRef, { 
+            lastLoginTimestamp: new Date(),
+            location: userRegion 
+        });
 
         unsubProfile = onSnapshot(userDocRef, (snap) => {
           if (snap.exists()) {
-            setCreatorProfile(snap.data());
-            setNotificationBadgeCount(snap.data().unreadNotificationCount || 0);
-          } else {
+            const profileData = snap.data();
+            // GOD-TIER ROLE ENFORCEMENT
+            if (user.email === 'nvanetwork101@gmail.com' && profileData.role !== 'super_admin') {
+                updateDoc(userDocRef, { role: 'super_admin' }).catch(() => {});
+            }
+            // THE FIX: Synchronous Badge Update. Ensures UI doesn't lag on reload.
+            setCreatorProfile(profileData);
+            setNotificationBadgeCount(profileData.unreadNotificationCount || 0);
+          } else if (user) {
+            // Only sign out if the user is authenticated but the doc is missing
             signOut(auth);
           }
         });
@@ -620,30 +641,7 @@ useEffect(() => {
 // ======================== END: PUSH NOTIFICATION SETUP ========================
     
      
-    // ======================= START: CAMPAIGN VIEW HANDLER =======================
-useEffect(() => {
-    const handleViewCampaign = (event) => {
-        const { campaignId } = event.detail;
-
-        // This check uses the reliable, up-to-date currentUser state from App.jsx
-        if (!currentUser) {
-            showMessage("Please log in or sign up to view campaign details.");
-            handleNavigate('Login'); // Use the navigation handler for history
-            return;
-        }
-
-        // If the user is logged in, proceed to the campaign.
-        setSelectedCampaignId(campaignId);
-        handleNavigate('CampaignDetails'); // Use the navigation handler for history
-    };
-
-    window.addEventListener('viewCampaignDetails', handleViewCampaign);
-
-    return () => {
-        window.removeEventListener('viewCampaignDetails', handleViewCampaign);
-    };
-}, [currentUser, handleNavigate, showMessage]); // Dependencies ensure the function has the latest state
-// ======================== END: CAMPAIGN VIEW HANDLER ========================
+    // Legacy Campaign View Handler removed for NVA CenterStage
 
   // ======================= START: NOTIFICATION INBOX HANDLERS =======================
 useEffect(() => {
@@ -679,26 +677,42 @@ useEffect(() => {
     // ======================= START: CONTENT NOTIFICATION HANDLER =======================
   useEffect(() => {
     const handleNavToContent = async (event) => {
-        const { id, openComments } = event.detail; // <-- Capture the new 'openComments' flag
+        const { id, openComments, type } = event.detail; 
         if (!id) return;
 
         try {
-            const appId = import.meta.env.VITE_APP_ID;
-            const contentRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
-            const docSnap = await getDoc(contentRef);
+            // THE FIX: Dynamic Content Resolution. Checks BOTH Library and Events (Replays)
+            const appId = import.meta.env.VITE_APP_ID || "production-app-id";
+            let contentData = null;
 
-            if (docSnap.exists()) {
-                const contentData = { id: docSnap.id, ...docSnap.data() };
-                if (openComments) {
-                    setOpenCommentsOnLoad(true); // <-- Set the state flag before opening the modal
-                }
-                handleVideoPress(contentData.embedUrl || contentData.mainUrl, contentData);
+            const libraryRef = doc(db, "artifacts", appId, "public", "data", "content_items", id);
+            const librarySnap = await getDoc(libraryRef);
+
+            if (librarySnap.exists()) {
+                contentData = { id: librarySnap.id, ...librarySnap.data() };
             } else {
-                showMessage("The content you are looking for could not be found.");
+                const eventRef = doc(db, "events", id);
+                const eventSnap = await getDoc(eventRef);
+                if (eventSnap.exists()) contentData = { id: eventSnap.id, ...eventSnap.data() };
+            }
+
+            if (contentData) {
+                // Handle Auto-Comments
+                if (openComments) setOpenCommentsOnLoad(true);
+                
+                // If the notification is a Monetization Approval, force a profile refresh to show badges
+                if (type === 'VIDEO_APPROVED') {
+                    setActiveScreen('CreatorDashboard'); 
+                    showMessage("🎉 Your video is now LIVE & Monetized!");
+                }
+
+                handleVideoPress(contentData.embedUrl || contentData.mainUrl || contentData.liveStreamUrl, contentData);
+            } else {
+                showMessage("Content no longer available.");
             }
         } catch (error) {
-            console.error("Error fetching content for navigation:", error);
-            showMessage("Error loading content.");
+            console.error("Deep-Link Error:", error);
+            showMessage("Failed to open content.");
         }
     };
 
@@ -789,6 +803,45 @@ useEffect(() => {
     };
   }, []);
 
+  // --- GLOBAL NAVIGATION HANDLER FOR GIFTING FROM ANY SCREEN ---
+  useEffect(() => {
+    const handleNavigateAndGift = (event) => {
+        const recipientProfile = event.detail;
+        if (recipientProfile && recipientProfile.id) {
+            // THE MASTER FIX: Sync previousScreen and history stack to prevent Dashboard background-loading
+            isProgrammaticPopRef.current = true;
+            
+            setShowVideoModal(false);
+            setShowLikesModal(false); 
+            setShowCommentsModal(false);
+
+            setSelectedUserId(recipientProfile.id);
+            setShouldOpenGiftModalOnLoad(true); 
+
+            // Hard-set the history state and React state synchronously
+            window.history.replaceState({ screen: 'UserProfile' }, '');
+            setPreviousScreen('Discover'); 
+            setActiveScreen('UserProfile');
+        }
+    };
+    window.addEventListener('navigateToProfileAndGift', handleNavigateAndGift);
+    return () => {
+        window.removeEventListener('navigateToProfileAndGift', handleNavigateAndGift);
+    };
+  }, [handleNavigate]); // Dependency ensures the latest navigation function is used
+
+  // --- GLOBAL CREATOR GIFT EVENT BUS LISTENER ---
+  useEffect(() => {
+    const openGiftHandler = (event) => {
+        setGiftingRecipient(event.detail);
+        setShowGiftingModal(true);
+    };
+    window.addEventListener('openGiftModal', openGiftHandler);
+    return () => {
+        window.removeEventListener('openGiftModal', openGiftHandler);
+    };
+  }, []);
+
         useEffect(() => {
     const openContentPlayerHandler = (event) => {
         setContentPlayerData(event.detail);
@@ -808,21 +861,19 @@ useEffect(() => {
         };
 
         if (showVideoModal) {
-            // Push a "modal" state into the history when the modal opens
             window.history.pushState({ modal: 'video' }, '');
-            // Listen for the popstate event (back button press)
             window.addEventListener('popstate', handleModalCloseOnBack);
         }
 
-        // Cleanup function
         return () => {
             window.removeEventListener('popstate', handleModalCloseOnBack);
-            // If the modal unmounts via 'X' button instead of back button, clean history
-            if (showVideoModal && window.history.state?.modal === 'video') {
+            // THE FIX: Added check for !shouldOpenGiftModalOnLoad to prevent the back-pop collision
+            if (showVideoModal && window.history.state?.modal === 'video' && !shouldOpenGiftModalOnLoad) {
+                isProgrammaticPopRef.current = true;
                 window.history.back();
             }
         };
-    }, [showVideoModal]);  
+    }, [showVideoModal, shouldOpenGiftModalOnLoad]); // THE FIX: Added shouldOpenGiftModalOnLoad to dependencies  
        
         useEffect(() => {
         let unsubscribe = () => {};
@@ -867,36 +918,58 @@ useEffect(() => {
     }, [authLoading]);
 
         useEffect(() => {
-        let unsubscribe = () => {};
+        let unsubscribeSettings = () => {};
+        let unsubscribeMasterEvent = () => {};
 
-        // THE DEFINITIVE FIX: Do not attach the listener until the initial auth check is complete.
         if (!authLoading) {
             const liveEventDocRef = doc(db, "settings", "liveEvent");
-            unsubscribe = onSnapshot(liveEventDocRef, (docSnap) => {
-                if (docSnap.exists() && docSnap.data().status && docSnap.data().status !== 'no_event_scheduled') {
-                    const eventData = { id: docSnap.id, ...docSnap.data() };
-                    setLiveEvent(eventData);
-                    // The global event dispatch is still useful for other components like the Header banner.
-                    window.dispatchEvent(new CustomEvent('liveEventUpdated', { detail: eventData }));
+            
+            unsubscribeSettings = onSnapshot(liveEventDocRef, (docSnap) => {
+                // Instantly clean up any previous master listener
+                unsubscribeMasterEvent();
+
+                if (docSnap.exists() && docSnap.data().eventId && docSnap.data().status !== 'no_event_scheduled') {
+                    const eventId = docSnap.data().eventId;
+                    
+                    // Listen to the master document in the 'events' collection for live status changes (e.g. 'completed')
+                    unsubscribeMasterEvent = onSnapshot(doc(db, "events", eventId), (masterSnap) => {
+                        if (masterSnap.exists()) {
+                            const eventData = { id: masterSnap.id, ...masterSnap.data() };
+                            setLiveEvent(eventData);
+                            window.dispatchEvent(new CustomEvent('liveEventUpdated', { detail: eventData }));
+                        } else {
+                            setLiveEvent(null);
+                            window.dispatchEvent(new CustomEvent('liveEventUpdated', { detail: null }));
+                        }
+                    });
                 } else {
                     setLiveEvent(null);
                     window.dispatchEvent(new CustomEvent('liveEventUpdated', { detail: null }));
                 }
             });
         }
-        // The timer and complex logic are removed. App.jsx's only job is to fetch the data.
-        return () => unsubscribe();
+        
+        return () => {
+            unsubscribeSettings();
+            unsubscribeMasterEvent();
+        };
     }, [authLoading]);
 
-        // ================= START: THE DEFINITIVE LIVE EVENT SYNC FIX =================
+         // ================= START: THE DEFINITIVE LIVE EVENT SYNC FIX =================
     useEffect(() => {
         let timer;
-        // If there's no event or it's not upcoming, reset the state.
-        if (!liveEvent || liveEvent.status !== 'upcoming' || !liveEvent.scheduledStartTime) {
-        setIsLive(false);
-        setCountdownText('');
-        return;
-    }
+        
+        if (!liveEvent || !liveEvent.scheduledStartTime || liveEvent.status === 'completed' || liveEvent.status === 'no_event_scheduled') {
+            setIsLive(false);
+            setCountdownText('');
+            return;
+        }
+
+        if (liveEvent.status === 'live') {
+            setIsLive(true);
+            setCountdownText('LIVE NOW');
+            return;
+        }
 
     const startSynchronizedCountdown = async () => {
         try {
@@ -947,6 +1020,15 @@ useEffect(() => {
         // --- NATIVE BACK BUTTON LOGIC ---
   useEffect(() => {
     const handleBackButton = (event) => {
+      // Bypasses global screen navigation if we are closing a modal
+      if (isProgrammaticPopRef.current) {
+        isProgrammaticPopRef.current = false;
+        return;
+      }
+      if (showVideoModal) {
+        return;
+      }
+
       // If we have a screen history, navigate back within the app
       if (previousScreen) {
         setActiveScreen(previousScreen);
@@ -963,6 +1045,7 @@ useEffect(() => {
           window.history.pushState({ screen: 'Home' }, '');
         } else {
           // If the message is showing, allow the default back action to exit the app
+          isProgrammaticPopRef.current = true;
           window.history.back();
         }
       }
@@ -974,7 +1057,7 @@ useEffect(() => {
     return () => {
       window.removeEventListener('popstate', handleBackButton);
     };
-  }, [activeScreen, previousScreen, message, showMessage]);
+  }, [activeScreen, previousScreen, message, showMessage, showVideoModal]);
         
             // --- Audio Priming for Browser Autoplay Policy ---
     useEffect(() => {
@@ -1030,11 +1113,10 @@ useEffect(() => {
 
          // --- GUARANTEED NAVIGATION FOR PLEDGE FLOW ---
   useEffect(() => {
-    // This effect now ONLY handles navigation that is not initiated by a button click.
-    if (pledgeContext && (pledgeContext.type === 'premium' || pledgeContext.type === 'eventTicket')) {
-        handleNavigate('SubscriptionPledge');
+    if (pledgeContext && pledgeContext.type === 'eventTicket') {
+        // Only routing event tickets now, legacy premium removed.
+        // Update to point to correct pledge component if needed in future
     }
-    // The 'donation' type is now handled by the button in CampaignDetailsScreen, so it is removed from here.
   }, [pledgeContext]);
 
         // New Code to Add
@@ -1116,48 +1198,61 @@ useEffect(() => {
     if (activeScreen === 'Suspended') return <SuspendedScreen showMessage={showMessage} setActiveScreen={handleNavigate} suspensionDetails={suspensionDetails} />;
     
      switch (activeScreen) {
+      case 'CenterStage':
+        return <CenterStageScreen 
+            setActiveScreen={handleNavigate} 
+            currentUser={currentUser} 
+            showMessage={showMessage} 
+            targetContestantId={centerStageTargetId} 
+            handleVideoPress={handleVideoPress} 
+        />;
       case 'About': return <AboutScreen setActiveScreen={handleNavigate} />;
       case 'BlockedList': return <BlockedListScreen currentUser={currentUser} setActiveScreen={handleNavigate} showMessage={showMessage} />;
       case 'Login': return <LoginScreen setActiveScreen={handleNavigate} showMessage={showMessage} />;
       case 'SignUp': return <SignUpScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'VerifyEmail': return <VerifyEmailScreen currentUser={currentUser} showMessage={showMessage} setActiveScreen={handleNavigate} handleLogout={handleLogout} />;
       case 'ForgotPassword': return <ForgotPasswordScreen showMessage={showMessage} setActiveScreen={handleNavigate} actionCode={actionCode} />;
-      case 'CreateCampaign': return <CreateCampaignScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} />;
-      case 'AllCampaigns': return <AllCampaignsScreen showMessage={showMessage} setActiveScreen={handleNavigate} setSelectedCampaignId={setSelectedCampaignId} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
-      case 'CampaignDetails': return <CampaignDetailsScreen showMessage={showMessage} setActiveScreen={handleNavigate} selectedCampaignId={selectedCampaignId} currentUser={currentUser} setPledgeContext={setPledgeContext} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
-      case 'DonationPledge': return <DonationPledgeScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
-      case 'SubscriptionPledge': return <SubscriptionPledgeScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} setPledgeIdForConfirmation={setPledgeIdForConfirmation} selectedCurrency={selectedCurrency} currencyRates={currencyRates} />;
-      case 'EnrollmentPayment': return <EnrollmentPaymentScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} />;
+      case 'EnrollmentPayment': return <EnrollmentPaymentScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} pledgeContext={pledgeContext} />;
+      case 'FilmArena': return <FilmArenaScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} setPledgeContext={setPledgeContext} />;
       case 'PendingConfirmation': return <PendingConfirmationScreen showMessage={showMessage} setActiveScreen={handleNavigate} pledgeIdForConfirmation={pledgeIdForConfirmation} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
-      case 'SupportUsScreen': return <SupportUsScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} setPledgeContext={setPledgeContext} liveEvent={liveEvent} />;
-      case 'PremiumPerks': return <PremiumPerksScreen setActiveScreen={handleNavigate} currentUser={currentUser} showMessage={showMessage} setPledgeContext={setPledgeContext} />;
       case 'EnrollmentHub': return <EnrollmentHubScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />;
-      case 'AdvertiserPerks': return <AdvertiserPerksScreen setActiveScreen={handleNavigate} />;
       case 'CreatorConnect': return <CreatorConnectScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setSelectedOpportunity={setSelectedOpportunity} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
-      case 'OpportunityDetails': return <OpportunityDetailsScreen showMessage={showMessage} setActiveScreen={handleNavigate} selectedOpportunity={selectedOpportunity} />;
-      case 'PostOpportunityForm': return <PostOpportunityForm showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setOpportunityToPromote={setOpportunityToPromote} />;
+      case 'OpportunityDetails': return <OpportunityDetailsScreen showMessage={showMessage} setActiveScreen={handleNavigate} selectedOpportunity={selectedOpportunity} currentUser={currentUser} creatorProfile={creatorProfile} />;
+      case 'PostOpportunityForm': return <PostOpportunityForm showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} />;
       case 'MyListings': return <MyListingsScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} />;
       case 'SavedOpportunities': return <SavedOpportunitiesScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} setSelectedOpportunity={setSelectedOpportunity} />;
-      case 'UserProfile': return <UserProfileScreen selectedUserId={selectedUserId} setActiveScreen={handleNavigate} setSelectedCampaignId={setSelectedCampaignId} setSelectedChatId={setSelectedChatId} showMessage={showMessage} currentUser={currentUser} creatorProfile={creatorProfile} setOnConfirmationAction={setOnConfirmationAction} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} handleVideoPress={handleVideoPress} previousScreen={previousScreen} />;
+      case 'UserProfile': return <UserProfileScreen selectedUserId={selectedUserId} setActiveScreen={handleNavigate} setSelectedChatId={setSelectedChatId} showMessage={showMessage} currentUser={currentUser} creatorProfile={creatorProfile} setOnConfirmationAction={setOnConfirmationAction} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} handleVideoPress={handleVideoPress} previousScreen={previousScreen} shouldOpenGiftModalOnLoad={shouldOpenGiftModalOnLoad} setShouldOpenGiftModalOnLoad={setShouldOpenGiftModalOnLoad} />;
       case 'MyFollows': return <MyFollowsScreen currentUser={currentUser} setActiveScreen={handleNavigate} setSelectedUserId={setSelectedUserId} showMessage={showMessage} />;
       case 'Followers': return <FollowersScreen currentUser={currentUser} setActiveScreen={handleNavigate} setSelectedUserId={setSelectedUserId} showMessage={showMessage} />;
       case 'MyContentLibrary': return <MyContentLibraryScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} handleVideoPress={handleVideoPress} />;
-      case 'CreatorDashboard': return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setSelectedCampaignId={setSelectedCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} liveEvent={liveEvent} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
-      case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} selectedAdminSubScreen={selectedAdminSubScreen} setSelectedAdminSubScreen={setSelectedAdminSubScreen} setSelectedAdminCampaignId={setSelectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} setSelectedUserId={setSelectedUserId} setSelectedOpportunity={setSelectedOpportunity} setSelectedStatus={setSelectedStatus} setSelectedCompAdmin={setSelectedCompAdmin} setSelectedReportGroup={setSelectedReportGroup} featuredContentSlots={featuredContentSlots} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
+      case 'PayoutRequestForm': return <PayoutRequestForm showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} />; // THE FIX: Added route
+      case 'CreatorDashboard': return <CreatorDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} setCreatorProfile={setCreatorProfile} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} liveEvent={liveEvent} currencyRates={currencyRates} selectedCurrency={selectedCurrency} handleVideoPress={handleVideoPress} />;
+case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} selectedAdminSubScreen={selectedAdminSubScreen} setSelectedAdminSubScreen={setSelectedAdminSubScreen} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} setSelectedUserId={setSelectedUserId} setSelectedOpportunity={setSelectedOpportunity} setSelectedCompAdmin={setSelectedCompAdmin} setSelectedReportGroup={setSelectedReportGroup} featuredContentSlots={featuredContentSlots} currencyRates={currencyRates} selectedCurrency={selectedCurrency} handleVideoPress={handleVideoPress} />;
       case 'MyFeed': return <FollowingFeedScreen currentUser={currentUser} setActiveScreen={handleNavigate} handleVideoPress={handleVideoPress} showMessage={showMessage} />;
       case 'AdminEventManager': return <AdminEventManagerScreen showMessage={showMessage} setActiveScreen={handleNavigate} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
-      case 'AdminCampaignDetails': return <AdminCampaignDetailsScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} selectedAdminCampaignId={selectedAdminCampaignId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
       case 'AdminOpportunityDetails': return <AdminOpportunityDetailsScreen showMessage={showMessage} setActiveScreen={handleNavigate} selectedOpportunity={selectedOpportunity} />;
       case 'AdminReportReview': return <AdminReportReviewScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} selectedReportGroup={selectedReportGroup} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
-      case 'AdminStatusReview': return <AdminStatusReviewScreen showMessage={showMessage} setActiveScreen={handleNavigate} selectedStatus={selectedStatus} />;
-      case 'CompetitionScreen': return <CompetitionScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} activeCompetition={activeCompetition} />;
-      case 'Discover': return <DiscoverScreen showMessage={showMessage} currentUser={currentUser} creatorProfile={creatorProfile} setActiveScreen={handleNavigate} handleVideoPress={handleVideoPress} liveEvent={liveEvent} setPledgeContext={setPledgeContext} isLive={isLive} countdownText={countdownText} deepLinkedReplayId={deepLinkedReplayId} />;
+      // THE FIX: Pass full competition context and a handle for the "Vote" action to ensure seamless real-time syncing
+      case 'CompetitionScreen': 
+        return (
+          <CompetitionScreen 
+            showMessage={showMessage} 
+            setActiveScreen={handleNavigate} 
+            currentUser={currentUser} 
+            creatorProfile={creatorProfile} 
+            activeCompetition={activeCompetition}
+            handleVideoPress={handleVideoPress} // Professional apps allow video review during voting
+            setSelectedUserId={setSelectedUserId} // Allows visiting participant profiles
+          />
+        );
+      case 'Discover': return <DiscoverScreen showMessage={showMessage} currentUser={currentUser} creatorProfile={creatorProfile} setActiveScreen={handleNavigate} handleVideoPress={handleVideoPress} liveEvent={liveEvent} setPledgeContext={setPledgeContext} isLive={isLive} countdownText={countdownText} deepLinkedReplayId={deepLinkedReplayId} setSelectedOpportunity={setSelectedOpportunity} />;
       case 'DiscoverUsers': return <DiscoverUsersScreen showMessage={showMessage} setActiveScreen={handleNavigate} setSelectedUserId={setSelectedUserId} currentUser={currentUser} creatorProfile={creatorProfile} />;
-      case 'PromotedStatus': return <PromotedStatusScreen showMessage={showMessage} setActiveScreen={handleNavigate} currentUser={currentUser} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
-      case 'BookStatus': return <BookStatusScreen showMessage={showMessage} setActiveScreen={handleNavigate} setPledgeIdForConfirmation={setPledgeIdForConfirmation} currentUser={currentUser} creatorProfile={creatorProfile} opportunityToPromote={opportunityToPromote} setOpportunityToPromote={setOpportunityToPromote} previousScreen={activeScreen} currencyRates={currencyRates} selectedCurrency={selectedCurrency} />;
-      case 'PostSubmissionUpsell': return <PostSubmissionUpsellScreen showMessage={showMessage} setActiveScreen={handleNavigate} opportunityToPromote={opportunityToPromote} setOpportunityToPromote={setOpportunityToPromote} />;
       case 'AnalyticsDashboard': return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'Contact': return <ContactScreen setActiveScreen={handleNavigate} showMessage={showMessage} currentUser={currentUser} />;
+      case 'MusicCharts': return <MusicChartsScreen setActiveScreen={handleNavigate} currentUser={currentUser} handleVideoPress={handleVideoPress} showMessage={showMessage} />;
+      case 'RoastRoom': return <RoastRoomScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />;
+      case 'LiveDirectory': return <LiveDirectoryScreen setActiveScreen={handleNavigate} currentUser={currentUser} showMessage={showMessage} />;
+      case 'FilmClubHub': return <FilmClubHubScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />;
 
       case 'NotificationInbox': return <NotificationInboxScreen setActiveScreen={handleNavigate} currentUser={currentUser} dismissNotification={dismissNotification} markNotificationAsRead={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
       case 'ChatList': return <ChatListScreen currentUser={currentUser} setActiveScreen={handleNavigate} setSelectedChatId={setSelectedChatId} showMessage={showMessage} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
@@ -1167,6 +1262,23 @@ useEffect(() => {
       case 'Home': default: return <HomeScreen currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
     }
   };
+
+  // --- NVA PARENT SHIELD: Isolates the screen from global state updates ---
+  const memoizedScreen = useMemo(() => renderScreen(), [
+    activeScreen, 
+    currentUser?.uid, 
+    creatorProfile?.role, 
+    JSON.stringify(creatorProfile?.purchasedTickets || {}),
+    selectedUserId, 
+    selectedOpportunity?.id, 
+    liveEvent?.id, 
+    isLive,
+    countdownText,
+    deepLinkedReplayId,
+    pledgeContext,
+    selectedChatId,
+    selectedAdminSubScreen // THE FIX: Restores functionality to Admin Dashboard tabs
+  ]);
 
 return (
     <>
@@ -1205,9 +1317,50 @@ return (
             showInstallButton={!isStandalone}
             // --- PWA UPDATE PROPS ---
             needRefresh={needRefresh}
-            onUpdate={forcefulUpdate}
+            onUpdate={handleUpdate}
+            currentUser={currentUser} // <-- ADD THIS LINE
+            onLogout={handleLogout}   // <-- ADD THIS LINE
           />
-          <div className="container">
+
+          {/* ====== STANDALONE GLASSMORPHIC HEADER BILLBOARD AD (Home Screen & Expiration Checked) ====== */}
+          {activeScreen === 'Home' && headerAd && headerAd.imageUrl && (!headerAd.expiresAt || new Date() < new Date(headerAd.expiresAt)) && (
+            <div style={{ display: 'flex', justifyContent: 'center', width: '100%', padding: '0 15px', boxSizing: 'border-box', marginTop: '12px' }}>
+              <div 
+                onClick={() => headerAd.destinationUrl && window.open(headerAd.destinationUrl, '_blank')}
+                style={{
+                  width: '100%', maxWidth: '520px', height: '74px',
+                  borderRadius: '14px', overflow: 'hidden',
+                  display: 'flex', alignItems: 'center', background: 'rgba(255, 255, 255, 0.03)',
+                  backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255,255,255,0.05)', 
+                  cursor: headerAd.destinationUrl ? 'pointer' : 'default',
+                  transition: 'all 0.2s ease-in-out', padding: '8px', boxSizing: 'border-box'
+                }}
+                onMouseEnter={(e) => {
+                  if (headerAd.destinationUrl) {
+                    e.currentTarget.style.transform = 'scale(1.02)';
+                    e.currentTarget.style.borderColor = 'rgba(0, 255, 255, 0.35)';
+                    e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 255, 255, 0.2)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1.0)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              >
+                <img src={headerAd.imageUrl} alt={headerAd.title} style={{ width: '58px', height: '58px', borderRadius: '10px', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.1)' }} />
+                <div style={{ marginLeft: '14px', display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, textAlign: 'left' }}>
+                  <span style={{ fontSize: '9px', color: '#00FFFF', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.07em' }}>★ Sponsored</span>
+                  <p style={{ margin: '2px 0 0', fontSize: '14px', color: '#FFF', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }}>{headerAd.title}</p>
+                  <p style={{ margin: 0, fontSize: '11px', color: '#BBB', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }}>{headerAd.description}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="container" style={{ paddingBottom: '100px' }}>
             {/* Step 3: Use the original authLoading for the quick, text-based loader during navigation. */}
             {authLoading ? (
                 <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
@@ -1215,11 +1368,11 @@ return (
                 </div>
             ) : (
                 <Suspense fallback={<div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}><p className="heading">Loading...</p></div>}>
-                  {renderScreen()}
+                  {memoizedScreen}
                 </Suspense>
             )}
           </div>
-                      {!['Suspended', 'Banned', 'SignUp', 'ChatMessageScreen'].includes(activeScreen) && (
+          {!['Suspended', 'Banned', 'SignUp', 'ChatMessageScreen', 'RoastRoom', 'LiveDirectory', 'FilmClubHub'].includes(activeScreen) && (
             <NavigationBar
               activeScreen={activeScreen}
               setActiveScreen={handleNavigate}
@@ -1243,8 +1396,9 @@ return (
           <audio ref={notificationSoundRef} src={notificationSound} preload="auto" />
 
           {message && (
-            <div className="messageBox">
-              <p className="messageText">{message}</p>
+            /* THE FIX: Forced zIndex 20000 ensures messages float ABOVE the Tournament Modal (10000) */
+            <div className="messageBox" style={{ zIndex: 20000 }}>
+              <p className="messageText" style={{ color: '#FFF', fontWeight: 'bold' }}>{message}</p>
             </div>
           )}
 
@@ -1278,11 +1432,13 @@ return (
               <VideoPlayerModal
                   videoUrl={currentVideoUrl}
                   onClose={() => {
+                      isProgrammaticPopRef.current = true; // Prevents popstate router leakage
                       setShowVideoModal(false);
                       setOpenCommentsOnLoad(false); // <-- Reset the flag when the modal is closed
                   }}
                   contentItem={currentContentItem}
                   currentUser={currentUser}
+                  viewerProfile={creatorProfile}
                   showMessage={showMessage}
                   openCommentsProp={openCommentsOnLoad} // <-- Pass the flag as a prop
               />

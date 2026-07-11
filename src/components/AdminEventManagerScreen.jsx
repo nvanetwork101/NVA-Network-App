@@ -1,10 +1,15 @@
 // src/components/AdminEventManagerScreen.jsx
 
 import React, { useState, useEffect } from 'react';
-import { db, functions } from '../firebase'; // Correct: functions is now imported
+import { db, functions } from '../firebase'; 
 import { httpsCallable } from 'firebase/functions'; // Correct: httpsCallable is now imported
-import { collection, onSnapshot, doc, setDoc, addDoc, deleteDoc, updateDoc, query, orderBy, Timestamp, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, addDoc, deleteDoc, updateDoc, query, orderBy, Timestamp, where, getDocs } from 'firebase/firestore';
+import { uploadManager } from '../utils/uploadManager';
 import EventForm from './EventForm';
+import { uploadMovieToR2 } from '../utils/r2Uploader';
+
+// Centralized Media Server IP pointed to your Tokyo Oracle Instance
+const MEDIA_SERVER_URL = "http://158.179.184.80:5000";
 
 // --- DEDICATED COMPONENT FOR THE LIVE DASHBOARD (CORRECTED LOGIC) ---
 const LiveDashboard = ({ showMessage }) => {
@@ -118,6 +123,21 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
     const [vodCategories, setVodCategories] = useState([]);
     const [selectedVodCategory, setSelectedVodCategory] = useState('');
 
+    const [uploadState, setUploadState] = useState(() => ({
+        uploadProgress: uploadManager.uploadProgress,
+        isUploadingMovie: uploadManager.isUploadingMovie,
+        statusMessage: uploadManager.statusMessage,
+        movieFile: uploadManager.movieFile,
+        targetEventId: uploadManager.targetEventId
+    }));
+
+    useEffect(() => {
+        const unsubscribe = uploadManager.subscribe((newState) => {
+            setUploadState(newState);
+        });
+        return () => unsubscribe();
+    }, []);
+
     useEffect(() => {
         const eventsCollectionRef = collection(db, "events");
         const q = query(eventsCollectionRef, orderBy("scheduledStartTime", "desc"));
@@ -144,6 +164,46 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
     const handleShowCreateForm = () => { setEventToEdit(null); setIsFormVisible(true); };
     const handleShowEditForm = (event) => { setEventToEdit(event); setIsFormVisible(true); };
     const handleCloseForm = () => { setIsFormVisible(false); setEventToEdit(null); };
+
+    // THE FIX: Brought in the Global Free Tag Engine
+    const handleToggleFreeTag = async (event) => {
+        try {
+            const nextStatus = !event.isNowShowingFree;
+            if (nextStatus) {
+                const qMovies = query(collection(db, "movies"), where("isNowShowingFree", "==", true));
+                const snapMovies = await getDocs(qMovies);
+                await Promise.all(snapMovies.docs.map(d => updateDoc(d.ref, { isNowShowingFree: false })));
+                
+                const qEvents = query(collection(db, "events"), where("isNowShowingFree", "==", true));
+                const snapEvents = await getDocs(qEvents);
+                await Promise.all(snapEvents.docs.map(d => updateDoc(d.ref, { isNowShowingFree: false })));
+            }
+            await updateDoc(doc(db, "events", event.id), { isNowShowingFree: nextStatus });
+            await updateDoc(doc(db, "movies", event.id), { isNowShowingFree: nextStatus }).catch(() => {});
+            showMessage(nextStatus ? "🔓 Marked as 'Now Showing: Free'!" : "Removed 'Now Showing: Free' tag.");
+        } catch (error) {
+            showMessage("Failed to update Free Screening status.");
+        }
+    };
+
+    // THE FIX: Brought in the Universal Pin Engine
+    const handleTogglePin = async (event) => {
+        try {
+            const pinnedEventsSnap = await getDocs(query(collection(db, "events"), where("isPinned", "==", true)));
+            const pinnedMoviesSnap = await getDocs(query(collection(db, "movies"), where("isPinned", "==", true)));
+            const totalPinned = pinnedEventsSnap.size + pinnedMoviesSnap.size;
+
+            if (!event.isPinned && totalPinned >= 2) {
+                showMessage("You can only pin a maximum of 2 films globally.");
+                return;
+            }
+            await updateDoc(doc(db, "events", event.id), { isPinned: !event.isPinned });
+            await updateDoc(doc(db, "movies", event.id), { isPinned: !event.isPinned }).catch(() => {});
+            showMessage(!event.isPinned ? "📌 Pinned to Cinemas!" : "Unpinned from Cinemas.");
+        } catch (error) {
+            showMessage("Failed to update pin status.");
+        }
+    };
 
     const handleSaveEvent = async (eventData) => {
         showMessage("Saving event...");
@@ -219,6 +279,12 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
         setIsPublishModalVisible(true);
     };
 
+    const handleMovieUpload = async () => {
+        if (!uploadState.movieFile) return showMessage("Please select a movie file first!");
+        if (!uploadState.targetEventId) return showMessage("Please select a target event from the dropdown!");
+        uploadManager.startUpload(uploadState.movieFile, uploadState.targetEventId, MEDIA_SERVER_URL, showMessage);
+    };
+
     const formatDate = (timestamp) => {
         if (!timestamp || !timestamp.toDate) return 'Not set';
         return timestamp.toDate().toLocaleString();
@@ -226,52 +292,209 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
     
     return (
         <>
+            {/* God-Tier CSS Overrides for Responsive Clearance */}
+            <style>{`
+                /* Unified Uploader Flex-Grid */
+                .uploader-grid-system {
+                    display: grid;
+                    grid-template-columns: 1fr;
+                    gap: 12px;
+                    width: 100%;
+                    margin-top: 15px;
+                }
+                .uploader-select-item, .uploader-file-item, .uploader-button-item {
+                    width: 100% !important;
+                    box-sizing: border-box;
+                }
+                
+                /* Master List Control Table & Card Mechanics */
+                .library-wrapper {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    width: 100%;
+                }
+                .desktop-th {
+                    display: none;
+                }
+                .modern-row-card {
+                    display: flex;
+                    flex-direction: column;
+                    background: #111;
+                    border: 1px solid #222;
+                    border-radius: 10px;
+                    padding: 16px;
+                    gap: 14px;
+                }
+                .card-meta-line {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-bottom: 1px dashed #222;
+                    padding-bottom: 10px;
+                }
+                .top-action-jumble {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                    width: 100%;
+                }
+                .top-action-jumble button {
+                    width: 100%;
+                }
+
+                /* Media Query: Scale to Desktop Grid */
+                @media (min-width: 992px) {
+                    .uploader-grid-system {
+                        grid-template-columns: 240px 1fr 220px;
+                        align-items: center;
+                        gap: 16px;
+                    }
+                    .top-action-jumble {
+                        flex-direction: row;
+                    }
+                    .top-action-jumble button {
+                        width: auto;
+                    }
+                    .desktop-th {
+                        display: grid;
+                        grid-template-columns: 80px 2.5fr 1fr 1.8fr 100px 2.5fr;
+                        padding: 12px 16px;
+                        font-weight: 900;
+                        text-transform: uppercase;
+                        font-size: 11px;
+                        letter-spacing: 1px;
+                        color: #666;
+                        border-bottom: 1px solid #222;
+                        gap: 16px;
+                    }
+                    .modern-row-card {
+                        display: grid;
+                        grid-template-columns: 80px 2.5fr 1fr 1.8fr 100px 2.5fr;
+                        align-items: center;
+                        border-radius: 6px;
+                        padding: 12px 16px;
+                        gap: 16px;
+                    }
+                    .card-meta-line {
+                        display: contents; /* Strip card rules, inherit desktop grid positioning */
+                    }
+                    .mobile-label {
+                        display: none !important;
+                    }
+                }
+            `}</style>
+
             <p className="heading">Event Management Hub</p>
             <p className="subHeading">This is the master library of all events. The automation engine will manage their status and promotion.</p>
             
             <LiveDashboard showMessage={showMessage} />
 
             <div className="dashboardSection">
-                <div className="flex gap-4">
+                <div className="top-action-jumble">
                     <button className="button" onClick={handleShowCreateForm}>Create New Event</button>
                     <button className="button" style={{backgroundColor: '#DC3545'}} onClick={handleManualTrigger}>Run Automation Manually</button>
                 </div>
+            </div>
+
+            <div className="dashboardSection" style={{ border: '1px solid #007BFF', background: '#111' }}>
+                <p className="dashboardSectionTitle" style={{ color: '#007BFF' }}>Cinema Live-Slot Uploader</p>
+                <p className="paragraph" style={{ fontSize: '12px', marginBottom: '10px' }}>Upload a movie to the isolated slot. This overwrites the previous movie to save R2 space. <strong style={{color: '#DC3545'}}>Background Upload Mode active. You can safely change tabs without losing your progress!</strong></p>
+                <div className="uploader-grid-system">
+                    <select 
+                        value={uploadState.targetEventId}
+                        onChange={(e) => uploadManager.setTargetEventId(e.target.value)} 
+                        className="uploader-select-item"
+                        style={{ background: '#222', color: '#FFF', padding: '12px 8px', borderRadius: '4px', border: '1px solid #333', fontSize: '13px' }}
+                    >
+                        <option value="">Select Target Event...</option>
+                        {events.map(ev => (
+                            <option key={ev.id} value={ev.id}>{ev.eventTitle}</option>
+                        ))}
+                    </select>
+                    <input type="file" accept="video/mp4" onChange={(e) => uploadManager.setMovieFile(e.target.files[0])} className="paragraph uploader-file-item" style={{ background: '#222', padding: '9px 5px', borderRadius: '4px' }} />
+                    <button className="button uploader-button-item" style={{ backgroundColor: uploadState.isUploadingMovie ? '#555' : '#007BFF', minWidth: '220px', height: '44px' }} onClick={handleMovieUpload} disabled={uploadState.isUploadingMovie}>
+                        {uploadState.isUploadingMovie ? uploadState.statusMessage || `Processing...` : 'Upload to Live Slot'}
+                    </button>
+                </div>
+                {uploadState.isUploadingMovie && (
+                    <div style={{ width: '100%', height: '4px', background: '#333', marginTop: '10px', borderRadius: '2px', overflow: 'hidden' }}>
+                        <div style={{ width: `${uploadState.uploadProgress}%`, height: '100%', background: '#007BFF', transition: 'width 0.2s' }}></div>
+                    </div>
+                )}
             </div>
             
             <div className="dashboardSection">
                 <p className="dashboardSectionTitle">Master Event Library</p>
                 {isLoading ? <p>Loading events...</p> : (
-                    <div className="event-list-container" style={{ overflowX: 'auto' }}>
-                        <div className="event-list-header" style={{ minWidth: '850px' }}>
-                            <div style={{ flex: '0 0 70px' }}>Image</div>
-                            <div style={{ flex: '2 1 0%' }}>Event Title</div>
-                            <div style={{ flex: '1 1 0%' }}>Status</div>
-                            <div style={{ flex: '1.5 1 0%' }}>Schedule</div>
-                            <div style={{ flex: '0 0 100px', textAlign: 'center' }}>Ticketed</div>
-                            <div style={{ flex: '1.5 1 0%', textAlign: 'right' }}>Actions</div>
+                    <div className="library-wrapper">
+                        {/* Tabular Header (Auto-Hides on Phone Screen Sizes) */}
+                        <div className="desktop-th">
+                            <div>Image</div>
+                            <div>Event Title</div>
+                            <div>Status</div>
+                            <div>Schedule</div>
+                            <div style={{ textAlign: 'center' }}>Ticketed</div>
+                            <div style={{ textAlign: 'right' }}>Actions</div>
                         </div>
-                        <div className="event-list-body">
-                            {events.map(event => (
-                                <div key={event.id} className="event-list-item" style={{ minWidth: '850px' }}>
-                                    <div style={{ flex: '0 0 70px' }}><img src={event.thumbnailUrl || 'https://placehold.co/100x56/2A2A2A/FFF?text=N/A'} alt={event.eventTitle} style={{ width: '60px', height: '34px', borderRadius: '4px', objectFit: 'cover' }}/></div>
-                                    <div style={{ flex: '2 1 0%', fontWeight: 'bold' }}>{event.eventTitle}</div>
-                                    <div style={{ flex: '1 1 0%' }}><span className={`status-badge status-${event.status}`}>{event.status?.toUpperCase() || 'UNKNOWN'}</span></div>
-                                    <div style={{ flex: '1.5 1 0%', fontSize: '12px', color: '#ccc' }}>
-                                        <div>Starts: {formatDate(event.scheduledStartTime)}</div>
-                                        <div>Ends: {formatDate(event.scheduledEndTime)}</div>
-                                    </div>
-                                    <div style={{ flex: '0 0 100px', textAlign: 'center', color: event.isTicketed ? '#4CAF50' : '#FFC107', fontWeight: 'bold' }}>{event.isTicketed ? `Yes ($${event.ticketPrice})` : 'No'}</div>
-                                   <div className="flex gap-2 justify-end" style={{ flex: '1.5 1 0%'}}>
-                                        <button onClick={() => handleShowEditForm(event)} className="adminActionButton">Edit</button>
-                                        <button onClick={() => handleDuplicateEvent(event)} className="adminActionButton" style={{backgroundColor: '#007BFF'}}>Duplicate</button>
-                                        {event.status === 'completed' && !event.isPublishedAsVOD && (
-                                            <button onClick={() => handlePublishEvent(event)} className="adminActionButton" style={{backgroundColor: '#28a745'}}>Publish VOD</button>
-                                        )}
-                                        <button onClick={() => handleDeleteEvent(event)} className="adminActionButton reject">Delete</button>
+
+                        {/* List Items (Fluid Stack on Mobile, Native Grid Rows on Desktop) */}
+                        {events.map(event => (
+                            <div key={event.id} className="modern-row-card">
+                                
+                                {/* Image / Media Element */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <img src={event.thumbnailUrl || 'https://placehold.co/100x56/2A2A2A/FFF?text=N/A'} alt={event.eventTitle} style={{ width: '70px', height: '40px', borderRadius: '4px', objectFit: 'cover', border: '1px solid #222' }}/>
+                                    <div className="mobile-label" style={{ fontSize: '11px', color: '#666', fontWeight: '900', textTransform: 'uppercase' }}>Preview Thumb</div>
+                                </div>
+
+                                {/* Title Header */}
+                                <div className="card-meta-line">
+                                    <div className="mobile-label" style={{ fontSize: '11px', color: '#666', fontWeight: '900', textTransform: 'uppercase' }}>Event Title</div>
+                                    <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', textAlign: 'right' }}>
+                                        {event.isPinned && <span style={{color: '#FFD700'}} title="Pinned to Cinemas">📌</span>}
+                                        {event.isNowShowingFree && <span style={{backgroundColor: '#00FF00', color: '#000', fontSize: '9px', padding: '2px 4px', borderRadius: '3px'}} title="Global Free Entry">🔓 FREE</span>}
+                                        <span>{event.eventTitle}</span>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+
+                                {/* Status Area */}
+                                <div className="card-meta-line">
+                                    <div className="mobile-label" style={{ fontSize: '11px', color: '#666', fontWeight: '900', textTransform: 'uppercase' }}>Event Status</div>
+                                    <div><span className={`status-badge status-${event.status}`}>{event.status?.toUpperCase() || 'UNKNOWN'}</span></div>
+                                </div>
+
+                                {/* Date/Schedule Component */}
+                                <div className="card-meta-line">
+                                    <div className="mobile-label" style={{ fontSize: '11px', color: '#666', fontWeight: '900', textTransform: 'uppercase' }}>Air Schedule</div>
+                                    <div style={{ fontSize: '12px', color: '#FFF', fontWeight: 'bold', textAlign: 'right' }}>
+                                        <div>🟢 {formatDate(event.scheduledStartTime)}</div>
+                                        <div style={{color: '#888', marginTop: '2px'}}>🔴 {formatDate(event.scheduledEndTime)}</div>
+                                    </div>
+                                </div>
+
+                                {/* Ticket / Admission Status */}
+                                <div className="card-meta-line">
+                                    <div className="mobile-label" style={{ fontSize: '11px', color: '#666', fontWeight: '900', textTransform: 'uppercase' }}>Admission</div>
+                                    <div style={{ textAlign: 'right', color: event.isTicketed ? '#00FF00' : '#888', fontWeight: 'bold', fontSize: '14px' }}>
+                                        {event.isTicketed ? `🎟️ $${event.ticketPrice}` : 'Free'}
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons Panel (Touch Target Compliant) */}
+                                <div className="flex gap-2 justify-end flex-wrap" style={{ borderTop: '1px dashed #222', paddingTop: '10px', width: '100%' }}>
+                                    <button onClick={() => handleTogglePin(event)} className="adminActionButton" style={{backgroundColor: event.isPinned ? '#FFD700' : '#333', color: event.isPinned ? '#000' : '#FFF', minHeight: '36px', minWidth: '36px'}} title="Pin to Cinemas">📌</button>
+                                    <button onClick={() => handleToggleFreeTag(event)} className="adminActionButton" style={{backgroundColor: event.isNowShowingFree ? '#00FF00' : '#333', color: event.isNowShowingFree ? '#000' : '#FFF', minHeight: '36px', minWidth: '36px'}} title="Enable Global Free Entry">🔓</button>
+                                    <button onClick={() => handleShowEditForm(event)} className="adminActionButton" style={{minHeight: '36px', padding: '0 12px'}}>Edit</button>
+                                    <button onClick={() => handleDuplicateEvent(event)} className="adminActionButton" style={{backgroundColor: '#007BFF', minHeight: '36px', padding: '0 12px'}}>Copy</button>
+                                    {event.status === 'completed' && !event.isPublishedAsVOD && (
+                                        <button onClick={() => handlePublishEvent(event)} className="adminActionButton" style={{backgroundColor: '#28a745', minHeight: '36px', padding: '0 12px'}}>Publish</button>
+                                    )}
+                                    <button onClick={() => handleDeleteEvent(event)} className="adminActionButton reject" style={{minHeight: '36px', padding: '0 12px'}}>Delete</button>
+                                </div>
+
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>

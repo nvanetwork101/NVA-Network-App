@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
-import { db, functions } from '../firebase';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { useState, useEffect, useMemo } from 'react';
+import { db, functions, storage } from '../firebase';
+import { doc, onSnapshot, updateDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 
-const EnrollmentPaymentScreen = ({ currentUser, showMessage, setActiveScreen, creatorProfile }) => {
+const EnrollmentPaymentScreen = ({ currentUser, showMessage, setActiveScreen, creatorProfile, pledgeContext }) => {
+    const isTicketCheckout = pledgeContext?.type === 'eventTicket';
     const [application, setApplication] = useState(null);
     const [config, setConfig] = useState(null);
     const [paymentId, setPaymentId] = useState('');
@@ -63,21 +65,53 @@ const EnrollmentPaymentScreen = ({ currentUser, showMessage, setActiveScreen, cr
             const base64Image = await toBase64(screenshot);
             setUploadProgress(60);
 
-            const submitPayment = httpsCallable(functions, 'submitEnrollmentPayment');
-            const result = await submitPayment({
-                userId: currentUser.uid,
-                paymentId: paymentId.trim(),
-                screenshotBase64: base64Image,
-                autoVerify: config?.autoVerifyPayments !== false
-            });
-            setUploadProgress(100);
+            if (isTicketCheckout) {
+                // --- BOX OFFICE TICKETING PATH (CLIENT-SIDE DIRECT) ---
+                // 1. Upload the receipt securely to Firebase Storage
+                const receiptRef = ref(storage, `receipts/tickets/${currentUser.uid}_${Date.now()}`);
+                await uploadString(receiptRef, base64Image, 'data_url');
+                const receiptUrl = await getDownloadURL(receiptRef);
+                setUploadProgress(80);
 
-            if (result.data.verified) {
-                showMessage("Payment verified! You are now enrolled.");
+                // 2. Write the pledge directly into the Box Office Waiting Room
+                await addDoc(collection(db, 'paymentPledges'), {
+                    type: 'ticket',
+                    eventId: pledgeContext.targetEventId,
+                    eventTitle: pledgeContext.targetEventTitle,
+                    userId: currentUser.uid,
+                    userEmail: currentUser.email || '',
+                    userName: creatorProfile?.displayName || 'Unknown',
+                    paymentId: paymentId.trim(),
+                    amount: pledgeContext.amount,
+                    receiptUrl: receiptUrl,
+                    status: 'pending',
+                    createdAt: serverTimestamp()
+                });
+
+                setUploadProgress(100);
+                showMessage("Ticket pledge submitted! Your ticket unlocks upon Box Office approval.");
+                
+                // Route back to the Premieres tab to wait
+                setActiveScreen('Discover');
+                setTimeout(() => window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' })), 50);
             } else {
-                showMessage("Payment submitted! Pending admin verification.");
+                // --- ENROLLMENT PATH ---
+                const submitPayment = httpsCallable(functions, 'submitEnrollmentPayment');
+                const result = await submitPayment({
+                    userId: currentUser.uid,
+                    paymentId: paymentId.trim(),
+                    screenshotBase64: base64Image,
+                    autoVerify: config?.autoVerifyPayments !== false
+                });
+                setUploadProgress(100);
+
+                if (result.data.verified) {
+                    showMessage("Payment verified! You are now enrolled.");
+                } else {
+                    showMessage("Payment submitted! Pending admin verification.");
+                }
+                setActiveScreen('CreatorDashboard');
             }
-            setActiveScreen('CreatorDashboard');
         } catch (error) {
             console.error("Payment submission error:", error);
             showMessage(`Failed to submit payment: ${error.message}`);
@@ -86,83 +120,120 @@ const EnrollmentPaymentScreen = ({ currentUser, showMessage, setActiveScreen, cr
         }
     };
 
-    if (!application || !config) {
+    // --- CONSOLIDATED SUBSCRIPTION & TRACK LOGIC ---
+    // ARCHITECTURAL FIX: Hooks must always be called before early returns
+    const isFilmClubRenewalWindow = useMemo(() => {
+        if (!creatorProfile?.subscriptionExpiresAt || !creatorProfile?.isFilmClub) return false;
+        const expiry = new Date(creatorProfile.subscriptionExpiresAt).getTime();
+        const now = Date.now();
+        const diffDays = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+        return diffDays <= 7; // Only active 7 days before or during grace period
+    }, [creatorProfile]);
+
+    if (!config || (!application && !isTicketCheckout)) {
         return (
             <div className="screenContainer" style={{ textAlign: 'center', paddingTop: '50px' }}>
-                <p className="heading">Loading...</p>
+                <p className="heading">Loading Checkout...</p>
             </div>
         );
     }
 
-    const items = application.selectedOptions.map(opt => ({
-        label: opt === 'filmClub' ? 'Film Club Classes' : 'Docu-Series Challenge',
-        amount: opt === 'filmClub' ? (config.filmClubFee || 2500) : (config.docuSeriesFee || 500)
-    }));
+    let items = [];
+    let displayTotal = 0;
+    
+    // NVA DUAL-PURPOSE CHECKOUT LOGIC
+    if (isTicketCheckout) {
+        const ticketAmount = pledgeContext.amount || 0;
+        items = [{
+            label: `🎟️ Box Office Ticket: ${pledgeContext.targetEventTitle}`,
+            amount: ticketAmount
+        }];
+        displayTotal = ticketAmount;
+    } else {
+        // FILTER: Only bill for tracks they don't have, or Film Club if it's renewal time.
+        items = (application?.selectedOptions || [])
+            .filter(opt => {
+                if (opt === 'filmClub') {
+                    const isGold = creatorProfile?.badges?.includes("Gold Club");
+                    if (isGold) return false;
+                    const isActive = creatorProfile?.isFilmClub || creatorProfile?.isClassMember;
+                    return !(isActive && !isFilmClubRenewalWindow);
+                }
+                if (opt === 'docuSeries') {
+                    return !creatorProfile?.isContestant;
+                }
+                return true;
+            })
+            .map(opt => ({
+                id: opt,
+                label: opt === 'filmClub' ? (isFilmClubRenewalWindow ? 'Film Club Renewal' : 'Film Club Classes') : 'Docu-Series Challenge',
+                amount: opt === 'filmClub' ? (config.filmClubFee || 2500) : (config.docuSeriesFee || 500)
+            }));
+        // RECALCULATE TOTAL: Prevents charging for blocked tracks
+        displayTotal = items.reduce((sum, item) => sum + item.amount, 0) - (items.length === 2 ? (config.bothDiscount || 0) : 0);
+    }
 
     return (
-        <div className="screenContainer">
-            <p className="heading">Complete Your Enrollment</p>
-            <p className="subHeading">Your application was approved! Make your payment to finalize enrollment.</p>
+        <div className="screenContainer" style={{ maxWidth: '600px', margin: '0 auto' }}>
+            <p className="heading" style={{ color: isTicketCheckout ? '#FFD700' : '#FFF', fontSize: '28px' }}>
+                {isTicketCheckout ? 'Box Office Checkout' : 'Complete Your Enrollment'}
+            </p>
+            <p className="subHeading" style={{ marginBottom: '30px' }}>
+                {isTicketCheckout 
+                    ? `Secure your access to "${pledgeContext.targetEventTitle}".` 
+                    : 'Your application was approved! Make your payment to finalize enrollment.'}
+            </p>
 
             {/* Amount Breakdown */}
-            <div style={{
-                backgroundColor: '#1A1A1A',
-                borderRadius: '12px',
-                padding: '20px',
-                marginBottom: '20px'
-            }}>
-                <p style={{ margin: '0 0 15px', fontSize: '16px', fontWeight: 'bold', color: '#FFF' }}>
-                    Payment Summary
-                </p>
-                {items.map((item, i) => (
-                    <div key={i} style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        marginBottom: '10px',
-                        fontSize: '14px'
-                    }}>
-                        <span style={{ color: '#AAA' }}>{item.label}</span>
-                        <span style={{ color: '#FFF' }}>${item.amount.toLocaleString()} GYD</span>
+            <div style={{ backgroundColor: '#1A1A1A', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+                <p style={{ margin: '0 0 15px', fontSize: '16px', fontWeight: 'bold', color: '#FFF' }}>Payment Summary</p>
+                
+                {items.length > 0 ? items.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', fontSize: '14px' }}>
+                        <span style={{ color: '#AAA', flex: 1, paddingRight: '15px' }}>{item.label}</span>
+                        <div style={{ textAlign: 'right' }}>
+                            <span style={{ color: '#FFF', fontWeight: 'bold' }}>${item.amount.toLocaleString()} GYD</span>
+                        </div>
                     </div>
-                ))}
-                {items.length === 2 && config.bothDiscount > 0 && (
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        marginBottom: '10px',
-                        fontSize: '14px'
-                    }}>
+                )) : <p style={{ color: '#888', fontSize: '13px' }}>No active payments required.</p>}
+
+                {!isTicketCheckout && items.length === 2 && config.bothDiscount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '14px' }}>
                         <span style={{ color: '#00FF00' }}>Bundle Discount</span>
                         <span style={{ color: '#00FF00' }}>-${config.bothDiscount.toLocaleString()} GYD</span>
                     </div>
                 )}
-                <div style={{
-                    borderTop: '1px solid #444',
-                    marginTop: '10px',
-                    paddingTop: '10px',
-                    display: 'flex',
-                    justifyContent: 'space-between'
-                }}>
-                    <span style={{ color: '#FFF', fontWeight: 'bold' }}>Total</span>
-                    <span style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '20px' }}>
-                        ${application.totalAmount?.toLocaleString()} GYD
+                
+                <div style={{ borderTop: '1px solid #444', marginTop: '10px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#FFF', fontWeight: 'bold' }}>Total Due Now</span>
+                    <span style={{ color: '#FFD700', fontWeight: '900', fontSize: '24px' }}>
+                        ${displayTotal.toLocaleString()} GYD
                     </span>
                 </div>
             </div>
 
+            {/* TRACK PROTECTION BANNERS (HIDDEN DURING TICKET CHECKOUT) */}
+            {!isTicketCheckout && creatorProfile?.isFilmClub && !isFilmClubRenewalWindow && application?.selectedOptions.includes('filmClub') && (
+                <div style={{ backgroundColor: 'rgba(0, 255, 255, 0.08)', border: '1px solid #00FFFF', borderRadius: '10px', padding: '12px', marginBottom: '20px' }}>
+                    <p style={{ color: '#00FFFF', fontSize: '12px', margin: 0, textAlign: 'center' }}>
+                        🛡️ <strong>Film Club Active:</strong> Your membership is current. Renewal payment opens 7 days before your expiration date.
+                    </p>
+                </div>
+            )}
+
+            {!isTicketCheckout && creatorProfile?.isContestant && application?.selectedOptions.includes('docuSeries') && (
+                <div style={{ backgroundColor: 'rgba(255, 215, 0, 0.08)', border: '1px solid #FFD700', borderRadius: '10px', padding: '12px', marginBottom: '20px' }}>
+                    <p style={{ color: '#FFD700', fontSize: '12px', margin: 0, textAlign: 'center' }}>
+                        🏆 <strong>Contestant Status Active:</strong> You are already registered for the current Docu-Series Challenge.
+                    </p>
+                </div>
+            )}
+
             {/* MMG Instructions */}
-            <div style={{
-                backgroundColor: 'rgba(255, 215, 0, 0.08)',
-                border: '1px solid #FFD700',
-                borderRadius: '12px',
-                padding: '20px',
-                marginBottom: '20px'
-            }}>
-                <p style={{ margin: '0 0 10px', fontSize: '16px', fontWeight: 'bold', color: '#FFD700' }}>
-                    MMG Payment Instructions
-                </p>
+            <div style={{ backgroundColor: 'rgba(255, 215, 0, 0.05)', border: '1px solid #FFD700', borderRadius: '12px', padding: '20px', marginBottom: '20px' }}>
+                <p style={{ margin: '0 0 10px', fontSize: '16px', fontWeight: 'bold', color: '#FFD700' }}>MMG Payment Instructions</p>
                 <p style={{ color: '#CCC', fontSize: '14px', lineHeight: 1.6, margin: '0 0 10px' }}>
-                    Send <strong style={{ color: '#FFF' }}>${application.totalAmount?.toLocaleString()} GYD</strong> via MMG to:
+                    Send <strong style={{ color: '#FFF' }}>${displayTotal.toLocaleString()} GYD</strong> via MMG to:
                 </p>
                 <div style={{
                     backgroundColor: '#0A0A0A',
@@ -253,10 +324,19 @@ const EnrollmentPaymentScreen = ({ currentUser, showMessage, setActiveScreen, cr
 
             <button
                 className="button"
-                onClick={() => setActiveScreen('CreatorDashboard')}
-                style={{ backgroundColor: '#3A3A3A', marginTop: '20px' }}
+                onClick={() => {
+                    if (isTicketCheckout) {
+                        setActiveScreen('Discover');
+                        setTimeout(() => window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' })), 50);
+                    } else {
+                        setActiveScreen('CreatorDashboard');
+                    }
+                }}
+                style={{ backgroundColor: '#3A3A3A', marginTop: '20px', border: '1px solid #555' }}
             >
-                <span className="buttonText light">Back to Dashboard</span>
+                <span className="buttonText light">
+                    {isTicketCheckout ? 'Cancel Checkout' : 'Back to Dashboard'}
+                </span>
             </button>
         </div>
     );

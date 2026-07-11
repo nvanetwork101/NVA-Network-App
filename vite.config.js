@@ -21,9 +21,8 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg}']
       },
       manifest: {
-        name: 'NVA Network',
-        short_name: 'NVA Network',
-        description: 'Caribbean Content to a Global Stage.',
+        name: 'NVA Network', short_name: 'NVA Network',
+        description: 'Caribbean Caribbean Content to a Global Stage.',
         theme_color: '#121212',
         background_color: '#121212',
         display: 'standalone',
@@ -44,4 +43,15 @@ export default defineConfig({
       }
     })
   ],
+  // THE VITEST CONFIGURATION BINDING:
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/setupTests.js',
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      'functions/**', // THE FIX: Prevent Vitest from trying to compile and run your backend Jest suites!
+    ],
+  },
 })

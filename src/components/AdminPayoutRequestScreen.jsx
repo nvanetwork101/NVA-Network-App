@@ -1,67 +1,163 @@
 // src/components/AdminPayoutRequestScreen.jsx
+import React, { useState } from 'react';
+import { db, doc, updateDoc, setDoc, deleteDoc, functions, httpsCallable } from '../firebase'; // FIXED: Added missing imports
+import { serverTimestamp } from 'firebase/firestore';
 
-import React from 'react';
-import { db, functions, httpsCallable, doc, updateDoc } from '../firebase';
-import formatCurrency from '../utils/formatCurrency';
+const AdminPayoutRequestScreen = ({ requests, showMessage, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction }) => {
+    const [txIds, setTxIds] = useState({});
 
-const AdminPayoutRequestScreen = ({ 
-    requests, 
-    showMessage, 
-    setShowConfirmationModal, 
-    setConfirmationTitle, 
-    setConfirmationMessage, 
-    setOnConfirmationAction,
-    currencyRates,
-    selectedCurrency
-}) => {
+    // Track A: Handle cash-out requests securely (Deducts totalEarnings and Archives MMG receipt)
+    const handleProcessCashPayout = async (req) => {
+        const mmgId = txIds[req.id];
+        if (!mmgId) { showMessage("MMG TRANSACTION ID REQUIRED"); return; }
+        
+        const systemReceiptId = `NVA-REC-${req.id.slice(0, 8).toUpperCase()}`;
 
-    const handleUpdateRequest = async (requestId, newStatus) => {
-        showMessage(`Updating request to "${newStatus}"...`);
         try {
-            const requestRef = doc(db, "payoutRequests", requestId);
-            await updateDoc(requestRef, { status: newStatus });
-            showMessage("Request status updated successfully.");
+            await setDoc(doc(db, "payoutHistory", req.id), {
+                ...req,
+                systemReceiptId,
+                adminTxId: mmgId,
+                status: 'paid',
+                processedAt: new Date().toISOString(),
+                searchIndex: [req.creatorName.toLowerCase(), req.mmgNumber, mmgId.toLowerCase(), systemReceiptId.toLowerCase()]
+            });
+
+            await updateDoc(doc(db, "creators", req.userId), {
+                totalEarnings: 0,
+                payoutStatus: 'none',
+                lastPayoutDate: serverTimestamp()
+            });
+
+            await deleteDoc(doc(db, "payoutRequests", req.id));
+            showMessage(`PAID & ARCHIVED: ${systemReceiptId}`);
         } catch (error) {
-            showMessage(`Error updating status: ${error.message}`);
+            showMessage("ERROR: Check Firestore Permissions");
         }
     };
 
-    const confirmUpdate = (request, newStatus) => {
-        const action = newStatus === 'paid' ? 'Paid' : 'Dismissed';
-        setConfirmationTitle(`Mark as ${action}?`);
-        setConfirmationMessage(`Are you sure you want to mark the payout request for "${request.campaignTitle}" as ${newStatus}?`);
-        setOnConfirmationAction(() => () => handleUpdateRequest(request.campaignId, newStatus));
-        setShowConfirmationModal(true);
+    // Track B: Handle ledger sweeps through secure Cloud Function (requires no manual MMG ID input)
+    const handleProcessLedgerSweep = async (req) => {
+        showMessage("Processing dynamic ledger sweep...");
+        try {
+            const approveSweepCallable = httpsCallable(functions, 'approveBoxOfficeSweep');
+            const result = await approveSweepCallable({ requestId: req.id });
+            
+            showMessage(result.data.message);
+        } catch (error) {
+            showMessage(`Sweep Failed: ${error.message}`);
+        }
     };
 
-    if (requests.length === 0) {
-        return <p className="dashboardItem">There are no pending payout requests.</p>;
-    }
+    const handleDismissRequest = async (reqId) => {
+        if (!window.confirm("Are you sure you want to dismiss this request?")) return;
+        try {
+            await deleteDoc(doc(db, "payoutRequests", reqId));
+            showMessage("Request dismissed.");
+        } catch(e) { showMessage("Dismissal failed."); }
+    };
+
+    if (requests.length === 0) return <p style={{textAlign: 'center', padding: '40px', color: '#888', fontSize: '18px'}}>Zero Pending Payouts</p>;
 
     return (
-        <div className="dashboardContentList">
-            {requests.map(req => (
-                <div key={req.campaignId} className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch'}}>
-                    <div>
-                        <p className="adminDashboardItemTitle">{req.campaignTitle}</p>
-                        <p className="text-sm" style={{color:'#CCC'}}>
-                            Requested by: <span style={{color: '#FFD700'}}>{req.creatorName}</span>
-                        </p>
-                        <p className="text-sm" style={{color:'#CCC'}}>
-                            Amount Raised: <span style={{color: '#00FFFF'}}>{formatCurrency(req.amountRaised, selectedCurrency, currencyRates)}</span>
-                        </p>
-                         <p className="text-sm" style={{color:'#AAA'}}>
-                            Requested On: {new Date(req.requestedAt.toDate()).toLocaleString()}
-                        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '20px', padding: '10px' }}>
+            {requests.map(req => {
+                const systemIdPreview = `NVA-REC-${req.id.slice(0, 8).toUpperCase()}`;
+                const isSweep = req.type === 'boxOfficeSweep';
+
+                return (
+                    <div key={req.id} style={{ background: '#111', border: isSweep ? '1px solid #00FFFF' : '1px solid #333', borderRadius: '12px', overflow: 'hidden' }}>
+                        {/* Header: System Info - High Contrast */}
+                        <div style={{ background: '#222', padding: '10px 15px', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #333' }}>
+                            <span style={{ color: isSweep ? '#00FFFF' : '#FFD700', fontSize: '11px', fontWeight: '900' }}>
+                                {isSweep ? '🎟️ INTERNAL LEDGER SWEEP' : `SYSTEM ID: ${systemIdPreview}`}
+                            </span>
+                            <span style={{ color: '#FFF', fontSize: '11px', fontWeight: '700' }}>
+                                {req.requestedAt?.toDate ? new Date(req.requestedAt.toDate()).toLocaleString() : 'N/A'}
+                            </span>
+                        </div>
+
+                        <div style={{ padding: '15px' }}>
+                            {/* Amount & Name Section */}
+                            <div style={{ marginBottom: '15px' }}>
+                                <p style={{ color: '#00FF00', fontSize: '28px', fontWeight: '900', margin: 0 }}>
+                                    {req.amount?.toLocaleString()} <span style={{fontSize: '14px'}}>GYD</span>
+                                </p>
+                                <p style={{ color: '#FFF', fontSize: '16px', fontWeight: '800', margin: '4px 0' }}>{req.creatorName}</p>
+                            </div>
+
+                            {isSweep ? (
+                                /* PATHWAY B: INTERNAL SWEEP FLOW */
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                    <div style={{ background: '#000', padding: '12px', borderRadius: '8px', border: '1px dashed #00FFFF' }}>
+                                        <p style={{ color: '#00FFFF', fontSize: '10px', fontWeight: '900', margin: '0 0 4px 0', textTransform: 'uppercase' }}>SOURCE & FILM BREAKDOWN</p>
+                                        <p style={{ color: '#FFF', fontSize: '14px', fontWeight: '700', margin: 0, lineHeight: '1.4' }}>{req.campaignTitle || 'General Arena Earnings'}</p>
+                                        <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #222', display: 'flex', justifyContent: 'space-between' }}>
+                                            <span style={{ color: '#888', fontSize: '10px', fontWeight: 'bold' }}>AUDIT TYPE: DYNAMIC SWEEP</span>
+                                            <span style={{ color: '#00FF00', fontSize: '10px', fontWeight: 'bold' }}>SECURE CLOUD ROUTE</span>
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                                        <button 
+                                            onClick={() => handleProcessLedgerSweep(req)}
+                                            style={{ flex: 1.5, padding: '12px', background: '#00FFFF', color: '#000', border: 'none', borderRadius: '6px', fontWeight: '900', fontSize: '13px', cursor: 'pointer' }}
+                                        >
+                                            APPROVE INTERNAL SWEEP
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDismissRequest(req.id)}
+                                            style={{ flex: 1, padding: '12px', background: '#333', color: '#FFF', border: 'none', borderRadius: '6px', fontWeight: '800', fontSize: '13px', cursor: 'pointer' }}
+                                        >
+                                            DISMISS
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* PATHWAY A: HARD CASH OUT FLOW */
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', background: '#000', padding: '12px', borderRadius: '8px' }}>
+                                        <div>
+                                            <p style={{ color: '#FFD700', fontSize: '10px', fontWeight: '900', margin: 0 }}>MMG NUMBER</p>
+                                            <p style={{ color: '#FFF', fontSize: '14px', fontWeight: '700', margin: 0 }}>{req.mmgNumber}</p>
+                                        </div>
+                                        <div>
+                                            <p style={{ color: '#FFD700', fontSize: '10px', fontWeight: '900', margin: 0 }}>LEGAL NAME</p>
+                                            <p style={{ color: '#FFF', fontSize: '14px', fontWeight: '700', margin: 0 }}>{req.fullName}</p>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginBottom: '5px' }}>
+                                        <p style={{ color: '#AAA', fontSize: '10px', fontWeight: '800', marginBottom: '5px' }}>MMG TRANSACTION REFERENCE</p>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Enter MMG reference ID..." 
+                                            value={txIds[req.id] || ''}
+                                            onChange={(e) => setTxIds({...txIds, [req.id]: e.target.value})}
+                                            style={{ width: '100%', padding: '10px', background: '#000', border: '1px solid #444', color: '#00FF00', borderRadius: '6px', fontWeight: 'bold' }}
+                                        />
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                        <button 
+                                            onClick={() => handleProcessCashPayout(req)}
+                                            style={{ flex: 1.5, padding: '12px', background: '#22C55E', color: '#000', border: 'none', borderRadius: '6px', fontWeight: '900', fontSize: '13px', cursor: 'pointer' }}
+                                        >
+                                            APPROVE & ARCHIVE PAYOUT
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDismissRequest(req.id)}
+                                            style={{ flex: 1, padding: '12px', background: '#333', color: '#FFF', border: 'none', borderRadius: '6px', fontWeight: '800', fontSize: '13px', cursor: 'pointer' }}
+                                        >
+                                            DISMISS
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                    <div style={{display: 'flex', justifyContent: 'flex-end', gap: '10px', width: '100%', marginTop: '10px', borderTop: '1px solid #2A2A2A', paddingTop: '10px'}}>
-                        <button className="adminActionButton" style={{backgroundColor: '#555'}} onClick={() => confirmUpdate(req, 'dismissed')}>Dismiss</button>
-                        <button className="adminActionButton approve" onClick={() => confirmUpdate(req, 'paid')}>Mark as Paid</button>
-                    </div>
-                </div>
-            ))}
+                );
+            })}
         </div>
     );
 };
-
 export default AdminPayoutRequestScreen;

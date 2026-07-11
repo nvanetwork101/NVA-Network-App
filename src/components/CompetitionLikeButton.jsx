@@ -74,22 +74,26 @@ function CompetitionLikeButton({ competition, entry, currentUser, showMessage })
             onClick={handleLike}
             disabled={isLoading || isProcessing}
             style={{
-                background: 'rgba(10, 10, 10, 0.7)',
-                border: '1px solid #00FFFF',
-                borderRadius: '50px',
-                padding: '0 10px',
-                height: '32px',
+                background: isLiked ? '#00FFFF' : 'rgba(255, 255, 255, 0.05)',
+                border: isLiked ? 'none' : '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '12px',
+                padding: '8px 16px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '6px',
-                cursor: 'pointer'
+                gap: '8px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                transform: isProcessing ? 'scale(0.95)' : 'scale(1)',
+                boxShadow: isLiked ? '0 0 15px rgba(0, 255, 255, 0.4)' : 'none'
             }}
         >
-            <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: isLiked ? '#00FFFF' : '#FFF' }}>
+            <svg viewBox="0 0 24 24" style={{ width: '18px', height: '18px', fill: isLiked ? '#000' : '#FFF', transition: 'fill 0.2s' }}>
                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
             </svg>
-            <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>{likeCount}</span>
+            <span style={{ color: isLiked ? '#000' : '#FFF', fontSize: '14px', fontWeight: '900' }}>
+                {isProcessing ? '...' : isLiked ? 'VOTED' : 'VOTE'} {likeCount > 0 && `(${likeCount})`}
+            </span>
         </button>
     );
 }

@@ -15,7 +15,7 @@ admin.initializeApp({
     storageBucket: "nvanetworkapp.firebasestorage.app"
 });
 
-const PLATFORM_FEE_PERCENTAGE = 0.07; // 7% platform fee
+const PLATFORM_FEE_PERCENTAGE = 0.15; // Updated to 15% NVA CenterStage Fee
 
     // =====================================================================
 // ============ START: SECURE USER PROFILE CREATION ====================
@@ -87,28 +87,59 @@ exports.createUserProfile = onCall(async (request) => {
 
 exports.sendNotificationOnCreate = onDocumentCreated("notifications/{notificationId}", async (event) => {
     const notificationData = event.data.data();
+    if (!notificationData) return null;
+
     const notificationId = event.params.notificationId;
     const notificationRef = event.data.ref;
+    const db = admin.firestore();
 
-    // --- COST-SAVING STEP 1: VALIDATE DELIVERY TYPE ---
-    // If this notification isn't meant for push, or has no data, exit immediately.
-    if (!notificationData || !notificationData.deliveryType?.includes('push')) {
-        // Update status to 'sent' for non-push notifications to mark them as processed.
-        if (notificationData) {
-            await notificationRef.update({ status: "sent", processedAt: new Date() });
+    const now = new Date();
+    const notificationType = notificationData.notificationType || "";
+    const deliveryType = notificationData.deliveryType || [];
+
+    // --- STEP 1: RESOLVE CATEGORY LIFESPAN (TTL) ---
+    // Category 1: The Vault (Financials, Approvals & Admissions) -> Excluded from TTL (No expiry)
+    const vaultTypes = [
+        "Pledge Approved", "GIFT_RECEIVED", "ENTRY_APPROVED", "MONETIZATION_APPROVED",
+        "PAYOUT_PAID", "PAYOUT_DISMISSED", "OPPORTUNITY_APPROVED", "OPPORTUNITY_REJECTED",
+        "CONTENT_REMOVED", "COOLDOWN_LIFTED"
+    ];
+
+    let expiresAt = null;
+
+    if (vaultTypes.includes(notificationType)) {
+        expiresAt = null; // Stored indefinitely
+    } else if (!deliveryType.includes("inbox")) {
+        // Category 3 & 4: Transient alerts & DMs -> Auto-expire after 2 hours to prevent database clutter
+        expiresAt = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+    } else {
+        // Category 2: Time-Sensitive General Notifications -> Auto-expire after 7 days
+        expiresAt = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
+    }
+
+    // --- STEP 2: HANDLE NON-PUSH PAYLOADS IMMEDIATELY ---
+    if (!deliveryType.includes('push')) {
+        const updates = { status: "sent", processedAt: now };
+        if (expiresAt) {
+            updates.expiresAt = admin.firestore.Timestamp.fromDate(expiresAt);
         }
+        await notificationRef.update(updates);
         return null;
     }
 
+    // --- STEP 3: EXECUTE PUSH NOTIFICATION DELIVERY ---
     const { userId, title, body, link } = notificationData;
     if (!userId || !title || !body) {
-        logger.warn(`[Push Send] Notification '${notificationId}' is missing required fields (userId, title, or body).`, { data: notificationData });
-        await notificationRef.update({ status: "error", errorMessage: "Missing required fields.", processedAt: new Date() });
+        logger.warn(`[Push Send] Notification '${notificationId}' is missing required fields (userId, title, or body).`);
+        const updates = { status: "error", errorMessage: "Missing required fields.", processedAt: now };
+        if (expiresAt) {
+            updates.expiresAt = admin.firestore.Timestamp.fromDate(expiresAt);
+        }
+        await notificationRef.update(updates);
         return null;
     }
 
     logger.info(`[Push Send] Processing push notification '${notificationId}' for user '${userId}'.`);
-    const db = admin.firestore();
     const userRef = db.collection("creators").doc(userId);
 
     try {
@@ -120,17 +151,37 @@ exports.sendNotificationOnCreate = onDocumentCreated("notifications/{notificatio
         const tokens = userDoc.data().fcmTokens || [];
         if (tokens.length === 0) {
             logger.info(`[Push Send] User '${userId}' has no FCM tokens. Marking as sent.`);
-            await notificationRef.update({ status: "sent", processedAt: new Date() });
+            const updates = { status: "sent", processedAt: now };
+            if (expiresAt) {
+                updates.expiresAt = admin.firestore.Timestamp.fromDate(expiresAt);
+            }
+            await notificationRef.update(updates);
             return null;
         }
 
+        // Retrieve the user's active unread badge count
+        const unreadCount = userDoc.data().unreadNotificationCount || 0;
+
         const message = {
-            // This is now a "data-only" message. It has no 'notification' or 'webpush' property.
-            // This guarantees that onBackgroundMessage in the service worker will be triggered.
+            // 1. Notification block forces the popup to appear on screen
+            notification: {
+                title: title,
+                body: body,
+            },
+            // 2. Data block keeps your frontend routing intact
             data: {
                 title: title,
                 body: body,
                 link: link || '/'
+            },
+            // 3. APNS block updates the iOS home screen icon badge count natively
+            apns: {
+                payload: {
+                    aps: {
+                        badge: unreadCount,
+                        sound: "default"
+                    }
+                }
             },
             tokens: tokens,
         };
@@ -154,12 +205,20 @@ exports.sendNotificationOnCreate = onDocumentCreated("notifications/{notificatio
             logger.info(`[Push Send] Cleaned up ${tokensToDelete.length} stale tokens for user '${userId}'.`);
         }
 
-        await notificationRef.update({ status: "sent", processedAt: new Date() });
+        const updates = { status: "sent", processedAt: now };
+        if (expiresAt) {
+            updates.expiresAt = admin.firestore.Timestamp.fromDate(expiresAt);
+        }
+        await notificationRef.update(updates);
         logger.info(`[Push Send] Successfully sent push notification '${notificationId}' to user '${userId}'.`);
 
     } catch (error) {
         logger.error(`[Push Send] A fatal error occurred while processing notification '${notificationId}' for user '${userId}'`, { error: error.message });
-        await notificationRef.update({ status: "error", errorMessage: error.message, processedAt: new Date() });
+        const updates = { status: "error", errorMessage: error.message, processedAt: now };
+        if (expiresAt) {
+            updates.expiresAt = admin.firestore.Timestamp.fromDate(expiresAt);
+        }
+        await notificationRef.update(updates);
     }
     return null;
 });
@@ -216,7 +275,7 @@ exports.onUserStatusChanged = onValueWritten("/status/{uid}", async (event) => {
 // =========== START: GHOST CLEANUP FUNCTION ===========
 exports.cleanupGhostArtifacts = onCall(async (request) => {
     // Security Check: Only an admin can run this destructive operation.
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
       throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
 
@@ -315,7 +374,7 @@ exports.approvePledge = onCall(async (request) => {
   const uid = request.auth.uid;
   if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in to perform this action."); }
 
-  if (request.auth.token.admin !== true) {
+  if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
     throw new HttpsError("permission-denied", "You must be an admin to approve pledges.");
   }
   
@@ -324,10 +383,12 @@ exports.approvePledge = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "The function must be called with 'pledgeId' and 'appId'.");
   }
 
-  logger.info(`Admin '${uid}' initiated approval for pledge '${pledgeId}' in app '${appId}'.`);
+  logger.info(`Admin '${uid}' initiated approval for pledge '${pledgeId}'.`);
   const db = admin.firestore();
   
   try {
+    let finalPledgeData = null;
+
     await db.runTransaction(async (transaction) => {
       const pledgeRef = db.collection("paymentPledges").doc(pledgeId);
       const pledgeDoc = await transaction.get(pledgeRef);
@@ -336,215 +397,320 @@ exports.approvePledge = onCall(async (request) => {
       if (pledgeDoc.data().status !== "pending") { throw new HttpsError("failed-precondition", `Pledge is not in 'pending' state.`); }
 
       const pledgeData = pledgeDoc.data();
+      finalPledgeData = pledgeData; // Store for notification block
       const userRef = db.collection("creators").doc(pledgeData.userId);
       const approvalTimestamp = new Date();
-      const notificationsRef = db.collection("notifications");
       
-      if (pledgeData.paymentType === 'donation') {
-        const campaignRef = db.collection(`artifacts/${appId}/public/data/campaigns`).doc(pledgeData.targetCampaignId);
-        const campaignDoc = await transaction.get(campaignRef);
+      // --- NVA CENTERSTAGE GIFT TOKEN ENGINE ---
+      if (pledgeData.paymentType === 'giftToken') {
+        const recipientId = pledgeData.targetUserId;
+        
+        // Prevent self-gifting to protect transactional integrity and abuse
+        if (pledgeData.userId === recipientId) {
+            throw new HttpsError("failed-precondition", "Users cannot send gifts to themselves.");
+        }
+        
         const grossAmount = pledgeData.amount;
         const netAmount = Math.round((grossAmount * (1 - PLATFORM_FEE_PERCENTAGE)) * 100) / 100;
         
-        transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
-        transaction.update(userRef, { totalApproved: admin.firestore.FieldValue.increment(1), updatedAt: approvalTimestamp.toISOString() });
-        transaction.update(campaignRef, { raised: admin.firestore.FieldValue.increment(netAmount) });
-
-        const broadcastNotification = {
-            broadcastType: "DONATION", 
-            userName: pledgeData.userName,
-            amount: pledgeData.amount,
-            targetCampaignTitle: pledgeData.targetCampaignTitle,
-            message: `${pledgeData.userName} just supported the "${pledgeData.targetCampaignTitle}" campaign!`,
-            link: "/AllCampaigns", 
-            timestamp: approvalTimestamp
-        };
-        transaction.set(db.collection("broadcast_notifications").doc(), broadcastNotification);
-
-      } else if (pledgeData.paymentType === 'premium') {
-        const premiumExpiresAt = new Date(approvalTimestamp);
-        premiumExpiresAt.setMonth(premiumExpiresAt.getMonth() + 1);
-        transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
-        transaction.update(userRef, { totalApproved: admin.firestore.FieldValue.increment(1), updatedAt: approvalTimestamp.toISOString(), premiumExpiresAt: premiumExpiresAt });
-                
-      } else if (pledgeData.paymentType === 'promotedStatus') {
-        transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
-
-        const newStatusRef = db.collection("promotedStatuses").doc();
-        transaction.set(newStatusRef, {
-            postedByUid: pledgeData.userId,
-            status: 'content_pending',
-            createdAt: approvalTimestamp,
-            startTime: admin.firestore.Timestamp.fromDate(new Date(pledgeData.scheduledStartTime)),
-            expiresAt: admin.firestore.Timestamp.fromDate(new Date(pledgeData.scheduledEndTime)),
-            pledgeId: pledgeId
-        });
-              
-      } else if (pledgeData.paymentType === 'eventTicket') {
-        const eventId = pledgeData.targetEventId;
-        const ticketPrice = pledgeData.amount;
+        const recipientRef = db.collection("creators").doc(recipientId);
+        const buyerRef = db.collection("creators").doc(pledgeData.userId);
         
-        // --- ALL READS MUST HAPPEN FIRST ---
-        const finalRecipientId = pledgeData.recipientId || pledgeData.userId;
-        const isGift = !!pledgeData.recipientId;
-        const buyerUserRef = db.collection("creators").doc(pledgeData.userId); // Explicitly reference the buyer
+        const now = new Date();
+        const thirtyDaysFromNow = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+        const twentyFourHoursFromNow = new Date(now.getTime() + (24 * 60 * 60 * 1000));
 
-        const recipientRef = db.collection("creators").doc(finalRecipientId);
-        const [eventDoc, recipientDoc] = await Promise.all([
-            eventId ? transaction.get(db.collection("events").doc(eventId)) : Promise.resolve(null),
-            transaction.get(recipientRef)
+        // 1. ALL TRANSACTION READS FIRST (Strictly enforced)
+        const [recipientDoc, buyerDoc] = await Promise.all([
+            transaction.get(recipientRef),
+            transaction.get(buyerRef)
         ]);
         
-        if (!recipientDoc.exists) {
-            throw new HttpsError("not-found", `The gift recipient with ID '${finalRecipientId}' does not exist. Cannot approve pledge.`);
-        }
-        const recipientData = recipientDoc.data();
+        if (!recipientDoc.exists) { throw new HttpsError("not-found", "Actor profile not found."); }
+        if (!buyerDoc.exists) { throw new HttpsError("not-found", "Buyer profile not found."); }
 
-        // --- ALL WRITES HAPPEN AFTER THE READS ---
+        let compDoc = null;
+        if (pledgeData.paymentType === 'competitionEntry') {
+            const compRef = db.collection("competitions").doc(pledgeData.competitionId);
+            compDoc = await transaction.get(compRef);
+            if (!compDoc.exists) { throw new HttpsError("not-found", "Competition not found."); }
+        }
+
+        const recipientData = recipientDoc.data();
+        const activeTeamTag = recipientData.teamTag;
+        const isTeamGift = !!activeTeamTag;
+
+        let teamSnapshot = null;
+        if (isTeamGift) {
+            const teamQuery = db.collection("creators").where("isContestant", "==", true).where("teamTag", "==", activeTeamTag);
+            teamSnapshot = await transaction.get(teamQuery);
+        }
+
+        // 2. TRANSACTION CALCULATIONS SECOND
+        const buyerData = buyerDoc.data();
+        const currentLifetimeSpent = buyerData.lifetimeSpent || 0;
+        const newLifetimeSpent = currentLifetimeSpent + grossAmount;
+        let patronBadge = null;
+        
+        if (newLifetimeSpent >= 50000) patronBadge = 'Patron of the Arts (Legend)';
+        else if (newLifetimeSpent >= 15000) patronBadge = 'Patron of the Arts (Gold)';
+        else if (newLifetimeSpent >= 5000) patronBadge = 'Patron of the Arts (Silver)';
+        else if (newLifetimeSpent >= 1000) patronBadge = 'Patron of the Arts (Bronze)';
+
+        const buyerBadges = buyerData.badges || [];
+        const cleanBadges = buyerBadges.filter(b => !b.startsWith('Patron of the Arts'));
+        if (patronBadge) cleanBadges.push(patronBadge);
+
+        const giftFieldPath = `giftInventory.${pledgeData.giftName}`;
+
+        // 3. ALL TRANSACTION WRITES LAST
+        transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
+
+        transaction.update(buyerRef, {
+            patronStripeExpiry: thirtyDaysFromNow.toISOString(),
+            lifetimeSpent: newLifetimeSpent,
+            badges: cleanBadges
+        });
+
+        if (isTeamGift && teamSnapshot) {
+            const memberCount = teamSnapshot.size > 0 ? teamSnapshot.size : 1;
+            const splitEarnings = netAmount / memberCount;
+
+            teamSnapshot.forEach(memberDoc => {
+                const updates = {
+                    giftsReceived: FieldValue.increment(1),
+                    [giftFieldPath]: FieldValue.increment(1),
+                    receivedGifts: FieldValue.arrayUnion({
+                        id: pledgeId,
+                        giftName: pledgeData.giftName,
+                        expiresAt: thirtyDaysFromNow.toISOString()
+                    })
+                };
+                
+                if (pledgeData.isFilmmakerDonation) {
+                    updates["boxOfficeLedger.filmDonations"] = FieldValue.increment(splitEarnings);
+                } else {
+                    updates.totalEarnings = FieldValue.increment(splitEarnings);
+                }
+                transaction.update(memberDoc.ref, updates);
+            });
+        } else {
+            const updates = {
+                giftsReceived: FieldValue.increment(1),
+                supportedTokenExpiry: twentyFourHoursFromNow.toISOString(),
+                [giftFieldPath]: FieldValue.increment(1),
+                receivedGifts: FieldValue.arrayUnion({
+                    id: pledgeId,
+                    giftName: pledgeData.giftName,
+                    expiresAt: thirtyDaysFromNow.toISOString()
+                })
+            };
+
+            if (pledgeData.isFilmmakerDonation) {
+                updates["boxOfficeLedger.filmDonations"] = FieldValue.increment(netAmount);
+            } else {
+                updates.totalEarnings = FieldValue.increment(netAmount);
+            }
+            transaction.update(recipientRef, updates);
+        }
+
+        if (pledgeData.competitionId && pledgeData.entryId) {
+            const entryRef = db.doc(`competitions/${pledgeData.competitionId}/entries/${pledgeData.entryId}`);
+            const entryGiftFieldPath = `giftInventory.${pledgeData.giftName}`;
+            transaction.update(entryRef, {
+                giftsReceived: FieldValue.increment(1),
+                [entryGiftFieldPath]: FieldValue.increment(1)
+            });
+        }
+        
+        if (!pledgeData.isAnonymous) {
+            const supporterRef = recipientRef.collection("supporters").doc(pledgeData.userId);
+            transaction.set(supporterRef, {
+                userName: pledgeData.userName || "A fan",
+                amountGiven: FieldValue.increment(grossAmount),
+                lastGift: approvalTimestamp.toISOString()
+            }, { merge: true });
+            
+            const broadcastNotification = {
+                broadcastType: "GIFT_RECEIVED", 
+                message: `🎉 ${pledgeData.userName || 'A fan'} sent a [${pledgeData.giftName}] to ${recipientDoc.data().creatorName}!`,
+                link: `/user/${recipientId}`, 
+                timestamp: approvalTimestamp
+            };
+            transaction.set(db.collection("broadcast_notifications").doc(), broadcastNotification);
+        }
+      } 
+      else if (pledgeData.paymentType === 'competitionEntry') {
+        const compId = pledgeData.competitionId;
+        const entryId = pledgeData.entryId || pledgeData.userId; 
+        const grossAmount = pledgeData.amount;
+        const netAmount = Math.round((grossAmount * (1 - PLATFORM_FEE_PERCENTAGE)) * 100) / 100;
+
+        const compRef = db.collection("competitions").doc(compId);
+        const entryRef = compRef.collection("entries").doc(entryId);
+
+        const compDoc = await transaction.get(compRef);
+        if (!compDoc.exists) { throw new HttpsError("not-found", "Competition not found."); }
+
+        const currentPrizePool = compDoc.data().prizePool || 0;
+        const newPrizePool = currentPrizePool + netAmount;
+
+        transaction.update(compRef, { prizePool: newPrizePool });
+        transaction.update(entryRef, {
+            status: 'active',
+            approvedAt: approvalTimestamp.toISOString(),
+            createdAt: FieldValue.serverTimestamp()
+        });
+
+        transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
+      } 
+      else if (pledgeData.paymentType === 'roastTokens') {
+        const buyerRef = db.collection("creators").doc(pledgeData.userId);
+        const tokensToAward = pledgeData.tokenAmount || 0;
+        
+        const cashValueToAdd = Math.round((pledgeData.amount * 0.85) * 100) / 100;
+
+        transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
+        transaction.update(buyerRef, {
+            roastTokens: FieldValue.increment(tokensToAward),
+            tokenCashValue: FieldValue.increment(cashValueToAdd),
+            lifetimeSpent: FieldValue.increment(pledgeData.amount)
+        });
+      }
+      else if (pledgeData.paymentType === 'eventTicket') {
+        const eventId = pledgeData.targetEventId; 
+        const ticketPrice = pledgeData.amount;
+        
+        const finalRecipientId = pledgeData.recipientId || pledgeData.userId; 
+        const ticketBuyerRef = db.collection("creators").doc(finalRecipientId);
+        
+        const [eventDoc, movieDoc, ticketBuyerDoc] = await Promise.all([
+            eventId ? transaction.get(db.collection("events").doc(eventId)) : Promise.resolve(null),
+            eventId ? transaction.get(db.collection("movies").doc(eventId)) : Promise.resolve(null),
+            transaction.get(ticketBuyerRef)
+        ]);
+        
+        if (!ticketBuyerDoc.exists) { throw new HttpsError("not-found", "Ticket recipient does not exist."); }
+        
         transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });  
-                        
+        
         if (eventId) {
-            // Grant the RECIPIENT their ticket
-            transaction.set(recipientRef, { purchasedTickets: { [eventId]: true } }, { merge: true });
+            transaction.set(ticketBuyerRef, { purchasedTickets: { [eventId]: true } }, { merge: true });
             
             if (eventDoc && eventDoc.exists) {
                 transaction.update(eventDoc.ref, {
-                    ticketsSold: admin.firestore.FieldValue.increment(1),
-                    totalRevenue: admin.firestore.FieldValue.increment(ticketPrice)
+                    ticketsSold: FieldValue.increment(1),
+                    totalRevenue: FieldValue.increment(ticketPrice)
                 });
-            } else {
-                logger.warn(`Pledge approved for eventId '${eventId}', but the master event document was not found. Ticket was granted, but stats were not updated.`);
+            }
+
+            if (movieDoc && movieDoc.exists) {
+                const movieData = movieDoc.data();
+                if (movieData.creatorId) {
+                    const filmmakerRef = db.collection("creators").doc(movieData.creatorId);
+                    const filmmakerNet = Math.round((ticketPrice * 0.85) * 100) / 100;
+                    transaction.set(filmmakerRef, {
+                        boxOfficeLedger: {
+                            ticketSales: FieldValue.increment(filmmakerNet)
+                        }
+                    }, { merge: true });
+                }
             }
         }
       } else {
         transaction.update(pledgeRef, { status: "approved", approvedAt: approvalTimestamp.toISOString(), approvedBy: uid });
-        transaction.update(userRef, { totalApproved: admin.firestore.FieldValue.increment(1), updatedAt: approvalTimestamp.toISOString() });
       }
     });
+
     logger.info(`Pledge '${pledgeId}' approved successfully.`);
 
-      // --- START: NEW CONSOLIDATED NOTIFICATION LOGIC (AFTER TRANSACTION) ---
-    const finalPledgeDoc = await db.collection("paymentPledges").doc(pledgeId).get();
-    const finalPledgeData = finalPledgeDoc.data();
     const notificationsRef = db.collection("notifications");
-
     const createNotification = async (payload) => {
         await notificationsRef.add({
             ...payload,
             isRead: false,
             status: "pending",
-            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
+            timestamp: FieldValue.serverTimestamp()
         });
         const userRef = db.collection("creators").doc(payload.userId);
-        await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+        await userRef.update({ unreadNotificationCount: FieldValue.increment(1) });
     };
 
-    if (finalPledgeData.paymentType === 'donation') {
-        const campaignDoc = await db.collection(`artifacts/${appId}/public/data/campaigns`).doc(finalPledgeData.targetCampaignId).get();
-        if (campaignDoc.exists) {
-            const campaignData = campaignDoc.data();
-            const campaignCreatorId = campaignData.creatorId;
-            
-            // Notify Creator of Donation
-            await createNotification({
-                userId: campaignCreatorId,
-                title: "Donation Received!",
-                body: `${finalPledgeData.userName} donated $${finalPledgeData.amount.toFixed(2)} to your campaign "${finalPledgeData.targetCampaignTitle}"!`,
-                link: "/CreatorDashboard",
-                deliveryType: ["inbox", "push"],
-                notificationType: "DONATION_RECEIVED",
-                sound: true
-            });
-
-            // Check if goal was reached
-            const newRaisedAmount = campaignData.raised || 0;
-            const oldRaisedAmount = newRaisedAmount - (finalPledgeData.amount * (1 - PLATFORM_FEE_PERCENTAGE));
-            if (oldRaisedAmount < campaignData.goal && newRaisedAmount >= campaignData.goal) {
-                await createNotification({
-                    userId: campaignCreatorId,
-                    title: "Campaign Goal Reached!",
-                    body: `Congratulations! Your campaign "${campaignData.title}" has reached its funding goal!`,
-                    link: "/CreatorDashboard",
-                    deliveryType: ["inbox", "push"],
-                    notificationType: "CAMPAIGN_GOAL_REACHED",
-                    sound: true
-                });
-            }
-        }
-        // Notify Donor
+    if (finalPledgeData.paymentType === 'competitionEntry') {
+        const targetReceiverId = finalPledgeData.entryId || finalPledgeData.userId;
         await createNotification({
-            userId: finalPledgeData.userId,
-            title: "Donation Confirmed",
-            body: `Your donation of $${finalPledgeData.amount.toFixed(2)} to "${finalPledgeData.targetCampaignTitle}" was approved. Thank you!`,
-            link: "/Home",
+            userId: targetReceiverId, 
+            title: "Audition Approved! 🏆",
+            body: `Your entry "${finalPledgeData.entryTitle || 'Contestant Entry'}" was approved and is now live in the tournament!`,
+            link: "/CompetitionScreen",
             deliveryType: ["inbox", "push"],
-            notificationType: "Pledge Approved",
+            notificationType: "ENTRY_APPROVED",
             sound: true
         });
+    } else if (finalPledgeData.paymentType === 'giftToken') {
+        const isShowcaseDonation = !finalPledgeData.competitionId;
+        const notifTitle = isShowcaseDonation ? "New Film Donation! 🎁" : "You Received a Gift!";
+        const notifBody = isShowcaseDonation 
+            ? (finalPledgeData.isAnonymous ? `An anonymous fan sent you a donation of ${finalPledgeData.amount.toLocaleString()} GYD for your Showcase film!` : `${finalPledgeData.userName} sent you a donation of ${finalPledgeData.amount.toLocaleString()} GYD for your Showcase film!`)
+            : (finalPledgeData.isAnonymous ? `An anonymous fan sent you a ${finalPledgeData.giftName}!` : `${finalPledgeData.userName} sent you a ${finalPledgeData.giftName}!`);
 
-    } else if (finalPledgeData.paymentType === 'premium') {
         await createNotification({
-            userId: finalPledgeData.userId,
-            title: "Subscription Activated!",
-            body: "Your NVA Premium subscription is now active!",
+            userId: finalPledgeData.targetUserId,
+            title: notifTitle,
+            body: notifBody,
             link: "/CreatorDashboard",
             deliveryType: ["inbox", "push"],
-            notificationType: "Pledge Approved",
+            notificationType: "GIFT_RECEIVED",
             sound: true
         });
-
-    } else if (finalPledgeData.paymentType === 'promotedStatus') {
         await createNotification({
             userId: finalPledgeData.userId,
-            title: "Booking Confirmed!",
-            body: `Your Promoted Status booking for ${new Date(finalPledgeData.scheduledStartTime).toLocaleDateString()} is confirmed!`,
-            link: "/PromotedStatus",
-            deliveryType: ["inbox", "push"],
+            title: "Gift Delivered",
+            body: `Your ${finalPledgeData.giftName} was successfully delivered!`,
+            link: "/Home",
+            deliveryType: ["inbox"],
             notificationType: "Pledge Approved",
-            sound: true
+            sound: false
         });
-
     } else if (finalPledgeData.paymentType === 'eventTicket') {
         const isGift = !!finalPledgeData.recipientId;
+        const filmName = finalPledgeData.targetEventTitle || "the Premiere";
+        const senderName = finalPledgeData.userName || "A friend";
+        const recipientName = finalPledgeData.recipientName || "your friend";
+
         if (isGift) {
-            const recipientDoc = await db.collection("creators").doc(finalPledgeData.recipientId).get();
-            const recipientName = recipientDoc.exists ? recipientDoc.data().creatorName : "your recipient";
-            // Notify Recipient
             await createNotification({
                 userId: finalPledgeData.recipientId,
-                title: "You Received a Gift!",
-                body: `${finalPledgeData.userName} gifted you a ticket for "${finalPledgeData.targetEventTitle || 'the Live Premiere'}"!`,
-                link: `/user/${finalPledgeData.recipientId}`,
+                title: "Gift Ticket Received! 🎟️",
+                body: `${senderName} gifted you a ticket for ${filmName}`,
+                link: "/Discover",
                 deliveryType: ["inbox", "push"],
-                notificationType: "Pledge Approved",
+                notificationType: "TICKET_GIFTED",
                 sound: true
             });
-            // Notify Buyer
             await createNotification({
                 userId: finalPledgeData.userId,
-                title: "Gift Purchase Confirmed",
-                body: `Your gift ticket for "${finalPledgeData.targetEventTitle || 'the Live Premiere'}" was successfully sent to ${recipientName}.`,
-                link: "/Home",
-                deliveryType: ["inbox", "push"],
-                notificationType: "Pledge Approved",
-                sound: true
+                title: "Ticket Delivered",
+                body: `Your gift ticket to ${recipientName} for ${filmName} has been delivered successfully.`,
+                link: "/Discover",
+                deliveryType: ["inbox"],
+                notificationType: "TICKET_DELIVERED",
+                sound: false
             });
         } else {
-            // Standard self-purchase
             await createNotification({
                 userId: finalPledgeData.userId,
-                title: "Ticket Purchase Confirmed!",
-                body: `Your ticket for "${finalPledgeData.targetEventTitle || 'the Live Premiere'}" is confirmed!`,
-                link: `/user/${finalPledgeData.userId}`,
+                title: "Ticket Purchase Confirmed! 🎟️",
+                body: `Your ticket for ${filmName} is confirmed!`,
+                link: "/Discover",
                 deliveryType: ["inbox", "push"],
-                notificationType: "Pledge Approved",
+                notificationType: "TICKET_PURCHASED",
                 sound: true
             });
         }
     }
-    // --- END: NEW CONSOLIDATED NOTIFICATION LOGIC ---
     
-    return { message: "Pledge approved and all relevant notifications sent." };
+    return { message: "Pledge approved and notifications sent." };
   } catch (error) {
     logger.error("Error approving pledge", { error });
     if (error instanceof HttpsError) { throw error; }
@@ -555,7 +721,7 @@ exports.approvePledge = onCall(async (request) => {
     // --- GHOST BADGE REPAIR UTILITY (ADMIN TOOL) ---
 exports.recalculateUnreadNotifications = onCall(async (request) => {
     // Security Check: Only an admin can run this function.
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
 
@@ -595,7 +761,7 @@ exports.recalculateUnreadNotifications = onCall(async (request) => {
 // =========== FINAL, PRODUCTION DATA INTEGRITY AUDIT TOOL =============
 // =====================================================================
 exports.runDataIntegrityAudit = onCall({timeoutSeconds: 540}, async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
         throw new HttpsError("permission-denied", "You must be an admin to run the data audit.");
     }
 
@@ -717,7 +883,7 @@ exports.runDataIntegrityAudit = onCall({timeoutSeconds: 540}, async (request) =>
 // =====================================================================
 exports.recalibrateAllCounts = onCall(async (request) => {
     // Security Check: Only an admin can run this destructive/reparative operation.
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
         throw new HttpsError("permission-denied", "You must be an admin to run this function.");
     }
 
@@ -838,7 +1004,7 @@ exports.recalibrateAllCounts = onCall(async (request) => {
 // =====================================================================
 
   exports.cleanupDuplicateFCMTokens = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
         throw new HttpsError("permission-denied", "You must be an admin to run this task.");
     }
     logger.info(`Admin '${request.auth.uid}' initiated a cleanup of duplicate FCM tokens.`);
@@ -896,18 +1062,21 @@ exports.recalibrateAllCounts = onCall(async (request) => {
         throw new HttpsError("resource-exhausted", "You have reached the maximum limit of 100 videos in your library.");
     }
 
+    const isMonetizationRequest = contentData.isMonetizationRequest === true;
+
     const finalData = {
         ...contentData,
         creatorId: uid,
         createdAt: new Date().toISOString(),
         viewCount: 0,
         likeCount: 0,
-        isFeatured: false,
-        isActive: true,
+        isFeatured: false, // Reverted: Must be manually featured by the creator
+        isActive: contentData.isActive !== undefined ? contentData.isActive : true,
     };
 
     try {
-        await contentRef.add(finalData);
+        const newDoc = await contentRef.add(finalData);
+
         logger.info(`User '${uid}' successfully added new content titled "${finalData.title}".`);
         return { success: true, message: "Content added to your library successfully." };
     } catch (error) {
@@ -1033,9 +1202,15 @@ exports.deleteContentItem = onCall(async (request) => {
         
         const creatorRef = db.collection("creators").doc(contentData.creatorId);
 
-        await creatorRef.update({
-            pinnedContent: admin.firestore.FieldValue.arrayRemove(contentId)
-        });
+        const creatorDoc = await creatorRef.get();
+        const updates = { pinnedContent: admin.firestore.FieldValue.arrayRemove(contentId) };
+        
+        // Wipe from Showcase if this was the featured video
+        if (creatorDoc.data()?.featuredVideoLink?.liveFeedContentId === contentId) {
+            updates.featuredVideoLink = admin.firestore.FieldValue.delete();
+        }
+
+        await creatorRef.update(updates);
         
         const followersSnapshot = await creatorRef.collection("followers").get();
         if (!followersSnapshot.empty) {
@@ -1047,6 +1222,10 @@ exports.deleteContentItem = onCall(async (request) => {
             await batch.commit();
             logger.info(`Removed '${contentId}' from ${followersSnapshot.size} follower feeds.`);
         }
+
+        // Secure Cascade Fix: Erase all nested comments and likes subcollections to prevent zombie db drift [1]
+        await deleteCollection(db, contentRef.collection("comments"), 400);
+        await deleteCollection(db, contentRef.collection("likes"), 400);
 
         await contentRef.delete();
         logger.info(`User '${uid}' successfully deleted content item '${contentId}'.`);
@@ -1097,6 +1276,10 @@ exports.deleteContentItem = onCall(async (request) => {
             if (updates.title !== undefined) allowedUpdates.title = updates.title;
             if (updates.description !== undefined) allowedUpdates.description = updates.description;
             if (updates.customThumbnailUrl !== undefined) allowedUpdates.customThumbnailUrl = updates.customThumbnailUrl;
+            
+            // ALLOW MONETIZATION REQUESTS TO PASS THROUGH
+            if (updates.monetizationStatus !== undefined) allowedUpdates.monetizationStatus = updates.monetizationStatus;
+            if (updates.isMonetizationRequest !== undefined) allowedUpdates.isMonetizationRequest = updates.isMonetizationRequest;
 
             if (Object.keys(allowedUpdates).length === 0) {
                 return; // End transaction if no valid updates
@@ -1191,7 +1374,7 @@ exports.deleteContentItem = onCall(async (request) => {
 
 exports.promoteExternalLink = onCall(async (request) => {
     const uid = request.auth.uid;
-    if (!uid || (!request.auth.token.admin && !request.auth.token.authority)) {
+    if (!uid || (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin)) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
 
@@ -1347,40 +1530,6 @@ exports.onEventUpdateSyncLowerCase = onDocumentUpdated("events/{eventId}", (even
 // ============ END: DATA SYNC FOR SEARCH FIELDS =======================
 // =====================================================================
 
-exports.resetDailyStats = onSchedule("every 24 hours", async (event) => {
-    logger.info("Running scheduled job: Resetting daily analytics stats.");
-    const db = admin.firestore();
-    const creatorsRef = db.collection("creators");
-
-    const today = new Date();
-    const isMonday = today.getDay() === 1;
-
-    try {
-        const snapshot = await creatorsRef.get();
-        if (snapshot.empty) {
-            return null;
-        }
-
-        const batch = db.batch();
-        snapshot.forEach(doc => {
-            const updates = { dailyViews: 0, dailyLikes: 0 };
-            if (isMonday) {
-                updates.weeklyViews = 0;
-                updates.weeklyLikes = 0;
-            }
-            batch.update(doc.ref, updates);
-        });
-
-        await batch.commit();
-        logger.info(`Reset daily stats for ${snapshot.size} creators. Weekly reset: ${isMonday}`);
-        return null;
-
-    } catch (error) {
-        logger.error("Error during scheduled stat reset:", { error });
-        return null;
-    }
-});
-
 async function runTopPerformersUpdate() {
     const db = admin.firestore();
     const appId = "production-app-id";
@@ -1487,20 +1636,9 @@ async function runTopPerformersUpdate() {
     }
 }
 
-    // The original scheduled function now simply calls our reusable logic.
-exports.updateTopPerformers = onSchedule("every 24 hours", async (event) => {
-    logger.info("Running scheduled job: updateTopPerformers.");
-    try {
-        await runTopPerformersUpdate();
-    } catch (error) {
-        logger.error("Error during scheduled updateTopPerformers job:", { error });
-    }
-    return null;
-});
-
 // THIS IS THE NEW, ON-DEMAND FUNCTION FOR THE ADMIN BUTTON
 exports.triggerTopPerformersUpdate = onCall(async (request) => {
-    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority)) {
+    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin)) {
       throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     logger.info(`Moderator '${request.auth.uid}' manually triggered updateTopPerformers.`);
@@ -1546,13 +1684,16 @@ async function runPlatformStatsAggregation() {
     });
 
     const contentSnapshot = await db.collectionGroup("content_items").get();
-    const campaignsSnapshot = await db.collectionGroup("campaigns").get();
-    const campaignStatusBreakdown = { pending: 0, active: 0, ended: 0, rejected: 0, cancelled: 0 };
-    campaignsSnapshot.forEach(doc => {
-        const status = doc.data().status || 'unknown';
-        if (campaignStatusBreakdown.hasOwnProperty(status)) {
-            campaignStatusBreakdown[status]++;
-        }
+    const geographyBreakdown = {};
+
+    creatorsSnapshot.forEach(doc => {
+        const userData = doc.data();
+        // Bucket users by Geographic Region (Captured on Login) [1]
+        const region = userData.location || 'Unknown / VPN';
+        geographyBreakdown[region] = (geographyBreakdown[region] || 0) + 1;
+        
+        const role = userData.role || 'other';
+        // ... existing role logic ...
     });
 
     const platformStats = {
@@ -1561,26 +1702,15 @@ async function runPlatformStatsAggregation() {
         newUsers7Days,
         userRoleBreakdown,
         totalContentItems: contentSnapshot.size,
-        campaignStatusBreakdown,
+        geographyBreakdown, // Replaced Campaigns with Geography [1]
         lastUpdated: new Date().toISOString()
     };
     await db.collection("statistics").doc("platformOverview").set(platformStats);
     logger.info("Successfully completed platform stats aggregation.", { stats: platformStats });
 }
 
-exports.updatePlatformStats = onSchedule("every 24 hours", async (event) => {
-    logger.info("Starting scheduled job: updatePlatformStats");
-    try {
-        await runPlatformStatsAggregation();
-        return null;
-    } catch (error) {
-        logger.error("Error in scheduled updatePlatformStats job", { error });
-        return null;
-    }
-});
-
 exports.triggerPlatformStatsUpdate = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
       throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
     logger.info(`Admin '${request.auth.uid}' manually triggered updatePlatformStats.`);
@@ -1612,62 +1742,8 @@ exports.onPremiereUpdate = onDocumentUpdated("content_categories/{categoryId}", 
     return null;
 });
 
-exports.onCampaignStatusChange = onDocumentUpdated("artifacts/{appId}/public/data/campaigns/{campaignId}", async (event) => {
-    const dataAfter = event.data.after.data();
-    const dataBefore = event.data.before.data();
-    const creatorId = dataAfter.creatorId;
-
-    // Exit if there's no creator or if the status didn't change from 'pending'
-    if (!creatorId || dataBefore.status !== 'pending') {
-        return null;
-    }
-
-    const db = admin.firestore();
-    const userRef = db.collection("creators").doc(creatorId);
-    let notificationPayload;
-
-    // Condition 1: Pending -> Active
-    if (dataAfter.status === 'active') {
-        logger.info(`Campaign '${event.params.campaignId}' approved. Creating notification.`);
-        notificationPayload = {
-            userId: creatorId,
-            title: "Campaign Approved!",
-            body: `Congratulations! Your campaign "${dataAfter.title}" has been approved and is now live.`,
-            link: "/CreatorDashboard",
-            deliveryType: ["inbox", "push"],
-            notificationType: "CAMPAIGN_APPROVED",
-            sound: true,
-        };
-    // Condition 2: Pending -> Rejected
-    } else if (dataAfter.status === 'rejected') {
-        logger.info(`Campaign '${event.params.campaignId}' rejected. Creating notification.`);
-        notificationPayload = {
-            userId: creatorId,
-            title: "Campaign Update",
-            body: `Your campaign "${dataAfter.title}" was reviewed but could not be approved.`,
-            link: "/CreatorDashboard",
-            deliveryType: ["inbox", "push"],
-            notificationType: "CAMPAIGN_REJECTED",
-            sound: true,
-        };
-    }
-
-    // If a payload was created, write it to the notifications collection and update the user's badge.
-    if (notificationPayload) {
-        await db.collection("notifications").add({
-            ...notificationPayload,
-            isRead: false,
-            status: "pending",
-            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
-        });
-        await userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
-    }
-
-    return null;
-});
-
 exports.createBroadcast = onCall(async (request) => {
-    if (request.auth.token.admin !== true && request.auth.token.authority !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.authority !== true && request.auth.token.super_admin !== true) {
         throw new HttpsError("permission-denied", "You must be a moderator to create a broadcast.");
     }
     const { message, link } = request.data;
@@ -1684,7 +1760,7 @@ exports.createBroadcast = onCall(async (request) => {
 });
 
 exports.runSystemDiagnostics = onCall(async (request) => {
-  if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority)) {
+  if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin)) {
     throw new HttpsError("permission-denied", "You must be an admin or authority.");
   }
   const uid = request.auth.uid;
@@ -1990,85 +2066,7 @@ exports.hideChatForUser = onCall(async (request) => {
 // ============= END: CHAT CONVERSATION DELETION LOGIC =================
 // =====================================================================
 
-    // =====================================================================
-// ============ START: CONVERSATION DELETION (SOFT DELETE) =============
-// =====================================================================
-exports.hideChatForUser = onCall(async (request) => {
-    // 1. Authenticate the user.
-    const uid = request.auth.uid;
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in to delete a conversation.");
-    }
-
-    // 2. Validate the incoming data from the client.
-    const { chatId } = request.data;
-    if (!chatId) {
-        throw new HttpsError("invalid-argument", "The function must be called with a 'chatId'.");
-    }
-
-    const db = admin.firestore();
-    const chatRef = db.collection("chats").doc(chatId);
-
-    try {
-        const chatDoc = await chatRef.get();
-        if (!chatDoc.exists) {
-            // If the chat doesn't exist, it's already gone. Return success.
-            return { success: true, message: "Chat already deleted." };
-        }
-
-        const chatData = chatDoc.data();
-        
-        // 3. SECURITY CHECK: Ensure the user calling the function is a participant.
-        // This prevents one user from deleting a conversation they are not a part of.
-        if (!chatData.participants || !chatData.participants.includes(uid)) {
-            throw new HttpsError("permission-denied", "You do not have permission to modify this chat.");
-        }
-        
-        // 4. Perform the "soft delete" by adding the user's ID to the 'hiddenFor' array.
-        // The `arrayUnion` operator is safe and idempotent.
-        await chatRef.update({
-            hiddenFor: admin.firestore.FieldValue.arrayUnion(uid)
-        });
-
-        logger.info(`User '${uid}' successfully deleted chat '${chatId}' from their view.`);
-        return { success: true, message: "Conversation deleted." };
-
-    } catch (error) {
-        logger.error(`Error deleting chat '${chatId}' for user '${uid}':`, error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError("internal", "An unexpected error occurred.");
-    }
-});
-// =====================================================================
-// ============= END: CONVERSATION DELETION (SOFT DELETE) ==============
-// =====================================================================
-
-    // ============ START: CHAT MANAGEMENT FUNCTIONS =======================
-// =====================================================================
-
-// Soft-deletes a conversation from a single user's view.
-exports.hideChatForUser = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in."); }
-
-    const { chatId } = request.data;
-    if (!chatId) { throw new HttpsError("invalid-argument", "Missing chatId."); }
-
-    const db = admin.firestore();
-    const chatRef = db.collection("chats").doc(chatId);
-    try {
-        const chatDoc = await chatRef.get();
-        if (!chatDoc.exists) return { success: true, message: "Chat already deleted." };
-        if (!chatDoc.data().participants?.includes(uid)) {
-            throw new HttpsError("permission-denied", "You cannot modify this chat.");
-        }
-        await chatRef.update({ hiddenFor: admin.firestore.FieldValue.arrayUnion(uid) });
-        return { success: true, message: "Conversation deleted from your list." };
-    } catch (error) {
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError("internal", "An unexpected error occurred.");
-    }
-});
+  
 
 // Soft-deletes a single message within a private chat.
 exports.deleteChatMessagePrivate = onCall(async (request) => {
@@ -2152,6 +2150,20 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
             });
         });
 
+        // Chat Cap Optimization: Prune older messages if count exceeds 100 to save space [1]
+        const messagesRef = chatRef.collection("messages");
+        const countSnap = await messagesRef.count().get();
+        const totalCount = countSnap.data().count;
+        if (totalCount > 100) {
+            const oldestMsgsQuery = messagesRef.orderBy("timestamp", "asc").limit(totalCount - 100);
+            const oldestSnap = await oldestMsgsQuery.get();
+            if (!oldestSnap.empty) {
+                const pruneBatch = db.batch();
+                oldestSnap.docs.forEach(doc => pruneBatch.delete(doc.ref));
+                await pruneBatch.commit();
+                logger.info(`Pruned ${oldestSnap.size} old messages from chat '${chatId}' to maintain the 100-message cap.`);
+            }
+        }
         
         return { success: true, message: "Message sent." };
 
@@ -2416,228 +2428,6 @@ exports.markChatAsRead = onCall(async (request) => {
     return null;
 });
 
-   exports.requestCampaignPayout = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in to request a payout.");
-    }
-
-    const { campaignId, appId, legalName, mmgPhoneNumber } = request.data;
-    if (!campaignId || !appId || !legalName || !mmgPhoneNumber) {
-        throw new HttpsError("invalid-argument", "Missing required data. The function requires campaignId, appId, legalName, and mmgPhoneNumber.");
-    }
-
-    const db = admin.firestore();
-    
-    try {
-        let newRequestId;
-
-        await db.runTransaction(async (transaction) => {
-            const campaignRef = db.collection(`artifacts/${appId}/public/data/campaigns`).doc(campaignId);
-            const creatorRef = db.collection("creators").doc(uid);
-            const payoutRequestQuery = db.collection("payoutRequests").where("campaignId", "==", campaignId).limit(1);
-
-            const [campaignDoc, creatorDoc, existingRequestSnapshot] = await Promise.all([
-                transaction.get(campaignRef),
-                transaction.get(creatorRef),
-                transaction.get(payoutRequestQuery)
-            ]);
-
-            if (!campaignDoc.exists) { throw new HttpsError("not-found", "The specified campaign could not be found."); }
-            if (!creatorDoc.exists) { throw new HttpsError("not-found", "Your creator profile could not be found."); }
-            if (!existingRequestSnapshot.empty) { throw new HttpsError("already-exists", "A payout has already been requested for this campaign."); }
-
-            const campaignData = campaignDoc.data();
-            const creatorData = creatorDoc.data();
-
-            if (campaignData.creatorId !== uid) { throw new HttpsError("permission-denied", "You can only request payouts for your own campaigns."); }
-            if (campaignData.status !== 'ended') { throw new HttpsError("failed-precondition", "Payouts can only be requested for campaigns that have ended."); }
-            if (campaignData.raised < campaignData.goal) { throw new HttpsError("failed-precondition", "The campaign funding goal was not met."); }
-
-            const payoutAmount = Math.round((campaignData.raised * (1 - PLATFORM_FEE_PERCENTAGE)) * 100) / 100;
-
-            const newRequestRef = db.collection("payoutRequests").doc();
-            newRequestId = newRequestRef.id;
-
-            // --- THIS IS THE FIX ---
-            // The field names now exactly match what the Admin Dashboard expects.
-            const newPayoutRequest = {
-                creatorId: uid,
-                creatorName: creatorData.creatorName || 'N/A',
-                legalName: legalName, // Corrected
-                mmgPhoneNumber: mmgPhoneNumber, // Corrected
-                campaignId: campaignId,
-                campaignTitle: campaignData.title,
-                amountRaised: campaignData.raised,
-                netAmount: payoutAmount, // Corrected
-                status: 'pending',
-                requestedAt: admin.firestore.FieldValue.serverTimestamp(),
-            };
-            // --- END OF FIX ---
-
-            transaction.set(newRequestRef, newPayoutRequest);
-            transaction.update(campaignRef, { payoutStatus: 'requested' });
-        });
-
-        logger.info(`User '${uid}' successfully requested payout for campaign '${campaignId}'. New request ID: '${newRequestId}'.`);
-        return { success: true, message: "Your payout request has been submitted for review." };
-
-    } catch (error) {
-        logger.error(`Error requesting payout for campaign '${campaignId}' by user '${uid}'`, { error });
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError("internal", "An unexpected error occurred while submitting your request.");
-    }
-});
-async function endCampaignAndApplyCooldown(campaignRef, campaignData, db, endReasonMessage) {
-    const batch = db.batch();
-    batch.update(campaignRef, { status: "ended" });
-    
-    const broadcast = {
-        broadcastType: "CAMPAIGN_ENDED",
-        message: `The campaign "${campaignData.title}" by ${campaignData.creatorName} has concluded.`,
-        link: "/AllCampaigns",
-        timestamp: new Date(),
-    };
-    batch.set(db.collection("broadcast_notifications").doc(), broadcast);
-
-    // Create a new-style notification document
-    const notificationPayload = {
-        userId: campaignData.creatorId,
-        title: "Campaign Concluded",
-        body: endReasonMessage, // Use the specific message passed to the function
-        link: "/CreatorDashboard",
-        deliveryType: ["inbox"], // Inbox only, no push
-        notificationType: "CAMPAIGN_ENDED",
-        sound: false,
-        isRead: false,
-        status: "pending",
-        timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
-    };
-    batch.set(db.collection("notifications").doc(), notificationPayload);
-
-    const creatorRef = db.collection("creators").doc(campaignData.creatorId);
-    const cooldownDate = new Date();
-    cooldownDate.setDate(cooldownDate.getDate() + 30);
-    batch.update(creatorRef, { canCreateCampaignAfter: cooldownDate });
-    
-    await batch.commit();
-    logger.info(`Campaign '${campaignRef.id}' ended. Cooldown applied.`);
-}
-
-exports.endCampaignEarly = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in."); }
-    const { campaignId, appId } = request.data;
-    if (!campaignId || !appId) { throw new HttpsError("invalid-argument", "Missing 'campaignId' or 'appId'."); }
-    
-    const db = admin.firestore();
-    const campaignRef = db.collection(`artifacts/${appId}/public/data/campaigns`).doc(campaignId);
-    
-    try {
-        const campaignDoc = await campaignRef.get();
-        if (!campaignDoc.exists) { throw new HttpsError("not-found", "Campaign not found."); }
-        
-        const campaignData = campaignDoc.data();
-        if (campaignData.creatorId !== uid) { throw new HttpsError("permission-denied", "Not the owner."); }
-        if (campaignData.status !== 'active') { throw new HttpsError("failed-precondition", "Not active."); }
-        if (campaignData.raised < campaignData.goal) { throw new HttpsError("failed-precondition", "Goal not reached."); }
-        
-        // Define the specific message for this action
-        const endReason = `Your campaign "${campaignData.title}" has successfully completed.`;
-        await endCampaignAndApplyCooldown(campaignRef, campaignData, db, endReason);
-        
-        return { success: true, message: "Campaign ended successfully!" };
-    } catch (error) {
-        logger.error(`Error ending campaign '${campaignId}'`, { error });
-        if (error instanceof HttpsError) { throw error; }
-        throw new HttpsError("unknown", "An error occurred.");
-    }
-});
-
-        exports.deleteCampaign = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in to delete a campaign.");
-    }
-    const { campaignId, appId } = request.data;
-    if (!campaignId || !appId) {
-        throw new HttpsError("invalid-argument", "Missing 'campaignId' or 'appId'.");
-    }
-
-    const db = admin.firestore();
-    const bucket = admin.storage().bucket();
-    const campaignRef = db.collection(`artifacts/${appId}/public/data/campaigns`).doc(campaignId);
-
-    try {
-        const campaignDoc = await campaignRef.get();
-        if (!campaignDoc.exists) {
-            logger.warn(`User '${uid}' tried to delete non-existent campaign '${campaignId}'.`);
-            return { success: true, message: "Campaign already deleted." };
-        }
-        
-        const campaignData = campaignDoc.data();
-
-        if (campaignData.creatorId !== uid) {
-            throw new HttpsError("permission-denied", "You do not have permission to delete this campaign.");
-        }
-        
-        if (campaignData.status === 'active') {
-            throw new HttpsError("failed-precondition", "Active campaigns cannot be deleted. Please end the campaign first.");
-        }
-
-        // Delete associated image from Cloud Storage if it exists
-        if (campaignData.imageUrl && campaignData.imageUrl.includes('firebasestorage')) {
-            try {
-                const url = new URL(campaignData.imageUrl);
-                const path = decodeURIComponent(url.pathname.split('/o/')[1].split('?')[0]);
-                await bucket.file(path).delete();
-                logger.info(`Deleted campaign image for '${campaignId}' from Storage.`);
-            } catch (e) {
-                logger.warn(`Could not delete campaign image for '${campaignId}'. It may have been manually removed.`, e.message);
-            }
-        }
-
-        await campaignRef.delete();
-        logger.info(`User '${uid}' successfully deleted campaign '${campaignId}'.`);
-        
-        return { success: true, message: "Campaign has been successfully deleted." };
-
-    } catch (error) {
-        logger.error(`Error deleting campaign '${campaignId}' for user '${uid}'`, { error });
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError("internal", "An unexpected error occurred during campaign deletion.");
-    }
-});
-
-exports.checkCampaignExpirations = onSchedule("every 1 hours", async (event) => {
-    logger.info("Checking for expired campaigns...");
-    const db = admin.firestore();
-    const now = new Date();
-    const expiredCampaignsQuery = db.collectionGroup("campaigns").where("status", "==", "active").where("endDate", "<=", now.toISOString());
-    try {
-        const snapshot = await expiredCampaignsQuery.get();
-        if (snapshot.empty) return null;
-
-        // Process each campaign individually to ensure the helper function is called correctly.
-        for (const doc of snapshot.docs) {
-            const campaignData = doc.data();
-            const campaignRef = doc.ref;
-            
-            // Define the specific reason for this campaign ending.
-            const endReason = `Your campaign "${campaignData.title}" has reached its end date and is now completed.`;
-            
-            // Call the single, authoritative helper function we fixed in the previous step.
-            await endCampaignAndApplyCooldown(campaignRef, campaignData, db, endReason);
-        }
-        
-        logger.info(`Processed ${snapshot.size} expired campaigns.`);
-        return null;
-    } catch (error) {
-        logger.error("Error during campaign expiration check", { error });
-        return null;
-    }
-});;
-
 exports.oEmbedProxy = onCall(async (request) => {
   const fetch = require("node-fetch");
   const { url, platform } = request.data;
@@ -2673,83 +2463,6 @@ exports.oEmbedProxy = onCall(async (request) => {
     if (error instanceof HttpsError) throw error;
     throw new HttpsError("unknown", "An unexpected error occurred.");
   }
-});
-
-exports.socialCardRenderer = onRequest({ cors: true }, async (req, res) => {
-    const db = admin.firestore();
-    const path = req.path; // e.g., /user/someUserId
-    const parts = path.split('/').filter(Boolean);
-    const rootUrl = `https://${req.hostname}`; // Use req.hostname for dynamic URL
-
-    const defaultTitle = "NVA Network";
-    const defaultDescription = "Caribbean Content to a Global Stage.";
-    const defaultImage = `${rootUrl}/default-social-image.png`; // A default image in your hosting public folder
-
-    let ogTitle = defaultTitle;
-    let ogDescription = defaultDescription;
-    let ogImage = defaultImage;
-    let ogUrl = rootUrl + path;
-
-    try {
-        if (parts.length > 0) {
-            const screen = parts[0];
-            const id = parts[1];
-
-            if (screen === 'user' && id) {
-                const userDoc = await db.collection('creators').doc(id).get();
-                if (userDoc.exists) {
-                    const userData = userDoc.data();
-                    ogTitle = userData.creatorName || defaultTitle;
-                    ogDescription = userData.bio || defaultDescription;
-                    ogImage = userData.profilePictureUrl || defaultImage;
-                }
-            } else if (screen === 'competition') {
-                const compQuery = query(collection(db, "competitions"), where("status", "in", ["Accepting Entries", "Live Voting", "Judging", "Results Visible"]), orderBy("createdAt", "desc"), limit(1));
-                const compSnapshot = await compQuery.get();
-                if (!compSnapshot.empty) {
-                    const compData = compSnapshot.docs[0].data();
-                    ogTitle = compData.title || "NVA Competition";
-                    ogDescription = compData.description || defaultDescription;
-                    ogImage = compData.flyerImageUrl || defaultImage;
-                }
-            } else if (screen === 'opportunity' && id) {
-                const oppDoc = await db.collection('opportunities').doc(id).get();
-                if (oppDoc.exists) {
-                    const oppData = oppDoc.data();
-                    ogTitle = oppData.title;
-                    ogDescription = oppData.description;
-                    ogImage = oppData.flyerImageUrl || defaultImage;
-                }
-            }
-            // Add other content types like 'content' here in the future
-        }
-    } catch (error) {
-        logger.error("Error fetching social card data:", { path, error });
-    }
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${ogTitle}</title>
-          <meta property="og:title" content="${ogTitle}" />
-          <meta property="og:description" content="${ogDescription}" />
-          <meta property="og:image" content="${ogImage}" />
-          <meta property="og:url" content="${ogUrl}" />
-          <meta property="og:type" content="website" />
-          <script>
-            // Redirect non-crawler users to the actual SPA
-            window.location.href = "${path}";
-          </script>
-        </head>
-        <body>
-          <h1>${ogTitle}</h1>
-          <p>${ogDescription}</p>
-        </body>
-      </html>
-    `;
-
-    res.status(200).send(html);
 });
 
 exports.onNewContentPublished = onDocumentCreated("artifacts/{appId}/public/data/content_items/{contentId}", async (event) => {
@@ -2902,17 +2615,22 @@ exports.updateLikeCount = onCall(async (request) => {
     const increment = isLiking ? 1 : -1;
 
     try {
+        let itemData;
+        let likerName = "Someone";
+
         await db.runTransaction(async (transaction) => {
             const itemDoc = await transaction.get(itemRef);
             if (!itemDoc.exists) {
                 throw new HttpsError("not-found", `The ${itemType} you are trying to like does not exist.`);
             }
+            itemData = itemDoc.data();
 
             if (isLiking) {
                 // Get the user's profile to store their picture on the content item
                 const userRef = db.collection("creators").doc(uid);
                 const userDoc = await transaction.get(userRef);
                 const userProfileUrl = userDoc.exists ? userDoc.data().profilePictureUrl : null;
+                likerName = userDoc.exists ? (userDoc.data().creatorName || "Someone") : "Someone";
 
                 transaction.set(likeRef, { likedAt: new Date().toISOString() });
                 transaction.update(itemRef, { 
@@ -2925,6 +2643,27 @@ exports.updateLikeCount = onCall(async (request) => {
                 transaction.update(itemRef, { likeCount: admin.firestore.FieldValue.increment(increment) });
             }
         });
+
+        // Silent in-app toast notification (stored temporarily for 2 hours)
+        const contentOwnerId = itemData ? (itemData.creatorId || itemData.postedByUid) : null;
+        if (isLiking && contentOwnerId && contentOwnerId !== uid) {
+            const itemTitle = itemData ? (itemData.title || itemData.eventTitle || "your post") : "your post";
+            const link = itemType === 'content' ? `/content/${itemId}` : '/Discover';
+
+            await db.collection("notifications").add({
+                userId: contentOwnerId,
+                title: "New Like!",
+                body: `${likerName} liked your post "${itemTitle}"`,
+                link: link,
+                deliveryType: ["toast"], // Triggers toast, auto-expires in 2 hours
+                notificationType: "NEW_LIKE",
+                sound: false,
+                isRead: false,
+                status: "pending",
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
+            }).catch(e => logger.warn("Failed to dispatch silent like notification", e));
+        }
+
         return { success: true, message: `Successfully ${isLiking ? 'liked' : 'unliked'} item.` };
     } catch (error) {
         logger.error(`Error updating like count for ${itemType} '${itemId}' by user '${uid}'`, { error });
@@ -3038,11 +2777,12 @@ exports.incrementViewCount = onCall(async (request) => {
     }
 });
 
-exports.clearNewContentFlags = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) {
+exports.clearNewContentFlags = onCall({ enforceAppCheck: false, cors: true }, async (request) => {
+    // Safety check: Prevent crash if auth is temporarily undefined
+    if (!request.auth || !request.auth.uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to perform this action.");
     }
+    const uid = request.auth.uid;
 
     logger.info(`User '${uid}' is clearing their new content flags.`);
     const db = admin.firestore();
@@ -3224,86 +2964,6 @@ exports.toggleBlockUser = onCall({ cors: true }, async (request) => {
             throw error;
         }
         throw new HttpsError("internal", `An unexpected error occurred: ${error.message}`);
-    }
-});
-
-exports.setVerifiedAdvertiserStatus = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
-      throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
-    }
-
-    const { userId, durationInMonths } = request.data;
-    if (!userId || !durationInMonths) {
-        throw new HttpsError("invalid-argument", "Missing userId or durationInMonths.");
-    }
-    
-    const db = admin.firestore();
-    const userRef = db.collection("creators").doc(userId);
-
-    const now = new Date();
-    const expiryDate = new Date(now.setMonth(now.getMonth() + parseInt(durationInMonths)));
-    
-    await userRef.update({
-        isVerifiedAdvertiser: true,
-        verifiedAdvertiserExpiresAt: admin.firestore.Timestamp.fromDate(expiryDate)
-    });
-
-    return { success: true, message: `User status set to Verified Advertiser for ${durationInMonths} month(s).` };
-});
-
-exports.revokeVerifiedAdvertiserStatus = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
-      throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
-    }
-
-    const { userId } = request.data;
-    if (!userId) {
-        throw new HttpsError("invalid-argument", "Missing userId.");
-    }
-
-    const db = admin.firestore();
-    const userRef = db.collection("creators").doc(userId);
-
-    await userRef.update({
-        isVerifiedAdvertiser: false,
-        verifiedAdvertiserExpiresAt: admin.firestore.FieldValue.delete()
-    });
-    
-    return { success: true, message: "Verified Advertiser status has been revoked." };
-});
-
-exports.cleanupExpiredVerifications = onSchedule("every 24 hours", async (event) => {
-    logger.info("Running scheduled job: Cleaning up expired Verified Advertiser statuses.");
-    const db = admin.firestore();
-    const now = new Date();
-
-    const expiredUsersQuery = db.collection("creators")
-        .where("isVerifiedAdvertiser", "==", true)
-        .where("verifiedAdvertiserExpiresAt", "<=", now);
-
-    try {
-        const snapshot = await expiredUsersQuery.get();
-        if (snapshot.empty) {
-            logger.info("No expired advertiser statuses found to clean up.");
-            return null;
-        }
-
-        const batch = db.batch();
-        snapshot.forEach(doc => {
-            logger.info(`Advertiser status for user '${doc.id}' has expired. Revoking status.`);
-            batch.update(doc.ref, {
-                isVerifiedAdvertiser: false,
-                verifiedAdvertiserExpiresAt: admin.firestore.FieldValue.delete()
-            });
-        });
-
-        await batch.commit();
-        logger.info(`Successfully cleaned up ${snapshot.size} expired advertiser statuses.`);
-        return null;
-
-    } catch (error) {
-        logger.error("Error during scheduled cleanup of advertiser statuses", { error });
-        return null;
     }
 });
 
@@ -3495,7 +3155,7 @@ exports.submitContentAppeal = onCall(async (request) => {
 });
 
 exports.dismissContentReports = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
+    if (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     const { reportIds } = request.data;
@@ -3526,10 +3186,9 @@ exports.dismissContentReports = onCall(async (request) => {
 });
 
 exports.removeReportedContent = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
+    if (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
-    }
-    const { contentId, appId, reportIds } = request.data;
+    }    const { contentId, appId, reportIds } = request.data;
     if (!contentId || !appId || !reportIds || !Array.isArray(reportIds) || reportIds.length === 0) {
         throw new HttpsError("invalid-argument", "Missing required information.");
     }
@@ -3549,7 +3208,7 @@ exports.removeReportedContent = onCall(async (request) => {
         }
         
         const contentData = contentDoc.data();
-        const removalReason = firstReportDoc.exists() ? firstReportDoc.data().reason : "Violation of Community Guidelines";
+        const removalReason = firstReportDoc.exists ? firstReportDoc.data().reason : "Violation of Community Guidelines";
         const contentCreatorId = contentData.creatorId;
 
         // Perform all database writes in a single batch
@@ -3602,7 +3261,7 @@ exports.removeReportedContent = onCall(async (request) => {
 });
 
 exports.suspendReportedUser = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
+    if (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     const { userId, durationHours, reportIds } = request.data;
@@ -3623,7 +3282,8 @@ exports.suspendReportedUser = onCall(async (request) => {
     if (firstReportDoc.exists) {
         const contentId = firstReportDoc.data().contentId;
         const contentRef = db.collection(`artifacts/production-app-id/public/data/content_items`).doc(contentId);
-        batch.update(contentRef, { hasPendingReports: false });
+        // Deactivates the violating content and clears the pending flag simultaneously
+        batch.update(contentRef, { hasPendingReports: false, isActive: false });
     }
 
     reportIds.forEach(id => {
@@ -3636,7 +3296,7 @@ exports.suspendReportedUser = onCall(async (request) => {
 });
 
 exports.suspendUserDirectly = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
+    if (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     const { userId, durationHours } = request.data;
@@ -3677,7 +3337,7 @@ exports.suspendUserDirectly = onCall(async (request) => {
 });
 
 exports.reinstateUser = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
+    if (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     const { userId, appealId } = request.data;
@@ -3702,7 +3362,7 @@ exports.reinstateUser = onCall(async (request) => {
 });
 
 exports.dismissAppeal = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
+    if (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     const { userId, appealId } = request.data;
@@ -3726,7 +3386,7 @@ exports.dismissAppeal = onCall(async (request) => {
 exports.toggleUserBanStatus = onCall(async (request) => {
     // 1. Authentication & Authorization Check
     const uid = request.auth.uid;
-    if (!uid || (!request.auth.token.admin && !request.auth.token.authority)) {
+    if (!uid || (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin)) {
       throw new HttpsError('permission-denied', 'You must be a moderator to perform this action.');
     }
   
@@ -3780,10 +3440,9 @@ exports.toggleUserBanStatus = onCall(async (request) => {
 exports.liftUserSuspension = onCall(async (request) => {
     // 1. Authentication & Authorization Check
     const uid = request.auth.uid;
-    if (!uid || (!request.auth.token.admin && !request.auth.token.authority)) {
+    if (!uid || (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin)) {
       throw new HttpsError('permission-denied', 'You must be a moderator to perform this action.');
-    }
-  
+    }  
     const { targetUserId } = request.data;
     if (!targetUserId) {
       throw new HttpsError('invalid-argument', 'The function must be called with a "targetUserId" argument.');
@@ -3827,13 +3486,17 @@ exports.liftUserSuspension = onCall(async (request) => {
     }
 });
 
-exports.createOpportunity = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in to post an opportunity.");
+exports.createOpportunity = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth || !request.auth.uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to post a casting call.");
     }
+    const uid = request.auth.uid;
 
-    const data = request.data;
+    // Secure Gating: Only Admins or Authorities can create casting calls
+    if (request.auth.token.admin !== true && request.auth.token.authority !== true && request.auth.token.super_admin !== true) {
+        throw new HttpsError("permission-denied", "Only administrators can post casting calls.");
+    }
+    const data = request.data || {};
     const requiredFields = ['title', 'providerName', 'opportunityType', 'compensationType', 'equipmentProvided', 'location', 'description', 'howToApply', 'listingDuration'];
     for (const field of requiredFields) {
         if (!data[field]) {
@@ -3841,29 +3504,8 @@ exports.createOpportunity = onCall(async (request) => {
         }
     }
 
-    logger.info(`User '${uid}' attempting to create opportunity: "${data.title}"`);
+    logger.info(`Admin '${uid}' is creating casting call: "${data.title}"`);
     const db = admin.firestore();
-    const creatorRef = db.collection("creators").doc(uid);
-    const creatorDoc = await creatorRef.get();
-    if (!creatorDoc.exists) {
-        throw new HttpsError("not-found", "Your creator profile could not be found.");
-    }
-    const creatorData = creatorDoc.data();
-
-    const isPremium = creatorData.premiumExpiresAt && creatorData.premiumExpiresAt.toDate() > new Date();
-    const isVerified = creatorData.isVerifiedAdvertiser === true;
-
-    if (!isPremium && !isVerified) {
-        throw new HttpsError("permission-denied", "Posting opportunities is a Premium feature.");
-    }
-
-    if (!isVerified) {
-        const existingListingsQuery = db.collection("opportunities").where("postedByUid", "==", uid).where("status", "in", ["active", "pending"]);
-        const existingListingsSnapshot = await existingListingsQuery.get();
-        if (!existingListingsSnapshot.empty) {
-            throw new HttpsError("already-exists", "You already have an active or pending opportunity.");
-        }
-    }
     
     const createdAt = admin.firestore.FieldValue.serverTimestamp();
     const expiresAt = new Date();
@@ -3872,34 +3514,22 @@ exports.createOpportunity = onCall(async (request) => {
     const newOpportunity = {
         ...data,
         postedByUid: uid,
-        status: 'pending',
+        status: 'active', // Admin posts go live immediately without review!
         createdAt: createdAt,
         expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
         viewCount: 0,
         applyClickCount: 0,
-        listingTier: data.listingTier === 'promoted' && isVerified ? 'promoted' : 'standard'
+        listingTier: 'standard'
     };
     
     const newDocRef = await db.collection("opportunities").add(newOpportunity);
-    logger.info(`Successfully created pending opportunity for user '${uid}' with ID '${newDocRef.id}'.`);
+    logger.info(`Successfully created live casting call with ID '${newDocRef.id}'.`);
 
-    if (!isVerified) {
-        const allListingsQuery = db.collection("opportunities").where("postedByUid", "==", uid).orderBy("createdAt", "desc");
-        const allListingsSnapshot = await allListingsQuery.get();
-        if (allListingsSnapshot.size > 10) {
-            const batch = db.batch();
-            const listingsToDelete = allListingsSnapshot.docs.slice(10);
-            listingsToDelete.forEach(doc => batch.delete(doc.ref));
-            await batch.commit();
-            logger.info(`Cleaned up ${listingsToDelete.length} old listings for user '${uid}'.`);
-        }
-    }
-
-    return { success: true, message: "Your opportunity has been submitted for review.", opportunityId: newDocRef.id };
+    return { success: true, message: "Casting Call posted successfully!", opportunityId: newDocRef.id };
 });
 
 exports.approveOpportunity = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
+    if (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     const { opportunityId } = request.data;
@@ -3944,7 +3574,7 @@ exports.approveOpportunity = onCall(async (request) => {
 });
 
 exports.rejectOpportunity = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
+    if (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     const { opportunityId } = request.data;
@@ -3985,7 +3615,7 @@ exports.rejectOpportunity = onCall(async (request) => {
 });
 
 exports.endOpportunityByAdmin = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
+    if (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     const { opportunityId } = request.data;
@@ -4043,6 +3673,7 @@ exports.deleteOpportunity = onCall(async (request) => {
     }
 
     const db = admin.firestore();
+    const bucket = admin.storage().bucket();
     const opportunityRef = db.collection("opportunities").doc(opportunityId);
     
     const opportunityDoc = await opportunityRef.get();
@@ -4050,8 +3681,24 @@ exports.deleteOpportunity = onCall(async (request) => {
         throw new HttpsError("not-found", "The listing you are trying to delete does not exist.");
     }
 
-    if (opportunityDoc.data().postedByUid !== uid) {
+    const opData = opportunityDoc.data();
+    if (opData.postedByUid !== uid && request.auth.token.admin !== true) {
         throw new HttpsError("permission-denied", "You do not have permission to delete this listing.");
+    }
+
+    // 1. Purge GCS Flyer assets to prevent storage bloat [1]
+    if (opData.flyerImageUrl) {
+        const path = getPathFromUrl(opData.flyerImageUrl);
+        if (path) await bucket.file(path).delete().catch(() => {});
+    }
+
+    // 2. Erase from creators' saved lists globally to prevent ghost references
+    const savedQuery = db.collectionGroup("savedOpportunities").where("__name__", "==", opportunityId);
+    const savedSnap = await savedQuery.get();
+    if (!savedSnap.empty) {
+        const batch = db.batch();
+        savedSnap.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
     }
 
     await opportunityRef.delete();
@@ -4221,361 +3868,8 @@ exports.checkOpportunityExpirations = onSchedule("every 12 hours", async (event)
     }
 });
 
-exports.getNextAvailableStatusSlot = onCall(async (request) => {
-    const db = admin.firestore();
-    const statusesRef = db.collection("promotedStatuses");
-    const now = new Date();
-
-    const q = statusesRef.orderBy("expiresAt", "desc").limit(1);
-    const snapshot = await q.get();
-
-    if (snapshot.empty) {
-        return { nextAvailable: now.toISOString() };
-    }
-
-    const lastBooking = snapshot.docs[0].data();
-    const lastExpiry = lastBooking.expiresAt.toDate();
-
-    if (lastExpiry < now) {
-        return { nextAvailable: now.toISOString() };
-    } else {
-        return { nextAvailable: lastExpiry.toISOString() };
-    }
-});
-
-exports.rejectStatusContent = onCall(async (request) => {
-    if (!request.auth.token.admin && !request.auth.token.authority) {
-      throw new HttpsError("permission-denied", "You must be an admin to reject content.");
-    }
-    const { bookingId } = request.data;
-    if (!bookingId) { throw new HttpsError("invalid-argument", "Missing bookingId."); }
-
-    const db = admin.firestore();
-    const bookingRef = db.collection("promotedStatuses").doc(bookingId);
-
-    const bookingDoc = await bookingRef.get();
-    if (!bookingDoc.exists) {
-        throw new HttpsError("not-found", "Booking not found.");
-    }
-    
-    // Update the booking status first.
-    await bookingRef.update({ status: 'content_rejected' });
-
-    const bookingData = bookingDoc.data();
-    const posterId = bookingData.postedByUid;
-
-    if (posterId) {
-        const posterRef = db.collection("creators").doc(posterId);
-        const notificationPayload = {
-            userId: posterId,
-            title: "Ad Content Rejected",
-            body: `Your submitted content for the Promoted Status on ${bookingData.startTime.toDate().toLocaleDateString()} was not approved. Please submit new content.`,
-            link: "/PromotedStatus",
-            deliveryType: ["inbox", "push"],
-            notificationType: "PROMO_CONTENT_REJECTED",
-            sound: true,
-            isRead: false,
-            status: "pending",
-            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
-        };
-
-        await db.collection("notifications").add(notificationPayload);
-        await posterRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
-    }
-
-    return { success: true, message: "Content rejected. The advertiser has been notified to resubmit." };
-});
-
-exports.endPromotedStatusByAdmin = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
-      throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
-    }
-    const { bookingId } = request.data;
-    if (!bookingId) { throw new HttpsError("invalid-argument", "Missing bookingId."); }
-
-    const db = admin.firestore();
-    const bookingRef = db.collection("promotedStatuses").doc(bookingId);
-
-    const bookingDoc = await bookingRef.get();
-    if (!bookingDoc.exists) { throw new HttpsError("not-found", "Booking not found."); }
-    
-    const bookingData = bookingDoc.data();
-    const posterId = bookingData.postedByUid;
-
-    // Use a batch to ensure all writes succeed together.
-    const batch = db.batch();
-
-    // 1. Update the booking status.
-    batch.update(bookingRef, { status: 'expired' });
-
-    // 2. Create the notification if there is a user to notify.
-    if (posterId) {
-        const posterRef = db.collection("creators").doc(posterId);
-        const notificationRef = db.collection("notifications").doc(); // Create a new doc ref for the notification
-
-        const notificationPayload = {
-            userId: posterId,
-            title: "Ad Status Update",
-            body: `Your Promoted Status for ${bookingData.startTime.toDate().toLocaleDateString()} was ended by a moderator.`,
-            link: "/PromotedStatus",
-            deliveryType: ["inbox", "push"],
-            notificationType: "PROMO_ENDED_BY_ADMIN",
-            sound: true,
-            isRead: false,
-            status: "pending",
-            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected from createdAt
-        };
-        
-        batch.set(notificationRef, notificationPayload);
-        batch.update(posterRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
-    }
-
-    // 3. Commit all changes at once.
-    await batch.commit();
-
-    return { success: true, message: "Promoted Status has been taken down and the user has been notified." };
-});
-
-exports.createBookingAndPledge = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in.");
-    }
-    
-    const { bookingDetails, contentDetails } = request.data;
-    if (!bookingDetails) {
-        throw new HttpsError("invalid-argument", "Missing booking details.");
-    }
-
-    const db = admin.firestore();
-    const creatorRef = db.collection("creators").doc(uid);
-    
-    try {
-        const creatorDoc = await creatorRef.get();
-        if (!creatorDoc.exists) {
-            throw new HttpsError("not-found", "Your creator profile was not found.");
-        }
-
-        const { scheduledStartTime, scheduledEndTime, price, sourceOpportunityId } = bookingDetails;
-        let finalTitle, finalMainUrl, finalFlyerImageUrl;
-
-        if (sourceOpportunityId) {
-            logger.info(`User '${uid}' is creating a booking from source opportunity '${sourceOpportunityId}'.`);
-            const opportunityRef = db.collection("opportunities").doc(sourceOpportunityId);
-            const opportunityDoc = await opportunityRef.get();
-
-            if (!opportunityDoc.exists) {
-                throw new HttpsError("not-found", "The source opportunity listing could not be found.");
-            }
-            const opportunityData = opportunityDoc.data();
-
-            if (opportunityData.postedByUid !== uid) {
-                throw new HttpsError("permission-denied", "You do not have permission to promote this listing.");
-            }
-
-            finalTitle = opportunityData.title;
-            finalFlyerImageUrl = opportunityData.flyerImageUrl || ''; // Ensure fallback
-            finalMainUrl = opportunityData.mainUrl || ''; // Ensure fallback
-        } else {
-            logger.info(`User '${uid}' is creating a booking with new content.`);
-            if (!contentDetails) {
-                throw new HttpsError("invalid-argument", "Missing content details for a new booking.");
-            }
-            const { title, mainUrl, flyerImageUrl, flyerImageUrl_highRes, description } = contentDetails;
-
-            // Implement the resilient validation logic to check Title OR Description
-            if (!title && !description) {
-                throw new HttpsError("invalid-argument", "Content details are incomplete. An Ad Title or Description is required.");
-            }
-            
-            finalTitle = title || description; // Use title, or description as a fallback
-            finalMainUrl = mainUrl || ''; 
-            finalFlyerImageUrl = flyerImageUrl || '';
-            finalFlyerImageUrl_highRes = flyerImageUrl_highRes || flyerImageUrl || ''; // Prioritize high-res, fallback to standard
-            finalDescription = description || ''; // Ensure finalDescription is set
-        }
-
-        const pledgeId = `NVA-${Date.now().toString().slice(-6).toUpperCase()}`;
-        const pledgeRef = db.collection("paymentPledges").doc(pledgeId);
-        const newStatusRef = db.collection("promotedStatuses").doc();
-
-        await db.runTransaction(async (transaction) => {
-            transaction.set(pledgeRef, {
-                pledgeId,
-                userId: uid,
-                userName: creatorDoc.data().creatorName || "N/A",
-                userEmail: creatorDoc.data().email,
-                paymentType: 'promotedStatus',
-                amount: price,
-                status: 'pending',
-                targetEventTitle: `Promoted Status Booking for ${new Date(scheduledStartTime).toLocaleDateString()}`,
-                scheduledStartTime: scheduledStartTime,
-                scheduledEndTime: scheduledEndTime,
-                createdAt: new Date().toISOString()
-            });
-
-            const isVideoUrl = finalMainUrl.includes("youtube.com") || finalMainUrl.includes("youtu.be") || finalMainUrl.includes("vimeo.com") || finalMainUrl.includes("tiktok.com");
-
-            transaction.set(newStatusRef, {
-                postedByUid: uid,
-                status: 'content_review_pending',
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                startTime: admin.firestore.Timestamp.fromDate(new Date(scheduledStartTime)),
-                expiresAt: admin.firestore.Timestamp.fromDate(new Date(scheduledEndTime)),
-                pledgeId: pledgeId,
-                content: {
-                    title: finalTitle,
-                    
-                    description: finalDescription,
-
-                    destinationUrl: isVideoUrl ? '' : finalMainUrl,
-                    adVideoUrl: isVideoUrl ? finalMainUrl : '',
-                    flyerImageUrl: finalFlyerImageUrl,
-                    flyerImageUrl_highRes: finalFlyerImageUrl_highRes
-                },
-                contentSubmittedAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-        });
-
-        return { pledgeId: pledgeId };
-
-    } catch (error) {
-        logger.error(`Error in createBookingAndPledge for user '${uid}'`, { error });
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError("internal", "An unexpected error occurred during the booking process.");
-    }
-});
-
-exports.cleanupOldBookings = onSchedule("every 24 hours", async (event) => {
-    logger.info("Running scheduled job: Cleaning up old promoted status bookings...");
-    const db = admin.firestore();
-    const retentionDays = 30;
-    
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-    const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoffDate);
-
-    const oldBookingsQuery = db.collection("promotedStatuses")
-        .where("status", "in", ["expired", "cancelled"])
-        .where("startTime", "<", cutoffTimestamp);
-
-    try {
-        const snapshot = await oldBookingsQuery.get();
-        if (snapshot.empty) {
-            logger.info("No old bookings found to clean up.");
-            return null;
-        }
-
-        const batch = db.batch();
-        snapshot.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-
-        await batch.commit();
-        logger.info(`Successfully cleaned up and deleted ${snapshot.size} old booking documents.`);
-        return null;
-
-    } catch (error) {
-        logger.error("Error during scheduled cleanup of old bookings", { error });
-        return null;
-    }
-});
-
-    // =====================================================================
-// =========== START: PROMOTED STATUS EXPIRATION LOGIC =================
-// =====================================================================
-exports.checkPromotedStatusExpirations = onSchedule("every 1 hours", async (event) => {
-    logger.info("Running scheduled job: Checking for expired promoted status slots...");
-    const db = admin.firestore();
-    const now = admin.firestore.Timestamp.now();
-
-    const expiredQuery = db.collection("promotedStatuses")
-        .where("status", "in", ["approved_and_scheduled", "content_review_pending", "content_pending"])
-        .where("expiresAt", "<=", now);
-
-    try {
-        const snapshot = await expiredQuery.get();
-        if (snapshot.empty) return null;
-        
-        const batch = db.batch();
-        const notificationPromises = [];
-
-        for (const doc of snapshot.docs) {
-            const bookingData = doc.data();
-            
-            // Update the booking status to expired
-            batch.update(doc.ref, { status: "expired" });
-
-            if (bookingData.postedByUid) {
-                const notificationPayload = {
-                    userId: bookingData.postedByUid,
-                    title: "Ad Slot Expired",
-                    body: `Your Promoted Status slot for ${bookingData.startTime.toDate().toLocaleDateString()} has finished running.`,
-                    link: "/PromotedStatus",
-                    deliveryType: ["inbox", "push"],
-                    notificationType: "PROMO_SLOT_EXPIRED",
-                    sound: false,
-                    isRead: false,
-                    status: "pending",
-                    timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
-                };
-                
-                // Add notification creation to a promise array to run after the batch
-                notificationPromises.push(
-                    db.collection("notifications").add(notificationPayload).then(() => {
-                        const userRef = db.collection("creators").doc(bookingData.postedByUid);
-                        return userRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
-                    })
-                );
-            }
-        }
-
-        // Commit all status updates first
-        await batch.commit();
-        // Then, execute all notification writes
-        await Promise.all(notificationPromises);
-
-        logger.info(`Processed ${snapshot.size} expired status slots and created ${notificationPromises.length} notifications.`);
-        return null;
-
-    } catch (error) {
-        logger.error("Error during scheduled status expiration check", { error });
-        return null;
-    }
-});
-// =====================================================================
-// =========== END: PROMOTED STATUS EXPIRATION LOGIC ===================
-// =====================================================================
-
-exports.deleteBooking = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in.");
-    }
-    const { bookingId } = request.data;
-    if (!bookingId) {
-        throw new HttpsError("invalid-argument", "Missing bookingId.");
-    }
-
-    const db = admin.firestore();
-    const bookingRef = db.collection("promotedStatuses").doc(bookingId);
-    
-    const bookingDoc = await bookingRef.get();
-    if (!bookingDoc.exists) {
-        return { success: true, message: "Booking already deleted." };
-    }
-
-    if (bookingDoc.data().postedByUid !== uid) {
-        throw new HttpsError("permission-denied", "You do not have permission to delete this booking.");
-    }
-
-    await bookingRef.delete();
-    
-    return { success: true, message: "Booking has been deleted." };
-});
-
 exports.createCompetition = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
       throw new HttpsError("permission-denied", "You must be an admin to create a competition.");
     }
     
@@ -4587,10 +3881,11 @@ exports.createCompetition = onCall(async (request) => {
 
     const db = admin.firestore();
     const bucket = admin.storage().bucket();
-    logger.info(`Admin '${request.auth.uid}' is creating competition: "${competitionData.title}"`);
+    logger.info(`Admin '${request.auth.uid}' is saving single-slot competition: "${competitionData.title}"`);
     
     try {
-        const competitionRef = db.collection("competitions").doc();
+        // Enforce Static Single-Slot ID to prevent orphan drift and directory clutter [1]
+        const competitionRef = db.collection("competitions").doc("active_competition");
         
         const finalData = { ...competitionData };
 
@@ -4604,7 +3899,7 @@ exports.createCompetition = onCall(async (request) => {
         await competitionRef.set({
             ...finalData,
             status: 'Pending',
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            createdAt: FieldValue.serverTimestamp(),
             createdBy: request.auth.uid,
             entryCount: 0
         });
@@ -4619,7 +3914,7 @@ exports.createCompetition = onCall(async (request) => {
 });
 
 exports.updateCompetition = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
       throw new HttpsError("permission-denied", "You must be an admin to update a competition.");
     }
 
@@ -4722,6 +4017,23 @@ exports.submitCompetitionEntry = onCall(async (request) => {
             throw new HttpsError("failed-precondition", "The entry deadline for this competition has passed.");
         }
 
+        // --- THE FIX: SECURE EARNINGS DEDUCTION & POOL ROUTING (With 15% Platform Fee Cut) ---
+        const entryFee = competitionData.entryFee || 0;
+        let poolIncrement = 0;
+
+        if (entryData.paymentMethod === 'earnings' && entryFee > 0) {
+            const currentEarnings = creatorData.totalEarnings || 0;
+            if (currentEarnings < entryFee) {
+                throw new HttpsError("failed-precondition", "Insufficient earnings to cover the tournament entry fee.");
+            }
+            // Securely deduct the full entry fee from the contestant's dashboard balance
+            transaction.update(creatorRef, {
+                totalEarnings: FieldValue.increment(-entryFee)
+            });
+            // Stage exactly 85% of the entry fee to be added to the tournament prize pool, reserving your 15% fee
+            poolIncrement = Math.round((entryFee * 0.85) * 100) / 100;
+        }
+
         const entryRef = competitionRef.collection("entries").doc(uid);
 
 // Explicitly construct the entry document from the received data.
@@ -4735,19 +4047,26 @@ transaction.set(entryRef, {
     submissionUrl: entryData.submissionUrl || '',
     photoUrl: entryData.photoUrl || '',
     customThumbnailUrl: entryData.customThumbnailUrl || '',
+    status: entryData.status || 'active', // Saves pending/active status dynamically
 
     // Server-added authoritative data
     userId: uid,
     userName: creatorData.creatorName || creatorData.email,
     userProfilePicture: creatorData.profilePictureUrl || '',
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
     likeCount: 0,
     viewCount: 0
 });
 
-        transaction.update(competitionRef, {
-            entryCount: admin.firestore.FieldValue.increment(1)
-        });
+        // THE FIX: Route the staged funds into the tournament's live prize pool
+        const compUpdates = {
+            entryCount: FieldValue.increment(1)
+        };
+        if (poolIncrement > 0) {
+            compUpdates.prizePool = FieldValue.increment(poolIncrement);
+        }
+        
+        transaction.update(competitionRef, compUpdates);
 
         return { success: true, message: "Your entry has been submitted successfully!" };
     });
@@ -4810,7 +4129,7 @@ exports.incrementCompetitionView = onCall(async (request) => {
     });
 });
 
-exports.checkResultsRevelations = onSchedule("every 1 minutes", async (event) => {
+exports.checkResultsRevelations =onSchedule("every 12 hours", async (event) => {
     const db = admin.firestore();
     const now = new Date();
 
@@ -4843,7 +4162,8 @@ exports.checkResultsRevelations = onSchedule("every 1 minutes", async (event) =>
             };
             batch.set(db.collection("broadcast_notifications").doc(), broadcast);
 
-            const winnersToNotify = competitionData.winnersToNotify;
+            // THE AUDIT FIX: Default to 3 winners if the admin forgot to select a setting during draft creation
+            const winnersToNotify = (competitionData.winnersToNotify !== undefined && competitionData.winnersToNotify !== null) ? competitionData.winnersToNotify : 3;
             if (winnersToNotify > 0) {
                 try {
                     const entriesQuery = competitionRef.collection("entries").orderBy("likeCount", "desc").limit(winnersToNotify);
@@ -4896,7 +4216,7 @@ exports.checkResultsRevelations = onSchedule("every 1 minutes", async (event) =>
 });
 
 exports.deleteCompetition = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
       throw new HttpsError("permission-denied", "You must be an admin to delete a competition.");
     }
     const { competitionId } = request.data;
@@ -4954,9 +4274,18 @@ exports.deleteCompetition = onCall(async (request) => {
     try {
         const competitionDoc = await competitionRef.get();
         if (competitionDoc.exists) {
-            const flyerPath = getPathFromUrl(competitionDoc.data().flyerImageUrl);
+            const compData = competitionDoc.data();
+            
+            // 1. Delete standard flyer thumbnail
+            const flyerPath = getPathFromUrl(compData.flyerImageUrl);
             if (flyerPath) {
                 await bucket.file(flyerPath).delete().catch(e => logger.error(`Non-fatal: Failed to delete main flyer: ${flyerPath}`, e));
+            }
+
+            // 2. THE FIX: Also delete high-resolution flyer to prevent permanent Cloud Storage leaks
+            const highResPath = getPathFromUrl(compData.flyerImageUrl_highRes);
+            if (highResPath) {
+                await bucket.file(highResPath).delete().catch(e => logger.error(`Non-fatal: Failed to delete high-res flyer: ${highResPath}`, e));
             }
         } else {
              logger.warn(`Competition document '${competitionId}' already deleted. Aborting.`);
@@ -4977,7 +4306,7 @@ exports.deleteCompetition = onCall(async (request) => {
     }
 });
 
-exports.checkCompetitionStatusTransitions = onSchedule("every 1 minutes", async (event) => {
+exports.checkCompetitionStatusTransitions =onSchedule("every 12 hours", async (event) => {
     logger.info("Running scheduled job: Checking for competition status transitions...");
     const db = admin.firestore();
     const now = new Date();
@@ -5049,7 +4378,7 @@ exports.checkCompetitionStatusTransitions = onSchedule("every 1 minutes", async 
         // =====================================================================
 // =========== START: SERVER-AUTHORITATIVE COMPETITION TIMER ===========
 // =====================================================================
-exports.updateCompetitionDisplayState = onSchedule("every 1 minutes", async (event) => {
+exports.updateCompetitionDisplayState =onSchedule("every 12 hours", async (event) => {
     logger.info("Running scheduled job: updateCompetitionDisplayState.");
     const db = admin.firestore();
     const now = admin.firestore.Timestamp.now();
@@ -5064,7 +4393,7 @@ exports.updateCompetitionDisplayState = onSchedule("every 1 minutes", async (eve
         const snapshot = await activeQuery.get();
 
         if (snapshot.empty) {
-            await displayStateRef.set({ isActive: false, status: 'no_active_competition' });
+            await displayStateRef.set({ isActive: false, status: 'no_active_competition' }, { merge: true });
             return null;
         }
 
@@ -5107,12 +4436,12 @@ exports.updateCompetitionDisplayState = onSchedule("every 1 minutes", async (eve
             countdownTarget: countdownTarget
         };
 
-        await displayStateRef.set(displayState);
+        await displayStateRef.set(displayState, { merge: true });
         logger.info(`Updated competitionDisplayState for '${competitionData.title}' to status '${status}'.`);
 
     } catch (error) {
         logger.error("Error in updateCompetitionDisplayState scheduled job:", { error });
-        await displayStateRef.set({ isActive: false, status: 'error' }); // Write error state
+        await displayStateRef.set({ isActive: false, status: 'error' }, { merge: true }); 
     }
     return null;
 });
@@ -5172,7 +4501,7 @@ async function runManageEventStatus() {
 }
 
 // The scheduled function now simply calls our reusable logic.
-exports.manageEventStatus = onSchedule("every 1 minutes", async (event) => {
+exports.manageEventStatus =onSchedule("every 12 hours", async (event) => {
     logger.info("Running scheduled job: manageEventStatus.");
     try {
         await runManageEventStatus();
@@ -5276,7 +4605,7 @@ exports.promoteNextEvent = onSchedule("every 5 minutes", async (event) => {
 // =========== MANUAL TRIGGER FOR AUTOMATION DIAGNOSTICS ===============
 // =====================================================================
 exports.triggerManualAutomation = onCall(async (request) => {
-    if (!request.auth || !request.auth.token.admin) {
+    if (!request.auth || (!request.auth.token.admin && !request.auth.token.super_admin)) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
     logger.info(`Admin '${request.auth.uid}' manually triggered the automation engine.`);
@@ -5357,7 +4686,7 @@ exports.triggerManualAutomation = onCall(async (request) => {
         userName: creatorData.creatorName || "NVA User",
         userProfilePicture: creatorData.profilePictureUrl || '',
         text: text.trim(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
         replyTo: replyTo || null,
         authorRole: authorRole
     };
@@ -5429,96 +4758,6 @@ exports.triggerManualAutomation = onCall(async (request) => {
 
     return { success: true, message: "Comment posted." };
 });
-
-exports.submitStatusContent = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in.");
-    }
-
-    // --- FIX #1: 'description' is added to the line below ---
-    const { bookingId, title, description, destinationUrl, adVideoUrl, flyerImageUrl } = request.data;
-    
-    if (!bookingId || !title) {
-        throw new HttpsError("invalid-argument", "Missing bookingId or title.");
-    }
-
-    const db = admin.firestore();
-    const bookingRef = db.collection("promotedStatuses").doc(bookingId);
-    
-    return db.runTransaction(async (transaction) => {
-        const bookingDoc = await transaction.get(bookingRef);
-        if (!bookingDoc.exists) {
-            throw new HttpsError("not-found", "The specified booking was not found.");
-        }
-        
-        const bookingData = bookingDoc.data();
-        if (bookingData.postedByUid !== uid) {
-            throw new HttpsError("permission-denied", "You do not own this booking.");
-        }
-        // This check is updated to allow resubmission for rejected content
-        if (bookingData.status !== 'content_pending' && bookingData.status !== 'content_rejected') {
-            throw new HttpsError("failed-precondition", "Content has already been submitted and is pending review or approved.");
-        }
-
-        transaction.update(bookingRef, {
-            status: 'content_review_pending',
-            
-            // --- FIX #2: The 'content' object below is updated with the description ---
-            content: { title, description: description || '', destinationUrl, adVideoUrl, flyerImageUrl },
-            
-            contentSubmittedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        return { success: true, message: "Content submitted for review." };
-    });
-});
-
-exports.approveStatusContent = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
-      throw new HttpsError("permission-denied", "You must be an admin to approve content.");
-    }
-    const { bookingId } = request.data;
-    if (!bookingId) { throw new HttpsError("invalid-argument", "Missing bookingId."); }
-
-    const db = admin.firestore();
-    const bookingRef = db.collection("promotedStatuses").doc(bookingId);
-
-    const bookingDoc = await bookingRef.get();
-    if (!bookingDoc.exists) {
-        throw new HttpsError("not-found", "Booking not found.");
-    }
-    if (bookingDoc.data().status !== 'content_review_pending') {
-        throw new HttpsError("failed-precondition", "This booking is not pending content review.");
-    }
-
-    await bookingRef.update({ status: 'approved_and_scheduled' });
-
-    const bookingData = bookingDoc.data();
-    const posterId = bookingData.postedByUid;
-
-    if (posterId) {
-        const posterRef = db.collection("creators").doc(posterId);
-        const notificationPayload = {
-            userId: posterId,
-            title: "Ad Content Approved!",
-            body: `Your content for the Promoted Status on ${bookingData.startTime.toDate().toLocaleDateString()} has been approved!`,
-            link: "/PromotedStatus",
-            deliveryType: ["inbox", "push"],
-            notificationType: "PROMO_CONTENT_APPROVED",
-            sound: true,
-            isRead: false,
-            status: "pending",
-            timestamp: admin.firestore.FieldValue.serverTimestamp() // Corrected
-        };
-
-        await db.collection("notifications").add(notificationPayload);
-        await posterRef.update({ unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
-    }
-
-    return { success: true, message: "Promoted content approved and scheduled." };
-});
-
 
 exports.deleteComment = onCall(async (request) => {
     const uid = request.auth.uid;
@@ -5639,7 +4878,7 @@ exports.postChatMessage = onCall(async (request) => {
         userName: creatorData.creatorName || "NVA User",
         userProfilePicture: creatorData.profilePictureUrl || '',
         text: text.trim(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
         replyTo: replyTo || null,
         authorRole: authorRole // Add the author's role to the document
     };
@@ -5694,7 +4933,7 @@ exports.postChatMessage = onCall(async (request) => {
 
     exports.muteUserInChat = onCall(async (request) => {
     // 1. Security Check: Only moderators can mute users.
-    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority)) {
+    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin)) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
 
@@ -5733,7 +4972,7 @@ exports.postChatMessage = onCall(async (request) => {
 
     exports.unmuteUserInChat = onCall(async (request) => {
     // 1. Security Check: Only moderators can unmute users.
-    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority)) {
+    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin)) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
 
@@ -5754,7 +4993,7 @@ exports.postChatMessage = onCall(async (request) => {
 
     exports.toggleEventChat = onCall(async (request) => {
     // Security Check: Only moderators can perform this action.
-    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority)) {
+    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin)) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
 
@@ -5844,7 +5083,7 @@ exports.incrementEventView = onCall(async (request) => {
 
     exports.publishEventAsContent = onCall(async (request) => {
     // 1. Security Check: Only admins can perform this action.
-    if (!request.auth || request.auth.token.admin !== true) {
+    if (!request.auth || (request.auth.token.admin !== true && request.auth.token.super_admin !== true)) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
 
@@ -5914,7 +5153,7 @@ exports.incrementEventView = onCall(async (request) => {
 
 exports.liftCampaignCooldown = onCall(async (request) => {
     const uid = request.auth.uid;
-    if (!uid || (!request.auth.token.admin && !request.auth.token.authority)) {
+    if (!uid || (!request.auth.token.admin && !request.auth.token.authority && !request.auth.token.super_admin)) {
         throw new HttpsError("permission-denied", "You must be a moderator to perform this action.");
     }
     const { targetUserId } = request.data;
@@ -6040,8 +5279,31 @@ exports.deleteOwnAccount = onCall(async (request) => {
         await deleteStorageFolder(bucket, `promo_flyers/${uid}/`);
         await deleteStorageFolder(bucket, `creator_uploads/${uid}/`);
 
-        // --- REVISED STEP 4: Manually delete known sub-collections before deleting the main document ---
+        // --- REVISED STEP 4: Reciprocal Follow Cleanup & Subcollection Purge [1] ---
         const userRef = db.collection('creators').doc(uid);
+        
+        // 1. Wipe my reciprocal following records from other users' follower lists
+        const myFollowingRef = userRef.collection("following");
+        const myFollowingSnap = await myFollowingRef.get();
+        if (!myFollowingSnap.empty) {
+            for (const doc of myFollowingSnap.docs) {
+                const targetUserRef = db.collection("creators").doc(doc.id);
+                await targetUserRef.collection("followers").doc(uid).delete().catch(() => {});
+                await targetUserRef.update({ followerCount: admin.firestore.FieldValue.increment(-1) }).catch(() => {});
+            }
+        }
+
+        // 2. Wipe my reciprocal follower records from other users' following lists
+        const myFollowersRef = userRef.collection("followers");
+        const myFollowersSnap = await myFollowersRef.get();
+        if (!myFollowersSnap.empty) {
+            for (const doc of myFollowersSnap.docs) {
+                const targetUserRef = db.collection("creators").doc(doc.id);
+                await targetUserRef.collection("following").doc(uid).delete().catch(() => {});
+                await targetUserRef.update({ followingCount: admin.firestore.FieldValue.increment(-1) }).catch(() => {});
+            }
+        }
+
         const subcollections = ['followers', 'following', 'blockedUsers', 'blockedBy', 'savedOpportunities', 'seenNotifications', 'feed'];
         for (const sub of subcollections) {
             await deleteCollection(db, userRef.collection(sub), batchSize);
@@ -6128,7 +5390,7 @@ exports.scheduledGhostCleanup = onSchedule("0 3 1 * *", async (event) => {
     // 2. THE MANUAL TRIGGER FUNCTION FOR THE ADMIN PANEL
 exports.manualGhostCleanup = onCall(async (request) => {
     // Security Check: Only an admin can run this action.
-    if (!request.auth || request.auth.token.admin !== true) {
+    if (!request.auth || (request.auth.token.admin !== true && request.auth.token.super_admin !== true)) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
     
@@ -6152,7 +5414,7 @@ exports.manualGhostCleanup = onCall(async (request) => {
 // ============ START: NEW DESTRUCTIVE DELETE USER FUNCTION ============
 // =====================================================================
 exports.deleteUserAccount = onCall(async (request) => {
-    if (!request.auth || request.auth.token.admin !== true) {
+    if (!request.auth || (request.auth.token.admin !== true && request.auth.token.super_admin !== true)) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
     const { userIdToDelete } = request.data;
@@ -6205,7 +5467,7 @@ exports.deleteUserAccount = onCall(async (request) => {
 // =====================================================================
 exports.deleteAllUserDataAndContent = onCall(async (request) => {
     // SECURITY: Only a verified admin can run this function.
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
         throw new HttpsError("permission-denied", "CRITICAL: You must be an admin to perform this action.");
     }
     const adminUid = request.auth.uid;
@@ -6216,21 +5478,21 @@ exports.deleteAllUserDataAndContent = onCall(async (request) => {
     const auth = admin.auth();
     const batchSize = 400; // Number of documents to delete per batch.
 
-    // --- Helper function to recursively delete collections ---
-    async function deleteCollection(collectionRef) {
-        const query = collectionRef.orderBy('__name__').limit(batchSize);
-        return new Promise((resolve, reject) => {
-            deleteQueryBatch(query, resolve).catch(reject);
-        });
-    }
-    async function deleteQueryBatch(query, resolve) {
-        const snapshot = await query.get();
-        if (snapshot.size === 0) { return resolve(); }
-        const batch = db.batch();
-        snapshot.docs.forEach(doc => { batch.delete(doc.ref); });
-        await batch.commit();
-        process.nextTick(() => { deleteQueryBatch(query, resolve); });
-    }
+    // --- Consolidated Global Deletion Helper to Prevent Code Overwrite Crashes [1] ---
+async function deleteCollection(db, collectionRef, batchSize = 400) {
+    const query = collectionRef.orderBy('__name__').limit(batchSize);
+    return new Promise((resolve, reject) => {
+        deleteQueryBatch(db, query, resolve).catch(reject);
+    });
+}
+async function deleteQueryBatch(db, query, resolve) {
+    const snapshot = await query.get();
+    if (snapshot.size === 0) { return resolve(); }
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => { batch.delete(doc.ref); });
+    await batch.commit();
+    process.nextTick(() => { deleteQueryBatch(db, query, resolve); });
+}
     
     // --- Helper function to recursively delete storage folders ---
     async function deleteStorageFolder(path) {
@@ -6244,10 +5506,12 @@ exports.deleteAllUserDataAndContent = onCall(async (request) => {
     
     try {
         // --- STEP 1: Define all user-generated data locations ---
+        // THE FIX: Protect financial ledger logs so your P&L system maintains accurate auditing [1]
         const collectionsToDelete = [
             'competitions', 'opportunities', 'events', 'promotedStatuses', 
-            'paymentPledges', 'payoutRequests', 'reports', 'appeals', 
-            'contactSubmissions', 'notifications', 'broadcast_notifications'
+            'reports', 'appeals', 
+            'contactSubmissions', 'notifications', 'broadcast_notifications',
+            'chats', 'enrollmentApplications'
         ];
         const artifactSubcollectionsToDelete = ['campaigns', 'content_items'];
         const storagePrefixesToDelete = [
@@ -6255,15 +5519,37 @@ exports.deleteAllUserDataAndContent = onCall(async (request) => {
             'opportunity_flyers/', 'promo_flyers/', 'creator_uploads/', 'competition_entries/'
         ];
 
-        // --- STEP 2: Delete all specified collections and subcollections ---
+        // --- STEP 2: Deep-Clean Wipe of all Root Collections & Nested Subcollections [1] ---
         for (const colPath of collectionsToDelete) {
-            logger.info(`Deleting collection: '${colPath}'...`);
-            await deleteCollection(db.collection(colPath));
+            logger.info(`Deep-cleaning collection: '${colPath}'...`);
+            const colRef = db.collection(colPath);
+            const snapshot = await colRef.get();
+            
+            for (const doc of snapshot.docs) {
+                // EQUIP THE NUKE: Recursively find and kill all hidden subcollections (Messages, Comments, Likes, Entries) [1]
+                const subcollections = await doc.ref.listCollections();
+                for (const sub of subcollections) {
+                    await deleteCollection(db, sub, batchSize);
+                }
+                await doc.ref.delete();
+            }
         }
         for (const subColPath of artifactSubcollectionsToDelete) {
             const fullPath = `artifacts/production-app-id/public/data/${subColPath}`;
             logger.info(`Deleting artifact subcollection: '${fullPath}'...`);
-            await deleteCollection(db.collection(fullPath));
+            
+            // Cascade delete nested subcollections (comments and likes) inside content_items before deletion [1]
+            if (subColPath === 'content_items') {
+                const contentColRef = db.collection(fullPath);
+                const contentDocs = await contentColRef.get();
+                for (const doc of contentDocs.docs) {
+                    await deleteCollection(db, doc.ref.collection("comments"), batchSize);
+                    await deleteCollection(db, doc.ref.collection("likes"), batchSize);
+                    await doc.ref.delete();
+                }
+            } else {
+                await deleteCollection(db, db.collection(fullPath), batchSize);
+            }
         }
 
         // --- STEP 3: Delete all user-uploaded files from Storage ---
@@ -6272,21 +5558,47 @@ exports.deleteAllUserDataAndContent = onCall(async (request) => {
             await deleteStorageFolder(prefix);
         }
         
-        // --- STEP 4: Delete all users (Firestore Docs & Auth accounts), EXCEPT the calling admin ---
-        logger.info("Deleting all user accounts (except the calling admin)...");
+        // --- STEP 4: Delete all users (Firestore Docs & Auth accounts), EXCEPT active Admin/Staff Accounts ---
+        logger.info("Deleting all standard user accounts, preserving calling admin and other staff roles...");
         const usersSnapshot = await db.collection('creators').get();
         const userDeletionPromises = [];
         
         usersSnapshot.forEach(doc => {
-            if (doc.id !== adminUid) {
-                // Delete the Auth user, which will trigger the Firestore document deletion via the extension.
+            const userData = doc.data() || {};
+            // THE FIX: Guard all administrative, moderator, and authority accounts from accidental deletion
+            const isStaff = userData.role === 'admin' || userData.role === 'super_admin' || userData.role === 'authority';
+            
+            if (doc.id !== adminUid && !isStaff) {
+                // Delete the Auth user
                 userDeletionPromises.push(auth.deleteUser(doc.id).catch(err => logger.error(`Failed to delete auth user ${doc.id}`, err)));
-                // Also delete the firestore doc directly for immediate cleanup.
+                // Delete the firestore doc directly
                 userDeletionPromises.push(doc.ref.delete().catch(err => logger.error(`Failed to delete firestore doc for user ${doc.id}`, err)));
             }
         });
         await Promise.all(userDeletionPromises);
-        logger.info(`Deleted ${userDeletionPromises.length / 2} user accounts.`);
+        
+        // --- STEP 5: Wipe Admin Ghost Subcollections (Followers/Feed/Chats) & RESET Admin Testing Flags ---
+        const adminRef = db.collection('creators').doc(adminUid);
+        const subcollectionsToWipe = ['followers', 'following', 'feed', 'notifications', 'blockedUsers'];
+        for (const subCol of subcollectionsToWipe) {
+            await deleteCollection(adminRef.collection(subCol));
+        }
+
+       // Reset Admin's active enrollment flags so you can cleanly re-test registration!
+        const adminDoc = await adminRef.get();
+        // THE FIX: Extract current role and write it back explicitly to guarantee they are never demoted/downgraded
+        const currentRole = adminDoc.exists ? (adminDoc.data().role || 'super_admin') : 'super_admin';
+
+        await adminRef.update({
+            isClassMember: false,
+            isFilmClub: false,
+            isContestant: false,
+            badges: [],
+            role: currentRole, // Guarantees role persistence
+            cooldowns: FieldValue.delete() // THE FIX: Prevents undefined property crash
+        });
+
+        logger.info(`Deleted ${userDeletionPromises.length / 2} user accounts, sanitized Admin subcollections, and reset testing flags.`);
 
         const successMessage = "Full data reset complete. All user and content data has been wiped. Your admin account remains.";
         logger.info(successMessage);
@@ -6306,7 +5618,7 @@ exports.deleteAllUserDataAndContent = onCall(async (request) => {
 // =====================================================================
 exports.clearAdminFeed = onCall(async (request) => {
     // SECURITY: Only an admin can run this function.
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
     const adminUid = request.auth.uid;
@@ -6379,7 +5691,7 @@ exports.clearAdminFeed = onCall(async (request) => {
         }
         
         const targetUserRole = targetUserDoc.data().role;
-        const isCallerAdmin = request.auth.token.admin === true;
+        const isCallerAdmin = request.auth.token.admin === true || request.auth.token.super_admin === true;
         const isCallerAuthority = request.auth.token.authority === true;
 
         // --- PERMISSION CHECKS ---
@@ -6397,12 +5709,16 @@ exports.clearAdminFeed = onCall(async (request) => {
 
         // --- THIS IS THE CRITICAL FIX ---
         // 1. Prepare the custom claims object based on the new role.
+        const userRecord = await admin.auth().getUser(targetUserId);
+        const currentClaims = userRecord.customClaims || {};
+        
         const claims = {
+            ...currentClaims,
             admin: newRole === 'admin',
             authority: newRole === 'authority'
         };
 
-        // 2. Set the custom claims on the user's authentication token.
+        // 2. Set the custom claims on the user's authentication token non-destructively.
         await admin.auth().setCustomUserClaims(targetUserId, claims);
 
         // 3. Update the role in the Firestore document for display purposes.
@@ -6425,7 +5741,7 @@ exports.clearAdminFeed = onCall(async (request) => {
 // =====================================================================
 exports.backfillFollowerData = onCall(async (request) => {
     // Security Check: Only an admin can run this powerful operation.
-    if (!request.auth || request.auth.token.admin !== true) {
+    if (!request.auth || (request.auth.token.admin !== true && request.auth.token.super_admin !== true)) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
 
@@ -6551,20 +5867,9 @@ async function runFeedPruning() {
     return message;
 }
 
-// 1. THE AUTOMATED, SCHEDULED FUNCTION (e.g., runs once a day)
-exports.pruneUserFeeds = onSchedule("every 24 hours", async (event) => {
-    logger.info("Running scheduled job: Prune User Feeds.");
-    try {
-        await runFeedPruning();
-    } catch (error) {
-        logger.error("Error during scheduled feed pruning:", { error });
-    }
-    return null;
-});
-
 // 2. THE MANUAL TRIGGER FUNCTION FOR THE ADMIN PANEL
 exports.triggerFeedPrune = onCall(async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
     logger.info(`Admin '${request.auth.uid}' manually triggered feed pruning.`);
@@ -6586,7 +5891,7 @@ exports.triggerFeedPrune = onCall(async (request) => {
 // =====================================================================
 exports.setAdminClaim = onCall(async (request) => {
     // Security Check: Only an existing admin can make another admin.
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
       throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
     const { targetUid } = request.data;
@@ -6594,7 +5899,9 @@ exports.setAdminClaim = onCall(async (request) => {
       throw new HttpsError("invalid-argument", "Missing targetUid.");
     }
     try {
-      await admin.auth().setCustomUserClaims(targetUid, { admin: true });
+      const userRecord = await admin.auth().getUser(targetUid);
+      const currentClaims = userRecord.customClaims || {};
+      await admin.auth().setCustomUserClaims(targetUid, { ...currentClaims, admin: true });
       logger.info(`Admin '${request.auth.uid}' successfully set admin claim for user '${targetUid}'.`);
       return { success: true, message: `Admin claim set for user ${targetUid}.` };
     } catch (error) {
@@ -6605,7 +5912,7 @@ exports.setAdminClaim = onCall(async (request) => {
 
     exports.setAuthorityClaim = onCall(async (request) => {
     // Security Check: Only an admin can grant authority status.
-    if (request.auth.token.admin !== true) {
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
       throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
     const { targetUid } = request.data;
@@ -6629,8 +5936,8 @@ exports.setAdminClaim = onCall(async (request) => {
 
  
 // Called by the frontend to save a device's push notification token.
-exports.saveFCMToken = onCall(async (request) => {
-    const uid = request.auth.uid;
+exports.saveFCMToken = onCall({ enforceAppCheck: false, cors: true }, async (request) => {
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in.");
     }
@@ -6724,20 +6031,19 @@ exports.deleteReadNotifications = onCall(async (request) => {
 // ============ END: NOTIFICATION BADGE & PUSH SYSTEM ===================
 // =====================================================================
 
-exports.markToastAsSeen = onCall(async (request) => {
+exports.markToastAsSeen = onCall({ enforceAppCheck: false, cors: true }, async (request) => {
+    if (!request.auth || !request.auth.uid) { 
+        throw new HttpsError("unauthenticated", "You must be logged in."); 
+    }
     const uid = request.auth.uid;
-    if (!uid) {
-        throw new HttpsError("unauthenticated", "You must be logged in.");
-    }
-    const { notificationId } = request.data;
-    if (!notificationId) {
-        throw new HttpsError("invalid-argument", "Missing notificationId.");
-    }
+    const { notificationId } = request.data || {};
+    if (!notificationId) { throw new HttpsError("invalid-argument", "Missing notificationId."); }
 
     const db = admin.firestore();
     try {
         const seenRef = db.doc(`creators/${uid}/seenNotifications/${notificationId}`);
-        await seenRef.set({ seenAt: new Date() });
+        // Fix: Use the imported FieldValue from "firebase-admin/firestore" to prevent internal crash
+        await seenRef.set({ seenAt: FieldValue.serverTimestamp() }, { merge: true });
         return { success: true };
     } catch (error) {
         logger.error(`Failed to mark toast ${notificationId} as seen for user ${uid}`, { error });
@@ -6837,6 +6143,21 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                 ogDescription = data.description;
                 ogImage = data.flyerImageUrl || ogImage;
             }
+        } else if (screen === 'CenterStage') {
+            if (id) {
+                const docSnap = await db.doc(`creators/${id}`).get();
+                if (docSnap.exists) {
+                    const data = docSnap.data();
+                    ogTitle = `Vote for ${data.creatorName} on NVA CenterStage!`;
+                    ogDescription = `Support ${data.creatorName} in the NVA Docu-Series Challenges. Tap here to send a gift and cast your vote!`;
+                    ogImage = data.profilePictureUrl || ogImage;
+                    debugMessage = `<!-- NVA DEBUG: Rendered CenterStage contestant: ${id} -->`;
+                }
+            } else {
+                ogTitle = "NVA CenterStage - The Docu-Series Challenges";
+                ogDescription = "Step into the arena! Vote for your favorite actors, see who takes the crown, and send gifts to influence the leaderboard.";
+                debugMessage = `<!-- NVA DEBUG: Rendered CenterStage Main Arena -->`;
+            }
         } else if (screen === 'discover') {
             const docSnap = await db.doc("settings/liveEvent").get();
             if (docSnap.exists) {
@@ -6908,15 +6229,80 @@ exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (
         if (!userDoc.exists) {
             throw new HttpsError("not-found", "Your user profile could not be found.");
         }
-        if (enrollmentDoc.exists && !['declined', 'cancelled'].includes(enrollmentDoc.data().status)) {
-            throw new HttpsError("already-exists", "You already have a pending or approved application.");
+
+        const userData = userDoc.data();
+        const config = configDoc.data();
+        // DEFINITIVE FIX: Check track-specific cooldowns instead of global blocks
+        const userCooldowns = userData.cooldowns || {};
+        for (const option of selectedOptions) {
+            if (userCooldowns[option]) {
+                const cooldownTime = new Date(userCooldowns[option]).getTime();
+                if (!isNaN(cooldownTime) && Date.now() < cooldownTime) {
+                    const remainingDays = Math.ceil((cooldownTime - Date.now()) / (24 * 60 * 60 * 1000));
+                    throw new HttpsError("failed-precondition", `Your profile is on a cooldown hold for ${option === 'filmClub' ? 'Film Club' : 'Docu-Series'}. You can apply again in ${remainingDays} day(s).`);
+                }
+            }
         }
+        
+        // Fallback for legacy global hold
+        if (userData.cooldownUntil) {
+            const cooldownTime = new Date(userData.cooldownUntil).getTime();
+            if (!isNaN(cooldownTime) && Date.now() < cooldownTime) {
+                const remainingDays = Math.ceil((cooldownTime - Date.now()) / (24 * 60 * 60 * 1000));
+                throw new HttpsError("failed-precondition", `Your profile is on a global cooldown hold. You can apply again in ${remainingDays} day(s).`);
+            }
+        }
+        
+        // --- Check 3-Day & 30-Day Holds on Rejection or Deletion ---
+        if (enrollmentDoc.exists) {
+            const appData = enrollmentDoc.data();
+            const existingOpts = appData.selectedOptions || [];
+            const history = appData.history || [];
+            
+            // Check if the user is adding any brand-new program options they haven't applied for yet
+            const isNewOptionSelected = selectedOptions.some(opt => !existingOpts.includes(opt));
+            
+            if (!isNewOptionSelected) {
+                const lastHistoryEntry = history[history.length - 1];
+                const isHoldCleared = lastHistoryEntry && lastHistoryEntry.status === "hold_cleared";
+
+                if (!isHoldCleared) {
+                    const wasPreviouslyApprovedOrEnrolled = history.some(h => h.status === "approved" || h.status === "enrolled" || h.status === "paymentPending");
+                    
+                    // ARCHITECTURAL FIX: Decoupled check. Only block if the SPECIFIC track being requested is in declinedOptions.
+                    const isGlobalHoldStatus = ["declined", "cancelled", "revoked"].includes(appData.status);
+                    const declinedOpts = appData.declinedOptions || [];
+                    const isTargetTrackLocked = selectedOptions.some(opt => declinedOpts.includes(opt));
+
+                    if (isGlobalHoldStatus && isTargetTrackLocked) {
+                        const lastUpdateTime = appData.updatedAt 
+                            ? (appData.updatedAt.toDate ? appData.updatedAt.toDate().getTime() : new Date(appData.updatedAt).getTime())
+                            : (appData.declinedAt ? (appData.declinedAt.toDate ? appData.declinedAt.toDate().getTime() : new Date(appData.declinedAt).getTime()) : Date.now());
+                        
+                        const cooldownMs = wasPreviouslyApprovedOrEnrolled ? (30 * 24 * 60 * 60 * 1000) : (3 * 24 * 60 * 60 * 1000);
+                        const timeElapsed = Date.now() - lastUpdateTime;
+
+                        if (timeElapsed < cooldownMs) {
+                            const remainingTime = cooldownMs - timeElapsed;
+                            const remainingDays = Math.ceil(remainingTime / (24 * 60 * 60 * 1000));
+                            throw new HttpsError("failed-precondition", `The selected track is on a ${wasPreviouslyApprovedOrEnrolled ? '30' : '3'}-day hold. You can reapply in ${remainingDays} day(s).`);
+                        }
+                    } else if (!isGlobalHoldStatus) {
+                        // If status is active (pending/approved), only block if they are trying to re-apply for the exact same track
+                        const isAlreadyActive = selectedOptions.some(opt => existingOpts.includes(opt));
+                        if (isAlreadyActive) {
+                            throw new HttpsError("already-exists", "You already have an active pending or approved application for this selection.");
+                        }
+                    }
+                }
+            }
+        }
+
         if (!configDoc.exists) {
             throw new HttpsError("failed-precondition", "Enrollment configuration is not available.");
         }
 
-        const userData = userDoc.data();
-        const config = configDoc.data();
+        const bioText = userData.bio || ""; // <-- PREVENT UNDEFINED ERROR
 
         // --- Profile Completeness Validation ---
         if (config.requireProfilePhoto && !userData.profilePictureUrl) {
@@ -6925,21 +6311,25 @@ exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (
         if (config.requirePhone && !phoneNumber) { 
             throw new HttpsError("failed-precondition", "A phone number is required to apply.");
         }
-        if (config.requireExperience && (!userData.bio || userData.bio.length < 10)) {
+        if (config.requireExperience && (!bioText || bioText.length < 10)) {
             throw new HttpsError("failed-precondition", "Your bio/experience is required (minimum 10 characters).");
         }
 
+        // DEFINITIVE FIX: Safely pull email from Auth Token, preventing crashes if 'email' is missing in Firestore
+        const userAuthEmail = request.auth.token.email || userData.email || "";
+        const fallbackName = userAuthEmail ? userAuthEmail.split('@')[0] : "Applicant";
+
         const applicationData = {
             userId: uid,
-            userName: userData.creatorName || userData.email.split('@')[0],
-            userEmail: userData.email,
+            userName: userData.creatorName || fallbackName,
+            userEmail: userAuthEmail || "No Email Provided",
             profilePictureUrl: userData.profilePictureUrl || null,
             phone: phoneNumber || null,
-            bio: userData.bio || "",
+            bio: bioText,
             selectedOptions,
             totalAmount: totalAmount || 0,
             status: "pending",
-            submittedAt: FieldValue.serverTimestamp(),
+            submittedAt: admin.firestore.FieldValue.serverTimestamp(),
             history: [{
                 status: "pending",
                 timestamp: new Date().toISOString(),
@@ -6958,22 +6348,110 @@ exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (
     }
 });
 
+// Admin/Moderator function to bestow or revoke "Gold Club" status (Lifetime Exemption)
+exports.toggleGoldClubStatus = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated.");
+    const db = admin.firestore();
+    
+    // Auth Check: Staff roles only (Super Admin, Admin, Authority, Moderator)
+    const callerSnap = await db.doc(`creators/${request.auth.uid}`).get();
+    const callerData = callerSnap.data();
+    const allowedRoles = ['admin', 'authority', 'super_admin', 'moderator'];
+    if (!callerSnap.exists || !allowedRoles.includes(callerData.role)) {
+        throw new HttpsError("permission-denied", "Unauthorized.");
+    }
+
+    const { targetUserId } = request.data;
+    const userRef = db.doc(`creators/${targetUserId}`);
+    const userSnap = await userRef.get();
+
+    if (!userSnap.exists) throw new HttpsError("not-found", "User not found.");
+
+    const userData = userSnap.data();
+    const currentBadges = userData.badges || [];
+    const isGold = currentBadges.includes("Gold Club");
+
+    let newBadges;
+    if (isGold) {
+        newBadges = currentBadges.filter(b => b !== "Gold Club");
+    } else {
+        newBadges = [...currentBadges, "Gold Club"];
+    }
+
+    const appRef = db.doc(`enrollmentApplications/${targetUserId}`);
+    const appSnap = await appRef.get();
+
+    let userUpdates = { badges: newBadges };
+    let appUpdates = { badges: newBadges };
+
+    // INSTANT ENROLLMENT JUMP: If turning Gold ON, bypass the enrollment steps for Film Club
+    if (!isGold) {
+        // Set flags on User Profile
+        userUpdates.isFilmClub = true;
+        userUpdates.isClassMember = true;
+        
+        // Set a 30-day expiry placeholder (Cron job will ignore them anyway because of the Gold badge)
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + 30);
+        userUpdates.subscriptionExpiresAt = expiryDate.toISOString();
+
+        // Update Application Status to Enrolled ONLY if Film Club is the only thing they are doing
+        if (appSnap.exists) {
+            const appData = appSnap.data();
+            const currentOpts = appData.selectedOptions || [];
+            
+            // ARCHITECTURAL FIX: If they have Docu-Series, keep status 'pending' so they must pay.
+            const hasOtherTracks = currentOpts.some(opt => opt !== 'filmClub');
+            if (!hasOtherTracks) {
+                appUpdates.status = "enrolled";
+            }
+            
+            if (!currentOpts.includes('filmClub')) {
+                appUpdates.selectedOptions = [...currentOpts, 'filmClub'];
+            }
+            appUpdates.history = admin.firestore.FieldValue.arrayUnion({
+                status: "enrolled_via_gold",
+                timestamp: new Date().toISOString(),
+                actor: request.auth.uid
+            });
+        }
+    }
+
+    // Execute updates
+    await userRef.update(userUpdates);
+    if (appSnap.exists) {
+        await appRef.update(appUpdates);
+    }
+    
+    logger.info(`Admin '${request.auth.uid}' bestowed Gold Status & Enrolled user '${targetUserId}'.`);
+    return { success: true, isGold: !isGold };
+});
+
 // Admin-only function to approve an application.
 exports.approveEnrollmentApplication = onCall({ enforceAppCheck: false }, async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    
+    const db = admin.firestore();
+    
+    // THE FIX: Robust Admin Check via Database to prevent Token Crashes (CORS errors)
+    const callerRef = db.doc(`creators/${request.auth.uid}`);
+    const callerSnap = await callerRef.get();
+    const allowedRoles = ['admin', 'authority', 'super_admin', 'moderator'];
+    if (!callerSnap.exists || !allowedRoles.includes(callerSnap.data().role)) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
+
     const { targetUserId } = request.data;
     if (!targetUserId) {
         throw new HttpsError("invalid-argument", "Missing targetUserId.");
     }
 
-    const db = admin.firestore();
     const enrollmentRef = db.doc(`enrollmentApplications/${targetUserId}`);
-
     await enrollmentRef.update({
         status: "approved",
-        history: FieldValue.arrayUnion({
+        history: admin.firestore.FieldValue.arrayUnion({
             status: "approved",
             timestamp: new Date().toISOString(),
             actor: request.auth.uid
@@ -6986,20 +6464,50 @@ exports.approveEnrollmentApplication = onCall({ enforceAppCheck: false }, async 
 
 // Admin-only function to decline an application.
 exports.declineEnrollmentApplication = onCall({ enforceAppCheck: false }, async (request) => {
-    if (request.auth.token.admin !== true) {
-        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
-    }
-    const { targetUserId, reason } = request.data;
-    if (!targetUserId) {
-        throw new HttpsError("invalid-argument", "Missing targetUserId.");
-    }
+    if (!request.auth) throw new HttpsError("unauthenticated", "You must be logged in.");
 
     const db = admin.firestore();
+    const callerRef = db.doc(`creators/${request.auth.uid}`);
+    const callerSnap = await callerRef.get();
+    const allowedRoles = ['admin', 'authority', 'super_admin', 'moderator'];
+    if (!callerSnap.exists || !allowedRoles.includes(callerSnap.data().role)) {
+        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+
+    const { targetUserId, reason } = request.data;
+    if (!targetUserId) throw new HttpsError("invalid-argument", "Missing targetUserId.");
+
     const enrollmentRef = db.doc(`enrollmentApplications/${targetUserId}`);
+    const userRef = db.doc(`creators/${targetUserId}`);
+
+    const appSnap = await enrollmentRef.get();
+    const userSnap = await userRef.get();
+
+    // Set 3-day hold for specifically requested tracks
+    const cooldownMs = 3 * 24 * 60 * 60 * 1000;
+    const cooldownTimestamp = new Date(Date.now() + cooldownMs).toISOString();
+    
+    let newCooldowns = userSnap.exists ? (userSnap.data().cooldowns || {}) : {};
+    if (appSnap.exists && userSnap.exists) {
+        const uData = userSnap.data();
+        const opts = appSnap.data().selectedOptions || [];
+        opts.forEach(opt => {
+            // SAFEGUARD: Do not apply a decline hold to any track they are ALREADY a member of!
+            if (opt === 'filmClub' && (uData.isFilmClub || uData.isClassMember)) return;
+            if (opt === 'docuSeries' && uData.isContestant) return;
+            
+            newCooldowns[opt] = cooldownTimestamp;
+        });
+    }
+
+    await userRef.update({
+        cooldowns: newCooldowns
+    });
 
     await enrollmentRef.update({
         status: "declined",
-        history: FieldValue.arrayUnion({
+        declinedAt: admin.firestore.FieldValue.serverTimestamp(),
+        history: admin.firestore.FieldValue.arrayUnion({
             status: "declined",
             timestamp: new Date().toISOString(),
             actor: request.auth.uid,
@@ -7008,6 +6516,159 @@ exports.declineEnrollmentApplication = onCall({ enforceAppCheck: false }, async 
     });
 
     logger.info(`Admin '${request.auth.uid}' declined enrollment for user '${targetUserId}'.`);
+    return { success: true };
+});
+
+// Admin-only function to clear the 3-day or 30-day hold on ANY declined/revoked application.
+exports.clearEnrollmentHold = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "You must be logged in.");
+
+    const db = admin.firestore();
+    const callerRef = db.doc(`creators/${request.auth.uid}`);
+    const callerSnap = await callerRef.get();
+    const allowedRoles = ['admin', 'authority', 'super_admin', 'moderator'];
+    if (!callerSnap.exists || !allowedRoles.includes(callerSnap.data().role)) {
+        throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
+    }
+
+    const { targetUserId } = request.data;
+    if (!targetUserId) throw new HttpsError("invalid-argument", "Missing targetUserId.");
+
+    const enrollmentRef = db.doc(`enrollmentApplications/${targetUserId}`);
+    const userRef = db.doc(`creators/${targetUserId}`); // <-- FIXED TYPO (db.doc)
+
+    // 1. Physically remove all lockdowns, ghost badges, and active flags to reset the user
+    try {
+        const uSnap = await userRef.get();
+        const uData = uSnap.data();
+        const cleanBadges = (uData.badges || []).filter(b => b !== "Film Club" && b !== "Class Member" && b !== "Contestant" && b !== "Gold Club");
+
+        await userRef.update({
+            cooldowns: admin.firestore.FieldValue.delete(),
+            cooldownUntil: admin.firestore.FieldValue.delete(),
+            isFilmClub: false,
+            isClassMember: false,
+            isContestant: false,
+            badges: cleanBadges
+        });
+    } catch (e) {
+        // Silently ignore if fields don't exist
+    }
+
+    // 2. Safely set application to cancelled using MERGE so it resurrects missing Ghost documents!
+    await enrollmentRef.set({
+        status: "cancelled",
+        declinedAt: admin.firestore.FieldValue.delete(),
+        declinedOptions: admin.firestore.FieldValue.delete(),
+        hasRevokedTrack: admin.firestore.FieldValue.delete(),
+        hasDeclinedTrack: admin.firestore.FieldValue.delete(),
+        history: admin.firestore.FieldValue.arrayUnion({
+            status: "hold_cleared",
+            timestamp: new Date().toISOString(),
+            actor: request.auth.uid
+        })
+    }, { merge: true });
+
+    logger.info(`Admin '${request.auth.uid}' cleared enrollment hold for user '${targetUserId}'.`);
+    return { success: true };
+});
+
+// God-Tier Revoke: Handles track isolation, Gold stripping, visibility flags, and the set/merge VIP safety fix.
+exports.deleteEnrollmentApplication = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated.");
+    const db = admin.firestore();
+    const callerSnap = await db.doc(`creators/${request.auth.uid}`).get();
+    const allowedRoles = ['admin', 'authority', 'super_admin', 'moderator'];
+    if (!callerSnap.exists || !allowedRoles.includes(callerSnap.data().role)) {
+        throw new HttpsError("permission-denied", "Access Denied.");
+    }
+
+    const { targetUserId, program } = request.data; 
+    if (!targetUserId || !program) throw new HttpsError("invalid-argument", "Missing User ID or Program.");
+
+    const userRef = db.doc(`creators/${targetUserId}`);
+    const enrollmentRef = db.doc(`enrollmentApplications/${targetUserId}`);
+    const [userSnap, appSnap] = await Promise.all([userRef.get(), enrollmentRef.get()]);
+
+    let cooldownMs = 3 * 24 * 60 * 60 * 1000;
+    if (appSnap.exists) {
+        const history = appSnap.data().history || [];
+        if (history.some(h => h.status === "enrolled" || h.status === "approved")) {
+            cooldownMs = 30 * 24 * 60 * 60 * 1000;
+        }
+    }
+
+    let filteredBadges = [];
+    if (userSnap.exists) {
+        const uData = userSnap.data();
+        filteredBadges = uData.badges || [];
+        let updates = {};
+
+        const revokeFilm = program === 'filmClub' || program === 'all';
+        const revokeDocu = program === 'docuSeries' || program === 'all';
+
+        if (revokeFilm) {
+            updates.isClassMember = false;
+            updates.isFilmClub = false;
+            // ARCHITECTURAL SYNC: Gold Club is stripped whenever Film Club is revoked.
+            filteredBadges = filteredBadges.filter(b => b !== "Film Club" && b !== "Class Member" && b !== "Gold Club");
+        }
+        if (revokeDocu) {
+            updates.isContestant = false;
+            filteredBadges = filteredBadges.filter(b => b !== "Contestant");
+        }
+
+        updates.badges = filteredBadges;
+        const currentCooldowns = uData.cooldowns || {};
+        const expiry = new Date(Date.now() + cooldownMs).toISOString();
+        if (program === 'all') {
+            ['filmClub', 'docuSeries'].forEach(opt => currentCooldowns[opt] = expiry);
+        } else {
+            currentCooldowns[program] = expiry;
+        }
+        updates.cooldowns = currentCooldowns;
+        await userRef.update(updates);
+    }
+
+    // SYNC APPLICATION DOC: Calculate logic for "Revoked Members" tab visibility
+    const appData = appSnap.exists ? appSnap.data() : { selectedOptions: [], history: [], status: 'none' };
+    const wasPreviouslyEnrolled = appData.status === 'enrolled' || appData.history?.some(h => h.status === 'enrolled');
+
+    let newSelected = (appData.selectedOptions || []);
+    let declinedOpts = (appData.declinedOptions || []);
+    let newStatus = appData.status;
+
+    if (program === 'all') {
+        declinedOpts = Array.from(new Set([...declinedOpts, ...newSelected]));
+        newSelected = [];
+        newStatus = wasPreviouslyEnrolled ? 'revoked' : 'declined';
+    } else {
+        newSelected = newSelected.filter(opt => opt !== program);
+        if (!declinedOpts.includes(program)) declinedOpts.push(program);
+        if (newSelected.length === 0) {
+            newStatus = wasPreviouslyEnrolled ? 'revoked' : 'declined';
+        }
+    }
+
+    let appUpdates = {
+        status: newStatus,
+        selectedOptions: newSelected,
+        declinedOptions: declinedOpts,
+        badges: filteredBadges,
+        declinedAt: admin.firestore.FieldValue.serverTimestamp(),
+        history: admin.firestore.FieldValue.arrayUnion({
+            status: newStatus === appData.status ? `revoked_${program}` : newStatus,
+            timestamp: new Date().toISOString(),
+            actor: request.auth.uid
+        })
+    };
+
+    if (wasPreviouslyEnrolled) appUpdates.hasRevokedTrack = true;
+    else appUpdates.hasDeclinedTrack = true;
+
+    // DEFINITIVE FIX: Use SET with MERGE to handle Gold VIPs who skipped the application doc creation.
+    await enrollmentRef.set(appUpdates, { merge: true });
+
     return { success: true };
 });
 
@@ -7050,7 +6711,7 @@ exports.submitEnrollmentPayment = onCall({ enforceAppCheck: false }, async (requ
                 screenshotUrl,
                 submittedAt: new Date().toISOString()
             },
-            history: FieldValue.arrayUnion({
+            history: admin.firestore.FieldValue.arrayUnion({
                 status: "paymentPending",
                 timestamp: new Date().toISOString(),
                 actor: "user"
@@ -7068,20 +6729,27 @@ exports.submitEnrollmentPayment = onCall({ enforceAppCheck: false }, async (requ
 
 // Admin-only function to verify a payment and enroll the user.
 exports.verifyEnrollmentPayment = onCall({ enforceAppCheck: false }, async (request) => {
-    if (request.auth.token.admin !== true) {
+    if (!request.auth) throw new HttpsError("unauthenticated", "You must be logged in.");
+    
+    const db = admin.firestore();
+    
+    // THE FIX: Robust Admin Check via Database to bypass custom claim token crashes
+    const callerSnap = await db.doc(`creators/${request.auth.uid}`).get();
+    const allowedRoles = ['admin', 'authority', 'super_admin', 'moderator'];
+    if (!callerSnap.exists || !allowedRoles.includes(callerSnap.data().role)) {
         throw new HttpsError("permission-denied", "You must be an admin to perform this action.");
     }
+
     const { targetUserId } = request.data;
     if (!targetUserId) {
         throw new HttpsError("invalid-argument", "Missing targetUserId.");
     }
 
-    const db = admin.firestore();
     const enrollmentRef = db.doc(`enrollmentApplications/${targetUserId}`);
 
     await enrollmentRef.update({
         status: "enrolled",
-        history: FieldValue.arrayUnion({
+        history: admin.firestore.FieldValue.arrayUnion({
             status: "enrolled",
             timestamp: new Date().toISOString(),
             actor: request.auth.uid
@@ -7092,51 +6760,1761 @@ exports.verifyEnrollmentPayment = onCall({ enforceAppCheck: false }, async (requ
     return { success: true };
 });
 
-// Firestore trigger that runs when a user's status becomes 'enrolled'.
-exports.onEnrollmentEnrolled = onDocumentUpdated("enrollmentApplications/{userId}", async (event) => {
+// Firestore trigger that handles both badge synchronization on enrollment AND profile-cleaning on removal
+exports.onEnrollmentUpdated = onDocumentUpdated("enrollmentApplications/{userId}", async (event) => {
     const dataBefore = event.data.before.data();
     const dataAfter = event.data.after.data();
+    const userId = event.params.userId;
+    const db = admin.firestore();
+    const userRef = db.doc(`creators/${userId}`);
 
+    // Case 1: Status changed TO 'enrolled' (Additive Sync)
     if (dataBefore.status !== "enrolled" && dataAfter.status === "enrolled") {
-        const userId = event.params.userId;
-        const db = admin.firestore();
-        const userRef = db.doc(`creators/${userId}`);
-        
-        logger.info(`User '${userId}' status changed to 'enrolled'. Syncing profile and claims.`);
-
         try {
-            await userRef.update({
-                isClassMember: true,
-                badges: FieldValue.arrayUnion("Class Member")
+            const opts = dataAfter.selectedOptions || [];
+            const userSnap = await userRef.get();
+            const currentBadges = userSnap.exists ? (userSnap.data().badges || []) : [];
+            
+            let updates = { cooldownUntil: admin.firestore.FieldValue.delete() };
+            let newBadges = [...currentBadges];
+
+            // Only add Film Club if it's in the CURRENT application options
+            if (opts.includes("filmClub")) {
+                updates.isClassMember = true;
+                updates.isFilmClub = true;
+                // Set initial subscription for 30 days
+                const expiryDate = new Date();
+                expiryDate.setDate(expiryDate.getDate() + 30);
+                updates.subscriptionExpiresAt = expiryDate.toISOString();
+                
+                if (!newBadges.includes("Film Club")) newBadges.push("Film Club");
+                if (!newBadges.includes("Class Member")) newBadges.push("Class Member");
+            }
+            
+            // Only add Contestant if it's in the CURRENT application options
+            if (opts.includes("docuSeries")) {
+                updates.isContestant = true;
+                if (!newBadges.includes("Contestant")) newBadges.push("Contestant");
+            }
+
+            updates.badges = newBadges;
+            await userRef.update(updates);
+            
+            // DEFINITIVE FIX: Non-destructive Custom Claims update
+            const userRecord = await admin.auth().getUser(userId);
+            const currentClaims = userRecord.customClaims || {};
+            await admin.auth().setCustomUserClaims(userId, { ...currentClaims, classMember: true });
+        } catch (error) {
+            logger.error(`Error syncing enrollment: ${error.message}`);
+        }
+    }
+
+    // We intentionally removed Case 2 (Destructive Removal) here. 
+    // Revocations and badge stripping are now handled exclusively and safely by the 
+    // deleteEnrollmentApplication and clearEnrollmentHold admin functions.
+    
+    return null;
+});
+
+// Firestore trigger that cleans profiles and enforces the 30-day cooldown if an enrollment is deleted entirely
+exports.onEnrollmentDeleted = onDocumentDeleted("enrollmentApplications/{userId}", async (event) => {
+    const userId = event.params.userId;
+    const deletedData = event.data.data();
+    const db = admin.firestore();
+    const userRef = db.doc(`creators/${userId}`);
+
+    logger.info(`Enrollment application for '${userId}' was deleted. Clearing profile and enforcing cooldown.`);
+
+    try {
+        const history = deletedData.history || [];
+        const wasPreviouslyEnrolled = history.some(h => h.status === "enrolled");
+        const cooldownMs = wasPreviouslyEnrolled ? (30 * 24 * 60 * 60 * 1000) : (3 * 24 * 60 * 60 * 1000);
+
+        const userSnap = await userRef.get();
+        if (userSnap.exists) {
+            const currentBadges = userSnap.data().badges || [];
+            // ARCHITECTURAL SYNC: Strip Gold Club during hard deletion of enrollment records
+            const filteredBadges = currentBadges.filter(b => b !== "Film Club" && b !== "Class Member" && b !== "Contestant" && b !== "Gold Club");
+            
+            // Apply track-specific cooldowns to any options that were in the deleted document
+            const currentCooldowns = userSnap.data().cooldowns || {};
+            const opts = deletedData.selectedOptions || [];
+            const cooldownTimestamp = new Date(Date.now() + cooldownMs).toISOString();
+            opts.forEach(opt => {
+                currentCooldowns[opt] = cooldownTimestamp;
             });
 
-            await admin.auth().setCustomUserClaims(userId, { classMember: true });
-            logger.info(`Successfully updated profile and claims for enrolled user '${userId}'.`);
-
-        } catch (error) {
-            logger.error(`Failed to sync profile/claims for enrolled user '${userId}'.`, error);
+            const updates = {
+                isClassMember: false,
+                isFilmClub: false,
+                isContestant: false,
+                badges: filteredBadges,
+                cooldowns: currentCooldowns
+            };
+            
+            await userRef.update(updates);
         }
+
+        // DEFINITIVE FIX: Non-destructive Custom Claims update
+        const userRecord = await admin.auth().getUser(userId);
+        const currentClaims = userRecord.customClaims || {};
+        await admin.auth().setCustomUserClaims(userId, { ...currentClaims, classMember: false });
+    } catch (error) {
+        logger.error(`Failed to clean up deleted enrollment for '${userId}':`, error);
     }
     return null;
 });
 
-// Admin-only function to retrieve a list of applications.
-exports.getEnrollmentApplications = onCall({ enforceAppCheck: false }, async (request) => {
-    if (request.auth.token.admin !== true) {
-        throw new HttpsError("permission-denied", "You must be an admin.");
-    }
-    const { statusFilter } = request.data;
+// Admin-only function to retrieve a list of applications with hybrid status/flag support.
+exports.getEnrollmentApplications = onCall({ enforceAppCheck: false, cors: true }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated.");
     const db = admin.firestore();
-    let q = db.collection('enrollmentApplications');
-
-    if (statusFilter && statusFilter !== 'all') {
-        q = q.where('status', '==', statusFilter);
+    const callerSnap = await db.doc(`creators/${request.auth.uid}`).get();
+    const allowedRoles = ['admin', 'authority', 'super_admin', 'moderator'];
+    if (!callerSnap.exists || !allowedRoles.includes(callerSnap.data().role)) {
+        throw new HttpsError("permission-denied", "Access Denied.");
     }
-    q = q.orderBy('submittedAt', 'desc').limit(50);
 
-    const snapshot = await q.get();
-    const applications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const { statusFilter } = request.data;
+    let results = [];
 
-    return { applications };
+    if (statusFilter === 'revoked' || statusFilter === 'declined') {
+        const flagField = statusFilter === 'revoked' ? 'hasRevokedTrack' : 'hasDeclinedTrack';
+        const [snap1, snap2] = await Promise.all([
+            db.collection('enrollmentApplications').where('status', '==', statusFilter).get(),
+            db.collection('enrollmentApplications').where(flagField, '==', true).get()
+        ]);
+        const merged = new Map();
+        snap1.docs.forEach(d => merged.set(d.id, { id: d.id, ...d.data() }));
+        snap2.docs.forEach(d => merged.set(d.id, { id: d.id, ...d.data() }));
+        results = Array.from(merged.values());
+    } else if (statusFilter && statusFilter !== 'all') {
+        const snap = await db.collection('enrollmentApplications').where('status', '==', statusFilter).get();
+        results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } else {
+        const snap = await db.collection('enrollmentApplications').get();
+        results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+
+    results.sort((a, b) => {
+        const tA = a.submittedAt ? (a.submittedAt.toDate ? a.submittedAt.toDate().getTime() : new Date(a.submittedAt).getTime()) : 0;
+        const tB = b.submittedAt ? (b.submittedAt.toDate ? b.submittedAt.toDate().getTime() : new Date(b.submittedAt).getTime()) : 0;
+        return tB - tA;
+    });
+
+    return { applications: results.slice(0, 50) };
+});
+
+// Admin-only function to update global enrollment settings securely
+exports.updateEnrollmentConfig = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "Unauthenticated.");
+    const db = admin.firestore();
+    const callerSnap = await db.doc(`creators/${request.auth.uid}`).get();
+    const allowedRoles = ['admin', 'authority', 'super_admin', 'moderator'];
+    if (!callerSnap.exists || !allowedRoles.includes(callerSnap.data().role)) {
+        throw new HttpsError("permission-denied", "Unauthorized.");
+    }
+
+    const { newConfig } = request.data;
+    await db.doc('settings/enrollmentConfig').set(newConfig, { merge: true });
+    
+    logger.info(`Admin '${request.auth.uid}' updated global enrollment configurations.`);
+    return { success: true };
+});
+
+// =====================================================================
+// ============ START: CENTERSTAGE ADMIN MANAGEMENT ====================
+// =====================================================================
+
+exports.updateCenterStageContestant = onCall({ enforceAppCheck: false, cors: ["*"] }, async (request) => {
+    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority)) {
+        throw new HttpsError("permission-denied", "Unauthorized: Only admins or authorities can manage CenterStage.");
+    }
+
+    const { targetUserId, action, payload } = request.data || {};
+    if (!targetUserId || !action) {
+        throw new HttpsError("invalid-argument", "Missing target ID or action.");
+    }
+
+    const db = admin.firestore();
+    const userRef = db.doc(`creators/${targetUserId}`);
+
+    try {
+        const docSnap = await userRef.get();
+        if (!docSnap.exists) {
+            throw new HttpsError("not-found", "Target contestant profile does not exist.");
+        }
+
+        if (action === 'eliminate') {
+            await userRef.update({ isEliminated: true, competitionStatus: 'eliminated' });
+        } 
+        else if (action === 'reinstate') {
+            await userRef.update({ isEliminated: false, competitionStatus: 'active' });
+        } 
+        else if (action === 'update_media') {
+            await userRef.update({ 
+                currentChallengeLink: payload?.challengeLink || '',
+                currentChallengeThumbnail: payload?.customThumbnailUrl || '' 
+            });
+        } 
+        else if (action === 'assign_team') {
+            const cleanTag = payload?.teamTag ? payload.teamTag.trim() : '';
+            await userRef.update({ teamTag: cleanTag });
+        }
+
+        logger.info(`User '${request.auth.uid}' performed '${action}' on contestant '${targetUserId}'.`);
+        return { success: true, message: `Contestant successfully updated.` };
+
+    } catch (error) {
+        logger.error(`Error managing contestant '${targetUserId}':`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An error occurred while updating the contestant.");
+    }
+});
+
+exports.resetCenterStageVotes = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth || request.auth.token.admin !== true) {
+        throw new HttpsError("permission-denied", "Only Admins can perform a global vote reset.");
+    }
+
+    const db = admin.firestore();
+    try {
+        const contestantsSnap = await db.collection("creators").where("isContestant", "==", true).get();
+        if (contestantsSnap.empty) return { success: true, message: "No contestants found." };
+
+        const batch = db.batch();
+        let resetCount = 0;
+
+        contestantsSnap.forEach(doc => {
+            // Fix: Safely delete the gift map instead of wiping it with {} which causes map structural errors
+            batch.update(doc.ref, { 
+                voteCount: 0, 
+                giftInventory: admin.firestore.FieldValue.delete() 
+            });
+            resetCount++;
+        });
+
+        await batch.commit();
+        logger.info(`Admin '${request.auth.uid}' reset votes for ${resetCount} contestants.`);
+        return { success: true, message: `Successfully reset votes for ${resetCount} contestants for the new round.` };
+
+    } catch (error) {
+        logger.error("Error resetting CenterStage votes:", error);
+        throw new HttpsError("internal", "Failed to reset votes.");
+    }
+});
+
+exports.updateGlobalChallengeMedia = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth || (!request.auth.token.admin && !request.auth.token.authority)) {
+        throw new HttpsError("permission-denied", "Unauthorized.");
+    }
+    const { challengeLink, customThumbnailUrl } = request.data || {};
+    const db = admin.firestore();
+    try {
+        await db.doc("settings/competitionDisplayState").set({
+            globalChallengeLink: challengeLink || '',
+            globalChallengeThumbnail: customThumbnailUrl || ''
+        }, { merge: true });
+        return { success: true };
+    } catch (error) {
+        logger.error("Error updating global media:", error);
+        throw new HttpsError("internal", "Failed to update global media.");
+    }
+});
+
+// =====================================================================
+// =========== AUTOMATED DAILY PLATFORM MAINTENANCE SYSTEM =============
+// =====================================================================
+exports.dailySystemMaintenance = onSchedule("0 3 * * *", async (event) => {
+    logger.info("Executing scheduled daily platform maintenance...");
+    const db = admin.firestore();
+    const creatorsRef = db.collection("creators");
+    const today = new Date();
+    const isMonday = today.getDay() === 1;
+
+    // 1. Reset Daily/Weekly Stats
+    try {
+        const snapshot = await creatorsRef.get();
+        if (!snapshot.empty) {
+            const batch = db.batch();
+            snapshot.forEach(doc => {
+                const updates = { dailyViews: 0, dailyLikes: 0 };
+                if (isMonday) {
+                    updates.weeklyViews = 0;
+                    updates.weeklyLikes = 0;
+                }
+                batch.update(doc.ref, updates);
+            });
+            await batch.commit();
+            logger.info(`Reset stats for ${snapshot.size} creators.`);
+        }
+    } catch (err) { logger.error("Error resetting stats:", err); }
+
+    // 2. Update Top Performers
+    try { 
+        await runTopPerformersUpdate(); 
+        logger.info("Top performers refreshed.");
+    } catch (err) { logger.error("Error updating top performers:", err); }
+
+    // 3. Update Platform Stats
+    try { 
+        await runPlatformStatsAggregation(); 
+        logger.info("Platform statistics refreshed.");
+    } catch (err) { logger.error("Error updating platform stats:", err); }
+
+    // 4. Prune User Feeds (Weekly prune to keep indices low)
+    try { 
+        await runFeedPruning(); 
+        logger.info("User feeds pruned.");
+    } catch (err) { logger.error("Error pruning user feeds:", err); }
+
+    // 5. Purge Completed Events and Movies older than 7 Days [1]
+    try {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        // Retrieve and delete completed events
+        const oldEventsSnap = await db.collection("events")
+            .where("status", "==", "completed")
+            .where("scheduledEndTime", "<=", sevenDaysAgo)
+            .get();
+        if (!oldEventsSnap.empty) {
+            for (const doc of oldEventsSnap.docs) {
+                await doc.ref.delete(); // Triggers onEventDeleted recursive cleanup [1]
+            }
+        }
+
+        // Retrieve and delete old movies matching those events
+        const oldEventIds = oldEventsSnap.docs.map(doc => doc.id);
+        if (oldEventIds.length > 0) {
+            const oldMoviesSnap = await db.collection("movies")
+                .where("__name__", "in", oldEventIds.slice(0, 10))
+                .get();
+            for (const doc of oldMoviesSnap.docs) {
+                await doc.ref.delete(); // Triggers onMovieDeleted recursive cleanup [1]
+            }
+        }
+    } catch (err) { logger.error("Error purging old completed events:", err); }
+
+    // 6. Cleanup Expired Subscriptions (Grace-Period Awareness)
+    try {
+        const gracePeriodMs = 3 * 24 * 60 * 60 * 1000;
+        const expiredUsersSnap = await db.collection('creators')
+            .where('isFilmClub', '==', true)
+            .where('subscriptionExpiresAt', '<', today.toISOString())
+            .get();
+
+        if (!expiredUsersSnap.empty) {
+            const batch = db.batch();
+            expiredUsersSnap.forEach(doc => {
+                const userData = doc.data();
+                if (userData.badges?.includes("Gold Club")) return;
+                const expiry = new Date(userData.subscriptionExpiresAt).getTime();
+                if (Date.now() > (expiry + gracePeriodMs)) {
+                    const filteredBadges = (userData.badges || []).filter(b => b !== "Film Club" && b !== "Class Member");
+                    const currentCooldowns = userData.cooldowns || {};
+                    const cooldownDate = new Date();
+                    cooldownDate.setDate(cooldownDate.getDate() + 30);
+                    currentCooldowns['filmClub'] = cooldownDate.toISOString();
+
+                    batch.update(doc.ref, {
+                        isClassMember: false,
+                        isFilmClub: false,
+                        badges: filteredBadges,
+                        cooldowns: currentCooldowns,
+                        lastSubscriptionStatus: 'expired_and_revoked'
+                    });
+
+                    const appRef = db.doc(`enrollmentApplications/${doc.id}`);
+                    batch.update(appRef, { 
+                        status: 'revoked', 
+                        hasRevokedTrack: true,
+                        declinedOptions: admin.firestore.FieldValue.arrayUnion('filmClub')
+                    });
+                }
+            });
+            await batch.commit();
+            logger.info(`Cleaned up expired subscriptions.`);
+        }
+    } catch (err) { logger.error("Error cleaning expired subscriptions:", err); }
+
+    return null;
+});
+
+// --- SECURE MONETIZATION SNAPSHOT & NOTIFICATION ENGINE ---
+exports.onMonetizationStatusChange = onDocumentUpdated("artifacts/{appId}/public/data/content_items/{contentId}", async (event) => {
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+
+    // 1. Guard: Only run if status physically changed
+    if (before.monetizationStatus === after.monetizationStatus) return null;
+
+    const db = admin.firestore();
+    const creatorId = after.creatorId;
+    if (!creatorId) return null;
+
+    let notification = null;
+
+    // 2. Logic: Handle Approved State (Securely dispatch notification)
+    if (after.monetizationStatus === 'approved') {
+        
+        // === THE 1-MONETIZED-VIDEO-LIMIT FIX ===
+        try {
+            const contentRef = db.collection(`artifacts/${event.params.appId}/public/data/content_items`);
+            
+            // Find any OTHER monetized videos by this creator and strip the monetization badge
+            const otherMonetizedSnap = await contentRef
+                .where("creatorId", "==", creatorId)
+                .where("monetizationStatus", "==", "approved")
+                .get();
+            
+            if (!otherMonetizedSnap.empty) {
+                const batch = db.batch();
+                otherMonetizedSnap.forEach(docSnap => {
+                    if (docSnap.id !== event.params.contentId) {
+                        // Strip monetization from old content, but DO NOT touch their Showcase/isFeatured status!
+                        batch.update(docSnap.ref, { monetizationStatus: 'none', isMonetizationRequest: false });
+                    }
+                });
+                await batch.commit();
+            }
+            
+            // We DO NOT auto-publish or alter isFeatured. The user has full control over their showcase!
+        } catch (err) {
+            logger.error(`Monetization cleanup failed for ${creatorId}:`, err);
+        }
+
+        notification = {
+            userId: creatorId,
+            title: "Video Approved & Live! 🎬",
+            body: `Your video "${after.title}" has been approved for monetization and is now live!`,
+            link: "/CreatorDashboard",
+            deliveryType: ["inbox", "push"],
+            notificationType: "MONETIZATION_APPROVED",
+            timestamp: FieldValue.serverTimestamp() // SYNCED TO YOUR IMPORTS
+        };
+    } 
+    // 3. Logic: Handle Rejected State
+    else if (after.monetizationStatus === 'rejected') {
+        notification = {
+            userId: creatorId,
+            title: "Monetization Update",
+            body: `Your monetization request for "${after.title}" was not approved. The video remains private.`,
+            link: "/CreatorDashboard",
+            deliveryType: ["inbox"],
+            notificationType: "MONETIZATION_REJECTED",
+            timestamp: FieldValue.serverTimestamp() // SYNCED TO YOUR IMPORTS
+        };
+    }
+
+    // 4. Execution: Write Notification and Increment Badge securely from Backend
+    if (notification) {
+        const batch = db.batch();
+        const notifRef = db.collection("notifications").doc();
+        const userRef = db.collection("creators").doc(creatorId);
+
+        batch.set(notifRef, { ...notification, isRead: false, status: "pending" });
+        batch.update(userRef, { unreadNotificationCount: FieldValue.increment(1) });
+        
+        await batch.commit();
+        logger.info(`[Secure Monetization] Processed ${after.monetizationStatus} for ${creatorId}`);
+    }
+    return null;
+});
+
+// =====================================================================
+// ================== ROAST ROOM TOKEN ECONOMY =========================
+// =====================================================================
+
+exports.purchaseRoastTokensWithEarnings = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth || !request.auth.uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to purchase tokens.");
+    }
+
+    const { costGYD, tokenAmount } = request.data || {};
+    if (!costGYD || !tokenAmount) {
+        throw new HttpsError("invalid-argument", "Missing package details.");
+    }
+
+    const db = admin.firestore();
+    const userRef = db.collection("creators").doc(request.auth.uid);
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const userDoc = await transaction.get(userRef);
+            if (!userDoc.exists) throw new HttpsError("not-found", "User profile not found.");
+
+            const currentEarnings = userDoc.data().totalEarnings || 0;
+
+            if (currentEarnings < costGYD) {
+                throw new HttpsError("failed-precondition", "Insufficient earnings balance. Please use MMG.");
+            }
+
+            // Deduct earnings and add tokens using standalone FieldValue
+            transaction.update(userRef, {
+                totalEarnings: FieldValue.increment(-costGYD),
+                roastTokens: FieldValue.increment(tokenAmount)
+            });
+        });
+
+        logger.info(`User '${request.auth.uid}' purchased ${tokenAmount} tokens for ${costGYD} GYD from earnings.`);
+        return { success: true, message: `Successfully purchased ${tokenAmount} Roast Passes!` };
+
+    } catch (error) {
+        logger.error("Token purchase error:", error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "Transaction failed.");
+    }
+});
+
+const { AccessToken } = require('livekit-server-sdk');
+
+exports.getRoastRoomToken = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+
+    const { roomName, isHost } = request.data;
+    const participantName = request.auth.token.name || request.auth.uid;
+
+    // YOUR SECURE SERVER KEYS
+    const apiKey = "devkey_41a206e2";
+    const apiSecret = "secret_37246b3bbc507fc41bdc94a8";
+
+    const at = new AccessToken(apiKey, apiSecret, {
+        identity: request.auth.uid,
+        name: participantName,
+    });
+
+    at.addGrant({
+        roomJoin: true,
+        room: roomName,
+        canPublish: isHost, // Only the host starts with mic/video on
+        canSubscribe: true,
+        canPublishData: true, // For splatting tomatoes/fire
+    });
+
+    return { token: await at.toJwt() };
+});
+
+// =====================================================================
+// ================== LIVE ROAST ARENA ORCHESTRATOR ====================
+// =====================================================================
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+exports.clockIntoRoast = onCall({ enforceAppCheck: false, timeoutSeconds: 120 }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+    
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+    const arenaRef = db.collection("live_arena").doc("main-arena");
+    const userRef = db.collection("creators").doc(uid);
+
+    // Look up the active host dynamically
+    const hostQuery = await db.collection("creators").where("isLive", "==", true).where("liveRoomType", "==", "roast").limit(1).get();
+    const activeHostId = hostQuery.empty ? null : hostQuery.docs[0].id;
+    if (!activeHostId) throw new HttpsError('failed-precondition', 'No host is currently running the arena.');
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const arenaSnap = await transaction.get(arenaRef);
+            const userSnap = await transaction.get(userRef);
+            
+            if (arenaSnap.exists && arenaSnap.data()?.status !== 'idle') {
+                throw new HttpsError('failed-precondition', 'Arena is currently occupied!');
+            }
+            if ((userSnap.data()?.roastTokens || 0) < 5) {
+                throw new HttpsError('failed-precondition', 'Insufficient Roast Passes (Need 5).');
+            }
+
+            // 1. Deduct 5 tokens to enter
+            transaction.update(userRef, { roastTokens: admin.firestore.FieldValue.increment(-5) });
+            
+            // 2. Initialize Battle State (Phase 1)
+            transaction.set(arenaRef, {
+                status: 'suspense', // Frontend Trigger
+                hostId: activeHostId,
+                roasterId: uid,
+                roasterName: userSnap.data().creatorName || 'Anonymous',
+                currentReceiver: 'none',
+                timer: 5,
+                fireCount: 0,
+                tomatoCount: 0
+            }, { merge: true });
+        });
+
+        // --- THE SEQUENTIAL STOPWATCH (Server-Side) ---
+        
+        // End of Phase 1 -> Start Phase 2: Roaster's Turn (30s)
+        await delay(5000);
+        await arenaRef.update({ status: 'battle', currentReceiver: 'roaster', timer: 30 }); // Frontend Trigger
+
+        // End of Phase 2 -> Start Phase 3: Transition (5s)
+        await delay(30000);
+        await arenaRef.update({ status: 'suspense', currentReceiver: 'none', timer: 5 }); // Frontend Trigger
+
+        // End of Phase 3 -> Start Phase 4: Host's Clapback (30s)
+        await delay(5000);
+        await arenaRef.update({ status: 'battle', currentReceiver: 'host', timer: 30 }); // Frontend Trigger
+
+        // End of Phase 4 -> Phase 5: Result Calculation & Tax The Loser
+        await delay(30000);
+        
+        const finalSnap = await arenaRef.get();
+        const data = finalSnap.data();
+        const netScore = (data.fireCount || 0) - (data.tomatoCount || 0);
+        
+        // "Zero Points" Concept: If Fire dominates, the Host loses influence. If Tomatoes (boos) dominate, the Host gains influence.
+        const streakChange = netScore > 0 ? -1 : 1; 
+
+        await arenaRef.update({
+            status: 'idle',
+            roasterId: null,
+            currentReceiver: 'host',
+            timer: 0,
+            hostStreak: admin.firestore.FieldValue.increment(streakChange),
+            fireCount: 0,
+            tomatoCount: 0
+        });
+
+        return { success: true };
+    } catch (error) {
+        console.error("Battle failed:", error);
+        await arenaRef.update({ status: 'idle', timer: 0 }).catch(() => {});
+        throw error;
+    }
+});
+
+// GIFT LOGIC: Routes money to the correct person based on the "Receiver" variable
+exports.sendRoastReaction = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+    
+    const { reactionType } = request.data; // 'fire' or 'tomato'
+    const db = admin.firestore();
+    const arenaRef = db.collection("live_arena").doc("main-arena");
+    const arenaSnap = await arenaRef.get();
+    
+    if (!arenaSnap.exists) throw new HttpsError('not-found', 'Arena not initialized.');
+    const arenaData = arenaSnap.data();
+
+    // Dynamically retrieve the active host
+    let hostId = arenaData.hostId;
+    if (!hostId) {
+        const hostQuery = await db.collection("creators").where("isLive", "==", true).where("liveRoomType", "==", "roast").limit(1).get();
+        if (!hostQuery.empty) hostId = hostQuery.docs[0].id;
+    }
+    if (!hostId) throw new HttpsError('failed-precondition', 'No host found in the arena.');
+
+    const roasterId = arenaData.roasterId;
+    const receiverRole = arenaData.currentReceiver; // 'host', 'roaster', or 'none'
+
+    let finalRecipientId = hostId; // Default to host during idle/suspense phases
+    if (receiverRole === 'roaster') finalRecipientId = roasterId;
+    if (receiverRole === 'host') finalRecipientId = hostId;
+
+    // TAX THE LOSER LOGIC:
+    // If it's a Tomato (Boo), the money is ripped away and given to the OPPONENT.
+    if (reactionType === 'tomato') {
+        if (receiverRole === 'roaster') finalRecipientId = hostId;
+        else if (receiverRole === 'host' && roasterId) finalRecipientId = roasterId; // If no roaster exists, host keeps it
+        
+        await arenaRef.update({ tomatoCount: FieldValue.increment(1) });
+    } else {
+        await arenaRef.update({ fireCount: FieldValue.increment(1) });
+    }
+
+    if (!finalRecipientId) return { success: false, message: "No active target" };
+
+    // Transaction: Deduct 1 Pass from sender, deposit 20 GYD to recipient
+    const senderRef = db.collection("creators").doc(request.auth.uid);
+    const recipientRef = db.collection("creators").doc(finalRecipientId);
+
+    await db.runTransaction(async (t) => {
+        const sDoc = await t.get(senderRef);
+        if ((sDoc.data().roastTokens || 0) < 1) {
+            throw new HttpsError('failed-precondition', 'Out of tokens!');
+        }
+        
+        t.update(senderRef, { roastTokens: FieldValue.increment(-1) });
+        t.update(recipientRef, { totalEarnings: FieldValue.increment(20) }); // Fair platform split
+    });
+
+    return { success: true };
+});
+
+const functions = require("firebase-functions");
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+
+// Initialize secure Cloudflare R2 S3-Compatible Client
+const s3Client = new S3Client({
+  endpoint: "https://fbe1faad8ca929a47c3cce338399f497.r2.cloudflarestorage.com",
+  credentials: {
+    accessKeyId: "516aad0243cfc6c02086f78bfd65f3a3",
+    secretAccessKey: "bb32edef3c1757094a4ac551918f37f5047be235e62ce3f3d289d07d17ddd406",
+  },
+  region: "auto",
+});
+
+// Secure Cloud Function to generate upload URL
+exports.getR2UploadUrl = functions.https.onCall(async (data, context) => {
+  // Ensure only authenticated users can upload
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Auth required.");
+  }
+
+  const { filePath, contentType } = data;
+  if (!filePath) {
+    throw new functions.https.HttpsError("invalid-argument", "Missing filePath.");
+  }
+
+  const bucketName = "nva-storage";
+  const command = new PutObjectCommand({
+    Bucket: bucketName,
+    Key: filePath,
+    ContentType: contentType || "image/jpeg",
+  });
+
+  try {
+    // Generate secure upload URL valid for 1 hour
+    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+    const publicUrl = `https://media.nvanetworkapp.com/${filePath}`;
+
+    return { uploadUrl, publicUrl };
+  } catch (error) {
+    throw new functions.https.HttpsError("internal", error.message);
+  }
+});
+
+// =====================================================================
+// ============ START: iOVERLORD R2 BACKEND CLEANUP HOOK ===============
+// =====================================================================
+exports.onContentDeleted = onDocumentDeleted("artifacts/{appId}/public/data/content_items/{contentId}", async (event) => {
+    const deletedContent = event.data.data();
+    if (!deletedContent) return null;
+
+    const thumbnailUrl = deletedContent.customThumbnailUrl;
+
+    // Skip if there's no thumbnail or if it's a legacy Firebase Storage link
+    // (Legacy storage cleanup is handled separately until the Great Purge)
+    if (!thumbnailUrl || !thumbnailUrl.includes('media.nvanetworkapp.com')) {
+        return null;
+    }
+
+    try {
+        // Strip the base URL and cache-buster query (?t=timestamp) to get the exact R2 Key
+        // e.g., "https://media.nvanetworkapp.com/content_thumbnails/userX/thumb_123.jpg?t=456" 
+        // becomes "content_thumbnails/userX/thumb_123.jpg"
+        const urlObj = new URL(thumbnailUrl);
+        const r2Key = urlObj.pathname.substring(1); 
+
+        const command = new DeleteObjectCommand({
+            Bucket: "nva-storage",
+            Key: r2Key,
+        });
+
+        await s3Client.send(command);
+        logger.info(`[R2 Cleanup] Vaporized orphaned thumbnail from Cloudflare R2: ${r2Key}`);
+    } catch (error) {
+        logger.error(`[R2 Cleanup ERROR] Failed to delete thumbnail from R2 for content ${event.params.contentId}:`, error);
+    }
+
+    return null;
+});
+
+// =====================================================================
+// ============ START: REAL-TIME TYPING STATUS INDICATOR ===============
+// =====================================================================
+exports.updateTypingStatus = onCall(async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in.");
+    }
+    const { chatId, isTyping } = request.data;
+    if (!chatId) {
+        throw new HttpsError("invalid-argument", "Missing chatId.");
+    }
+
+    const db = admin.firestore();
+    try {
+        // Safely set the typing state of the user in the parent chat document
+        await db.collection("chats").doc(chatId).set({
+            typing: {
+                [uid]: isTyping || false
+            }
+        }, { merge: true });
+        return { success: true };
+    } catch (error) {
+        logger.error(`Error in updateTypingStatus for user ${uid}:`, error);
+        throw new HttpsError("internal", "Failed to update typing status.");
+    }
+});
+
+// =====================================================================
+// ============ UPGRADED: DYNAMIC EARNINGS-TO-GIFT & TICKET ENGINE =====
+// =====================================================================
+exports.sendGiftWithEarnings = onCall({ enforceAppCheck: false }, async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Unauthenticated.");
+
+    // THE FIX: Destructure isAnonymous so standard gifts support anonymity logic
+    const { targetUserId, giftName, amount, competitionId, entryId, eventId, recipientId, isAnonymous, isFilmmakerDonation } = request.data;
+    if (!targetUserId || !giftName || !amount) {
+        throw new HttpsError("invalid-argument", "Missing required transaction details.");
+    }
+    
+    const db = admin.firestore();
+    const senderRef = db.collection("creators").doc(uid);
+    const recipientRef = db.collection("creators").doc(targetUserId);
+
+    const now = new Date();
+    const thirtyDaysFromNow = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+    const netAmount = Math.round((amount * 0.85) * 100) / 100; // Deduct 15% platform fee
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            // 1. ALL TRANSACTION READS FIRST (Strictly Enforced)
+            const [senderDoc, recipientDoc] = await Promise.all([
+                transaction.get(senderRef),
+                transaction.get(recipientRef)
+            ]);
+
+            if (!senderDoc.exists) throw new HttpsError("not-found", "Sender profile not found.");
+            if (!recipientDoc.exists) throw new HttpsError("not-found", "Recipient profile not found.");
+
+            const senderEarnings = senderDoc.data().totalEarnings || 0;
+            if (senderEarnings < amount) {
+                throw new HttpsError("failed-precondition", "Insufficient earnings balance.");
+            }
+
+            let eventDoc = null;
+            let movieDoc = null;
+            let ticketHolderDoc = null;
+            let ticketHolderRef = null;
+
+            if (eventId) {
+                const finalRecipientId = recipientId || uid; // The ticket buyer or gifted friend
+                ticketHolderRef = db.collection("creators").doc(finalRecipientId);
+
+                const [evSnap, movSnap, holderSnap] = await Promise.all([
+                    transaction.get(db.collection("events").doc(eventId)),
+                    transaction.get(db.collection("movies").doc(eventId)),
+                    transaction.get(ticketHolderRef)
+                ]);
+                eventDoc = evSnap;
+                movieDoc = movSnap;
+                ticketHolderDoc = holderSnap;
+
+                if (!ticketHolderDoc.exists) throw new HttpsError("not-found", "Ticket recipient does not exist.");
+            }
+
+            // 2. TRANSACTION CALCULATIONS SECOND
+            // (Values already rounded/sanitized)
+
+            // 3. ALL TRANSACTION WRITES LAST
+            // Deduct full ticket/gift value from Sender's Earnings
+            transaction.update(senderRef, {
+                totalEarnings: FieldValue.increment(-amount)
+            });
+
+            // --- PATHWAY A: EVENT TICKET TRANSACTION ---
+            if (eventId && ticketHolderRef && !isFilmmakerDonation) {
+                // Grant the Ticket instantly to the Recipient (Self or Friend)
+                transaction.set(ticketHolderRef, { purchasedTickets: { [eventId]: true } }, { merge: true });
+
+                // Update Event totals in main events collection
+                if (eventDoc && eventDoc.exists) {
+                    transaction.update(eventDoc.ref, {
+                        ticketsSold: FieldValue.increment(1),
+                        totalRevenue: FieldValue.increment(amount)
+                    });
+                }
+
+                // Credit 85% to Filmmaker's Box Office Ledger in movies collection
+                if (movieDoc && movieDoc.exists) {
+                    const movieData = movieDoc.data();
+                    if (movieData.creatorId) {
+                        const filmmakerRef = db.collection("creators").doc(movieData.creatorId);
+                        transaction.set(filmmakerRef, {
+                            boxOfficeLedger: {
+                                ticketSales: FieldValue.increment(netAmount)
+                            }
+                        }, { merge: true });
+                    }
+                }
+            } 
+            // --- PATHWAY B: STANDARD ACTOR TIP/GIFT TRANSACTION ---
+            else {
+                const giftFieldPath = `giftInventory.${giftName}`;
+                const updates = {
+                    giftsReceived: FieldValue.increment(1),
+                    [giftFieldPath]: FieldValue.increment(1),
+                    receivedGifts: FieldValue.arrayUnion({
+                        id: `earnings_gift_${Date.now()}`,
+                        giftName: giftName,
+                        expiresAt: thirtyDaysFromNow.toISOString()
+                    })
+                };
+
+                // DYNAMIC ROUTING: Box Office Ledger vs General Earnings
+                if (isFilmmakerDonation) {
+                    updates["boxOfficeLedger.filmDonations"] = FieldValue.increment(netAmount);
+                } else {
+                    updates.totalEarnings = FieldValue.increment(netAmount);
+                }
+
+                transaction.update(recipientRef, updates);
+
+                // Update specific Competition Entry if applicable
+                if (competitionId && entryId) {
+                    const entryRef = db.doc(`competitions/${competitionId}/entries/${entryId}`);
+                    transaction.update(entryRef, {
+                        giftsReceived: FieldValue.increment(1),
+                        [`giftInventory.${giftName}`]: FieldValue.increment(1)
+                    });
+                }
+            }
+
+            // 4. Record Supporter Entry & Toast Broadcast
+            const senderData = senderDoc.data();
+            const supporterRef = recipientRef.collection("supporters").doc(uid);
+            transaction.set(supporterRef, {
+                userName: senderData.creatorName || senderData.email,
+                amountGiven: FieldValue.increment(amount),
+                lastGift: new Date().toISOString()
+            }, { merge: true });
+
+            const broadcastNotification = {
+                broadcastType: "GIFT_RECEIVED",
+                message: eventId 
+                    ? `🎟️ ${senderData.creatorName || senderData.email} purchased a Premiere Ticket!`
+                    : `🎉 ${senderData.creatorName || senderData.email} sent a [${giftName}] to ${recipientDoc.data().creatorName}!`,
+                link: eventId ? `/discover` : `/user/${targetUserId}`,
+                timestamp: new Date()
+            };
+            transaction.set(db.collection("broadcast_notifications").doc(), broadcastNotification);
+
+            // THE FIX: Move notification delivery inside the transaction scope for BOTH Tickets and Gifts
+            const notificationsRef = db.collection("notifications");
+
+            if (eventId && !isFilmmakerDonation) {
+                const finalRecipientId = recipientId || uid;
+                const isGift = !!recipientId;
+                
+                const senderName = senderData.creatorName || senderData.email || "A friend";
+                const recipientName = isGift ? (recipientDoc.data().creatorName || "your friend") : "yourself";
+                const filmName = eventDoc?.data()?.eventTitle || "the Premiere";
+
+                if (isGift) {
+                    transaction.set(notificationsRef.doc(), {
+                        userId: finalRecipientId,
+                        title: "Gift Ticket Received! 🎟️",
+                        body: `${senderName} gifted you a ticket for ${filmName}`,
+                        link: "/Discover",
+                        deliveryType: ["inbox", "push"],
+                        notificationType: "TICKET_GIFTED",
+                        isRead: false,
+                        status: "pending",
+                        sound: true,
+                        timestamp: FieldValue.serverTimestamp()
+                    });
+                    transaction.update(db.collection("creators").doc(finalRecipientId), { unreadNotificationCount: FieldValue.increment(1) });
+
+                    transaction.set(notificationsRef.doc(), {
+                        userId: uid,
+                        title: "Ticket Delivered",
+                        body: `Your gift ticket to ${recipientName} for ${filmName} has been delivered successfully.`,
+                        link: "/Discover",
+                        deliveryType: ["inbox"],
+                        notificationType: "TICKET_DELIVERED",
+                        isRead: false,
+                        status: "pending",
+                        sound: false,
+                        timestamp: FieldValue.serverTimestamp()
+                    });
+                    transaction.update(db.collection("creators").doc(uid), { unreadNotificationCount: FieldValue.increment(1) });
+                } else {
+                    transaction.set(notificationsRef.doc(), {
+                        userId: uid,
+                        title: "Ticket Purchase Confirmed! 🎟️",
+                        body: `Your ticket for ${filmName} is confirmed!`,
+                        link: "/Discover",
+                        deliveryType: ["inbox", "push"],
+                        notificationType: "TICKET_PURCHASED",
+                        isRead: false,
+                        status: "pending",
+                        sound: true,
+                        timestamp: FieldValue.serverTimestamp()
+                    });
+                    transaction.update(db.collection("creators").doc(uid), { unreadNotificationCount: FieldValue.increment(1) });
+                }
+            } else {
+                // --- THE AUDIT FIX: Dispatch Dynamic Gifting/Donation notifications based on Competition context ---
+                const senderName = senderData.creatorName || senderData.email || "A fan";
+                const isShowcaseDonation = !competitionId; // Showcase donations have no competition context
+
+                const notifTitle = isShowcaseDonation ? "New Film Donation! 🎁" : "You Received a Gift! 🎁";
+                const notifBody = isShowcaseDonation 
+                    ? (isAnonymous ? `An anonymous fan sent you a donation of ${amount.toLocaleString()} GYD for your Showcase film!` : `${senderName} sent you a donation of ${amount.toLocaleString()} GYD for your Showcase film!`)
+                    : (isAnonymous ? `An anonymous fan sent you a ${giftName}!` : `${senderName} sent you a ${giftName}!`);
+                
+                // 1. Notify Receiver
+                transaction.set(notificationsRef.doc(), {
+                    userId: targetUserId,
+                    title: notifTitle,
+                    body: notifBody,
+                    link: "/CreatorDashboard",
+                    deliveryType: ["inbox", "push"],
+                    notificationType: "GIFT_RECEIVED",
+                    isRead: false,
+                    status: "pending",
+                    sound: true,
+                    timestamp: FieldValue.serverTimestamp()
+                });
+                transaction.update(recipientRef, { unreadNotificationCount: FieldValue.increment(1) });
+
+                // 2. Notify Sender
+                transaction.set(notificationsRef.doc(), {
+                    userId: uid,
+                    title: "Gift Delivered",
+                    body: `Your ${giftName} to ${recipientDoc.data().creatorName || 'the creator'} has been delivered successfully.`,
+                    link: "/Home",
+                    deliveryType: ["inbox"],
+                    notificationType: "Pledge Approved",
+                    isRead: false,
+                    status: "pending",
+                    sound: false,
+                    timestamp: FieldValue.serverTimestamp()
+                });
+                transaction.update(senderRef, { unreadNotificationCount: FieldValue.increment(1) });
+            }
+        });
+
+        logger.info(`User '${uid}' successfully completed earnings-deducted transaction.`);
+        return { success: true, message: "Transaction completed successfully." };
+
+    } catch (error) {
+        logger.error("Transaction failed:", error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", error.message);
+    }
+});
+
+// =====================================================================
+// ============ 4. DELETE PAYOUT RECORD (USER CLEANUP - SOFT DELETE) ===
+// =====================================================================
+exports.deletePayoutRecord = onCall({ enforceAppCheck: false }, async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Unauthenticated.");
+
+    const { recordId } = request.data;
+    if (!recordId) throw new HttpsError("invalid-argument", "Missing record ID.");
+
+    const db = admin.firestore();
+    const recordRef = db.collection("payoutHistory").doc(recordId);
+
+    try {
+        const docSnap = await recordRef.get();
+        if (!docSnap.exists) throw new HttpsError("not-found", "Record not found.");
+        if (docSnap.data().userId !== uid) throw new HttpsError("permission-denied", "Unauthorized.");
+
+        // Secure Fix: Soft-delete only so treasury audit trails are never lost [1]
+        await recordRef.update({ hiddenByCreator: true });
+        return { success: true, message: "Record removed from history." };
+    } catch (error) {
+        throw new HttpsError("internal", error.message);
+    }
+});
+
+// =====================================================================
+// ============ 5. SYSTEM FINANCIAL REPORTING ENGINE ==================
+// =====================================================================
+exports.getSystemFinancialReport = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth?.token?.admin) throw new HttpsError("permission-denied", "Admin only.");
+
+    const { startDate, endDate } = request.data;
+    const db = admin.firestore();
+    
+    // Friendly mapping for your itemized sections
+    const SECTION_MAP = {
+        'giftToken': 'Gifts & Donations',
+        'competitionEntry': 'Casting Tournaments',
+        'roastTokens': 'Roast Room Passes',
+        'eventTicket': 'Box Office Tickets'
+    };
+
+    try {
+        const q = db.collection("paymentPledges")
+            .where("status", "==", "approved")
+            .where("createdAt", ">=", startDate)
+            .where("createdAt", "<=", endDate);
+
+        const snapshot = await q.get();
+        const report = {
+            grandTotalGross: 0,
+            grandTotalRevenue: 0, // 15%
+            grandTotalLiabilities: 0, // 85%
+            sections: {},
+            dailyBreakdown: {}
+        };
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const gross = data.amount || 0;
+            const revenue = Math.round((gross * PLATFORM_FEE_PERCENTAGE) * 100) / 100;
+            const liability = gross - revenue;
+            const type = data.paymentType || 'other';
+            const sectionName = SECTION_MAP[type] || 'Miscellaneous';
+            
+            // Extract date string (YYYY-MM-DD) for daily tracking
+            const dateKey = data.createdAt.split('T')[0];
+
+            // 1. Aggregate Section Totals
+            if (!report.sections[sectionName]) {
+                report.sections[sectionName] = { gross: 0, revenue: 0, liability: 0, count: 0 };
+            }
+            report.sections[sectionName].gross += gross;
+            report.sections[sectionName].revenue += revenue;
+            report.sections[sectionName].liability += liability;
+            report.sections[sectionName].count += 1;
+
+            // 2. Aggregate Daily Totals
+            if (!report.dailyBreakdown[dateKey]) {
+                report.dailyBreakdown[dateKey] = { gross: 0, count: 0 };
+            }
+            report.dailyBreakdown[dateKey].gross += gross;
+            report.dailyBreakdown[dateKey].count += 1;
+
+            // 3. Grand Totals
+            report.grandTotalGross += gross;
+            report.grandTotalRevenue += revenue;
+            report.grandTotalLiabilities += liability;
+        });
+
+        return report;
+    } catch (error) {
+        throw new HttpsError("internal", error.message);
+    }
+});
+
+// =====================================================================
+// ============ 6. MASTER SYSTEM FINANCIAL PURGE (FRESH START) =========
+// =====================================================================
+exports.purgeSystemFinancials = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth?.token?.admin) throw new HttpsError("permission-denied", "Admin only.");
+
+    const db = admin.firestore();
+    const batchSize = 500;
+
+    try {
+        // Expanded to include transactions and expenses for a 100% airtight clean slate [1]
+        const collectionsToWipe = ["paymentPledges", "payoutHistory", "payoutRequests", "transactions", "expenses"];
+        
+        for (const coll of collectionsToWipe) {
+            const query = db.collection(coll).limit(batchSize);
+            let snapshot = await query.get();
+            while (snapshot.size > 0) {
+                const batch = db.batch();
+                snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+                await batch.commit();
+                snapshot = await query.get();
+            }
+        }
+
+        // Reset all creator earnings, stats, and virtual token balances to 0
+        const creators = await db.collection("creators").get();
+        const statsBatch = db.batch();
+        creators.forEach(doc => {
+            statsBatch.update(doc.ref, {
+                totalEarnings: 0,
+                giftsReceived: 0,
+                lifetimeSpent: 0,
+                roastTokens: 0,        // Wipes test tokens
+                tokenCashValue: 0,    // Wipes test token value
+                giftInventory: {},    // Clears emoji counts
+                receivedGifts: [],    // Clears gift history
+                purchasedTickets: {}  // Clears test event access
+            });
+        });
+        await statsBatch.commit();
+
+        return { success: true, message: "Financial system purged and balances reset to zero." };
+    } catch (error) {
+        throw new HttpsError("internal", error.message);
+    }
+});
+
+// =====================================================================
+// ADMIN PROCESS BOX OFFICE SWEEP (Ledger -> Earnings - FULL AUDITED VERSION)
+// =====================================================================
+exports.approveBoxOfficeSweep = onCall(async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to perform this action.");
+    }
+    // THE FIX: Authorize both Admins and Super Admins dynamically
+    const isAdminUser = request.auth.token?.admin === true || request.auth.token?.super_admin === true;
+    if (!isAdminUser) {
+        throw new HttpsError("permission-denied", "Only administrators can initiate a box office sweep.");
+    }
+
+    const { requestId } = request.data;
+    if (!requestId) {
+        throw new HttpsError("invalid-argument", "Missing requestId.");
+    }
+
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const reqRef = db.collection("payoutRequests").doc(requestId);
+            const reqDoc = await transaction.get(reqRef);
+            
+            if (!reqDoc.exists) {
+                throw new HttpsError("not-found", "Payout request not found.");
+            }
+            
+            const data = reqDoc.data();
+            if (data.status !== 'pending' || data.type !== 'boxOfficeSweep') {
+                throw new HttpsError("failed-precondition", "Invalid request status or type for a box office sweep.");
+            }
+
+            const creatorRef = db.collection("creators").doc(data.userId);
+            const creatorDoc = await transaction.get(creatorRef);
+            
+            if (!creatorDoc.exists) {
+                throw new HttpsError("not-found", "Creator profile not found.");
+            }
+
+            const creatorData = creatorDoc.data();
+            const sweepAmount = data.amount;
+
+            // Secure, fail-safe deductions: Pull from ticketSales first, then flow through filmDonations if needed
+            const currentSales = creatorData.boxOfficeLedger?.ticketSales || 0;
+            const currentDonations = creatorData.boxOfficeLedger?.filmDonations || 0;
+            const availableLedger = currentSales + currentDonations;
+
+            if (sweepAmount > availableLedger) {
+                throw new HttpsError("failed-precondition", "Requested sweep amount exceeds available Box Office balance.");
+            }
+
+            const newSales = Math.max(0, currentSales - sweepAmount);
+            const remainingSweep = Math.max(0, sweepAmount - currentSales);
+            const newDonations = Math.max(0, currentDonations - remainingSweep);
+
+            // 1. Transaction Updates: Safely Deduct ledger totals & increment main earnings atomically
+            transaction.update(creatorRef, {
+                totalEarnings: FieldValue.increment(sweepAmount),
+                "boxOfficeLedger.ticketSales": newSales,
+                "boxOfficeLedger.filmDonations": newDonations
+            });
+
+            // 2. Mark request as processed
+            transaction.update(reqRef, { 
+                status: "processed", 
+                processedAt: FieldValue.serverTimestamp(), 
+                processedBy: uid 
+            });
+            
+            // 3. Log in Payout Audit History Archive
+            const historyRef = db.collection("payoutHistory").doc();
+            const systemReceiptId = `SWEEP-${Date.now()}`;
+            transaction.set(historyRef, {
+                userId: data.userId,
+                creatorName: data.creatorName,
+                amount: sweepAmount,
+                systemReceiptId,
+                adminTxId: "INTERNAL_LEDGER_TRANSFER",
+                processedAt: FieldValue.serverTimestamp(),
+                type: 'boxOfficeSweep',
+                notes: data.campaignTitle || "Box Office Funds Transfer"
+            });
+
+            // 4. THE FIX: Write transaction log for Finance Command P&L Hub Reports
+            const txnRef = db.collection("transactions").doc();
+            transaction.set(txnRef, {
+                amount: sweepAmount,
+                source: 'box_office',
+                type: 'payout_sweep',
+                userId: data.userId,
+                creatorName: data.creatorName,
+                createdAt: FieldValue.serverTimestamp()
+            });
+
+            // 5. THE FIX: Create highly detailed, relational user notification with associated film title
+            const notifRef = db.collection("notifications").doc();
+            transaction.set(notifRef, {
+                userId: data.userId,
+                title: "Box Office Sweep Approved! 🎟️",
+                body: `${sweepAmount.toLocaleString()} GYD was added to your earnings (Approved by Admin) from '${data.campaignTitle || 'your film'}' box office ticket sales.`,
+                link: "/CreatorDashboard",
+                deliveryType: ["inbox", "push"],
+                notificationType: "PAYOUT_PAID",
+                isRead: false,
+                status: "pending",
+                sound: true,
+                timestamp: FieldValue.serverTimestamp()
+            });
+
+            // Increment notifications badge count
+            transaction.update(creatorRef, {
+                unreadNotificationCount: FieldValue.increment(1)
+            });
+        });
+
+        logger.info(`Admin '${uid}' successfully approved box office sweep request '${requestId}'.`);
+        return { success: true, message: "Box office sweep approved and funds transferred." };
+
+    } catch (error) {
+        logger.error(`Error approving box office sweep request '${requestId}':`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", error.message || "An unexpected error occurred.");
+    }
+});
+
+exports.nukeCenterStageStorage = onCall(async (request) => {
+    // Restrict execution strictly to verified administrators
+    if (!request.auth || (!request.auth.token.admin && !request.auth.token.super_admin)) {
+        throw new HttpsError('failed-precondition', 'Must be an administrator to trigger this function.');
+    }
+
+    const db = admin.firestore();
+    const bucket = admin.storage().bucket();
+
+    try {
+        // === 1. PURGE STORAGE FILES ===
+        // Purge all custom contestant uploads
+        await bucket.deleteFiles({ prefix: 'centerstage_thumbs/' }).catch(() => {});
+        // Purge all dynamic sponsor banners
+        await bucket.deleteFiles({ prefix: 'centerstage_sponsor/' }).catch(() => {});
+
+        // === 2. PURGE DATABASE LEADERBOARD COLLECTION ===
+        const leaderboardRef = db.collection("leaderboard");
+        const leaderboardSnap = await leaderboardRef.get();
+        if (!leaderboardSnap.empty) {
+            const batch = db.batch();
+            leaderboardSnap.forEach(docSnap => {
+                batch.delete(docSnap.ref);
+            });
+            await batch.commit();
+        }
+
+        // === 3. GLOBAL LEADERBOARD RESET FOR ALL CREATORS ===
+        // Instead of only clearing active contestants, we clear giftsReceived and giftInventory 
+        // across ALL creators so the board is cleanly wiped, while leaving "badges" completely untouched [1]
+        const creatorsRef = db.collection("creators");
+        const creatorsSnap = await creatorsRef.get();
+        
+        if (!creatorsSnap.empty) {
+            const batch = db.batch();
+            creatorsSnap.forEach(docSnap => {
+                const data = docSnap.data();
+                // Check if they accumulated any votes or gifts this season [1]
+                if (data.giftsReceived > 0 || data.voteCount > 0 || Object.keys(data.giftInventory || {}).length > 0) {
+                    batch.update(docSnap.ref, {
+                        giftsReceived: 0,
+                        voteCount: 0,
+                        giftInventory: {},
+                        currentChallengeLink: "",
+                        currentChallengeThumbnail: "",
+                        performances: {},
+                        isEliminated: false,
+                        eliminatedAtStageIndex: null,
+                        teamTag: ""
+                        // Notice: "badges" is completely excluded, preserving their legacy status [1]
+                    });
+                }
+            });
+            await batch.commit();
+        }
+
+        return { 
+            success: true, 
+            message: "Season storage folders, leaderboard collections, and creator statistics have been cleanly wiped." 
+        };
+    } catch (err) {
+        throw new HttpsError('internal', err.message);
+    }
+});
+
+// ==========================================
+// MANUAL COMPETITION REVELATION BYPASS
+// ==========================================
+exports.revealCompetitionResults = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in to perform this action."); }
+
+    if (request.auth.token.admin !== true && request.auth.token.super_admin !== true) {
+        throw new HttpsError("permission-denied", "You must be an admin to reveal results.");
+    }
+
+    const { competitionId } = request.data;
+    if (!competitionId) {
+        throw new HttpsError("invalid-argument", "The function must be called with 'competitionId'.");
+    }
+
+    const db = admin.firestore();
+    logger.info(`Admin '${uid}' is manually revealing results for competition '${competitionId}'.`);
+
+    const competitionRef = db.collection("competitions").doc(competitionId);
+    const competitionDoc = await competitionRef.get();
+
+    if (!competitionDoc.exists) {
+        throw new HttpsError("not-found", "Competition not found.");
+    }
+
+    const competitionData = competitionDoc.data();
+    
+    const batch = db.batch();
+    batch.update(competitionRef, { status: "Results Visible" });
+
+    const broadcast = {
+        broadcastType: "COMPETITION_RESULTS",
+        message: `The results for the competition "${competitionData.title}" are in! See who won.`,
+        link: "/CompetitionScreen",
+        timestamp: new Date()
+    };
+    batch.set(db.collection("broadcast_notifications").doc(), broadcast);
+
+    const winnersToNotify = competitionData.winnersToNotify;
+    if (winnersToNotify > 0) {
+        try {
+            const entriesRef = competitionRef.collection("entries");
+            const entriesQuery = entriesRef.orderBy("likeCount", "desc").limit(winnersToNotify);
+            const winnersSnapshot = await entriesQuery.get();
+
+            if (!winnersSnapshot.empty) {
+                let rank = 1;
+                winnersSnapshot.forEach(winnerDoc => {
+                    const winnerData = winnerDoc.data();
+                    const winnerId = winnerData.userId;
+                    if (!winnerId) return;
+
+                    let rankString = (rank === 1) ? "1st" : (rank === 2) ? "2nd" : (rank === 3) ? "3rd" : `${rank}th`;
+                    
+                    const notificationPayload = {
+                        userId: winnerId,
+                        title: "You Won!",
+                        body: `Congratulations! You won ${rankString} place in the "${competitionData.title}" competition!`,
+                        link: "/CompetitionScreen",
+                        deliveryType: ["inbox", "push"],
+                        notificationType: "COMPETITION_WINNER",
+                        sound: true,
+                        isRead: false,
+                        status: "pending",
+                        timestamp: admin.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    batch.set(db.collection("notifications").doc(), notificationPayload);
+                    const winnerRef = db.collection("creators").doc(winnerId);
+                    batch.update(winnerRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(1) });
+                    
+                    rank++;
+                });
+            }
+        } catch (queryError) {
+            logger.error(`CRITICAL FAILURE: Could not query winners for competition '${competitionId}':`, queryError);
+            throw new HttpsError("internal", "Failed to query and notify tournament winners.");
+        }
+    }
+
+    await batch.commit();
+    return { success: true, message: "Results revealed and winners notified successfully!" };
+});
+
+// =====================================================================
+// ADMIN MANUAL OVERRIDE SWEEP (Sweeps a user's ledger directly from admin profile card)
+// =====================================================================
+exports.transferBoxOfficeToUser = onCall(async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to perform this action.");
+    }
+
+    // Authorize Super Admins, Admins, and Authorities dynamically
+    const callerRef = admin.firestore().collection("creators").doc(uid);
+    const callerSnap = await callerRef.get();
+    if (!callerSnap.exists || (callerSnap.data().role !== 'admin' && callerSnap.data().role !== 'authority' && callerSnap.data().role !== 'super_admin')) {
+        throw new HttpsError("permission-denied", "Only administrators can initiate a manual box office sweep.");
+    }
+
+    const { targetUserId } = request.data;
+    if (!targetUserId) {
+        throw new HttpsError("invalid-argument", "Missing targetUserId parameter.");
+    }
+
+    const db = admin.firestore();
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const creatorRef = db.collection("creators").doc(targetUserId);
+            const creatorDoc = await transaction.get(creatorRef);
+            
+            if (!creatorDoc.exists) {
+                throw new HttpsError("not-found", "Target creator profile not found.");
+            }
+
+            const creatorData = creatorDoc.data();
+            const currentSales = creatorData.boxOfficeLedger?.ticketSales || 0;
+            const currentDonations = creatorData.boxOfficeLedger?.filmDonations || 0;
+            const totalSweep = currentSales + currentDonations;
+
+            if (totalSweep <= 0) {
+                throw new HttpsError("failed-precondition", "Target user has no box office funds to sweep.");
+            }
+
+            // 1. Transaction Updates: Safely Deduct ledger totals & increment main earnings atomically
+            transaction.update(creatorRef, {
+                totalEarnings: FieldValue.increment(totalSweep),
+                "boxOfficeLedger.ticketSales": 0,
+                "boxOfficeLedger.filmDonations": 0
+            });
+
+            // 2. Log in Payout Audit History Archive
+            const historyRef = db.collection("payoutHistory").doc();
+            const systemReceiptId = `SWEEP-MANUAL-${Date.now()}`;
+            transaction.set(historyRef, {
+                userId: targetUserId,
+                creatorName: creatorData.creatorName || "NVA Creator",
+                amount: totalSweep,
+                systemReceiptId,
+                adminTxId: "MANUAL_OVERRIDE_SWEEP",
+                processedAt: FieldValue.serverTimestamp(),
+                type: 'boxOfficeSweep',
+                notes: "Manual Admin Override Sweep"
+            });
+
+            // 3. Write transaction log for Finance Command P&L Hub Reports
+            const txnRef = db.collection("transactions").doc();
+            transaction.set(txnRef, {
+                amount: totalSweep,
+                source: 'box_office',
+                type: 'payout_sweep',
+                userId: targetUserId,
+                creatorName: creatorData.creatorName || "NVA Creator",
+                createdAt: FieldValue.serverTimestamp()
+            });
+
+            // 4. Create highly detailed user notification
+            const notifRef = db.collection("notifications").doc();
+            transaction.set(notifRef, {
+                userId: targetUserId,
+                title: "Box Office Manual Sweep Approved! 🎟️",
+                body: `${totalSweep.toLocaleString()} GYD was moved to your earnings via a manual admin sweep of your Box Office.`,
+                link: "/CreatorDashboard",
+                deliveryType: ["inbox", "push"],
+                notificationType: "PAYOUT_PAID",
+                isRead: false,
+                status: "pending",
+                sound: true,
+                timestamp: FieldValue.serverTimestamp()
+            });
+
+            // Increment notifications badge count
+            transaction.update(creatorRef, {
+                unreadNotificationCount: FieldValue.increment(1)
+            });
+        });
+
+        logger.info(`Admin '${uid}' successfully completed manual box office sweep for user '${targetUserId}'.`);
+        return { success: true, message: "Manual box office sweep completed successfully." };
+
+    } catch (error) {
+        logger.error(`Error completing manual box office sweep for user '${targetUserId}':`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", error.message || "An unexpected error occurred.");
+    }
+});
+
+// =====================================================================
+// LIFT BOX OFFICE COOLDOWN (Admin Master Reset for Ledger Locks)
+// =====================================================================
+exports.liftBoxOfficeCooldown = onCall(async (request) => {
+    if (!request.auth || (request.auth.token.admin !== true && request.auth.token.super_admin !== true)) {
+        throw new HttpsError("permission-denied", "Unauthorized.");
+    }
+    const { targetUserId } = request.data;
+    const db = admin.firestore();
+
+    try {
+        const batch = db.batch();
+
+        // 1. Clear persistent profile lock
+        const userRef = db.collection("creators").doc(targetUserId);
+        batch.update(userRef, { payoutLockUntil: admin.firestore.FieldValue.delete() });
+
+        // 2. Takedown all active Premiere films for this user to release the live lock
+        const arenaRef = db.collection("movies");
+        const activePremieres = await arenaRef.where("creatorId", "==", targetUserId).where("type", "==", "premiere").get();
+        
+        activePremieres.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+
+        // 3. Delete from public events library to prevent ghost links
+        const eventsRef = db.collection("events");
+        const activeEvents = await eventsRef.where("creatorId", "==", targetUserId).get();
+        activeEvents.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+        return { success: true, message: "Box Office fully unlocked. All premiere locks cleared." };
+    } catch (error) {
+        throw new HttpsError("internal", error.message);
+    }
+});
+
+// =====================================================================
+// ============ PHASE B: RECURSIVE DELETION TRIGGERS ===================
+// =====================================================================
+
+// Reusable helper to safely extract Firebase Storage paths from URLs
+const getPathFromUrl = (url) => {
+    if (!url || !url.startsWith('https://firebasestorage.googleapis.com')) return null;
+    try {
+        const decodedUrl = decodeURIComponent(url);
+        return decodedUrl.split('/o/')[1].split('?')[0];
+    } catch (e) {
+        logger.warn(`Could not parse URL for deletion: ${url}`, e);
+        return null;
+    }
+};
+
+exports.onEventDeleted = onDocumentDeleted("events/{eventId}", async (event) => {
+    const deletedEvent = event.data.data();
+    if (!deletedEvent) return null;
+
+    const db = admin.firestore();
+    const bucket = admin.storage().bucket();
+    const eventId = event.params.eventId;
+    
+    logger.info(`[Audit] Running recursive cleanup for deleted event: ${eventId}`);
+
+    try {
+        // 1. Purge Cloud Storage Files (Thumbnails/Posters)
+        const posterPath = getPathFromUrl(deletedEvent.thumbnailUrl || deletedEvent.posterUrl);
+        if (posterPath) {
+            await bucket.file(posterPath).delete().catch(e => logger.warn(`Non-fatal: Failed to delete event poster: ${posterPath}`, e));
+        }
+
+        // 2. Erase all orphaned subcollections
+        const subcollections = ["likes", "comments", "mutedUsers", "chatMessages"];
+        for (const sub of subcollections) {
+            const snap = await db.collection(`events/${eventId}/${sub}`).get();
+            if (!snap.empty) {
+                const batch = db.batch();
+                snap.docs.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                logger.info(`Cleared ${snap.size} documents from events/${eventId}/${sub}`);
+            }
+        }
+    } catch (error) {
+        logger.error(`[Cleanup Error] Failed to clean up event ${eventId}:`, error);
+    }
+    return null;
+});
+
+exports.onMovieDeleted = onDocumentDeleted("movies/{movieId}", async (event) => {
+    const deletedMovie = event.data.data();
+    if (!deletedMovie) return null;
+
+    const db = admin.firestore();
+    const bucket = admin.storage().bucket();
+    const movieId = event.params.movieId;
+    
+    logger.info(`[Audit] Running recursive cleanup for deleted movie: ${movieId}`);
+
+    try {
+        // 1. Purge Cloud Storage Files (Posters, Trailers, Custom Uploads)
+        const assetUrls = [deletedMovie.posterUrl, deletedMovie.trailerUrl, deletedMovie.videoUrl];
+        for (const url of assetUrls) {
+            const path = getPathFromUrl(url);
+            if (path) {
+                await bucket.file(path).delete().catch(e => logger.warn(`Non-fatal: Failed to delete movie asset: ${path}`, e));
+            }
+        }
+
+        // 2. Erase Root-Level Relational Data (Movie Reviews)
+        const reviewsSnap = await db.collection("movieReviews").where("movieId", "==", movieId).get();
+        if (!reviewsSnap.empty) {
+            const batch = db.batch();
+            reviewsSnap.docs.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+            logger.info(`Cleared ${reviewsSnap.size} orphaned reviews for movie ${movieId}`);
+        }
+    } catch (error) {
+        logger.error(`[Cleanup Error] Failed to clean up movie ${movieId}:`, error);
+    }
+    return null;
+});
+
+// =====================================================================
+// ============ SECURE PAYOUT REQUEST SUBMISSION =======================
+// =====================================================================
+exports.requestPayout = onCall(async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "You must be logged in.");
+
+    const { fullName, mmgNumber } = request.data;
+    if (!fullName || !mmgNumber) throw new HttpsError("invalid-argument", "Missing MMG details.");
+
+    const db = admin.firestore();
+    const creatorRef = db.collection("creators").doc(uid);
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const creatorDoc = await transaction.get(creatorRef);
+            if (!creatorDoc.exists) throw new HttpsError("not-found", "Creator profile not found.");
+
+            const data = creatorDoc.data();
+            const currentEarnings = data.totalEarnings || 0;
+
+            // 1. SERVER-SIDE VALIDATION: Minimum Balance (10,000 GYD)
+            if (currentEarnings < 10000) {
+                throw new HttpsError("failed-precondition", "Insufficient earnings. Minimum 10,000 GYD required.");
+            }
+
+            // 2. SERVER-SIDE VALIDATION: Cooldown (30 Days)
+            if (data.lastPayoutDate) {
+                const lastPayout = data.lastPayoutDate.toDate ? data.lastPayoutDate.toDate() : new Date(data.lastPayoutDate);
+                const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000;
+                if (Date.now() - lastPayout.getTime() < thirtyDaysInMs) {
+                    throw new HttpsError("failed-precondition", "You must wait 30 days between payout requests.");
+                }
+            }
+
+            // 3. SERVER-SIDE VALIDATION: Prevent Duplicate Requests
+            if (data.payoutStatus === 'pending' || data.payoutStatus === 'approved') {
+                throw new HttpsError("failed-precondition", "You already have an active payout request in the queue.");
+            }
+
+            // 4. Write the secure request
+            const requestRef = db.collection("payoutRequests").doc();
+            transaction.set(requestRef, {
+                type: 'cashOut',
+                userId: uid,
+                creatorName: data.creatorName || "NVA Creator",
+                email: request.auth.token.email || "Unknown",
+                amount: currentEarnings,
+                fullName: fullName,
+                mmgNumber: mmgNumber,
+                status: 'pending',
+                requestedAt: FieldValue.serverTimestamp()
+            });
+
+            // 5. Lock the dashboard status securely
+            transaction.update(creatorRef, {
+                payoutStatus: 'pending'
+            });
+        });
+
+        logger.info(`User '${uid}' successfully submitted a secure payout request.`);
+        return { success: true, message: "Payout request submitted securely." };
+
+    } catch (error) {
+        logger.error(`Error processing payout request for ${uid}:`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", "An unexpected error occurred during submission.");
+    }
 });
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---

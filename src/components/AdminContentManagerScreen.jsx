@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db, functions, httpsCallable, storage, ref, uploadBytes, getDownloadURL, extractVideoInfo } from '../firebase';
-import { collection, onSnapshot, query, orderBy, doc, updateDoc } from 'firebase/firestore'; // <-- FIX: Add doc and updateDoc
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import AdminCurationModal from './AdminCurationModal';
 import AdminFeaturedContentManager from './AdminFeaturedContentManager';
 import ThumbnailAdjustModal from './ThumbnailAdjustModal';
@@ -33,6 +33,121 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
     const [curationTarget, setCurationTarget] = useState('');
     const [showManageModal, setShowManageModal] = useState(false);
     const [itemToManage, setItemToManage] = useState(null);
+
+    // --- Dynamic Header Ad states ---
+    const [showAdManager, setShowAdManager] = useState(false);
+    const [adTitle, setAdTitle] = useState('');
+    const [adUrl, setAdUrl] = useState('');
+    const [adDescription, setAdDescription] = useState('');
+    const [adExpiresAt, setAdExpiresAt] = useState('');
+    const [adFile, setAdFile] = useState(null);
+    const [adPreview, setAdPreview] = useState('');
+    const [adUploading, setAdUploading] = useState(false);
+    const adFileInputRef = useRef(null);
+
+    useEffect(() => {
+        if (showAdManager) {
+            const fetchAd = async () => {
+                const docSnap = await getDoc(doc(db, "settings", "headerAd"));
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    setAdTitle(data.title || '');
+                    setAdUrl(data.destinationUrl || '');
+                    setAdDescription(data.description || '');
+                    setAdPreview(data.imageUrl || '');
+                    
+                    // Pre-fill local date format for HTML datetime-local input safely
+                    if (data.expiresAt) {
+                        try {
+                            const dateObj = new Date(data.expiresAt);
+                            // Formats as YYYY-MM-DDTHH:MM
+                            const formattedDate = dateObj.toISOString().slice(0, 16);
+                            setAdExpiresAt(formattedDate);
+                        } catch(e) { setAdExpiresAt(''); }
+                    } else {
+                        setAdExpiresAt('');
+                    }
+                }
+            };
+            fetchAd();
+        }
+    }, [showAdManager]);
+
+    // Live Thumbnail Extractor Listener for Ads
+    useEffect(() => {
+        if (adFile) {
+            const objectUrl = URL.createObjectURL(adFile);
+            setAdPreview(objectUrl);
+            return () => URL.revokeObjectURL(objectUrl);
+        }
+        
+        if (!adUrl) {
+            return;
+        }
+
+        const handler = setTimeout(() => {
+            const videoInfo = extractVideoInfo(adUrl);
+            // Only overwrite preview if a valid, non-placeholder thumbnail is successfully resolved
+            if (videoInfo && videoInfo.thumbnailUrl && videoInfo.thumbnailUrl !== 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA') {
+                setAdPreview(videoInfo.thumbnailUrl);
+            }
+        }, 800);
+
+        return () => clearTimeout(handler);
+    }, [adUrl, adFile]);
+
+    const handleDeleteHeaderAd = () => {
+        setConfirmationTitle("Delete Billboard Ad?");
+        setConfirmationMessage("Are you sure you want to permanently delete the current header billboard? This action cannot be undone.");
+        setOnConfirmationAction(() => async () => {
+            setAdUploading(true);
+            showMessage("Deleting billboard...");
+            try {
+                await deleteDoc(doc(db, "settings", "headerAd"));
+                setAdTitle('');
+                setAdUrl('');
+                setAdDescription('');
+                setAdPreview('');
+                setAdExpiresAt('');
+                setAdFile(null);
+                showMessage("Header Billboard Deleted!");
+                setShowAdManager(false);
+            } catch (err) {
+                showMessage("Failed to delete billboard: " + err.message);
+            } finally {
+                setAdUploading(false);
+            }
+        });
+        setShowConfirmationModal(true);
+    };
+
+    const handleSaveHeaderAd = async (e) => {
+        e.preventDefault();
+        setAdUploading(true);
+        showMessage("Updating Header Billboard...");
+        try {
+            let finalImgUrl = adPreview;
+            if (adFile) {
+                const storageRef = ref(storage, `curated_thumbnails/headerAd_${Date.now()}`);
+                const snap = await uploadBytes(storageRef, adFile);
+                finalImgUrl = await getDownloadURL(snap.ref);
+            }
+            await setDoc(doc(db, "settings", "headerAd"), {
+                title: adTitle.trim(),
+                destinationUrl: (adUrl || '').trim(),
+                description: adDescription.trim(),
+                imageUrl: finalImgUrl,
+                expiresAt: adExpiresAt ? new Date(adExpiresAt).toISOString() : null,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            showMessage("Header Ad Banner Saved!");
+            setShowAdManager(false);
+        } catch(err) {
+            showMessage("Failed to save banner: " + err.message);
+        } finally {
+            setAdUploading(false);
+        }
+    };
 
     // --- NEW STATE for Search and Filter ---
     const [searchTerm, setSearchTerm] = useState('');
@@ -276,12 +391,74 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
             
             <AdminFeaturedContentManager featuredContentSlots={featuredContentSlots} showMessage={showMessage} contentItems={contentItems} />
 
-            <div className="dashboardSection" style={{ border: '2px solid #00FF00', marginTop: '20px' }}>
-                <p className="dashboardSectionTitle" style={{color: '#00FF00'}}>Home Screen Curation</p>
-                <p className="dashboardItem" style={{ color: '#AAA', marginBottom: '15px' }}>Manually add, remove, and reorder content for the main sections on the Home screen.</p>
-                <div style={{ display: 'flex', justifyContent: 'space-around', gap: '10px', marginTop: '15px' }}>
-                    <button type="button" className="button" onClick={() => openCurationModal('Featured')}><span className="buttonText">Manage Featured</span></button>
-                    <button type="button" className="button" onClick={() => openCurationModal('Trending')}><span className="buttonText">Manage Trending</span></button>
+            <div className="dashboardSection" style={{ 
+                background: 'rgba(255, 255, 255, 0.02)', 
+                backdropFilter: 'blur(16px)', 
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid rgba(255, 255, 255, 0.08)', 
+                borderRadius: '16px', 
+                padding: '24px', 
+                marginTop: '25px',
+                boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255,255,255,0.03)'
+            }}>
+                <p className="dashboardSectionTitle" style={{ color: '#FFF', margin: 0, fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    ⚡ Home Screen Curation & Billboards
+                </p>
+                <p style={{ color: '#888', fontSize: '12px', marginTop: '6px', marginBottom: '20px', lineHeight: '1.4' }}>
+                    Manually curate your featured lists, manage trending content, and configure the high-impact Header Billboard Ad banner.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                    <button 
+                        type="button" 
+                        className="button" 
+                        style={{ 
+                            flex: '1 1 150px', margin: 0, padding: '12px',
+                            background: 'rgba(255, 255, 255, 0.03)', 
+                            border: '1px solid rgba(255, 255, 255, 0.1)', 
+                            borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s'
+                        }} 
+                        onClick={() => openCurationModal('Featured')}
+                    >
+                        <span className="buttonText light" style={{ fontSize: '13px', fontWeight: 'bold' }}>Manage Featured</span>
+                    </button>
+                    <button 
+                        type="button" 
+                        className="button" 
+                        style={{ 
+                            flex: '1 1 150px', margin: 0, padding: '12px',
+                            background: 'rgba(255, 255, 255, 0.03)', 
+                            border: '1px solid rgba(255, 255, 255, 0.1)', 
+                            borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s'
+                        }} 
+                        onClick={() => openCurationModal('Trending')}
+                    >
+                        <span className="buttonText light" style={{ fontSize: '13px', fontWeight: 'bold' }}>Manage Trending</span>
+                    </button>
+                    <button 
+                        type="button" 
+                        className="button" 
+                        style={{ 
+                            flex: '1 1 180px', margin: 0, padding: '12px',
+                            background: 'rgba(0, 255, 255, 0.08)', 
+                            border: '2px solid #00FFFF', 
+                            borderRadius: '8px', cursor: 'pointer', 
+                            boxShadow: '0 0 15px rgba(0, 255, 255, 0.15)',
+                            transition: 'all 0.2s'
+                        }} 
+                        onClick={() => setShowAdManager(true)}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(0, 255, 255, 0.15)';
+                            e.currentTarget.style.boxShadow = '0 0 25px rgba(0, 255, 255, 0.3)';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'rgba(0, 255, 255, 0.08)';
+                            e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 255, 255, 0.15)';
+                        }}
+                    >
+                        <span className="buttonText" style={{ color: '#FFF', fontSize: '13px', fontWeight: '900', letterSpacing: '0.5px' }}>
+                            📺 HEADER BILLBOARD AD
+                        </span>
+                    </button>
                 </div>
             </div>
 
@@ -384,6 +561,75 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
                     </div>
                 </div>
             </div>
+
+            {/* ====== GLASSMORPHIC HEADER AD BILLBOARD MODAL ====== */}
+            {showAdManager && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+                    backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                    zIndex: 1900, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px'
+                }}>
+                    <form onSubmit={handleSaveHeaderAd} style={{
+                        background: 'rgba(26, 26, 26, 0.65)', border: '1px solid rgba(255, 255, 255, 0.1)',
+                        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)', borderRadius: '16px',
+                        padding: '30px', width: '100%', maxWidth: '500px', display: 'flex', flexDirection: 'column', gap: '15px'
+                    }}>
+                        <p style={{ fontSize: '20px', fontWeight: 'bold', color: '#00FFFF', margin: 0, textShadow: '0 0 10px rgba(0,255,255,0.3)' }}>📺 Header Billboard Ad Controller</p>
+                        <p style={{ fontSize: '12px', color: '#AAA', margin: 0 }}>This ad displays directly in the top header on all devices. Keep it concise!</p>
+
+                        <div className="formGroup">
+                            <label className="formLabel">Ad Campaign Title:</label>
+                            <input type="text" className="formInput" value={adTitle} onChange={(e) => setAdTitle(e.target.value)} placeholder="e.g., Buy Festival Tickets!" required />
+                        </div>
+
+                        <div className="formGroup">
+                            <label className="formLabel">Destination URL (Optional):</label>
+                            <input type="url" className="formInput" value={adUrl} onChange={(e) => setAdUrl(e.target.value)} placeholder="https://www.targetsite.com" />
+                        </div>
+
+                        <div className="formGroup">
+                            <label className="formLabel">Description:</label>
+                            <textarea className="formTextarea" value={adDescription} onChange={(e) => setAdDescription(e.target.value)} placeholder="Enter details..." rows="2" style={{ resize: 'none' }}></textarea>
+                        </div>
+
+                        <div className="formGroup">
+                            <label className="formLabel">Optional Banner Expiration Date & Time:</label>
+                            <input type="datetime-local" className="formInput" value={adExpiresAt} onChange={(e) => setAdExpiresAt(e.target.value)} style={{ margin: 0 }} />
+                        </div>
+
+                        <div className="formGroup">
+                            <label className="formLabel">Flyer Image (Upload):</label>
+                            {adPreview && (
+                                <img src={adPreview} alt="Preview" style={{ width: '100%', maxHeight: '110px', objectFit: 'contain', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.15)', background: '#000', marginBottom: '10px' }} />
+                            )}
+                            <input type="file" ref={adFileInputRef} accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                    setAdFile(file);
+                                    setAdPreview(URL.createObjectURL(file));
+                                }
+                            }} />
+                            <button type="button" className="button" onClick={() => adFileInputRef.current.click()} style={{ background: '#3A3A3A', width: '100%', margin: 0 }}>
+                                <span className="buttonText light">Choose Ad Image File</span>
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '10px', marginTop: '10px', flexDirection: 'column' }}>
+                            <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                                <button type="button" className="confirmationButton cancel" onClick={() => setShowAdManager(false)} style={{ flex: 1, padding: '12px' }} disabled={adUploading}>Cancel</button>
+                                <button type="submit" className="confirmationButton confirm" style={{ flex: 1, padding: '12px', background: '#00FFFF', color: '#000', fontWeight: 'bold' }} disabled={adUploading}>
+                                    {adUploading ? 'Uploading...' : 'Save & Publish Ad'}
+                                </button>
+                            </div>
+                            {adPreview && (
+                                <button type="button" className="adminActionButton reject" onClick={handleDeleteHeaderAd} style={{ width: '100%', margin: 0, padding: '10px' }} disabled={adUploading}>
+                                    🗑️ Delete Billboard Ad Completely
+                                </button>
+                            )}
+                        </div>
+                    </form>
+                </div>
+            )}
         </>
     );
 }

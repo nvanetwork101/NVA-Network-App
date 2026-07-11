@@ -1,6 +1,7 @@
 // src/components/NotificationInboxScreen.jsx
 import React, { useState, useEffect } from 'react';
 import { db, collection, query, where, orderBy, onSnapshot, limit, httpsCallable, functions } from '../firebase.js';
+import { doc, deleteDoc } from 'firebase/firestore';
 
 const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotification, markNotificationAsRead, markAllAsRead }) => {
     const [inboxNotifications, setInboxNotifications] = useState([]);
@@ -83,9 +84,12 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
         }
     };
 
-    const handleDismiss = (notificationId, event) => {
+    const handleDismiss = async (notificationId, event) => {
         event.stopPropagation();
+        // Optimistically hide from UI
         setInboxNotifications(prev => prev.filter(n => n.id !== notificationId));
+        
+        // Pass to the secure Cloud Function to bypass strict Client Security Rules
         dismissNotification(notificationId);
     };
 

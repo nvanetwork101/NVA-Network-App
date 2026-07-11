@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { db, functions, httpsCallable, storage, ref, uploadBytes, getDownloadURL, extractVideoInfo } from '../firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, doc, setDoc, getDocs, writeBatch, increment, limit } from 'firebase/firestore';
 import ThumbnailAdjustModal from './ThumbnailAdjustModal';
 import CompetitionManagementModal from './CompetitionManagementModal';
 
@@ -16,6 +16,8 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
     const [entryDeadline, setEntryDeadline] = useState('');
     const [competitionEnd, setCompetitionEnd] = useState('');
     const [resultsDate, setResultsDate] = useState('');
+    const [entryFee, setEntryFee] = useState(''); // Initialize empty string to prevent leading zero issues [1]
+    const [isFeeEnabled, setIsFeeEnabled] = useState(false); // Added master fee toggle state
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [flyerFile, setFlyerFile] = useState(null);
     const flyerInputRef = useRef(null);
@@ -35,6 +37,11 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
 
     const [competitions, setCompetitions] = useState([])
     const [loadingComps, setLoadingComps] = useState(true);
+
+    // Live Fail-Safe Champion Override States
+    const [editingOverrideCompId, setEditingOverrideCompId] = useState(null);
+    const [overrideUrl, setOverrideUrl] = useState('');
+    const [overrideType, setOverrideType] = useState('Photo');
 
     // --- DATA FETCHING ---
     useEffect(() => {
@@ -74,6 +81,8 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
         setDescription('');
         setRules('');
         setPrizesText('');
+        setEntryFee(''); // Reset entry fee blank [1]
+        setIsFeeEnabled(false); // Reset master toggle state
         setFlyerUrl('');
         setEntryDeadline('');
         setCompetitionEnd('');
@@ -148,6 +157,8 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
 
             const competitionData = {
                 title, competitionType, description, rules, prizesText,
+                entryFee: isFeeEnabled ? (parseInt(entryFee, 10) || 0) : 0, // Parse integer safely [1]
+                prizePool: 0, // Initialize prize pool
                 flyerImageUrl: thumbnailUrl,
                 flyerImageUrl_highRes: highResUrl,
                 // THE FIX: Use the new state variables, controlled by the toggle.
@@ -160,6 +171,17 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
 
             const createCompFunction = httpsCallable(functions, 'createCompetition');
             const result = await createCompFunction(competitionData);
+
+            // THE FIX: Authoritatively mirror the active competition to the Banner state
+            await setDoc(doc(db, "settings", "competitionDisplayState"), {
+                title: title,
+                displayMessage: description.slice(0, 60) + "...",
+                status: "Accepting Entries",
+                isActive: true,
+                countdownTarget: new Date(entryDeadline),
+                entryFee: isFeeEnabled ? (parseInt(entryFee, 10) || 0) : 0, // Parse integer safely [1]
+                prizePool: 0 // Mirror initial prize pool
+            }, { merge: true });
 
             showMessage(result.data.message);
             clearForm();
@@ -186,9 +208,128 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
         setShowConfirmationModal(true);
     };
 
+    // --- SECURE CLIENT-SIDE 60/25/15 PRIZE DISTRIBUTOR ---
+    const handleDistributePrizes = (comp) => {
+        const totalPool = comp.prizePool || 0;
+        if (totalPool === 0) {
+            showMessage("The Prize Pool is empty. No earnings to distribute!");
+            return;
+        }
+
+        setConfirmationTitle("Distribute Tournament Prizes?");
+        setConfirmationMessage(`You are about to distribute a total prize pool of ${totalPool.toLocaleString()} GYD to the Top 3 winners (60% / 25% / 15%). This will lock the tournament as paid and credit their dashboards. Proceed?`);
+        
+        setOnConfirmationAction(() => async () => {
+            showMessage("Executing prize distribution...");
+            try {
+                // 1. Fetch entries sorted by votes (likeCount) descending
+                const entriesRef = collection(db, "competitions", comp.id, "entries");
+                const q = query(entriesRef, orderBy("likeCount", "desc"), limit(3));
+                const snap = await getDocs(q);
+
+                if (snap.empty) {
+                    showMessage("No entries found inside the competition!");
+                    return;
+                }
+
+                const winners = snap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
+                
+                // 2. Calculate the golden-ratio split
+                const payout1st = Math.round(totalPool * 0.60);
+                const payout2nd = Math.round(totalPool * 0.25);
+                const payout3rd = Math.round(totalPool * 0.15);
+
+                const batch = writeBatch(db);
+
+                // 3. Update the competition status and distribute funds
+                batch.update(doc(db, "competitions", comp.id), {
+                    prizesDistributed: true,
+                    status: "Concluded" // Marks it paid & locked!
+                });
+
+                // Write 1st Place Winnings
+                if (winners[0]) {
+                    batch.update(doc(db, "creators", winners[0].userId), { totalEarnings: increment(payout1st) });
+                    batch.set(doc(collection(db, "notifications")), {
+                        userId: winners[0].userId,
+                        title: "1st Place Winner! 🏆",
+                        body: `${payout1st.toLocaleString()} GYD was credited to your account for 1st place in "${comp.title}"!`,
+                        link: "/CreatorDashboard",
+                        deliveryType: ["inbox", "push"],
+                        notificationType: "TOURNAMENT_WIN",
+                        sound: true,
+                        isRead: false,
+                        status: "pending",
+                        timestamp: new Date()
+                    });
+                    batch.update(doc(db, "creators", winners[0].userId), { unreadNotificationCount: increment(1) });
+                }
+
+                // Write 2nd Place Winnings
+                if (winners[1]) {
+                    batch.update(doc(db, "creators", winners[1].userId), { totalEarnings: increment(payout2nd) });
+                    batch.set(doc(collection(db, "notifications")), {
+                        userId: winners[1].userId,
+                        title: "2nd Place Winner! 🥈",
+                        body: `${payout2nd.toLocaleString()} GYD was credited to your account for 2nd place in "${comp.title}"!`,
+                        link: "/CreatorDashboard",
+                        deliveryType: ["inbox", "push"],
+                        notificationType: "TOURNAMENT_WIN",
+                        sound: true,
+                        isRead: false,
+                        status: "pending",
+                        timestamp: new Date()
+                    });
+                    batch.update(doc(db, "creators", winners[1].userId), { unreadNotificationCount: increment(1) });
+                }
+
+                // Write 3rd Place Winnings
+                if (winners[2]) {
+                    batch.update(doc(db, "creators", winners[2].userId), { totalEarnings: increment(payout3rd) });
+                    batch.set(doc(collection(db, "notifications")), {
+                        userId: winners[2].userId,
+                        title: "3rd Place Winner! 🥉",
+                        body: `${payout3rd.toLocaleString()} GYD was credited to your account for 3rd place in "${comp.title}"!`,
+                        link: "/CreatorDashboard",
+                        deliveryType: ["inbox", "push"],
+                        notificationType: "TOURNAMENT_WIN",
+                        sound: true,
+                        isRead: false,
+                        status: "pending",
+                        timestamp: new Date()
+                    });
+                    batch.update(doc(db, "creators", winners[2].userId), { unreadNotificationCount: increment(1) });
+                }
+
+                await batch.commit();
+                showMessage("Prizes distributed and winners notified successfully!");
+            } catch (err) {
+                console.error("Payout Distribution Failed:", err);
+                showMessage("Failed to distribute prizes.");
+            }
+        });
+        setShowConfirmationModal(true);
+    };
+
     const handleManage = (comp) => {
         setSelectedComp(comp);
         setShowManageModal(true);
+    };
+
+    const handleForceRevealResults = (comp) => {
+        setConfirmationTitle("Force Reveal Results?");
+        setConfirmationMessage(`Are you sure you want to manually force the results visible for "${comp.title}"? This will instantly change the stage to 'Results Visible', broadcast it to the network, and notify the winners.`);
+        setOnConfirmationAction(() => async () => {
+            showMessage("Revealing results... Please wait.");
+            try {
+                const revealFunc = httpsCallable(functions, 'revealCompetitionResults');
+                const result = await revealFunc({ competitionId: comp.id });
+                showMessage(result.data.message);
+            } catch (error) {
+                showMessage(`Error revealing results: ${error.message}`);
+            }
+        });
+        setShowConfirmationModal(true);
     };
     
     // --- RENDER LOGIC ---
@@ -208,6 +349,38 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
                     <div className="formGroup"><label className="formLabel">Official Rules & Requirements</label><textarea className="formTextarea" value={rules} onChange={e => setRules(e.target.value)} placeholder="Detail the rules, eligibility, and how to win." /></div>
                     <div className="formGroup"><label className="formLabel">Prizes (Simple Text)</label><textarea className="formTextarea" value={prizesText} onChange={e => setPrizesText(e.target.value)} placeholder="e.g., 1st Place: $500, 2nd Place: Gift Basket..." /></div>
                     
+                    {/* TOURNAMENT ENTRY FEE CONFIGURE (With Master Toggle) */}
+                    <div className="formGroup">
+                        <label className="formLabel" style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                            <input 
+                                type="checkbox" 
+                                checked={isFeeEnabled} 
+                                onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setIsFeeEnabled(checked);
+                                    if (!checked) {
+                                        setEntryFee(0); // Reset fee to 0 if unchecked
+                                    }
+                                }} 
+                                style={{ width: '18px', height: '18px', accentColor: '#00FFFF', cursor: 'pointer' }} 
+                            />
+                            <span style={{ color: '#FFF', fontSize: '13px', fontWeight: 'bold' }}>Require Paid Entry Fee</span>
+                        </label>
+                    </div>
+
+                    {isFeeEnabled && (
+                        <div className="formGroup">
+                            <label className="formLabel">Tournament Entry Fee (GYD)</label>
+                            <input 
+                                type="number" 
+                                className="formInput" 
+                                value={entryFee} 
+                                onChange={e => setEntryFee(e.target.value === '' ? '' : parseInt(e.target.value, 10))} // Allow empty string [1]
+                                placeholder="e.g. 2500" 
+                            />
+                        </div>
+                    )}
+
                     <div className="formGroup"><label className="formLabel">Promotional Flyer Image</label><input type="file" ref={flyerInputRef} className="formInput" accept="image/*" onChange={handleFileSelect} style={{display: 'none'}} /><button type="button" className="button" style={{ width: '100%', backgroundColor: '#3A3A3A' }} onClick={() => flyerInputRef.current.click()}><span className="buttonText light">Upload Custom Flyer</span></button></div>
                     <div className="formGroup">
                         <label className="formLabel" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -250,19 +423,180 @@ function AdminCompetitionManager({ showMessage, setShowConfirmationModal, setCon
             </div>
 
             <div className="dashboardSection" style={{marginTop: '30px'}}>
+                <style>{`
+                    .admin-comp-list {
+                        max-height: 450px;
+                        overflow-y: auto;
+                        padding-right: 8px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 12px;
+                    }
+                    .admin-comp-card {
+                        background: rgba(255, 255, 255, 0.02);
+                        backdrop-filter: blur(12px);
+                        -webkit-backdrop-filter: blur(12px);
+                        border: 1px solid rgba(255, 255, 255, 0.06);
+                        border-radius: 12px;
+                        padding: 16px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 14px;
+                        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+                        transition: all 0.2s ease;
+                    }
+                    .admin-comp-card:hover {
+                        border-color: rgba(255, 255, 255, 0.1);
+                        background: rgba(255, 255, 255, 0.03);
+                    }
+                    .admin-comp-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: flex-start;
+                        width: 100%;
+                        gap: 12px;
+                    }
+                    .admin-comp-actions {
+                        display: flex;
+                        gap: 8px;
+                        flex-wrap: wrap;
+                        justify-content: flex-end;
+                        align-items: center;
+                        width: 100%;
+                    }
+                    @media (max-width: 650px) {
+                        .admin-comp-header {
+                            flex-direction: column;
+                            gap: 6px;
+                        }
+                        .admin-comp-actions {
+                            justify-content: flex-start;
+                            border-top: 1px solid rgba(255,255,255,0.04);
+                            padding-top: 12px;
+                        }
+                    }
+                `}</style>
                 <p className="dashboardSectionTitle">Existing Competitions</p>
                 {loadingComps ? <p>Loading competitions...</p> : (
-                    <div className="dashboardContentList" style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '10px' }}>
+                    <div className="admin-comp-list">
                         {competitions.length === 0 ? <p className="dashboardItem">No competitions found.</p> :
                             competitions.map(comp => (
-                                <div key={comp.id} className="adminDashboardItem">
-                                    <div style={{flexGrow: 1}}>
-                                        <p className="adminDashboardItemTitle">{comp.title}</p>
-                                        <p style={{fontSize: '12px', color: '#CCC'}}>Type: {comp.competitionType}</p>
+                                <div key={comp.id} className="admin-comp-card">
+                                    <div className="admin-comp-header">
+                                        <div style={{ flex: 1 }}>
+                                            <p className="adminDashboardItemTitle" style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#FFF' }}>{comp.title}</p>
+                                            <p style={{ fontSize: '12px', color: '#888', margin: '2px 0 0 0' }}>Type: {comp.competitionType}</p>
+                                        </div>
+                                        <span className="adminDashboardItemStatus" style={{ 
+                                            color: comp.status === 'Pending' ? '#FFD700' : comp.status === 'Results Visible' ? '#00FF00' : '#00FFFF', 
+                                            fontWeight: '900',
+                                            fontSize: '11px',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '1px',
+                                            background: 'rgba(0,0,0,0.3)',
+                                            padding: '4px 10px',
+                                            borderRadius: '6px',
+                                            border: '1px solid rgba(255,255,255,0.03)'
+                                        }}>{comp.status}</span>
                                     </div>
-                                    <span className="adminDashboardItemStatus" style={{color: comp.status === 'Pending' ? '#FFD700' : '#00FF00', margin: '0 10px'}}>{comp.status}</span>
-                                    <button className="adminActionButton reject" onClick={() => handleDelete(comp)}>Delete</button>
-                                    <button className="adminActionButton approve" style={{marginLeft: '10px'}} onClick={() => handleManage(comp)}>Manage</button>
+
+                                    {/* ACTIVE COMPETITION PREVIEW CARD: Shows all schedules, flyers, and active settings instantly [1] */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '15px', background: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.03)', textAlign: 'left', fontSize: '12px', color: '#BBB' }}>
+                                        <div style={{ width: '80px', height: '80px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #333', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            {comp.flyerImageUrl ? (
+                                                <img src={comp.flyerImageUrl} alt="Flyer" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                            ) : (
+                                                <span style={{ fontSize: '10px', color: '#444' }}>No Image</span>
+                                            )}
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <p style={{ margin: 0 }}><strong>Entry Fee:</strong> <span style={{ color: comp.entryFee > 0 ? '#4ADE80' : '#AAA', fontWeight: 'bold' }}>{comp.entryFee > 0 ? `${comp.entryFee.toLocaleString()} GYD` : 'Free'}</span> | <strong>Prize Pool:</strong> <span style={{ color: '#00FFFF', fontWeight: 'bold' }}>{(comp.prizePool || 0).toLocaleString()} GYD</span></p>
+                                            <p style={{ margin: 0 }}><strong>Auditions Close:</strong> <span style={{ color: '#FFF' }}>{comp.entryDeadline ? new Date(comp.entryDeadline).toLocaleString() : 'N/A'}</span></p>
+                                            <p style={{ margin: 0 }}><strong>Voting Ends:</strong> <span style={{ color: '#FFF' }}>{comp.competitionEnd ? new Date(comp.competitionEnd).toLocaleString() : 'N/A'}</span></p>
+                                            <p style={{ margin: 0 }}><strong>Reveal Schedule:</strong> <span style={{ color: '#FFF' }}>{comp.resultsRevealTime ? new Date(comp.resultsRevealTime).toLocaleString() : 'N/A'}</span></p>
+                                        </div>
+                                    </div>
+
+                                    <div className="admin-comp-actions">
+                                        <button className="adminActionButton reject" style={{ margin: 0 }} onClick={() => handleDelete(comp)}>Delete</button>
+                                        <button className="adminActionButton approve" style={{ margin: 0 }} onClick={() => handleManage(comp)}>Manage</button>
+                                        <button className="adminActionButton approve" style={{ borderColor: '#00FFFF', color: '#00FFFF', background: 'transparent', margin: 0 }} onClick={() => {
+                                            setEditingOverrideCompId(editingOverrideCompId === comp.id ? null : comp.id);
+                                            setOverrideUrl(comp.championOverrideUrl || '');
+                                            setOverrideType(comp.championOverrideType || 'Photo');
+                                        }}>{editingOverrideCompId === comp.id ? 'Close' : 'Override'}</button>
+                                        {comp.status === 'Judging' && (
+                                            <button 
+                                                className="adminActionButton approve" 
+                                                style={{ borderColor: '#FF69B4', color: '#FF69B4', background: 'transparent', margin: 0 }} 
+                                                onClick={() => handleForceRevealResults(comp)}
+                                            >
+                                                Reveal Results
+                                            </button>
+                                        )}
+                                        {comp.status === 'Results Visible' && !comp.prizesDistributed && (
+                                            <button 
+                                                className="adminActionButton approve" 
+                                                style={{ borderColor: '#FFD700', color: '#FFD700', margin: 0 }} 
+                                                onClick={() => handleDistributePrizes(comp)}
+                                            >
+                                                Distribute
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* FAIL-SAFE CHAMPION OVERRIDE FORM */}
+                                    {editingOverrideCompId === comp.id && (
+                                        <div style={{ background: '#111', padding: '15px', borderRadius: '8px', marginTop: '12px', border: '1px solid #333' }}>
+                                            <p style={{ color: '#00FFFF', fontSize: '13px', fontWeight: 'bold', margin: '0 0 10px 0' }}>🏆 Champion Billboard Fail-Safe Override</p>
+                                            
+                                            <div style={{ marginBottom: '10px' }}>
+                                                <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>Override Media URL (YouTube Link or Image Direct Link)</label>
+                                                <input 
+                                                    type="text" 
+                                                    className="formInput" 
+                                                    style={{ margin: 0 }}
+                                                    value={overrideUrl} 
+                                                    onChange={e => setOverrideUrl(e.target.value)} 
+                                                    placeholder="Paste Image URL or Video URL..." 
+                                                />
+                                            </div>
+
+                                            <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                                                <div style={{ flex: 1 }}>
+                                                    <label style={{ fontSize: '11px', color: '#888', display: 'block', marginBottom: '4px' }}>Override Type</label>
+                                                    <select 
+                                                        className="formInput" 
+                                                        style={{ margin: 0 }}
+                                                        value={overrideType} 
+                                                        onChange={e => setOverrideType(e.target.value)}
+                                                    >
+                                                        <option value="Photo">Image</option>
+                                                        <option value="Video">Video (YouTube Embed)</option>
+                                                    </select>
+                                                </div>
+                                                <button 
+                                                    className="adminActionButton approve" 
+                                                    style={{ padding: '10px 20px', alignSelf: 'flex-end', height: '36px' }}
+                                                    onClick={async () => {
+                                                        showMessage("Saving override values...");
+                                                        try {
+                                                            await setDoc(doc(db, "competitions", comp.id), {
+                                                                championOverrideUrl: overrideUrl,
+                                                                championOverrideType: overrideType
+                                                            }, { merge: true });
+                                                            showMessage("Override Saved Successfully!");
+                                                            setEditingOverrideCompId(null);
+                                                        } catch(e) {
+                                                            showMessage("Failed to save override values.");
+                                                        }
+                                                    }}
+                                                >
+                                                    Save Override
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             ))
                         }

@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { db, functions } from '../firebase';
-import { doc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore'; // <-- ADDED getDoc
 import { httpsCallable } from 'firebase/functions';
 
 const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showMessage }) => {
     const [config, setConfig] = useState(null);
     const [loading, setLoading] = useState(true);
     const [selectedOptions, setSelectedOptions] = useState([]);
-    const [applicationStatus, setApplicationStatus] = useState(null); // 'pending' | 'approved' | 'declined' | null
-    const [phoneInput, setPhoneInput] = useState(''); // <-- ADD THIS LINE
+    const [existingApp, setExistingApp] = useState(null);
+    const [phoneInput, setPhoneInput] = useState(''); 
+    const [ageInput, setAgeInput] = useState(''); 
+    const [experienceInput, setExperienceInput] = useState(''); 
 
     useEffect(() => {
         const unsub = onSnapshot(doc(db, "settings", "enrollmentConfig"), (snap) => {
@@ -20,26 +22,98 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
         return () => unsub();
     }, []);
 
-    // Check existing application status
+    // Store full existing document to parse track states independently
     useEffect(() => {
         if (!currentUser) return;
-        const q = query(
-            collection(db, "enrollmentApplications"),
-            where("userId", "==", currentUser.uid)
-        );
-        getDocs(q).then((snapshot) => {
-            if (!snapshot.empty) {
-                const app = snapshot.docs[0].data();
-                setApplicationStatus(app.status);
-                if (app.selectedOptions) {
-                    setSelectedOptions(app.selectedOptions);
-                }
+        getDoc(doc(db, "enrollmentApplications", currentUser.uid)).then((docSnap) => {
+            if (docSnap.exists()) {
+                setExistingApp(docSnap.data());
             }
         });
     }, [currentUser]);
 
+    // --- TRACK LOCKOUT & COOLDOWN AUDIT ---
+    const statusLower = existingApp?.status?.toLowerCase() || '';
+    const existingOpts = existingApp?.selectedOptions || [];
+    const history = existingApp?.history || [];
+
+    // 1. Identify if a user was previously approved or enrolled in history
+    const wasPreviouslyApprovedOrEnrolled = useMemo(() => {
+        return history.some(h => {
+            const hStatus = h.status?.toLowerCase() || '';
+            return hStatus === 'approved' || hStatus === 'enrolled' || hStatus === 'paymentpending';
+        });
+    }, [history]);
+
+    // 2. Identify if an admin has manually cleared the hold
+    const isHoldCleared = useMemo(() => {
+        const lastEntry = history[history.length - 1];
+        return lastEntry?.status?.toLowerCase() === 'hold_cleared';
+    }, [history]);
+
+    // 3. Helper to check specific track cooldowns
+    const isTrackOnCooldown = (trackName) => {
+        const schemaTrackName = trackName === 'film' ? 'filmClub' : 'docuSeries';
+        
+        // Check new track-specific cooldowns
+        if (creatorProfile?.cooldowns?.[schemaTrackName]) {
+            const trackCooldown = new Date(creatorProfile.cooldowns[schemaTrackName]).getTime();
+            if (!isNaN(trackCooldown) && Date.now() < trackCooldown) return true;
+        }
+
+        // Fallback for legacy global hold
+        if (creatorProfile?.cooldownUntil) {
+            const globalCooldown = new Date(creatorProfile.cooldownUntil).getTime();
+            if (!isNaN(globalCooldown) && Date.now() < globalCooldown) return true;
+        }
+
+        // Check active document-level cooldown holds
+        const isCurrentlyInLockStatus = ['declined', 'cancelled', 'rejected', 'revoked'].includes(statusLower);
+        if (!isHoldCleared && (isCurrentlyInLockStatus || existingApp?.hasRevokedTrack || existingApp?.hasDeclinedTrack)) {
+            // THE TRACK-SPECIFIC FIX: Check if THIS specific track is in the declinedOptions array
+            const schemaTrackName = trackName === 'film' ? 'filmClub' : 'docuSeries';
+            const isSpecificallyDeclined = existingApp?.declinedOptions?.includes(schemaTrackName);
+
+            if (isSpecificallyDeclined) {
+                const updateTime = existingApp?.updatedAt 
+                    ? new Date(existingApp.updatedAt).getTime() 
+                    : (existingApp?.declinedAt ? (existingApp.declinedAt.toDate ? existingApp.declinedAt.toDate().getTime() : new Date(existingApp.declinedAt).getTime()) : 0);
+
+                if (updateTime !== 0) {
+                    const cooldownMs = wasPreviouslyApprovedOrEnrolled ? (30 * 24 * 60 * 60 * 1000) : (3 * 24 * 60 * 60 * 1000);
+                    if ((Date.now() - updateTime) < cooldownMs) return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    // 4. Calculate locked state for each individual option safely
+    const isTrackLocked = (trackName) => {
+        const badges = Array.isArray(creatorProfile?.badges) ? creatorProfile.badges : [];
+        
+        if (trackName === 'film') {
+            if (creatorProfile?.isFilmClub || creatorProfile?.isClassMember || badges.includes('Class Member') || badges.includes('Film Club')) return true;
+        } else if (trackName === 'docu') {
+            if (creatorProfile?.isContestant || badges.includes('Contestant')) return true;
+        }
+
+        const hasAppliedToTrack = existingOpts.some(o => typeof o === 'string' && o.toLowerCase().includes(trackName));
+        if (hasAppliedToTrack) {
+            const isActiveState = ['pending', 'paymentpending', 'approved', 'enrolled', 'paid', 'success'].includes(statusLower);
+            if (isActiveState) return true;
+        }
+
+        return isTrackOnCooldown(trackName);
+    };
+
+    const isFilmClubLocked = isTrackLocked('film');
+    const isDocuSeriesLocked = isTrackLocked('docu');
+
     const toggleOption = (option) => {
-        if (applicationStatus === 'pending') return; // Can't change while pending
+        if (option === 'filmClub' && isFilmClubLocked) return;
+        if (option === 'docuSeries' && isDocuSeriesLocked) return;
+
         setSelectedOptions(prev =>
             prev.includes(option)
                 ? prev.filter(o => o !== option)
@@ -77,11 +151,7 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
             return;
         }
         if (selectedOptions.length === 0) {
-            showMessage("Please select at least one option.");
-            return;
-        }
-        if (applicationStatus === 'pending') {
-            showMessage("Your application is already pending review.");
+            showMessage("Please select an available service.");
             return;
         }
 
@@ -89,7 +159,6 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
         if (!profileCheck.complete) {
             const missingList = profileCheck.missing.join(', ');
             showMessage(`Please complete your profile before applying. Missing: ${missingList}`);
-            // Give user a moment to see the message, then redirect to dashboard
             setTimeout(() => setActiveScreen('CreatorDashboard'), 2000);
             return;
         }
@@ -98,19 +167,32 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
             showMessage("Please enter your phone number to apply.");
             return;
         }
-
+        if (!ageInput.trim()) {
+            showMessage("Please enter your age to apply.");
+            return;
+        }
+        if (!experienceInput.trim()) {
+            showMessage("Please describe your performing arts experience.");
+            return;
+        }
         try {
             const submitApplication = httpsCallable(functions, 'submitEnrollmentApplication');
+            const mergedOptions = Array.from(new Set([...existingOpts, ...selectedOptions]));
+            
             await submitApplication({
-                selectedOptions: selectedOptions,
+                selectedOptions: mergedOptions,
                 totalAmount: calculateTotal(),
-                phoneNumber: phoneInput.trim()
+                phoneNumber: phoneInput.trim() || "Not Provided",
+                age: Number(ageInput.trim()) || 0,
+                experience: experienceInput.trim() || "Not Provided"
             });
-            setApplicationStatus('pending');
+            
+            setExistingApp(prev => ({ ...prev, status: 'pending', selectedOptions: mergedOptions }));
+            setSelectedOptions([]);
             showMessage("Application submitted! Pending admin review.");
         } catch (error) {
             console.error("Application error:", error);
-            showMessage("Failed to submit application. Please try again.");
+            showMessage(error.message || "Failed to submit application. Please try again.");
         }
     };
 
@@ -121,6 +203,10 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
             </div>
         );
     }
+
+    // DEFINITIVE FIX: Handle both boolean (true) and string ("true") to prevent the admin dashboard toggle bug
+    const isFilmClubOpen = config?.filmClubOpen === true || String(config?.filmClubOpen).toLowerCase() === "true";
+    const isDocuSeriesOpen = config?.docuSeriesOpen === true || String(config?.docuSeriesOpen).toLowerCase() === "true";
 
     const profileCheck = checkProfileComplete();
     const total = calculateTotal();
@@ -156,7 +242,7 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
             )}
 
             {/* Film Club Card */}
-            {config?.filmClubOpen && (
+            {isFilmClubOpen && (
                 <div
                     onClick={() => toggleOption('filmClub')}
                     style={{
@@ -164,9 +250,9 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                         borderRadius: '12px',
                         padding: '20px',
                         marginBottom: '15px',
-                        cursor: applicationStatus === 'pending' ? 'not-allowed' : 'pointer',
-                        backgroundColor: selectedOptions.includes('filmClub') ? 'rgba(255, 215, 0, 0.08)' : '#1A1A1A',
-                        opacity: applicationStatus === 'pending' && !selectedOptions.includes('filmClub') ? 0.6 : 1,
+                        cursor: isFilmClubLocked ? 'not-allowed' : 'pointer',
+                        backgroundColor: selectedOptions.includes('filmClub') ? 'rgba(255, 215, 0, 0.08)' : (isFilmClubLocked ? '#121212' : '#1A1A1A'),
+                        opacity: isFilmClubLocked ? 0.4 : 1,
                         transition: 'all 0.2s ease'
                     }}
                 >
@@ -182,7 +268,7 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                         }} />
                         <div style={{ flex: 1 }}>
                             <p style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#FFF' }}>
-                                NVA Film Club Classes
+                                NVA Film Club Classes {isFilmClubLocked && <span style={{fontSize: '12px', color: '#888', fontWeight: 'normal'}}>(Locked)</span>}
                             </p>
                             <p style={{ margin: '4px 0 0', fontSize: '20px', fontWeight: 'bold', color: '#FFD700' }}>
                                 ${config.filmClubFee?.toLocaleString() || '2,500'} GYD
@@ -208,7 +294,7 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
             )}
 
             {/* Docu-Series Card */}
-            {config?.docuSeriesOpen && (
+            {isDocuSeriesOpen && (
                 <div
                     onClick={() => toggleOption('docuSeries')}
                     style={{
@@ -216,9 +302,9 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                         borderRadius: '12px',
                         padding: '20px',
                         marginBottom: '15px',
-                        cursor: applicationStatus === 'pending' ? 'not-allowed' : 'pointer',
-                        backgroundColor: selectedOptions.includes('docuSeries') ? 'rgba(255, 215, 0, 0.08)' : '#1A1A1A',
-                        opacity: applicationStatus === 'pending' && !selectedOptions.includes('docuSeries') ? 0.6 : 1,
+                        cursor: isDocuSeriesLocked ? 'not-allowed' : 'pointer',
+                        backgroundColor: selectedOptions.includes('docuSeries') ? 'rgba(255, 215, 0, 0.08)' : (isDocuSeriesLocked ? '#121212' : '#1A1A1A'),
+                        opacity: isDocuSeriesLocked ? 0.4 : 1,
                         transition: 'all 0.2s ease'
                     }}
                 >
@@ -234,7 +320,7 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                         }} />
                         <div style={{ flex: 1 }}>
                             <p style={{ margin: 0, fontSize: '18px', fontWeight: 'bold', color: '#FFF' }}>
-                                Film Club Docu-Series Challenge
+                                Film Club Docu-Series Challenge {isDocuSeriesLocked && <span style={{fontSize: '12px', color: '#888', fontWeight: 'normal'}}>(Locked)</span>}
                             </p>
                             <p style={{ margin: '4px 0 0', fontSize: '20px', fontWeight: 'bold', color: '#FFD700' }}>
                                 ${config.docuSeriesFee?.toLocaleString() || '500'} GYD
@@ -276,86 +362,92 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                 </div>
             )}
 
-            {/* Application Status */}
-            {applicationStatus === 'pending' && (
-                <div style={{
-                    backgroundColor: 'rgba(255, 215, 0, 0.1)',
-                    border: '1px solid #FFD700',
-                    borderRadius: '10px',
-                    padding: '15px',
-                    marginBottom: '20px',
-                    textAlign: 'center'
-                }}>
-                    <p style={{ color: '#FFD700', fontWeight: 'bold', margin: 0 }}>
-                        Your application is pending admin review.
+            {/* Existing Track Notifications */}
+            {statusLower === 'pending' && (
+                <div style={{ backgroundColor: 'rgba(255, 215, 0, 0.1)', border: '1px solid #FFD700', borderRadius: '10px', padding: '12px', marginBottom: '15px', textAlign: 'center' }}>
+                    <p style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '13px', margin: 0 }}>
+                        ⏳ You hold a track currently pending administrative review.
                     </p>
                 </div>
             )}
 
-            {applicationStatus === 'approved' && (
-                <div style={{
-                    backgroundColor: 'rgba(0, 255, 0, 0.1)',
-                    border: '1px solid #00FF00',
-                    borderRadius: '10px',
-                    padding: '15px',
-                    marginBottom: '20px',
-                    textAlign: 'center'
-                }}>
-                    <p style={{ color: '#00FF00', fontWeight: 'bold', margin: '0 0 10px 0' }}>
-                        Approved! Complete your payment to enroll.
+            {statusLower === 'approved' && (
+                <div style={{ backgroundColor: 'rgba(0, 255, 0, 0.1)', border: '1px solid #00FF00', borderRadius: '10px', padding: '15px', marginBottom: '15px', textAlign: 'center' }}>
+                    <p style={{ color: '#00FF00', fontWeight: 'bold', fontSize: '14px', margin: '0 0 10px 0' }}>
+                        🎉 A track was approved! Complete payment to enroll.
                     </p>
-                    <button
-                        className="button"
-                        onClick={() => setActiveScreen('EnrollmentPayment')}
-                        style={{ margin: 0 }}
-                    >
+                    <button className="button" onClick={() => setActiveScreen('EnrollmentPayment')} style={{ margin: 0 }}>
                         <span className="buttonText">Make Payment</span>
                     </button>
                 </div>
             )}
 
-            {applicationStatus === 'declined' && (
-                <div style={{
-                    backgroundColor: 'rgba(220, 53, 69, 0.1)',
-                    border: '1px solid #DC3545',
-                    borderRadius: '10px',
-                    padding: '15px',
-                    marginBottom: '20px',
-                    textAlign: 'center'
-                }}>
-                    <p style={{ color: '#DC3545', fontWeight: 'bold', margin: 0 }}>
-                        Your application was not approved at this time.
+            {/* Red banner now only shows if the CURRENTLY SELECTED track is on hold */}
+            {selectedOptions.some(opt => isTrackOnCooldown(opt === 'filmClub' ? 'film' : 'docu')) && (
+                <div style={{ backgroundColor: 'rgba(220, 53, 69, 0.1)', border: '1px solid #DC3545', borderRadius: '10px', padding: '12px', marginBottom: '15px', textAlign: 'center' }}>
+                    <p style={{ color: '#DC3545', fontWeight: 'bold', fontSize: '13px', margin: 0 }}>
+                        🚫 Re-application hold is active for your selection. This track is locked under penalty.
                     </p>
                 </div>
             )}
 
-            {/* Phone Input field on application page */}
-            {config?.requirePhone && applicationStatus !== 'pending' && (
-                <div className="formGroup" style={{ marginTop: '20px', marginBottom: '20px' }}>
-                    <label className="formLabel" style={{ color: '#FFD700' }}>Contact Phone Number (Management Use Only):</label>
-                    <input
-                        type="tel"
-                        className="formInput"
-                        value={phoneInput}
-                        onChange={(e) => setPhoneInput(e.target.value)}
-                        placeholder="e.g., 592-600-1234"
-                        required
-                    />
-                </div>
+            {/* Contact & Demographics Input Fields (Accessible whenever at least one track remains open) */}
+            {(!isFilmClubLocked || !isDocuSeriesLocked) && (
+                <>
+                    {config?.requirePhone && (
+                        <div className="formGroup" style={{ marginTop: '20px' }}>
+                            <label className="formLabel" style={{ color: '#FFD700' }}>Contact Phone Number:</label>
+                            <input
+                                type="tel"
+                                inputMode="tel"
+                                className="formInput"
+                                value={phoneInput}
+                                onChange={(e) => setPhoneInput(e.target.value)}
+                                placeholder="e.g., 592-600-1234"
+                                required
+                            />
+                        </div>
+                    )}
+                    <div className="formGroup" style={{ marginTop: '20px' }}>
+                        <label className="formLabel" style={{ color: '#FFD700' }}>Applicant Age:</label>
+                        <input
+                            type="number"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            min="1"
+                            step="1"
+                            className="formInput"
+                            value={ageInput}
+                            onChange={(e) => setAgeInput(e.target.value)}
+                            placeholder="Enter your age"
+                            required
+                        />
+                    </div>
+                    <div className="formGroup" style={{ marginTop: '20px', marginBottom: '20px' }}>
+                        <label className="formLabel" style={{ color: '#FFD700' }}>Performing Arts Experience (Years / Details):</label>
+                        <textarea
+                            className="formTextarea"
+                            value={experienceInput}
+                            onChange={(e) => setExperienceInput(e.target.value)}
+                            placeholder="Describe your experience in acting, theatre, or film..."
+                            required
+                        />
+                    </div>
+                </>
             )}
 
             {/* Action Buttons */}
             <button
                 className="button"
                 onClick={handleApply}
-                disabled={selectedOptions.length === 0 || applicationStatus === 'pending'}
+                disabled={selectedOptions.length === 0}
                 style={{
                     marginTop: '10px',
-                    opacity: selectedOptions.length === 0 || applicationStatus === 'pending' ? 0.5 : 1
+                    opacity: selectedOptions.length === 0 ? 0.5 : 1
                 }}
             >
                 <span className="buttonText">
-                    {applicationStatus === 'pending' ? 'Application Submitted' : 'Submit Application'}
+                    {selectedOptions.length === 0 ? 'Select Available Service' : 'Submit Application'}
                 </span>
             </button>
 

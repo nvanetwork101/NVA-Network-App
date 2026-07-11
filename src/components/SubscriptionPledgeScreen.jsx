@@ -113,7 +113,7 @@ const SubscriptionPledgeScreen = ({
                     <span className="buttonText">{isSubmitting ? "Generating..." : "Submit Pledge & Get Payment Info"}</span>
                 </button>
             </form>
-            <button className="button" onClick={() => setActiveScreen('PremiumPerks')} style={{ backgroundColor: '#3A3A3A', marginTop: '20px' }}>
+            <button className="button" onClick={() => setActiveScreen(isTicket ? 'FilmArena' : 'PremiumPerks')} style={{ backgroundColor: '#3A3A3A', marginTop: '20px' }}>
                 <span className="buttonText">Back</span>
             </button>
         </div>
