@@ -436,12 +436,14 @@ function App() {
         let profileData;
         if (!docSnap.exists()) {
           // Final Fallback: Only create if the signup function truly failed after waiting [1]
+          const pendingField = localStorage.getItem('pendingCreatorField');
           profileData = {
             uid: user.uid,
             email: user.email,
             displayName: user.displayName || '',
             photoURL: user.photoURL || '',
-            role: 'user',
+            role: pendingField ? 'creator' : 'user',
+            ...(pendingField && { creatorField: pendingField }),
             createdAt: new Date(),
             lastLoginTimestamp: new Date(),
             banned: false,
@@ -452,6 +454,9 @@ function App() {
         } else {
           profileData = docSnap.data();
         }
+        
+        // Zero-dust cleanup: Purge the cache flag regardless of how the profile was generated
+        localStorage.removeItem('pendingCreatorField');
 
         if (profileData.banned) {
           setActiveScreen('Banned');

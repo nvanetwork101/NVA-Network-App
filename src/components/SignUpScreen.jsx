@@ -27,7 +27,7 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
         await createUserProfile({
             uid: user.uid,
             email: user.email,
-            role: 'user',
+            role: extraData.creatorField ? 'creator' : 'user',
             displayName: displayName || user.displayName || '',
             ...extraData
         });
@@ -36,6 +36,12 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
     const executeSignUpLogic = async (isGoogle = false) => {
         setIsLoading(true);
         setShowRoleWarningModal(false);
+        
+        // Cache the field instantly to bridge the 2-second race condition with App.jsx
+        if (selectedField) {
+            localStorage.setItem('pendingCreatorField', selectedField);
+        }
+        
         try {
             let user;
             if (isGoogle) {
@@ -318,8 +324,10 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
                                 </select>
                                 <span className="custom-select-arrow">▼</span>
                             </div>
-                            <p className="smallText" style={{ color: '#666', marginTop: '6px', fontSize: '11px', lineHeight: '1.4' }}>
-                                Selecting a role upgrades your account to access creator tools. You can also upgrade later in your dashboard.
+                            <p className="smallText" style={{ color: selectedField ? '#00FFFF' : '#FFD700', marginTop: '6px', fontSize: '11px', lineHeight: '1.4', fontWeight: 'bold' }}>
+                                {selectedField 
+                                    ? "🔒 This choice is permanent. Once saved, your role cannot be changed." 
+                                    : "⚠️ Choose carefully! Once saved, your creator role is permanent and cannot be changed."}
                             </p>
                         </div>
 
