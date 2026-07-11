@@ -7274,34 +7274,40 @@ exports.purchaseRoastTokensWithEarnings = onCall({ enforceAppCheck: false }, asy
 const { AccessToken } = require('livekit-server-sdk');
 
 exports.getRoastRoomToken = onCall({ enforceAppCheck: false }, async (request) => {
-    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', 'Login required.');
 
     const { roomName } = request.data;
-    const participantName = request.auth.token.name || request.auth.uid;
-
     const db = admin.firestore();
-    const userDoc = await db.collection("creators").doc(request.auth.uid).get();
-    const role = userDoc.data()?.role || 'user';
-    const isHost = role === 'admin' || role === 'authority';
 
-    // YOUR SECURE SERVER KEYS
-    const apiKey = "devkey_41a206e2";
-    const apiSecret = "secret_37246b3bbc507fc41bdc94a8";
+    try {
+        const userDoc = await db.collection("creators").doc(uid).get();
+        if (!userDoc.exists) throw new HttpsError('not-found', 'User profile not found.');
+        
+        const userData = userDoc.data();
+        const creatorName = userData.creatorName || "NVA Creator";
 
-    const at = new AccessToken(apiKey, apiSecret, {
-        identity: request.auth.uid,
-        name: participantName,
-    });
+        const apiKey = "devkey_41a206e2";
+        const apiSecret = "secret_37246b3bbc507fc41bdc94a8";
 
-    at.addGrant({
-        roomJoin: true,
-        room: roomName,
-        canPublish: isHost,
-        canSubscribe: true,
-        canPublishData: true,
-    });
+        const at = new AccessToken(apiKey, apiSecret, {
+            identity: uid,
+            name: creatorName,
+        });
 
-    return { token: await at.toJwt() };
+        at.addGrant({
+            roomJoin: true,
+            room: roomName,
+            canPublish: true, 
+            canSubscribe: true,
+            canPublishData: true,
+        });
+
+        return { token: await at.toJwt() };
+    } catch (error) {
+        logger.error("Token Generation Failed:", error);
+        throw new HttpsError('internal', 'Handshake failed.');
+    }
 });
 
 // =====================================================================
@@ -7343,7 +7349,7 @@ exports.clockIntoRoast = onCall({ enforceAppCheck: false, timeoutSeconds: 120 },
                 status: 'suspense', // Frontend Trigger
                 hostId: activeHostId,
                 roasterId: uid,
-                roasterName: userSnap.data().creatorName || 'Anonymous',
+                roasterName: userSnap.data()?.creatorName || 'NVA Contender',
                 currentReceiver: 'none',
                 timer: 5,
                 fireCount: 0,
