@@ -5,7 +5,8 @@ import "@livekit/components-styles";
 import { db, functions, doc, collection, onSnapshot, updateDoc, setDoc, getDoc, addDoc, query, orderBy, limit } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
 
-const LIVEKIT_URL = "ws://158.179.184.80:7880";
+// THE DEFINITIVE SECURITY FIX: Synchronized with SSL-certified infrastructure [1]
+const LIVEKIT_URL = "wss://livekit.nvanetworkapp.com";
 
 // --- CHILD COMPONENT: CLASSROOM VIEWER COUNT ---
 const ClassroomViewerCount = () => {
@@ -55,7 +56,14 @@ function ClassroomStage({ currentUser, creatorProfile, showMessage, handleExit }
     }
 
     return (
-        <LiveKitRoom serverUrl={LIVEKIT_URL} token={token} connect={true}>
+        /* THE FIX: Automatically trigger camera/mic only if user is the authorized Director [1] */
+        <LiveKitRoom 
+            serverUrl={LIVEKIT_URL} 
+            token={token} 
+            connect={true}
+            video={isHost}
+            audio={isHost}
+        >
             <ClassroomStageContent 
                 classState={classState} 
                 currentUser={currentUser} 

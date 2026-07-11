@@ -5,7 +5,9 @@ import { Track } from 'livekit-client';
 import "@livekit/components-styles";
 import { db, functions, doc, onSnapshot, updateDoc, httpsCallable } from '../firebase';
 
-const LIVEKIT_URL = "ws://158.179.184.80:7880";
+// SECURITY FIX: Deployed HTTPS sites require wss:// (WebSocket Secure). 
+// You MUST point this to a domain with a valid SSL certificate (e.g., livekit.nvanetworkapp.com) [1]
+const LIVEKIT_URL = "wss://livekit.nvanetworkapp.com";
 
 // --- MODERN VIEW COUNT COMPONENT ---
 const ViewerCount = () => {
@@ -302,7 +304,15 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
 
     return (
         <div className="screenContainer" style={{ padding: 0, backgroundColor: '#000', height: '100vh', overflow: 'hidden' }}>
-            <LiveKitRoom serverUrl={LIVEKIT_URL} token={token} connect={true} style={{ width: '100%', height: '100%' }}>
+            {/* THE FIX: Auto-trigger camera/mic only if user is an authorized Host [1] */}
+            <LiveKitRoom 
+                serverUrl={LIVEKIT_URL} 
+                token={token} 
+                connect={true} 
+                video={creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority'}
+                audio={creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority'}
+                style={{ width: '100%', height: '100%' }}
+            >
                 <RoastRoomContent battleState={battleState} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleExit={handleExit} />
                 <RoomAudioRenderer />
             </LiveKitRoom>
