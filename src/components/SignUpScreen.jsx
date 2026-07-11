@@ -5,8 +5,6 @@ import { httpsCallable } from 'firebase/functions';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
-const MASTER_CREATOR_FIELDS = ['Comedian', 'Craft', 'Health & Fitness', 'Designer', 'Influencer', 'Poet', 'Musician', 'Filmmaker', 'Actor'];
-
 const SignUpScreen = ({ showMessage, setActiveScreen }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -14,45 +12,34 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
     const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    
-    const [selectedField, setSelectedField] = useState('');
-    const [showRoleWarningModal, setShowRoleWarningModal] = useState(false);
 
     const validatePassword = (pw) => {
         return pw.length >= 8 && /\d/.test(pw) && /[A-Z]/.test(pw);
     };
 
-    const createProfile = async (user, extraData = {}) => {
+    const createProfile = async (user) => {
         const createUserProfile = httpsCallable(functions, 'createUserProfile');
         await createUserProfile({
             uid: user.uid,
             email: user.email,
-            role: extraData.creatorField ? 'creator' : 'user',
-            displayName: displayName || user.displayName || '',
-            ...extraData
+            role: 'user',
+            displayName: displayName || user.displayName || ''
         });
     };
 
     const executeSignUpLogic = async (isGoogle = false) => {
         setIsLoading(true);
-        setShowRoleWarningModal(false);
-        
-        // Cache the field instantly to bridge the 2-second race condition with App.jsx
-        if (selectedField) {
-            localStorage.setItem('pendingCreatorField', selectedField);
-        }
-        
         try {
             let user;
             if (isGoogle) {
                 const credential = await signInWithPopup(auth, googleProvider);
                 user = credential.user;
                 // The Cloud Function createUserProfile already handles creation safely [1]
-                await createProfile(user, { creatorField: selectedField });
+                await createProfile(user);
             } else {
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 user = userCredential.user;
-                await createProfile(user, { creatorField: selectedField });
+                await createProfile(user);
                 await sendEmailVerification(user);
             }
 
@@ -97,19 +84,11 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
             return;
         }
 
-        if (selectedField) {
-            setShowRoleWarningModal(true);
-        } else {
-            executeSignUpLogic(false);
-        }
+        executeSignUpLogic(false);
     };
 
     const handleGoogleSignUp = async () => {
-        if (selectedField) {
-            setShowRoleWarningModal(true);
-        } else {
-            executeSignUpLogic(true);
-        }
+        executeSignUpLogic(true);
     };
 
     const signupStyles = `
@@ -305,32 +284,6 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
                             />
                         </div>
 
-                        {/* Creator Role Selector */}
-                        <div className="auth-input-group">
-                            <label htmlFor="signupRole" className="formLabel" style={{ marginBottom: '6px', fontSize: '11px', textTransform: 'uppercase', color: '#FFD700', fontWeight: '700' }}>Creator Role (Optional)</label>
-                            <div className="custom-select-wrapper">
-                                <select 
-                                    id="signupRole" 
-                                    className="auth-input-field" 
-                                    value={selectedField} 
-                                    onChange={(e) => setSelectedField(e.target.value)}
-                                    disabled={isLoading}
-                                    style={{ paddingRight: '40px' }}
-                                >
-                                    <option value="">-- Normal User --</option>
-                                    {MASTER_CREATOR_FIELDS.map(field => (
-                                        <option key={field} value={field}>{field}</option>
-                                    ))}
-                                </select>
-                                <span className="custom-select-arrow">▼</span>
-                            </div>
-                            <p className="smallText" style={{ color: selectedField ? '#00FFFF' : '#FFD700', marginTop: '6px', fontSize: '11px', lineHeight: '1.4', fontWeight: 'bold' }}>
-                                {selectedField 
-                                    ? "🔒 This choice is permanent. Once saved, your role cannot be changed." 
-                                    : "⚠️ Choose carefully! Once saved, your creator role is permanent and cannot be changed."}
-                            </p>
-                        </div>
-
                         <div className="auth-input-group">
                             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
                                 <label htmlFor="signupPassword" className="formLabel" style={{ margin: '0 10px 0 0', fontSize: '11px', textTransform: 'uppercase', color: '#888', fontWeight: '700' }}>Password</label>
@@ -400,29 +353,6 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
                     </button>
                 </div>
             </div>
-
-            {/* Warn Overlay Modal */}
-            {showRoleWarningModal && (
-                <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000, backdropFilter: 'blur(10px)', padding: '16px' }}>
-                    <div className="modal-content" style={{ backgroundColor: '#111', padding: '32px', borderRadius: '20px', maxWidth: '400px', border: '1px solid #FFD700', textAlign: 'center', boxShadow: '0 20px 80px rgba(0,0,0,0.9)' }}>
-                        <p style={{ color: '#FFD700', fontSize: '20px', fontWeight: '900', marginBottom: '16px', letterSpacing: '0.02em', textTransform: 'uppercase' }}>Confirm Creator Role</p>
-                        <p style={{ color: '#FFF', fontSize: '15px', marginBottom: '16px', lineHeight: '1.5' }}>
-                            You are signing up as a <strong style={{ color: '#FFD700' }}>{selectedField}</strong>.
-                        </p>
-                        <p style={{ color: '#888', fontSize: '13px', lineHeight: '1.6', margin: '0 0 24px 0' }}>
-                            Are you sure? This will unlock creator tools on your dashboard. You can only represent <strong style={{ color: '#FFF' }}>one field</strong> at a time on your public profile.
-                        </p>
-                        <div style={{ display: 'flex', gap: '12px' }}>
-                            <button className="button" onClick={() => setShowRoleWarningModal(false)} disabled={isLoading} style={{ flex: 1, backgroundColor: '#222', border: '1px solid #444', margin: 0, padding: '12px' }}>
-                                <span className="buttonText light">Cancel</span>
-                            </button>
-                            <button className="button" onClick={() => executeSignUpLogic(!email)} disabled={isLoading} style={{ flex: 1, backgroundColor: '#FFD700', margin: 0, padding: '12px' }}>
-                                <span className="buttonText" style={{ color: '#0A0A0A', fontWeight: '900' }}>{isLoading ? 'Creating...' : 'Confirm'}</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </>
     );
 };
