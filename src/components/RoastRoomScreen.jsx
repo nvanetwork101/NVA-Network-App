@@ -28,7 +28,7 @@ const ViewerCount = () => {
 
 function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessage, handleExit }) {
     const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
-    const isHost = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';
+    const isHost = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin';
 
     // --- 4-PHASE HUD & MUTUALLY EXCLUSIVE AUDIO LOGIC ---
     const isSuspense = battleState.status === 'suspense'; 
@@ -222,6 +222,15 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                             {battleState.hostStreak >= 0 ? `+${battleState.hostStreak}` : battleState.hostStreak}
                         </span>
                     </div>
+                    <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)' }}></div>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#FFF', fontWeight: 'bold' }}>
+                            🔥 <span style={{ color: '#FFD700', fontFamily: 'monospace' }}>x{battleState.fireCount || 0}</span>
+                        </span>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#FFF', fontWeight: 'bold' }}>
+                            🍅 <span style={{ color: '#FFD700', fontFamily: 'monospace' }}>x{battleState.tomatoCount || 0}</span>
+                        </span>
+                    </div>
                     {battleState.timer > 0 && (
                         <>
                             <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)' }}></div>
@@ -286,8 +295,8 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                             </div>
                                         )}
 
-                                        {/* CLEAN PARTICIPANT TAG (Bottom Left) */}
-                                        <div style={{ position: 'absolute', bottom: visibleTracks.length > 1 && window.innerWidth < 768 && idx === 1 ? '100px' : '20px', left: '16px', right: '16px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', zIndex: 60, pointerEvents: 'none' }}>
+                                        {/* CLEAN PARTICIPANT TAG (Top Left) */}
+                                        <div style={{ position: 'absolute', top: '20px', left: '16px', right: '16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', zIndex: 60, pointerEvents: 'none' }}>
                                             <div className="glass-pill" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', maxWidth: '70%' }}>
                                                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#4ADE80', boxShadow: '0 0 8px #4ADE80' }}></div>
                                                 <span className="text-truncate" style={{ color: '#FFF', fontSize: '13px', fontWeight: '800' }}>
