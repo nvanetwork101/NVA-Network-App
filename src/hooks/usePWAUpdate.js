@@ -66,15 +66,8 @@ export function usePWAUpdate() {
   // This function is called by the "Update App" button for manual updates.
   const handleUpdate = () => {
     if (updateServiceWorker.current) {
-      isUpdateInProgress.current = true;
+      // Calling the update function with 'true' triggers the SW to skipWaiting and reloads automatically [1]
       updateServiceWorker.current(true);
-
-      // This is the failsafe timeout. If the 'controllerchange' event fails,
-      // this will force a reload after 5 seconds to prevent a stuck UI.
-      setTimeout(() => {
-        console.log("PWA Update Failsafe: Forcing reload.");
-        window.location.reload();
-      }, 5000);
     }
   };
 

@@ -35,12 +35,7 @@ const firebaseConfig = {
   measurementId: "G-6RNS6DH3G0"
 };
 
-  // --- AGGRESSIVE UPDATE LOGIC ---
-// This forces the new service worker to activate as soon as it's finished installing.
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
-// --- END AGGRESSIVE UPDATE ---
+  // AGGRESSIVE UPDATE REMOVED: Managed by React UI to prevent reload loops [1]
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());

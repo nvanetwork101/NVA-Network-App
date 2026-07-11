@@ -116,29 +116,8 @@ function App() {
   }, []); // Empty dependency array ensures this runs only once.
   // ======================== END: DEFINITIVE EMAIL ACTION HANDLER =========================
       
-   // THIS IS THE NEW, MORE POWERFUL UPDATE FUNCTION
-  const forcefulUpdate = async () => {
-    if (needRefresh) {
-      // 1. Tell the new service worker to take over.
-      await handleUpdate();
-
-      // 2. Programmatically delete all old caches.
-      if (window.caches) {
-        const keys = await window.caches.keys();
-        await Promise.all(keys.map(key => window.caches.delete(key)));
-      }
-      
-      // 3. Force a hard reload, bypassing the browser cache.
-      window.location.reload();
-    }
-  };
-
-  // THE MASTER CACHE BUSTER: Destroys the ghost cache hijacking your dashboard
-  useEffect(() => {
-    if (needRefresh) {
-      forcefulUpdate();
-    }
-  }, [needRefresh]);
+   // AGGRESSIVE CACHE NUKE REMOVED: Prevents the 60-second reload loop. 
+  // The PWA Update prompt now manages versioning cleanly [1].
   
   // --- END OF PWA UPDATE FIX ---
 
