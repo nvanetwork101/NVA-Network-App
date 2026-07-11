@@ -7276,8 +7276,13 @@ const { AccessToken } = require('livekit-server-sdk');
 exports.getRoastRoomToken = onCall({ enforceAppCheck: false }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
 
-    const { roomName, isHost } = request.data;
+    const { roomName } = request.data;
     const participantName = request.auth.token.name || request.auth.uid;
+
+    const db = admin.firestore();
+    const userDoc = await db.collection("creators").doc(request.auth.uid).get();
+    const role = userDoc.data()?.role || 'user';
+    const isHost = role === 'admin' || role === 'authority';
 
     // YOUR SECURE SERVER KEYS
     const apiKey = "devkey_41a206e2";
@@ -7291,9 +7296,9 @@ exports.getRoastRoomToken = onCall({ enforceAppCheck: false }, async (request) =
     at.addGrant({
         roomJoin: true,
         room: roomName,
-        canPublish: isHost, // Only the host starts with mic/video on
+        canPublish: isHost,
         canSubscribe: true,
-        canPublishData: true, // For splatting tomatoes/fire
+        canPublishData: true,
     });
 
     return { token: await at.toJwt() };

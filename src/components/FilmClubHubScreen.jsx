@@ -34,7 +34,7 @@ function ClassroomStage({ currentUser, creatorProfile, showMessage, handleExit }
         const fetchToken = async () => {
             try {
                 const getFunc = httpsCallable(functions, 'getRoastRoomToken'); // Reused token generator
-                const res = await getFunc({ roomName: "film-club-class", isHost });
+                const res = await getFunc({ roomName: "film-club-class" });
                 setToken(res.data.token);
             } catch (err) { showMessage("handshake failed."); }
         };

@@ -264,7 +264,7 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
         const fetchToken = async () => {
             try {
                 const getFunc = httpsCallable(functions, 'getRoastRoomToken');
-                const res = await getFunc({ roomName: "main-arena", isHost: creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' });
+                const res = await getFunc({ roomName: "main-arena" });
                 setToken(res.data.token);
             } catch (err) { showMessage("Arena handshake failed."); }
         };
