@@ -294,34 +294,36 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                                     {t.participant.name || 'User'}
                                                 </span>
                                             </div>
-                                    
-                                    {isHost && !t.participant.isLocal && (
-                                        <button 
-                                            onClick={async (e) => {
-                                                e.stopPropagation();
-                                                try {
-                                                    const kickFunc = httpsCallable(functions, 'kickParticipant');
-                                                    await kickFunc({ identity: t.participant.identity });
-                                                } catch (err) { showMessage("Kick failed."); }
-                                            }}
-                                            className="glass-pill"
-                                            style={{ background: 'rgba(220,53,69,0.8)', border: '1px solid #DC3545', color: '#FFF', padding: '6px 12px', fontSize: '10px', fontWeight: '900', cursor: 'pointer', textTransform: 'uppercase', pointerEvents: 'auto' }}
-                                        >
-                                            Drop
-                                        </button>
-                                    )}
+                                            
+                                            {isHost && !t.participant.isLocal && (
+                                                <button 
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        try {
+                                                            const kickFunc = httpsCallable(functions, 'kickParticipant');
+                                                            await kickFunc({ identity: t.participant.identity });
+                                                        } catch (err) { showMessage("Kick failed."); }
+                                                    }}
+                                                    className="glass-pill"
+                                                    style={{ background: 'rgba(220,53,69,0.8)', border: '1px solid #DC3545', color: '#FFF', padding: '6px 12px', fontSize: '10px', fontWeight: '900', cursor: 'pointer', textTransform: 'uppercase', pointerEvents: 'auto' }}
+                                                >
+                                                    Drop
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            }) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#333' }}>
+                                    <div style={{ width: '80px', height: '80px', borderRadius: '50%', border: '1px solid #333', background: 'rgba(255,255,255,0.02)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
+                                        <span style={{ fontSize: '24px', opacity: 0.5 }}>🎙️</span>
+                                    </div>
+                                    <p style={{ fontWeight: '800', fontSize: '11px', letterSpacing: '0.1em', color: '#666' }}>AWAITING SIGNAL...</p>
                                 </div>
-                            </div>
-                        );
-                    }) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#333' }}>
-                            <div style={{ width: '80px', height: '80px', borderRadius: '50%', border: '1px solid #333', background: 'rgba(255,255,255,0.02)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-                                <span style={{ fontSize: '24px', opacity: 0.5 }}>🎙️</span>
-                            </div>
-                            <p style={{ fontWeight: '800', fontSize: '11px', letterSpacing: '0.1em', color: '#666' }}>AWAITING SIGNAL...</p>
+                            )}
                         </div>
-                    )}
-                </div>
+                    );
+                })()}
             </div>
 
             {/* --- INTERACTIVE ACTION TRAY (FLOATING BOTTOM) --- */}
@@ -382,10 +384,33 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
     }, [creatorProfile, currentUser]);
 
     const handleExit = async () => {
-        if (creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority') {
-            try {
-                await updateDoc(doc(db, "creators", currentUser.uid), { isLive: false });
-            } catch (e) { console.error(e); }
+        try {
+            const isStreamHost = currentUser?.uid === battleState.hostId;
+            const isActiveRoaster = currentUser?.uid === battleState.roasterId;
+
+            if (isStreamHost) {
+                await updateDoc(doc(db, "live_arena", "main-arena"), {
+                    status: 'idle',
+                    hostId: null,
+                    roasterId: null,
+                    currentReceiver: 'none',
+                    timer: 0,
+                    fireCount: 0,
+                    tomatoCount: 0
+                });
+                await updateDoc(doc(db, "creators", currentUser.uid), { isLive: false, liveRoomType: null });
+            } else if (isActiveRoaster) {
+                await updateDoc(doc(db, "live_arena", "main-arena"), {
+                    status: 'idle',
+                    roasterId: null,
+                    currentReceiver: 'host',
+                    timer: 0,
+                    fireCount: 0,
+                    tomatoCount: 0
+                });
+            }
+        } catch (e) {
+            console.error("Clean exit failed:", e);
         }
         setActiveScreen('Home');
     };
