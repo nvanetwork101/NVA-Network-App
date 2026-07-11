@@ -466,12 +466,13 @@ function App() {
           return;
         }
 
-        // Capture geographic region for sponsor analytics at $0 cost [1]
-        const userRegion = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown';
-        await updateDoc(userDocRef, { 
-            lastLoginTimestamp: new Date(),
-            location: userRegion 
-        });
+        // Only attempt to update and listen if the profile document exists [1]
+        if (docSnap.exists()) {
+            await updateDoc(userDocRef, { 
+                lastLoginTimestamp: new Date(),
+                location: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown' 
+            });
+        }
 
         unsubProfile = onSnapshot(userDocRef, (snap) => {
           if (snap.exists()) {
@@ -493,9 +494,13 @@ function App() {
         unsubFollowing = onSnapshot(q, (snapshot) => setHasNewFollowerContent(!snapshot.empty));
 
       } catch (error) {
-        console.error("A critical error occurred during authentication:", error);
-        showMessage("An error occurred. Please log in again.");
-        await signOut(auth);
+        console.error("Authentication Sync Warning:", error);
+        // THE FIX: Only log out if it's a genuine Auth failure. 
+        // Do NOT log out for secondary permission errors (like presence or following-count lag) [1].
+        if (error.code === 'auth/user-token-expired' || error.code === 'auth/user-not-found') {
+            await signOut(auth);
+            showMessage("Session expired. Please log in again.");
+        }
       } finally {
         setAuthLoading(false);
         setIsInitialLoad(false);

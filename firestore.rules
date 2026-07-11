@@ -38,7 +38,7 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             // Standard cosmetic fields allowed for client-side writes [1]
             'creatorName', 'realName', 'bio', 'categories', 'creatorField', 'role', 'existingWorkLink', 'profilePictureUrl',
-            'featuredVideoLink', 'pinnedContent', 'updatedAt', 'lastLoginTimestamp', 'lastSubmissionTimestamp', 'lastCommentTimestamp',
+            'featuredVideoLink', 'pinnedContent', 'updatedAt', 'lastLoginTimestamp', 'location', 'lastSubmissionTimestamp', 'lastCommentTimestamp',
             'followingCount', 'blockedUsers', 'blockedBy', 'studioGallery',
             'currentChallengeLink', 'currentChallengeThumbnail', 'teamTag',
             'competitionStatus', 'isEliminated', 'isContestant',
