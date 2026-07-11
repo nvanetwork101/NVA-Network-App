@@ -46,11 +46,15 @@ exports.createUserProfile = onCall(async (request) => {
 
     let userProfileData;
 
-    if (role === 'creator') {
-        const { creatorName, bio, categories, existingWorkLink } = request.data;
+    const { creatorField, creatorName, bio, categories, existingWorkLink } = request.data;
+    // THE FIX: Automatically promote to 'creator' if they selected a field [1]
+    const isChoosingCreator = role === 'creator' || !!creatorField;
+
+    if (isChoosingCreator) {
         userProfileData = {
             ...baseProfile,
             role: 'creator',
+            creatorField: creatorField || "",
             creatorName: creatorName || email.split('@')[0],
             bio: bio || "",
             categories: categories || [],

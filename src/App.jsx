@@ -412,10 +412,9 @@ function App() {
             return;
           }
 
-          // THE DEFINITIVE FIX: Force a reload of the user object from Firebase servers.
+          // AUTHORITATIVE SYNC: Force a clean state refresh from Firebase servers [1]
           await user.reload();
-          await user.getIdToken(true); // <-- FORCE REFRESH TO SYNC NEW CLAIMS (E.G. ADMIN ROLE) INSTANTLY!
-          
+          await user.getIdToken(true); 
           setCurrentUser(user);
 
         if (!user.emailVerified) {
@@ -427,15 +426,15 @@ function App() {
         const userDocRef = doc(db, "creators", user.uid);
         let docSnap = await getDoc(userDocRef);
 
-        // SILENT SYNC FIX: If doc doesn't exist yet, wait 2 seconds for the signup function to finish [1]
+        // SILENT SYNC FIX: Increase wait to 2.5s to allow backend Cloud Functions to complete [1]
         if (!docSnap.exists()) {
-            await new Promise(res => setTimeout(res, 2000));
+            await new Promise(res => setTimeout(res, 2500));
             docSnap = await getDoc(userDocRef);
         }
 
         let profileData;
         if (!docSnap.exists()) {
-          // Final Fallback: Only create if the signup function truly failed after waiting [1]
+          // Final Fallback: Prevent data-loss if the Cloud Function fails [1]
           const pendingField = localStorage.getItem('pendingCreatorField');
           profileData = {
             uid: user.uid,
@@ -455,7 +454,6 @@ function App() {
           profileData = docSnap.data();
         }
         
-        // Zero-dust cleanup: Purge the cache flag regardless of how the profile was generated
         localStorage.removeItem('pendingCreatorField');
 
         if (profileData.banned) {
@@ -471,40 +469,34 @@ function App() {
           return;
         }
 
-        // Only attempt to update and listen if the profile document exists [1]
-        if (docSnap.exists()) {
-            await updateDoc(userDocRef, { 
-                lastLoginTimestamp: new Date(),
-                location: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown' 
-            });
-        }
-
+        // STABLE LISTENER REGISTRATION: Only starts once profile data is verified [1]
         unsubProfile = onSnapshot(userDocRef, (snap) => {
           if (snap.exists()) {
-            const profileData = snap.data();
-            // GOD-TIER ROLE ENFORCEMENT
-            if (user.email === 'nvanetwork101@gmail.com' && profileData.role !== 'super_admin') {
+            const pData = snap.data();
+            if (user.email === 'nvanetwork101@gmail.com' && pData.role !== 'super_admin') {
                 updateDoc(userDocRef, { role: 'super_admin' }).catch(() => {});
             }
-            // THE FIX: Synchronous Badge Update. Ensures UI doesn't lag on reload.
-            setCreatorProfile(profileData);
-            setNotificationBadgeCount(profileData.unreadNotificationCount || 0);
-          } else if (user) {
-            // Only sign out if the user is authenticated but the doc is missing
-            signOut(auth);
+            setCreatorProfile(pData);
+            setNotificationBadgeCount(pData.unreadNotificationCount || 0);
           }
-        });
+        }, (err) => console.warn("Snapshot sync postponed."));
+
+        // Update login metadata safely without causing permission suicides [1]
+        if (docSnap.exists()) {
+            updateDoc(userDocRef, { 
+                lastLoginTimestamp: new Date(),
+                location: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown' 
+            }).catch(() => {});
+        }
 
         const q = query(collection(db, "creators", user.uid, "following"), where("hasNewContent", "==", true));
         unsubFollowing = onSnapshot(q, (snapshot) => setHasNewFollowerContent(!snapshot.empty));
 
       } catch (error) {
-        console.error("Authentication Sync Warning:", error);
-        // THE FIX: Only log out if it's a genuine Auth failure. 
-        // Do NOT log out for secondary permission errors (like presence or following-count lag) [1].
-        if (error.code === 'auth/user-token-expired' || error.code === 'auth/user-not-found') {
+        console.error("Auth System Warning:", error.message);
+        // THE FIX: Do not log out for minor sync errors. Only for total session loss [1].
+        if (error.code === 'auth/user-token-expired') {
             await signOut(auth);
-            showMessage("Session expired. Please log in again.");
         }
       } finally {
         setAuthLoading(false);

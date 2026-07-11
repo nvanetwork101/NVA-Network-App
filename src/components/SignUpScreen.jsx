@@ -5,6 +5,8 @@ import { httpsCallable } from 'firebase/functions';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
+const MASTER_CREATOR_FIELDS = ['Comedian', 'Craft', 'Health & Fitness', 'Designer', 'Influencer', 'Poet', 'Musician', 'Filmmaker', 'Actor'];
+
 const SignUpScreen = ({ showMessage, setActiveScreen }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -12,6 +14,9 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
     const [agreedToTerms, setAgreedToTerms] = useState(false);
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    
+    const [selectedField, setSelectedField] = useState(''); // [1]
+    const [showRoleWarningModal, setShowRoleWarningModal] = useState(false); // [1]
 
     const validatePassword = (pw) => {
         return pw.length >= 8 && /\d/.test(pw) && /[A-Z]/.test(pw);
@@ -22,7 +27,8 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
         await createUserProfile({
             uid: user.uid,
             email: user.email,
-            role: 'user',
+            role: 'user', 
+            creatorField: selectedField, // THE FIX: Send the chosen field [1]
             displayName: displayName || user.displayName || ''
         });
     };
@@ -31,10 +37,10 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
         setIsLoading(true);
         try {
             let user;
+            setShowRoleWarningModal(false); // [1]
             if (isGoogle) {
                 const credential = await signInWithPopup(auth, googleProvider);
                 user = credential.user;
-                // The Cloud Function createUserProfile already handles creation safely [1]
                 await createProfile(user);
             } else {
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -74,21 +80,16 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
 
     const handleEmailSignUp = async (e) => {
         e.preventDefault();
-        
-        if (!agreedToTerms) {
-            showMessage('Please agree to the Terms & Conditions to sign up.');
-            return;
-        }
-        if (!validatePassword(password)) {
-            showMessage('Password must be at least 8 characters, with a number and a capital letter.');
-            return;
-        }
+        if (!agreedToTerms) { showMessage('Please agree to the Terms & Conditions.'); return; }
+        if (!validatePassword(password)) { showMessage('Password too weak.'); return; }
 
-        executeSignUpLogic(false);
+        if (selectedField) { setShowRoleWarningModal(true); } 
+        else { executeSignUpLogic(false); }
     };
 
     const handleGoogleSignUp = async () => {
-        executeSignUpLogic(true);
+        if (selectedField) { setShowRoleWarningModal(true); } 
+        else { executeSignUpLogic(true); }
     };
 
     const signupStyles = `
