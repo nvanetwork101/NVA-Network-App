@@ -5,7 +5,7 @@ import { httpsCallable } from 'firebase/functions';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
-const MASTER_CREATOR_FIELDS = ['Comedian', 'Designer', 'Influencer', 'Poet', 'Musician', 'Filmmaker', 'Actor', 'Voice Artist'];
+const MASTER_CREATOR_FIELDS = ['Comedian', 'Craft', 'Health & Fitness', 'Designer', 'Influencer', 'Poet', 'Musician', 'Filmmaker', 'Actor'];
 
 const SignUpScreen = ({ showMessage, setActiveScreen }) => {
     const [email, setEmail] = useState('');
@@ -41,6 +41,8 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
             if (isGoogle) {
                 const credential = await signInWithPopup(auth, googleProvider);
                 user = credential.user;
+                // Ensure Google users also have their profile created with the selected role if new [1]
+                await createProfile(user, { creatorField: selectedField });
             } else {
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                 user = userCredential.user;
