@@ -2,12 +2,11 @@ import { getIdToken, sendEmailVerification } from 'firebase/auth';
 import React, { useState } from 'react';
 import { auth } from '../firebase';
 
-const VerifyEmailScreen = ({ currentUser, showMessage, setActiveScreen, handleLogout }) => {
+const VerifyEmailScreen = ({ currentUser, showMessage, handleLogout }) => {
     const [isSending, setIsSending] = useState(false);
     const [isChecking, setIsChecking] = useState(false);
 
     const handleResend = async () => {
-        // Using the prop here is safe because it's just for the resend action.
         if (!currentUser) return;
         setIsSending(true);
         showMessage("Resending verification email...");
@@ -15,8 +14,7 @@ const VerifyEmailScreen = ({ currentUser, showMessage, setActiveScreen, handleLo
             await sendEmailVerification(currentUser);
             showMessage("A new verification email has been sent.");
         } catch (error) {
-            console.error("Error resending verification email:", error);
-            showMessage("Failed to resend email. Please try again in a few moments.");
+            showMessage("Failed to resend. Please try again in a moment.");
         } finally {
             setIsSending(false);
         }
@@ -25,61 +23,97 @@ const VerifyEmailScreen = ({ currentUser, showMessage, setActiveScreen, handleLo
     const handleCheckVerification = async () => {
         setIsChecking(true);
         try {
-            // THE DEFINITIVE FIX: Use `auth.currentUser` for all operations.
-            // This is the Firebase SDK's direct source of truth, not a potentially stale prop.
-            if (!auth.currentUser) {
-                throw new Error("User session not found.");
-            }
-
-            // Step 1: Reload the user's profile data directly from the auth instance.
+            if (!auth.currentUser) throw new Error("User session not found.");
+            
+            // AUTHORITATIVE SYNC: Force Firebase to re-fetch user metadata from server [1]
             await auth.currentUser.reload();
-
-            // Step 2: Force a refresh of the authentication token on the live user object.
             await getIdToken(auth.currentUser, true);
 
-            // Step 3: Check the reloaded, live user object for verification status.
             if (auth.currentUser.emailVerified) {
-                showMessage("Verification successful! Reloading...");
-                // THE DEFINITIVE FIX: Force a full page reload.
-                // This guarantees that the main onAuthStateChanged listener in App.jsx
-                // will re-run from a clean state, see the verified user, and fetch their profile data correctly.
-                window.location.reload();
+                showMessage("Verification successful! Opening your Hub...");
+                window.location.reload(); // Hard reload to trigger verified state in App.jsx [1]
             } else {
-                showMessage("Email has not been verified yet. Please click the link in your email.");
+                showMessage("Email not verified yet. Please check your inbox.");
             }
         } catch (error) {
-            console.error("Error during verification check:", error);
-            showMessage("An error occurred. Please try again in a moment.");
+            showMessage("Error during verification check.");
         } finally {
             setIsChecking(false);
         }
     };
 
+    const glassStyles = `
+        .verify-card {
+            max-width: 480px; width: 90%; margin: 60px auto;
+            background: rgba(15, 15, 15, 0.6);
+            backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 24px; padding: 40px 30px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        .verify-main-btn {
+            width: 100%; padding: 16px; border-radius: 14px;
+            font-size: 15px; font-weight: 900; text-transform: uppercase;
+            letter-spacing: 1px; cursor: pointer; transition: all 0.2s ease;
+            background: rgba(255, 215, 0, 0.08); 
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            color: #FFD700;
+            margin-top: 25px;
+        }
+        .verify-main-btn:hover:not(:disabled) {
+            background: rgba(255, 215, 0, 0.15);
+            border-color: rgba(255, 215, 0, 0.6);
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.1);
+        }
+        /* YELLOW GLOW TRIGGER: Lights up fully yellow on click [1] */
+        .verify-main-btn:active:not(:disabled) {
+            background: #FFD700 !important;
+            color: #000 !important;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.6) !important;
+            transform: scale(0.98);
+        }
+        .verify-main-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .secondary-btn {
+            background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255,255,255,0.1);
+            color: #AAA; padding: 10px 20px; border-radius: 12px; font-size: 12px;
+            font-weight: bold; cursor: pointer; transition: 0.2s;
+        }
+        .secondary-btn:hover { background: rgba(255,255,255,0.08); color: #FFF; }
+    `;
+
     return (
-        <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
-            <p className="heading">Please Verify Your Email</p>
-            <p className="subHeading">
-                You have successfully signed in, but your account is not active yet.
-                <br/>A verification link was sent to: <br/><strong style={{color: '#FFD700'}}>{currentUser?.email}</strong>
-            </p>
-            <p className="paragraph" style={{color: '#AAA', maxWidth: '400px', margin: '20px auto'}}>
-                To complete your sign-up, please click the link in the email.
-                <br/><strong style={{color: '#FFD700'}}>If you don't see it, please check your spam or junk folder.</strong>
-            </p>
-            
-            <button className="button" onClick={handleCheckVerification} disabled={isChecking}>
-                <span className="buttonText">{isChecking ? 'Checking...' : 'I Have Verified My Email'}</span>
-            </button>
-            
-            <p className="smallText" style={{marginTop: '20px'}}>Didn't receive an email?</p>
-            
-            <div style={{display: 'flex', justifyContent: 'center', gap: '15px', marginTop: '10px'}}>
-                <button className="button" onClick={handleResend} disabled={isSending} style={{backgroundColor: '#3A3A3A', margin: 0}}>
-                    <span className="buttonText light">{isSending ? 'Sending...' : 'Resend Verification Email'}</span>
+        <div className="screenContainer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '90vh' }}>
+            <style>{glassStyles}</style>
+            <div className="verify-card">
+                <div style={{ fontSize: '50px', marginBottom: '20px' }}>✉️</div>
+                <h1 className="heading" style={{ fontSize: '26px', marginBottom: '10px' }}>Verify Your Email</h1>
+                <p className="subHeading" style={{ color: '#888', fontSize: '14px', lineHeight: '1.5' }}>
+                    We sent a verification link to: <br/>
+                    <strong style={{ color: '#FFD700', fontSize: '16px' }}>{currentUser?.email}</strong>
+                </p>
+
+                <div style={{ background: 'rgba(255, 215, 0, 0.03)', border: '1px dashed rgba(255, 215, 0, 0.2)', padding: '15px', borderRadius: '14px', marginTop: '20px' }}>
+                    <p style={{ color: '#CCC', fontSize: '13px', margin: 0 }}>
+                        Please check your <strong style={{ color: '#FFF' }}>Inbox</strong> or <strong style={{ color: '#FFF' }}>Spam</strong> folder and click the link to activate your account.
+                    </p>
+                </div>
+
+                <button className="verify-main-btn" onClick={handleCheckVerification} disabled={isChecking}>
+                    {isChecking ? 'Checking Status...' : 'I Have Verified My Email'}
                 </button>
-                <button className="button" onClick={handleLogout} style={{backgroundColor: '#555', margin: 0}}>
-                    <span className="buttonText light">Logout</span>
-                </button>
+
+                <div style={{ marginTop: '35px', paddingTop: '25px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    <p style={{ color: '#666', fontSize: '12px', marginBottom: '15px' }}>Didn't receive the email?</p>
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+                        <button className="secondary-btn" onClick={handleResend} disabled={isSending}>
+                            {isSending ? 'Sending...' : 'Resend Email'}
+                        </button>
+                        <button className="secondary-btn" onClick={handleLogout} style={{ color: '#EF4444' }}>
+                            Logout
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );

@@ -41,7 +41,7 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
             if (isGoogle) {
                 const credential = await signInWithPopup(auth, googleProvider);
                 user = credential.user;
-                // Ensure Google users also have their profile created with the selected role if new [1]
+                // The Cloud Function createUserProfile already handles creation safely [1]
                 await createProfile(user, { creatorField: selectedField });
             } else {
                 const userCredential = await createUserWithEmailAndPassword(auth, email, password);
@@ -50,14 +50,11 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
                 await sendEmailVerification(user);
             }
 
-            if (selectedField) {
-                const { setDoc, doc } = await import('firebase/firestore');
-                await setDoc(doc(db, "creators", user.uid), { creatorField: selectedField }, { merge: true });
-            }
+            // REDUNDANT SETDOC REMOVED: This was causing a race condition error with the backend [1]
 
             if (isGoogle) {
                 showMessage(`Welcome to NVA Network!`);
-                setActiveScreen('Home'); 
+                // No need to manually set screen; App.jsx listener will detect the new profile and route you [1]
             } else {
                 showMessage(`Account created! Please check your inbox to verify your email.`);
                 setActiveScreen('VerifyEmail');

@@ -425,11 +425,17 @@ function App() {
         }
 
         const userDocRef = doc(db, "creators", user.uid);
-        const docSnap = await getDoc(userDocRef);
+        let docSnap = await getDoc(userDocRef);
+
+        // SILENT SYNC FIX: If doc doesn't exist yet, wait 2 seconds for the signup function to finish [1]
+        if (!docSnap.exists()) {
+            await new Promise(res => setTimeout(res, 2000));
+            docSnap = await getDoc(userDocRef);
+        }
 
         let profileData;
         if (!docSnap.exists()) {
-          // Auto-create basic profile for new users (handles Google sign-up race condition)
+          // Final Fallback: Only create if the signup function truly failed after waiting [1]
           profileData = {
             uid: user.uid,
             email: user.email,
