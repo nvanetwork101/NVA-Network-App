@@ -561,11 +561,19 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                             <button 
                                                 onClick={async (e) => {
                                                     e.preventDefault();
+                                                    let camSuccess = false;
                                                     try {
                                                         await room.localParticipant.setCameraEnabled(true);
+                                                        camSuccess = true;
+                                                    } catch (err) {
+                                                        console.warn("No camera hardware found, attempting microphone only.");
+                                                    }
+                                                    try {
                                                         await room.localParticipant.setMicrophoneEnabled(true);
                                                     } catch (err) {
-                                                        showMessage("Camera/Mic blocked.");
+                                                        if (!camSuccess) {
+                                                            showMessage("Hardware blocked or not found.");
+                                                        }
                                                     }
                                                 }}
                                                 style={{ background: '#4ADE80', color: '#000', padding: '12px 24px', borderRadius: '24px', fontSize: '13px', fontWeight: '900', textTransform: 'uppercase', border: 'none', cursor: 'pointer', boxShadow: '0 4px 15px rgba(74,222,128,0.4)', pointerEvents: 'auto', zIndex: 100 }}
@@ -731,7 +739,6 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
     // Fail-safe locks Host role to prevent ROAST button from ever rendering to the stream creator
     const isStreamHost = currentUser?.uid === battleState.hostId || currentUser?.uid === hostId;
     const isRoaster = currentUser?.uid === battleState.roasterId;
-    const shouldPublish = isStreamHost || isRoaster || localMediaIntent;
 
     // Auto-Claim: Dynamic Room Creator is instantly registered as the Host of their own stream
     useEffect(() => {
@@ -819,8 +826,8 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                 serverUrl={LIVEKIT_URL} 
                 token={token} 
                 connect={true} 
-                video={shouldPublish}
-                audio={shouldPublish}
+                video={false}
+                audio={false}
                 style={{ width: '100%', height: '100%' }}
             >
                 <RoastRoomContent battleState={battleState} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleExit={handleExit} setLocalMediaIntent={setLocalMediaIntent} hostId={hostId} />

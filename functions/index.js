@@ -7307,6 +7307,7 @@ exports.getRoastRoomToken = onCall({
         });
 
         at.addGrant({
+            roomCreate: true, // <-- CRITICAL: Allows LiveKit to auto-create the dynamic room on the fly
             roomJoin: true,
             room: roomName,
             canPublish: true, 
