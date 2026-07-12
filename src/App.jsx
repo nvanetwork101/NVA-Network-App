@@ -90,6 +90,14 @@ function App() {
   // --- PWA UPDATE FIX: Logic to handle the update prompt ---
   const { needRefresh, handleUpdate } = usePWAUpdate();
   
+  // Aggressive SPA Update Engine: Checks for a new deploy on every screen transition
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        registration.update().catch(() => {});
+      });
+    }
+  }, [activeScreen]);
 
   // ======================= START: DEFINITIVE EMAIL ACTION HANDLER ========================
   useEffect(() => {
