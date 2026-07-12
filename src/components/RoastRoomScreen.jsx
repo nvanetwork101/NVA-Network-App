@@ -27,7 +27,8 @@ const ViewerCount = () => {
 function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessage, handleExit }) {
     const room = useRoomContext();
     const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
-    const isHost = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin';
+    const isHost = currentUser?.uid === battleState.hostId;
+    const isRoaster = currentUser?.uid === battleState.roasterId;
 
     // --- 4-PHASE HUD & MUTUALLY EXCLUSIVE AUDIO LOGIC ---
     const isSuspense = battleState.status === 'suspense'; 
@@ -516,14 +517,24 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
         );
     }
 
+    // Stable reference prevents camera from shutting off during fast Firestore stat updates
+    const [shouldPublish, setShouldPublish] = useState(false);
+    useEffect(() => {
+        if (currentUser?.uid === battleState.hostId || currentUser?.uid === battleState.roasterId) {
+            setShouldPublish(true);
+        } else {
+            setShouldPublish(false);
+        }
+    }, [currentUser?.uid, battleState.hostId, battleState.roasterId]);
+
     return (
         <div className="screenContainer" style={{ padding: 0, backgroundColor: '#000', height: '100vh', overflow: 'hidden' }}>
             <LiveKitRoom 
                 serverUrl={LIVEKIT_URL} 
                 token={token} 
                 connect={true} 
-                video={currentUser?.uid === battleState.hostId || currentUser?.uid === battleState.roasterId}
-                audio={currentUser?.uid === battleState.hostId || currentUser?.uid === battleState.roasterId}
+                video={shouldPublish}
+                audio={shouldPublish}
                 style={{ width: '100%', height: '100%' }}
             >
                 <RoastRoomContent battleState={battleState} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleExit={handleExit} />
