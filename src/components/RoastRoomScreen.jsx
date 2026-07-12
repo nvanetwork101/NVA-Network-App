@@ -24,7 +24,7 @@ const ViewerCount = () => {
     );
 };
 
-function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessage, handleExit }) {
+function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessage, handleExit, setLocalMediaIntent }) {
     const room = useRoomContext();
     const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
     const isHost = currentUser?.uid === battleState.hostId;
@@ -164,9 +164,13 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
             return;
         }
         try {
+            setLocalMediaIntent(true);
             const clockFunc = httpsCallable(functions, 'clockIntoRoast');
             await clockFunc();
-        } catch (err) { showMessage(err.message); }
+        } catch (err) { 
+            setLocalMediaIntent(false);
+            showMessage(err.message); 
+        }
     };
 
     const handleShareArena = async (e) => {
@@ -462,27 +466,26 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
 function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMessage }) {
     const [token, setToken] = useState(null);
     const [battleState, setBattleState] = useState({ status: 'idle', hostStreak: 0, timer: 0 });
+    const [localMediaIntent, setLocalMediaIntent] = useState(false);
 
-    // Stable reference prevents camera from shutting off during fast Firestore stat updates
-    const [shouldPublish, setShouldPublish] = useState(false);
-    useEffect(() => {
-        if (currentUser?.uid === battleState.hostId || currentUser?.uid === battleState.roasterId) {
-            setShouldPublish(true);
-        } else {
-            setShouldPublish(false);
-        }
-    }, [currentUser?.uid, battleState.hostId, battleState.roasterId]);
+    // Immediate compile-time checks bypass browser dynamic hardware blocks
+    const isAdmin = creatorProfile?.role === 'admin' || creatorProfile?.role === 'super_admin' || creatorProfile?.role === 'authority';
+    const isRoaster = currentUser?.uid === battleState.roasterId;
+    const shouldPublish = isAdmin || isRoaster || localMediaIntent;
 
     // Host Auto-Claim System: Instantly registers the Admin as the active stream Host
     useEffect(() => {
-        if (currentUser && creatorProfile) {
-            const isAdmin = creatorProfile.role === 'admin' || creatorProfile.role === 'super_admin' || creatorProfile.role === 'authority';
-            if (isAdmin) {
-                updateDoc(doc(db, "creators", currentUser.uid), { isLive: true, liveRoomType: "roast" }).catch(() => {});
-                updateDoc(doc(db, "live_arena", "main-arena"), { hostId: currentUser.uid }).catch(() => {});
-            }
+        if (currentUser && creatorProfile && isAdmin) {
+            updateDoc(doc(db, "creators", currentUser.uid), { isLive: true, liveRoomType: "roast" }).catch(() => {});
+            updateDoc(doc(db, "live_arena", "main-arena"), { hostId: currentUser.uid }).catch(() => {});
         }
-    }, [currentUser, creatorProfile]);
+    }, [currentUser, creatorProfile, isAdmin]);
+
+    useEffect(() => {
+        if (battleState.roasterId !== currentUser?.uid) {
+            setLocalMediaIntent(false);
+        }
+    }, [battleState.roasterId, currentUser?.uid]);
 
     useEffect(() => {
         const fetchToken = async () => {
@@ -504,6 +507,7 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
     }, [currentUser?.uid]); // Stable dependency prevents unmount loops and connection drop-offs
 
     const handleExit = async () => {
+        setLocalMediaIntent(false);
         try {
             const isStreamHost = currentUser?.uid === battleState.hostId;
             const isActiveRoaster = currentUser?.uid === battleState.roasterId;
@@ -565,7 +569,7 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                 audio={shouldPublish}
                 style={{ width: '100%', height: '100%' }}
             >
-                <RoastRoomContent battleState={battleState} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleExit={handleExit} />
+                <RoastRoomContent battleState={battleState} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleExit={handleExit} setLocalMediaIntent={setLocalMediaIntent} />
                 <RoomAudioRenderer />
             </LiveKitRoom>
         </div>

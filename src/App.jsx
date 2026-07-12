@@ -1302,9 +1302,7 @@ case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} se
   const memoizedScreen = useMemo(() => renderScreen(), [
     activeScreen, 
     currentUser?.uid, 
-    creatorProfile?.roastTokens,   // Safely triggers UI updates ONLY when tokens change
-    creatorProfile?.totalEarnings, // Safely triggers UI updates ONLY when earnings change
-    creatorProfile?.role,          // Safely triggers UI updates ONLY when role changes
+    creatorProfile, // Restores real-time profile updates, name sync, and admin state safely
     selectedUserId, 
     selectedOpportunity?.id, 
     liveEvent?.id, 
@@ -1340,22 +1338,24 @@ return (
       ) : (
         <>
           {/* Step 2: Once the video is done, show the rest of the app. */}
-          <Header 
-            setActiveScreen={handleNavigate}
-            currencyRates={currencyRates}
-            selectedCurrency={selectedCurrency}
-            onCurrencyChange={setSelectedCurrency}
-            isLive={isLive}
-            countdownText={countdownText}
-            // --- PWA Install Button Props ---
-            onInstallClick={handleInstallClick}
-            showInstallButton={!isStandalone}
-            // --- PWA UPDATE PROPS ---
-            needRefresh={needRefresh}
-            onUpdate={handleUpdate}
-            currentUser={['Home', 'CreatorDashboard', 'UserProfile'].includes(activeScreen) ? currentUser : null}
-            onLogout={handleLogout}
-          />
+          {!['Suspended', 'Banned', 'SignUp', 'ChatMessageScreen', 'RoastRoom', 'LiveDirectory', 'FilmClubHub'].includes(activeScreen) && (
+            <Header 
+              setActiveScreen={handleNavigate}
+              currencyRates={currencyRates}
+              selectedCurrency={selectedCurrency}
+              onCurrencyChange={setSelectedCurrency}
+              isLive={isLive}
+              countdownText={countdownText}
+              // --- PWA Install Button Props ---
+              onInstallClick={handleInstallClick}
+              showInstallButton={!isStandalone}
+              // --- PWA UPDATE PROPS ---
+              needRefresh={needRefresh}
+              onUpdate={handleUpdate}
+              currentUser={currentUser} // Correctly synced across all standard screens
+              onLogout={handleLogout}
+            />
+          )}
 
           {/* ====== STANDALONE GLASSMORPHIC HEADER BILLBOARD AD (Home Screen & Expiration Checked) ====== */}
           {activeScreen === 'Home' && headerAd && headerAd.imageUrl && (!headerAd.expiresAt || new Date() < new Date(headerAd.expiresAt)) && (
