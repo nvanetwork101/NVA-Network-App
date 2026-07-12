@@ -456,6 +456,17 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
         }
     }, [currentUser?.uid, battleState.hostId, battleState.roasterId]);
 
+    // Host Auto-Claim System: Instantly registers the Admin as the active stream Host
+    useEffect(() => {
+        if (currentUser && creatorProfile) {
+            const isAdmin = creatorProfile.role === 'admin' || creatorProfile.role === 'super_admin' || creatorProfile.role === 'authority';
+            if (isAdmin) {
+                updateDoc(doc(db, "creators", currentUser.uid), { isLive: true, liveRoomType: "roast" }).catch(() => {});
+                updateDoc(doc(db, "live_arena", "main-arena"), { hostId: currentUser.uid }).catch(() => {});
+            }
+        }
+    }, [currentUser, creatorProfile]);
+
     useEffect(() => {
         const fetchToken = async () => {
             try {
