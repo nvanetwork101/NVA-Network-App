@@ -24,11 +24,64 @@ const ViewerCount = () => {
     );
 };
 
-function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessage, handleExit, setLocalMediaIntent }) {
+function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessage, handleExit, setLocalMediaIntent, hostId }) {
     const room = useRoomContext();
     const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
-    const isHost = currentUser?.uid === battleState.hostId;
+    const isHost = currentUser?.uid === battleState.hostId || currentUser?.uid === hostId;
     const isRoaster = currentUser?.uid === battleState.roasterId;
+
+    // --- LOCAL TICKING ENGINE (Bypasses Firestore Latency) ---
+    const [localTimer, setLocalTimer] = useState(0);
+
+    useEffect(() => {
+        setLocalTimer(battleState.timer);
+    }, [battleState.timer, battleState.status]);
+
+    useEffect(() => {
+        if (localTimer <= 0) return;
+        const interval = setInterval(() => {
+            setLocalTimer(prev => Math.max(0, prev - 1));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [localTimer]);
+
+    // --- AUTOMATIC AUDIO MUTING (Isolates the active speaker) ---
+    useEffect(() => {
+        if (!room) return;
+        const shouldMuteHost = isHost && battleState.status === 'battle' && battleState.currentReceiver === 'roaster';
+        const shouldUnmuteHost = isHost && battleState.status === 'battle' && battleState.currentReceiver === 'host';
+        
+        if (shouldMuteHost) {
+            room.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+        } else if (shouldUnmuteHost) {
+            room.localParticipant.setMicrophoneEnabled(true).catch(() => {});
+        }
+    }, [room, battleState.status, battleState.currentReceiver, isHost]);
+
+    // --- ROASTER CHOOSE WEAPON STATE ---
+    const [roasterMediaChoice, setRoasterMediaChoice] = useState(null);
+
+    useEffect(() => {
+        if (battleState.status === 'idle') {
+            setRoasterMediaChoice(null);
+        }
+    }, [battleState.status]);
+
+    const selectRoasterHardware = async (choice) => {
+        setRoasterMediaChoice(choice);
+        if (!room) return;
+        try {
+            if (choice === 'both') {
+                await room.localParticipant.setCameraEnabled(true);
+                await room.localParticipant.setMicrophoneEnabled(true);
+            } else {
+                await room.localParticipant.setCameraEnabled(false);
+                await room.localParticipant.setMicrophoneEnabled(true);
+            }
+        } catch (err) {
+            showMessage("Hardware permission denied.");
+        }
+    };
 
     // Dynamic extraction of the Host's real name from WebRTC participants or Firestore profile
     const hostTrack = tracks.find(t => t.participant.identity === battleState.hostId);
@@ -39,7 +92,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
     // --- 4-PHASE HUD & MUTUALLY EXCLUSIVE AUDIO LOGIC ---
     const isSuspense = battleState.status === 'suspense'; 
     const isBattle = battleState.status === 'battle';     
-    const isFinalSeconds = isBattle && battleState.timer > 0 && battleState.timer <= 5;
+    const isFinalSeconds = isBattle && localTimer > 0 && localTimer <= 5;
     
     const tickAudioRef = useRef(null);
     
@@ -113,7 +166,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
 
     const handleSendReaction = async (emoji) => {
         if ((creatorProfile?.roastTokens || 0) < 1) {
-            showMessage("1 Pass required. Top up in the Vault.");
+            showMessage("1 Token required. Top up in the Vault.");
             return;
         }
 
@@ -131,7 +184,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
 
         try {
             const sendFunc = httpsCallable(functions, 'sendRoastReaction');
-            await sendFunc({ reactionType: emoji === '🔥' ? 'fire' : 'tomato' });
+            await sendFunc({ reactionType: emoji === '🔥' ? 'fire' : 'tomato', hostId });
         } catch (err) { 
             console.error("Firebase reaction sync failed:", err); 
         }
@@ -160,13 +213,13 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
 
     const handleClockIn = async () => {
         if ((creatorProfile?.roastTokens || 0) < 5) {
-            showMessage("5 Passes required to Step to the Mic.");
+            showMessage("5 Tokens required to Step to the Mic.");
             return;
         }
         try {
             setLocalMediaIntent(true);
             const clockFunc = httpsCallable(functions, 'clockIntoRoast');
-            await clockFunc();
+            await clockFunc({ hostId });
         } catch (err) { 
             setLocalMediaIntent(false);
             showMessage(err.message); 
@@ -203,6 +256,90 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                 .hud-warning-border { box-shadow: inset 0 0 60px 15px rgba(255, 0, 0, 0.8) !important; }
                 .shake-active { animation: screen-shake 0.3s infinite; box-shadow: inset 0 0 40px 10px rgba(255, 69, 0, 0.6); }
                 
+                @keyframes pulse-hud {
+                    0% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+                    50% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; text-shadow: 0 0 25px currentColor; }
+                    100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+                }
+                .game-hud-overlay {
+                    position: absolute;
+                    top: 45%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 150;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    pointer-events: none;
+                    animation: pulse-hud 1.2s infinite ease-in-out;
+                    width: 90%;
+                    text-align: center;
+                }
+                .hud-headline {
+                    font-family: 'Impact', 'Arial Black', sans-serif;
+                    font-size: 38px;
+                    font-weight: 900;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    margin: 0;
+                    padding: 0;
+                    line-height: 1.1;
+                }
+                .hud-sub {
+                    font-family: monospace;
+                    font-size: 13px;
+                    font-weight: 800;
+                    color: #FFF;
+                    letter-spacing: 0.2em;
+                    margin-top: 8px;
+                    text-transform: uppercase;
+                    opacity: 0.8;
+                }
+                
+                /* Premium Design Utilities */
+                
+                @keyframes pulse-hud {
+                    0% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+                    50% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; text-shadow: 0 0 25px currentColor; }
+                    100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+                }
+                .game-hud-overlay {
+                    position: absolute;
+                    top: 45%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 150;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    pointer-events: none;
+                    animation: pulse-hud 1.2s infinite ease-in-out;
+                    width: 90%;
+                    text-align: center;
+                }
+                .hud-headline {
+                    font-family: 'Impact', 'Arial Black', sans-serif;
+                    font-size: 38px;
+                    font-weight: 900;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                    margin: 0;
+                    padding: 0;
+                    line-height: 1.1;
+                }
+                .hud-sub {
+                    font-family: monospace;
+                    font-size: 13px;
+                    font-weight: 800;
+                    color: #FFF;
+                    letter-spacing: 0.2em;
+                    margin-top: 8px;
+                    text-transform: uppercase;
+                    opacity: 0.8;
+                }
+                
                 /* Premium Design Utilities */
                 .glass-pill { background: rgba(15, 15, 15, 0.65); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 100px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
                 .text-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -224,13 +361,107 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                 }
             `}</style>
             
+            {/* --- ESPORTS GAME-HUD OVERLAY --- */}
+            {battleState.status !== 'idle' && localTimer > 0 && (() => {
+                let headlineText = "";
+                let subtextText = "";
+                let colorGradient = "linear-gradient(180deg, #FF4500 0%, #FF0000 100%)";
+                let shadowColor = "rgba(255, 69, 0, 0.8)";
+
+                const receiver = battleState.currentReceiver;
+
+                if (battleState.status === 'suspense' && receiver === 'none') {
+                    if (battleState.roasterId && !battleState.hostStreak) {
+                        headlineText = `WARNING: ROAST INCOMING IN ${localTimer}s`;
+                        subtextText = `${battleState.roasterName || 'Contender'} is stepping to the mic`;
+                        colorGradient = "linear-gradient(180deg, #FFF 30%, #FF0055 100%)";
+                        shadowColor = "rgba(255, 0, 85, 0.9)";
+                    } else {
+                        headlineText = `CLAPBACK IN ${localTimer}s`;
+                        subtextText = "Prepare your defense";
+                        colorGradient = "linear-gradient(180deg, #FFF 30%, #00FFFF 100%)";
+                        shadowColor = "rgba(0, 255, 255, 0.9)";
+                    }
+                } else if (battleState.status === 'battle') {
+                    if (receiver === 'roaster' && localTimer <= 5) {
+                        headlineText = `ROAST ENDS IN ${localTimer}s`;
+                        subtextText = "Times running out";
+                        colorGradient = "linear-gradient(180deg, #FFF 30%, #FF8C00 100%)";
+                        shadowColor = "rgba(255, 140, 0, 0.9)";
+                    } else if (receiver === 'host' && localTimer <= 5) {
+                        headlineText = `CLAPBACK ENDS IN ${localTimer}s`;
+                        subtextText = "Returning to idle";
+                        colorGradient = "linear-gradient(180deg, #FFF 30%, #9932CC 100%)";
+                        shadowColor = "rgba(153, 50, 204, 0.9)";
+                    }
+                }
+
+                if (!headlineText) return null;
+
+                return (
+                    <div className="game-hud-overlay">
+                        <h2 className="hud-headline" style={{ background: colorGradient, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: '#FFF', textShadow: `0 0 20px ${shadowColor}` }}>
+                            {headlineText}
+                        </h2>
+                        <span className="hud-sub">{subtextText}</span>
+                    </div>
+                );
+            })()}
+
+            {/* --- ESPORTS GAME-HUD OVERLAY --- */}
+            {battleState.status !== 'idle' && localTimer > 0 && (() => {
+                let headlineText = "";
+                let subtextText = "";
+                let colorGradient = "linear-gradient(180deg, #FF4500 0%, #FF0000 100%)";
+                let shadowColor = "rgba(255, 69, 0, 0.8)";
+
+                const receiver = battleState.currentReceiver;
+
+                if (battleState.status === 'suspense' && receiver === 'none') {
+                    if (battleState.roasterId && !battleState.hostStreak) {
+                        headlineText = `WARNING: ROAST INCOMING IN ${localTimer}s`;
+                        subtextText = `${battleState.roasterName || 'Contender'} is stepping to the mic`;
+                        colorGradient = "linear-gradient(180deg, #FFF 30%, #FF0055 100%)";
+                        shadowColor = "rgba(255, 0, 85, 0.9)";
+                    } else {
+                        headlineText = `CLAPBACK IN ${localTimer}s`;
+                        subtextText = "Prepare your defense";
+                        colorGradient = "linear-gradient(180deg, #FFF 30%, #00FFFF 100%)";
+                        shadowColor = "rgba(0, 255, 255, 0.9)";
+                    }
+                } else if (battleState.status === 'battle') {
+                    if (receiver === 'roaster' && localTimer <= 5) {
+                        headlineText = `ROAST ENDS IN ${localTimer}s`;
+                        subtextText = "Times running out";
+                        colorGradient = "linear-gradient(180deg, #FFF 30%, #FF8C00 100%)";
+                        shadowColor = "rgba(255, 140, 0, 0.9)";
+                    } else if (receiver === 'host' && localTimer <= 5) {
+                        headlineText = `CLAPBACK ENDS IN ${localTimer}s`;
+                        subtextText = "Returning to idle";
+                        colorGradient = "linear-gradient(180deg, #FFF 30%, #9932CC 100%)";
+                        shadowColor = "rgba(153, 50, 204, 0.9)";
+                    }
+                }
+
+                if (!headlineText) return null;
+
+                return (
+                    <div className="game-hud-overlay">
+                        <h2 className="hud-headline" style={{ background: colorGradient, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', color: '#FFF', textShadow: `0 0 20px ${shadowColor}` }}>
+                            {headlineText}
+                        </h2>
+                        <span className="hud-sub">{subtextText}</span>
+                    </div>
+                );
+            })()}
+
             {/* --- TOP FLOATING HEADER --- */}
             <div style={{ position: 'absolute', top: '16px', left: '16px', right: '16px', zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', pointerEvents: 'none' }}>
                 <div style={{ display: 'flex', gap: '8px', pointerEvents: 'auto' }}>
                     <ViewerCount />
                     <div className="glass-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', color: '#FFD700', fontSize: '11px', fontWeight: '800' }}>
                         <span>🎟️</span>
-                        <span>{creatorProfile?.roastTokens || 0} PASSES</span>
+                        <span>{creatorProfile?.roastTokens || 0} TOKENS</span>
                     </div>
                     <button onClick={handleShareArena} className="glass-pill" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', cursor: 'pointer', color: '#FFF', border: '1px solid rgba(255, 255, 255, 0.1)', background: 'rgba(15, 15, 15, 0.65)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(15,15,15,0.65)'}>
                         <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
@@ -250,11 +481,11 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                     <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', fontFamily: 'monospace' }}>
                         {battleState.hostStreak >= 0 ? `+${battleState.hostStreak}` : battleState.hostStreak}
                     </span>
-                    {battleState.timer > 0 && (
+                    {localTimer > 0 && (
                         <>
                             <div style={{ width: '1px', height: '14px', background: 'rgba(255,255,255,0.15)' }}></div>
                             <div style={{ color: '#FFD700', fontSize: '14px', fontWeight: '900', fontFamily: 'monospace', textShadow: '0 0 10px rgba(255,215,0,0.4)' }}>
-                                00:{battleState.timer < 10 ? `0${battleState.timer}` : battleState.timer}
+                                00:{localTimer < 10 ? `0${localTimer}` : localTimer}
                             </div>
                         </>
                     )}
@@ -323,7 +554,36 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                         <div style={{ width: '80px', height: '80px', borderRadius: '50%', border: '1px solid #333', background: 'rgba(255,255,255,0.02)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
                                             <span style={{ fontSize: '24px', opacity: 0.5 }}>🎙️</span>
                                         </div>
-                                        <p style={{ fontWeight: '800', fontSize: '11px', letterSpacing: '0.1em', color: '#666' }}>AWAITING SIGNAL...</p>
+                                        <p style={{ fontWeight: '800', fontSize: '11px', letterSpacing: '0.1em', color: '#666', marginBottom: '24px' }}>AWAITING SIGNAL...</p>
+                                        
+                                        {/* Host go-live button (Required to satisfy browser getUserMedia click gesture on load) */}
+                                        {isHost && (
+                                            <button 
+                                                onClick={async (e) => {
+                                                    e.preventDefault();
+                                                    try {
+                                                        await room.localParticipant.setCameraEnabled(true);
+                                                        await room.localParticipant.setMicrophoneEnabled(true);
+                                                    } catch (err) {
+                                                        showMessage("Camera/Mic blocked.");
+                                                    }
+                                                }}
+                                                style={{ background: '#4ADE80', color: '#000', padding: '12px 24px', borderRadius: '24px', fontSize: '13px', fontWeight: '900', textTransform: 'uppercase', border: 'none', cursor: 'pointer', boxShadow: '0 4px 15px rgba(74,222,128,0.4)', pointerEvents: 'auto', zIndex: 100 }}
+                                            >
+                                                👑 START STREAMING
+                                            </button>
+                                        )}
+
+                                        {/* Roaster Hardware Setup HUD overlay (Presented during the 5s warning countdown) */}
+                                        {isRoaster && battleState.status === 'suspense' && !roasterMediaChoice && (
+                                            <div className="game-hud-overlay" style={{ background: 'rgba(10, 10, 10, 0.95)', border: '2px solid #FF4500', padding: '24px', borderRadius: '16px', pointerEvents: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.8)' }}>
+                                                <h3 style={{ color: '#FFF', fontFamily: 'Impact, sans-serif', fontSize: '20px', letterSpacing: '0.05em', margin: '0 0 16px', textTransform: 'uppercase' }}>CHOOSE YOUR WEAPON</h3>
+                                                <div style={{ display: 'flex', gap: '12px' }}>
+                                                    <button onClick={() => selectRoasterHardware('both')} style={{ background: '#FF4500', color: '#FFF', border: 'none', padding: '10px 18px', borderRadius: '8px', fontWeight: '900', fontSize: '11px', cursor: 'pointer', textTransform: 'uppercase' }}>🎥 Camera & Mic</button>
+                                                    <button onClick={() => selectRoasterHardware('audio')} style={{ background: 'rgba(255,255,255,0.1)', color: '#FFF', border: '1px solid rgba(255,255,255,0.2)', padding: '10px 18px', borderRadius: '8px', fontWeight: '900', fontSize: '11px', cursor: 'pointer', textTransform: 'uppercase' }}>🎙️ Mic Only</button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -463,48 +723,42 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
     );
 }
 
-function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMessage }) {
+function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMessage, hostId }) {
     const [token, setToken] = useState(null);
     const [battleState, setBattleState] = useState({ status: 'idle', hostStreak: 0, timer: 0 });
     const [localMediaIntent, setLocalMediaIntent] = useState(false);
 
-    // Immediate compile-time checks bypass browser dynamic hardware blocks
-    const isAdmin = creatorProfile?.role === 'admin' || creatorProfile?.role === 'super_admin' || creatorProfile?.role === 'authority';
+    // Fail-safe locks Host role to prevent ROAST button from ever rendering to the stream creator
+    const isStreamHost = currentUser?.uid === battleState.hostId || currentUser?.uid === hostId;
     const isRoaster = currentUser?.uid === battleState.roasterId;
-    const shouldPublish = isAdmin || isRoaster || localMediaIntent;
+    const shouldPublish = isStreamHost || isRoaster || localMediaIntent;
 
-    // Host Auto-Claim System: Instantly registers the Admin as the active stream Host
+    // Auto-Claim: Dynamic Room Creator is instantly registered as the Host of their own stream
     useEffect(() => {
-        if (currentUser && creatorProfile && isAdmin) {
+        if (currentUser && currentUser.uid === hostId) {
             updateDoc(doc(db, "creators", currentUser.uid), { isLive: true, liveRoomType: "roast" }).catch(() => {});
-            updateDoc(doc(db, "live_arena", "main-arena"), { hostId: currentUser.uid }).catch(() => {});
+            updateDoc(doc(db, "live_arena", hostId), { hostId: currentUser.uid, status: 'idle' }).catch(() => {});
         }
-    }, [currentUser, creatorProfile, isAdmin]);
-
-    useEffect(() => {
-        if (battleState.roasterId !== currentUser?.uid) {
-            setLocalMediaIntent(false);
-        }
-    }, [battleState.roasterId, currentUser?.uid]);
+    }, [currentUser, hostId]);
 
     useEffect(() => {
         const fetchToken = async () => {
             try {
                 const getFunc = httpsCallable(functions, 'getRoastRoomToken');
-                const res = await getFunc({ roomName: "main-arena" });
+                const res = await getFunc({ roomName: hostId });
                 setToken(res.data.token);
             } catch (err) { showMessage("Arena handshake failed."); }
         };
         fetchToken();
-        const unsub = onSnapshot(doc(db, "live_arena", "main-arena"), (s) => s.exists() && setBattleState(s.data()));
+        const unsub = onSnapshot(doc(db, "live_arena", hostId), (s) => s.exists() && setBattleState(s.data()));
         
         return () => {
             unsub();
-            if (currentUser) {
+            if (currentUser && currentUser.uid === hostId) {
                 updateDoc(doc(db, "creators", currentUser.uid), { isLive: false, liveRoomType: null }).catch(() => {});
             }
         };
-    }, [currentUser?.uid]); // Stable dependency prevents unmount loops and connection drop-offs
+    }, [currentUser?.uid, hostId]); // Stable dependency prevents unmount loops and connection drop-offs
 
     const handleExit = async () => {
         setLocalMediaIntent(false);
@@ -513,7 +767,7 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
             const isActiveRoaster = currentUser?.uid === battleState.roasterId;
 
             if (isStreamHost) {
-                await updateDoc(doc(db, "live_arena", "main-arena"), {
+                await updateDoc(doc(db, "live_arena", hostId), {
                     status: 'idle',
                     hostId: null,
                     roasterId: null,
@@ -527,7 +781,7 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                 });
                 await updateDoc(doc(db, "creators", currentUser.uid), { isLive: false, liveRoomType: null });
             } else if (isActiveRoaster) {
-                await updateDoc(doc(db, "live_arena", "main-arena"), {
+                await updateDoc(doc(db, "live_arena", hostId), {
                     status: 'idle',
                     roasterId: null,
                     currentReceiver: 'host',
@@ -569,7 +823,7 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                 audio={shouldPublish}
                 style={{ width: '100%', height: '100%' }}
             >
-                <RoastRoomContent battleState={battleState} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleExit={handleExit} setLocalMediaIntent={setLocalMediaIntent} />
+                <RoastRoomContent battleState={battleState} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleExit={handleExit} setLocalMediaIntent={setLocalMediaIntent} hostId={hostId} />
                 <RoomAudioRenderer />
             </LiveKitRoom>
         </div>

@@ -7330,43 +7330,48 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 exports.clockIntoRoast = onCall({ enforceAppCheck: false, timeoutSeconds: 120 }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
     
+    const { hostId } = request.data || {};
+    if (!hostId) throw new HttpsError('invalid-argument', 'Missing hostId parameter.');
+
     const uid = request.auth.uid;
     const db = admin.firestore();
-    const arenaRef = db.collection("live_arena").doc("main-arena");
+    const arenaRef = db.collection("live_arena").doc(hostId);
     const userRef = db.collection("creators").doc(uid);
 
-    // Look up the active host dynamically
-    const hostQuery = await db.collection("creators").where("isLive", "==", true).where("liveRoomType", "==", "roast").limit(1).get();
-    const activeHostId = hostQuery.empty ? null : hostQuery.docs[0].id;
-    if (!activeHostId) throw new HttpsError('failed-precondition', 'No host is currently running the arena.');
+    const activeHostId = hostId;
 
     try {
-        await db.runTransaction(async (transaction) => {
-            const arenaSnap = await transaction.get(arenaRef);
-            const userSnap = await transaction.get(userRef);
-            
-            if (arenaSnap.exists && arenaSnap.data()?.status !== 'idle') {
-                throw new HttpsError('failed-precondition', 'Arena is currently occupied!');
-            }
-            if ((userSnap.data()?.roastTokens || 0) < 5) {
-                throw new HttpsError('failed-precondition', 'Insufficient Roast Passes (Need 5).');
-            }
+            await db.runTransaction(async (transaction) => {
+                const arenaSnap = await transaction.get(arenaRef);
+                const userSnap = await transaction.get(userRef);
+                const hostRef = db.collection("creators").doc(activeHostId);
+                const hostSnap = await transaction.get(hostRef);
+                
+                if (arenaSnap.exists && arenaSnap.data()?.status !== 'idle') {
+                    throw new HttpsError('failed-precondition', 'Arena is currently occupied!');
+                }
+                if ((userSnap.data()?.roastTokens || 0) < 5) {
+                    throw new HttpsError('failed-precondition', 'Insufficient Roast Passes (Need 5).');
+                }
 
-            // 1. Deduct 5 tokens to enter
-            transaction.update(userRef, { roastTokens: admin.firestore.FieldValue.increment(-5) });
-            
-            // 2. Initialize Battle State (Phase 1)
-            transaction.set(arenaRef, {
-                status: 'suspense', // Frontend Trigger
-                hostId: activeHostId,
-                roasterId: uid,
-                roasterName: userSnap.data()?.creatorName || 'NVA Contender',
-                currentReceiver: 'none',
-                timer: 5,
-                fireCount: 0,
-                tomatoCount: 0
-            }, { merge: true });
-        });
+                // 1. Deduct 5 tokens to enter
+                transaction.update(userRef, { roastTokens: admin.firestore.FieldValue.increment(-5) });
+
+                // 2. Route the 5 tokens value (100 GYD) directly to the Host's earnings
+                transaction.update(hostRef, { totalEarnings: admin.firestore.FieldValue.increment(100) });
+                
+                // 3. Initialize Battle State (Phase 1)
+                transaction.set(arenaRef, {
+                    status: 'suspense', // Frontend Trigger
+                    hostId: activeHostId,
+                    roasterId: uid,
+                    roasterName: userSnap.data()?.creatorName || 'NVA Contender',
+                    currentReceiver: 'none',
+                    timer: 5,
+                    fireCount: 0,
+                    tomatoCount: 0
+                }, { merge: true });
+            });
 
         // --- THE SEQUENTIAL STOPWATCH (Server-Side) ---
         
@@ -7414,21 +7419,15 @@ exports.clockIntoRoast = onCall({ enforceAppCheck: false, timeoutSeconds: 120 },
 exports.sendRoastReaction = onCall({ enforceAppCheck: false }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
     
-    const { reactionType } = request.data; // 'fire' or 'tomato'
+    const { reactionType, hostId } = request.data || {}; // 'fire' or 'tomato' and dynamic hostId
+    if (!hostId) throw new HttpsError('invalid-argument', 'Missing hostId parameter.');
+
     const db = admin.firestore();
-    const arenaRef = db.collection("live_arena").doc("main-arena");
+    const arenaRef = db.collection("live_arena").doc(hostId);
     const arenaSnap = await arenaRef.get();
     
     if (!arenaSnap.exists) throw new HttpsError('not-found', 'Arena not initialized.');
     const arenaData = arenaSnap.data();
-
-    // Dynamically retrieve the active host
-    let hostId = arenaData.hostId;
-    if (!hostId) {
-        const hostQuery = await db.collection("creators").where("isLive", "==", true).where("liveRoomType", "==", "roast").limit(1).get();
-        if (!hostQuery.empty) hostId = hostQuery.docs[0].id;
-    }
-    if (!hostId) throw new HttpsError('failed-precondition', 'No host found in the arena.');
 
     const roasterId = arenaData.roasterId;
     const receiverRole = arenaData.currentReceiver; // 'host', 'roaster', or 'none'

@@ -1285,7 +1285,7 @@ case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} se
       case 'AnalyticsDashboard': return <AnalyticsDashboardScreen showMessage={showMessage} setActiveScreen={handleNavigate} />;
       case 'Contact': return <ContactScreen setActiveScreen={handleNavigate} showMessage={showMessage} currentUser={currentUser} />;
       case 'MusicCharts': return <MusicChartsScreen setActiveScreen={handleNavigate} currentUser={currentUser} handleVideoPress={handleVideoPress} showMessage={showMessage} />;
-      case 'RoastRoom': return <RoastRoomScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />;
+      case 'RoastRoom': return <RoastRoomScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} hostId={selectedUserId || currentUser?.uid} />;
       case 'LiveDirectory': return <LiveDirectoryScreen setActiveScreen={handleNavigate} currentUser={currentUser} showMessage={showMessage} />;
       case 'FilmClubHub': return <FilmClubHubScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />;
 
