@@ -1302,7 +1302,9 @@ case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} se
   const memoizedScreen = useMemo(() => renderScreen(), [
     activeScreen, 
     currentUser?.uid, 
-    creatorProfile, // Real-time token and earning auto-updates now flow instantly
+    creatorProfile?.roastTokens,   // Safely triggers UI updates ONLY when tokens change
+    creatorProfile?.totalEarnings, // Safely triggers UI updates ONLY when earnings change
+    creatorProfile?.role,          // Safely triggers UI updates ONLY when role changes
     selectedUserId, 
     selectedOpportunity?.id, 
     liveEvent?.id, 
@@ -1351,8 +1353,8 @@ return (
             // --- PWA UPDATE PROPS ---
             needRefresh={needRefresh}
             onUpdate={handleUpdate}
-            currentUser={currentUser} // <-- ADD THIS LINE
-            onLogout={handleLogout}   // <-- ADD THIS LINE
+            currentUser={['Home', 'CreatorDashboard', 'UserProfile'].includes(activeScreen) ? currentUser : null}
+            onLogout={handleLogout}
           />
 
           {/* ====== STANDALONE GLASSMORPHIC HEADER BILLBOARD AD (Home Screen & Expiration Checked) ====== */}
@@ -1396,8 +1398,9 @@ return (
           {/* Dynamic layout engine: Removes padding and locks viewport height on full-screen screens */}
           <div className="container" style={{ 
             paddingBottom: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? '0' : '100px', 
-            height: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? '100vh' : 'auto', 
-            overflow: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? 'hidden' : 'visible' 
+            height: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? '100vh' : 'calc(100vh - 80px)', 
+            overflowY: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? 'hidden' : 'auto',
+            WebkitOverflowScrolling: 'touch' // Ensures buttery-smooth elastic scrolling on mobile
           }}>
             {/* Step 3: Use the original authLoading for the quick, text-based loader during navigation. */}
             {authLoading ? (
