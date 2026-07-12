@@ -1302,7 +1302,9 @@ case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} se
   const memoizedScreen = useMemo(() => renderScreen(), [
     activeScreen, 
     currentUser?.uid, 
-    creatorProfile, // Restores real-time profile updates, name sync, and admin state safely
+    creatorProfile?.roastTokens,   // Safely triggers UI updates ONLY when tokens change
+    creatorProfile?.totalEarnings, // Safely triggers UI updates ONLY when earnings change
+    creatorProfile?.role,          // Safely triggers UI updates ONLY when role changes
     selectedUserId, 
     selectedOpportunity?.id, 
     liveEvent?.id, 
