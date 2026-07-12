@@ -446,6 +446,16 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
     const [token, setToken] = useState(null);
     const [battleState, setBattleState] = useState({ status: 'idle', hostStreak: 0, timer: 0 });
 
+    // Stable reference prevents camera from shutting off during fast Firestore stat updates
+    const [shouldPublish, setShouldPublish] = useState(false);
+    useEffect(() => {
+        if (currentUser?.uid === battleState.hostId || currentUser?.uid === battleState.roasterId) {
+            setShouldPublish(true);
+        } else {
+            setShouldPublish(false);
+        }
+    }, [currentUser?.uid, battleState.hostId, battleState.roasterId]);
+
     useEffect(() => {
         const fetchToken = async () => {
             try {
@@ -516,16 +526,6 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
             </div>
         );
     }
-
-    // Stable reference prevents camera from shutting off during fast Firestore stat updates
-    const [shouldPublish, setShouldPublish] = useState(false);
-    useEffect(() => {
-        if (currentUser?.uid === battleState.hostId || currentUser?.uid === battleState.roasterId) {
-            setShouldPublish(true);
-        } else {
-            setShouldPublish(false);
-        }
-    }, [currentUser?.uid, battleState.hostId, battleState.roasterId]);
 
     return (
         <div className="screenContainer" style={{ padding: 0, backgroundColor: '#000', height: '100vh', overflow: 'hidden' }}>

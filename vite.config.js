@@ -10,13 +10,12 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      // --- THE DEFINITIVE FIX ---
-      // 1. The strategy remains 'injectManifest' because we have a custom service worker.
       strategies: 'injectManifest',
-      srcDir: '.', // Explicitly tell it to look in the root folder
-      // 3. We explicitly name our service worker file, which is now in the root.
+      srcDir: '.',
       filename: 'firebase-messaging-sw.js',
-      // --- END OF FIX ---
+      devOptions: {
+        enabled: true
+      },
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg}']
       },
