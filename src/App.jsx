@@ -748,7 +748,18 @@ useEffect(() => {
         const initializeMessaging = async () => {
           if ('serviceWorker' in navigator) {
             try {
-              const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+              // Explicitly register with root scope to satisfy Firebase SDK requirements
+              const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+              
+              // Ensure the service worker is active before passing to prevent duplicate fallback worker
+              if (registration.installing) {
+                await new Promise((resolve) => {
+                  registration.installing.addEventListener('statechange', (e) => {
+                    if (e.target.state === 'activated') resolve();
+                  });
+                });
+              }
+              
               const messagingService = getMessaging(app, { serviceWorkerRegistration: registration });
               setMessagingInstance(messagingService);
               console.log('Firebase Messaging service initialized successfully.');

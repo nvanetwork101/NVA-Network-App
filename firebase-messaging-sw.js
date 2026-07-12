@@ -37,6 +37,10 @@ const firebaseConfig = {
 
   // AGGRESSIVE UPDATE REMOVED: Managed by React UI to prevent reload loops [1]
 
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
 self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
