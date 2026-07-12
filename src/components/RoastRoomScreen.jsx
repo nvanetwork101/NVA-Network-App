@@ -30,6 +30,12 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
     const isHost = currentUser?.uid === battleState.hostId;
     const isRoaster = currentUser?.uid === battleState.roasterId;
 
+    // Dynamic extraction of the Host's real name from WebRTC participants or Firestore profile
+    const hostTrack = tracks.find(t => t.participant.identity === battleState.hostId);
+    const hostRealName = hostTrack?.participant.name || 
+                         (currentUser?.uid === battleState.hostId ? (creatorProfile?.creatorName || creatorProfile?.displayName) : null) || 
+                         "NVA Host";
+
     // --- 4-PHASE HUD & MUTUALLY EXCLUSIVE AUDIO LOGIC ---
     const isSuspense = battleState.status === 'suspense'; 
     const isBattle = battleState.status === 'battle';     
@@ -203,7 +209,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                 
                 /* Transparent TikTok Style Chat Overlay */
                 .arena-full-stage { position: absolute; inset: 0; display: flex; width: 100%; height: 100%; overflow: hidden; }
-                .chat-overlay { position: absolute; bottom: 160px; left: 16px; right: 16px; max-width: 320px; max-height: 250px; display: flex; flex-direction: column; z-index: 90; pointer-events: none; }
+                .chat-overlay { position: absolute; bottom: 190px; left: 16px; right: 16px; max-width: 320px; max-height: 250px; display: flex; flex-direction: column; z-index: 90; pointer-events: none; }
                 .chat-messages-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; scrollbar-width: none; pointer-events: auto; mask-image: linear-gradient(to top, black 80%, transparent 100%); -webkit-mask-image: linear-gradient(to top, black 80%, transparent 100%); }
                 .chat-messages-container::-webkit-scrollbar { display: none; }
                 .chat-input-wrapper { display: flex; gap: 8px; align-items: center; margin-top: 4px; pointer-events: auto; }
@@ -283,27 +289,29 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                         <div key={`${t.participant.identity}-${t.source}`} className="video-cell">
                                             <VideoTrack trackRef={t} style={{ height: '100%', width: '100%', objectFit: 'cover' }} />
                                             
-                                            {/* FIXED POSITION NAME TAG (MOVED TO TOP TO PREVENT CHAT COLLISION) */}
-                                            <div className="glass-pill" style={{ position: 'absolute', top: '90px', left: '16px', display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', zIndex: 60, maxWidth: '80%' }}>
-                                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#4ADE80', boxShadow: '0 0 8px #4ADE80' }}></div>
-                                                <span className="text-truncate" style={{ color: '#FFF', fontSize: '13px', fontWeight: '800' }}>
-                                                    {t.participant.name || 'User'}
-                                                </span>
-                                                {isHost && !t.participant.isLocal && (
-                                                    <button 
-                                                        onClick={async (e) => {
-                                                            e.stopPropagation();
-                                                            try {
-                                                                const kickFunc = httpsCallable(functions, 'kickParticipant');
-                                                                await kickFunc({ identity: t.participant.identity });
-                                                            } catch (err) { showMessage("Kick failed."); }
-                                                        }}
-                                                        style={{ border: 'none', background: 'rgba(220,53,69,0.85)', borderRadius: '20px', color: '#FFF', padding: '3px 8px', marginLeft: '6px', fontSize: '9px', fontWeight: '900', cursor: 'pointer', textTransform: 'uppercase' }}
-                                                    >
-                                                        Drop
-                                                    </button>
-                                                )}
-                                            </div>
+                                            {/* Renders a clean indicator with a Drop button ONLY on the Roaster's video cell */}
+                                            {t.participant.identity === battleState.roasterId && (
+                                                <div className="glass-pill" style={{ position: 'absolute', bottom: '16px', left: '16px', display: 'flex', alignItems: 'center', gap: '8px', zIndex: 60, maxWidth: '80%' }}>
+                                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#FF4500', boxShadow: '0 0 8px #FF4500' }}></div>
+                                                    <span className="text-truncate" style={{ color: '#FFF', fontSize: '12px', fontWeight: '900' }}>
+                                                        {t.participant.name?.toUpperCase() || 'CONTENDER'}
+                                                    </span>
+                                                    {isHost && (
+                                                        <button 
+                                                            onClick={async (e) => {
+                                                                e.stopPropagation();
+                                                                try {
+                                                                    const kickFunc = httpsCallable(functions, 'kickParticipant');
+                                                                    await kickFunc({ identity: t.participant.identity });
+                                                                } catch (err) { showMessage("Kick failed."); }
+                                                            }}
+                                                            style={{ border: 'none', background: 'rgba(220,53,69,0.85)', borderRadius: '20px', color: '#FFF', padding: '3px 8px', marginLeft: '6px', fontSize: '9px', fontWeight: '900', cursor: 'pointer', textTransform: 'uppercase' }}
+                                                        >
+                                                            Drop
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 }) : (
@@ -359,19 +367,28 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
             {/* --- INTERACTIVE ACTION TRAY (FLOATING BOTTOM) --- */}
             <div style={{ position: 'absolute', bottom: '16px', left: '16px', right: '16px', display: 'flex', flexDirection: 'column', gap: '12px', zIndex: 100, pointerEvents: 'none' }}>
                 
-                {/* 1. ROAST MIC (Pushed up safely above chat input) */}
-                {battleState.status === 'idle' && !isHost && (
-                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                {/* 1. HOST NAME & ROAST MIC ROW */}
+                <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40px', pointerEvents: 'auto', width: '100%' }}>
+                    {/* Host Name on the Left */}
+                    <div className="glass-pill" style={{ position: 'absolute', left: '8px', display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: 'rgba(15, 15, 15, 0.7)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#4ADE80', boxShadow: '0 0 8px #4ADE80' }}></div>
+                        <span className="text-truncate" style={{ color: '#FFF', fontSize: '11px', fontWeight: '900', maxWidth: '120px', letterSpacing: '0.05em' }}>
+                            {hostRealName.toUpperCase()}
+                        </span>
+                    </div>
+
+                    {/* Roast Button perfectly centered */}
+                    {battleState.status === 'idle' && !isHost && (
                         <button 
                             onClick={handleClockIn} 
-                            style={{ pointerEvents: 'auto', background: 'rgba(255,69,0,0.15)', color: '#FF4500', padding: '8px 24px', borderRadius: '24px', fontSize: '13px', fontWeight: '900', textTransform: 'uppercase', border: '1px solid #FF4500', cursor: 'pointer', backdropFilter: 'blur(10px)', transition: 'transform 0.1s', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}
+                            style={{ background: 'rgba(255,69,0,0.15)', color: '#FF4500', padding: '8px 24px', borderRadius: '24px', fontSize: '13px', fontWeight: '900', textTransform: 'uppercase', border: '1px solid #FF4500', cursor: 'pointer', backdropFilter: 'blur(10px)', transition: 'transform 0.1s', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}
                             onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
                             onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
                         >
                             <span>🎙️</span> ROAST
                         </button>
-                    </div>
-                )}
+                    )}
+                </div>
 
                 {/* 2. CHAT INPUT & TOGGLE ROW */}
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', pointerEvents: 'auto' }}>
@@ -404,7 +421,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                             {showEmojiPicker && (
                                 <div className="glass-pill" style={{ position: 'absolute', bottom: '40px', right: '-10px', padding: '8px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', background: 'rgba(15,15,15,0.95)', border: '1px solid rgba(255,69,0,0.3)', zIndex: 110 }}>
                                     {['😀','😂','💀','🔥','🍅','💯','👀','🧢'].map(emo => (
-                                        <button key={emo} type="button" onClick={(e) => { e.preventDefault(); setChatInput(prev => prev + emo); setShowEmojiPicker(false); document.getElementById('roast-chat-input').focus(); }} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', transition: 'transform 0.1s' }} onMouseDown={e => e.currentTarget.style.transform='scale(0.9)'} onMouseUp={e => e.currentTarget.style.transform='scale(1)'}>
+                                        <button key={emo} type="button" onClick={(e) => { e.preventDefault(); setChatInput(prev => prev + emo); setShowEmojiPicker(false); }} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', transition: 'transform 0.1s' }} onMouseDown={e => e.currentTarget.style.transform='scale(0.9)'} onMouseUp={e => e.currentTarget.style.transform='scale(1)'}>
                                             {emo}
                                         </button>
                                     ))}
