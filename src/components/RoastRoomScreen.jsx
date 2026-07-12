@@ -484,7 +484,7 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                 updateDoc(doc(db, "creators", currentUser.uid), { isLive: false, liveRoomType: null }).catch(() => {});
             }
         };
-    }, [creatorProfile, currentUser]);
+    }, [currentUser?.uid]); // Stable dependency prevents unmount loops and connection drop-offs
 
     const handleExit = async () => {
         try {
