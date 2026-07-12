@@ -75,6 +75,16 @@ import CompetitionHomeScreenBanner from './components/CompetitionHomeScreenBanne
 // --- PWA UPDATE FIX: Import our new custom hook and the component ---
 import { usePWAUpdate } from './hooks/usePWAUpdate';
 
+// --- BULLETPROOF PWA INSTALL PROMPT CAPTURE SYSTEM ---
+let deferredPromptGlobal = null;
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPromptGlobal = e;
+    window.dispatchEvent(new CustomEvent('pwaPromptAvailable', { detail: e }));
+  });
+}
+
 function App() {
   const [messagingInstance, setMessagingInstance] = useState(null); // <-- ADD THIS LINE
   // --- PWA UPDATE FIX: Logic to handle the update prompt ---
@@ -129,7 +139,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [contentPlayerData, setContentPlayerData] = useState(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true); // <-- FIX: New state for one-time video
-  const [installPromptEvent, setInstallPromptEvent] = useState(null); // <-- PWA FIX: Stores the install event
+  const [installPromptEvent, setInstallPromptEvent] = useState(deferredPromptGlobal); // <-- PWA FIX: Stores the install event
 
   const [isStandalone, setIsStandalone] = useState(false); // <-- PWA FIX: Checks if app is already installed
   const [activeScreen, setActiveScreen] = useState('Home');
@@ -1078,6 +1088,12 @@ useEffect(() => {
             return; // Don't set up listeners if already installed.
         }
 
+        // Sync with the early global capture event
+        const handleGlobalPrompt = (e) => {
+            setInstallPromptEvent(e.detail);
+        };
+        window.addEventListener('pwaPromptAvailable', handleGlobalPrompt);
+
         // Listen for the browser's install prompt event (for Android/Desktop)
         const handleBeforeInstallPrompt = (event) => {
             event.preventDefault(); // Prevent the default browser prompt
@@ -1093,6 +1109,7 @@ useEffect(() => {
         window.addEventListener('appinstalled', handleAppInstalled);
 
         return () => {
+            window.removeEventListener('pwaPromptAvailable', handleGlobalPrompt);
             window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
             window.removeEventListener('appinstalled', handleAppInstalled);
         };
