@@ -90,14 +90,6 @@ function App() {
   // --- PWA UPDATE FIX: Logic to handle the update prompt ---
   const { needRefresh, handleUpdate } = usePWAUpdate();
   
-  // Aggressive SPA Update Engine: Checks for a new deploy on every screen transition
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then((registration) => {
-        registration.update().catch(() => {});
-      });
-    }
-  }, [activeScreen]);
 
   // ======================= START: DEFINITIVE EMAIL ACTION HANDLER ========================
   useEffect(() => {
@@ -151,6 +143,16 @@ function App() {
 
   const [isStandalone, setIsStandalone] = useState(false); // <-- PWA FIX: Checks if app is already installed
   const [activeScreen, setActiveScreen] = useState('Home');
+
+  // Aggressive SPA Update Engine: Checks for a new deploy on every screen transition
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then((registration) => {
+        registration.update().catch(() => {});
+      });
+    }
+  }, [activeScreen]);
+
   const [activeCompetition, setActiveCompetition] = useState(null);
   const [previousScreen, setPreviousScreen] = useState(null);
   const isProgrammaticPopRef = useRef(false); // <-- PREVENTS DUAL POPSTATE COLLISION
