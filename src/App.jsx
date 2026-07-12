@@ -1292,13 +1292,11 @@ case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} se
   const memoizedScreen = useMemo(() => renderScreen(), [
     activeScreen, 
     currentUser?.uid, 
-    creatorProfile?.role, 
-    JSON.stringify(creatorProfile?.purchasedTickets || {}),
+    creatorProfile, // Real-time token and earning auto-updates now flow instantly
     selectedUserId, 
     selectedOpportunity?.id, 
     liveEvent?.id, 
-    isLive,
-    countdownText,
+    isLive, // Keeps streams completely stable, eliminating 1-second unmount loops
     deepLinkedReplayId,
     pledgeContext,
     selectedChatId,
@@ -1385,7 +1383,12 @@ return (
             </div>
           )}
 
-          <div className="container" style={{ paddingBottom: '100px' }}>
+          {/* Dynamic layout engine: Removes padding and locks viewport height on full-screen screens */}
+          <div className="container" style={{ 
+            paddingBottom: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? '0' : '100px', 
+            height: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? '100vh' : 'auto', 
+            overflow: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? 'hidden' : 'visible' 
+          }}>
             {/* Step 3: Use the original authLoading for the quick, text-based loader during navigation. */}
             {authLoading ? (
                 <div className="screenContainer" style={{textAlign: 'center', paddingTop: '50px'}}>
