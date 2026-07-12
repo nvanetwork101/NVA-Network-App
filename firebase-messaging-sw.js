@@ -4,6 +4,8 @@ importScripts('https://storage.googleapis.com/workbox-cdn/releases/6.4.1/workbox
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
+// Bulletproof cache cleanup of old versions
+workbox.precaching.cleanupOutdatedCaches();
 workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
 
 // --- SPA NAVIGATION FALLBACK (Fixes Facebook/External Link Loading) ---
@@ -38,11 +40,22 @@ const firebaseConfig = {
   // AGGRESSIVE UPDATE REMOVED: Managed by React UI to prevent reload loops [1]
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+  // REMOVED self.skipWaiting(); 
+  // It now safely enters the "waiting" state so your Update UI triggers properly.
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== workbox.core.cacheNames.precache && cacheName !== workbox.core.cacheNames.runtime) {
+            return caches.delete(cacheName); // Clears all orphaned/dust cache from old builds
+          }
+        })
+      );
+    }).then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener('message', (event) => {

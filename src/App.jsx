@@ -751,6 +751,11 @@ useEffect(() => {
               // Explicitly register with root scope to satisfy Firebase SDK requirements
               const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
               
+              // AGGRESSIVE UPDATE CHECK: Forces browser to check for deployment updates instantly on window focus
+              const updateCheck = () => { if (registration && registration.update) registration.update(); };
+              window.addEventListener('focus', updateCheck);
+              window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') updateCheck(); });
+
               // Ensure the service worker is active before passing to prevent duplicate fallback worker
               if (registration.installing) {
                 await new Promise((resolve) => {
@@ -763,6 +768,11 @@ useEffect(() => {
               const messagingService = getMessaging(app, { serviceWorkerRegistration: registration });
               setMessagingInstance(messagingService);
               console.log('Firebase Messaging service initialized successfully.');
+              
+              return () => {
+                window.removeEventListener('focus', updateCheck);
+                window.removeEventListener('visibilitychange', updateCheck);
+              };
             } catch (error) {
               console.error('Service Worker registration or Messaging init failed:', error);
             }

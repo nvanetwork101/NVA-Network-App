@@ -7281,7 +7281,10 @@ exports.purchaseRoastTokensWithEarnings = onCall({ enforceAppCheck: false }, asy
 
 const { AccessToken } = require('livekit-server-sdk');
 
-exports.getRoastRoomToken = onCall({ enforceAppCheck: false }, async (request) => {
+exports.getRoastRoomToken = onCall({ 
+  enforceAppCheck: false,
+  secrets: ["LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"]
+}, async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'Login required.');
 
@@ -7295,8 +7298,8 @@ exports.getRoastRoomToken = onCall({ enforceAppCheck: false }, async (request) =
         const userData = userDoc.data();
         const creatorName = userData.creatorName || "NVA Creator";
 
-        const apiKey = "devkey_41a206e2";
-        const apiSecret = "secret_37246b3bbc507fc41bdc94a8";
+        const apiKey = process.env.LIVEKIT_API_KEY;
+        const apiSecret = process.env.LIVEKIT_API_SECRET;
 
         const at = new AccessToken(apiKey, apiSecret, {
             identity: uid,
@@ -7468,27 +7471,27 @@ exports.sendRoastReaction = onCall({ enforceAppCheck: false }, async (request) =
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
-// Initialize secure Cloudflare R2 S3-Compatible Client
-const s3Client = new S3Client({
-  endpoint: "https://fbe1faad8ca929a47c3cce338399f497.r2.cloudflarestorage.com",
-  credentials: {
-    accessKeyId: "516aad0243cfc6c02086f78bfd65f3a3",
-    secretAccessKey: "bb32edef3c1757094a4ac551918f37f5047be235e62ce3f3d289d07d17ddd406",
-  },
-  region: "auto",
-});
-
-// Secure Cloud Function to generate upload URL
-exports.getR2UploadUrl = functions.https.onCall(async (data, context) => {
-  // Ensure only authenticated users can upload
-  if (!context.auth) {
-    throw new functions.https.HttpsError("unauthenticated", "Auth required.");
+// Secure Cloud Function to generate upload URL with encrypted R2 keys
+exports.getR2UploadUrl = onCall({
+  secrets: ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"]
+}, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Auth required.");
   }
 
-  const { filePath, contentType } = data;
+  const { filePath, contentType } = request.data;
   if (!filePath) {
-    throw new functions.https.HttpsError("invalid-argument", "Missing filePath.");
+    throw new HttpsError("invalid-argument", "Missing filePath.");
   }
+
+  const s3Client = new S3Client({
+    endpoint: "https://fbe1faad8ca929a47c3cce338399f497.r2.cloudflarestorage.com",
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    },
+    region: "auto",
+  });
 
   const bucketName = "nva-storage";
   const command = new PutObjectCommand({
@@ -7498,13 +7501,12 @@ exports.getR2UploadUrl = functions.https.onCall(async (data, context) => {
   });
 
   try {
-    // Generate secure upload URL valid for 1 hour
     const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
     const publicUrl = `https://media.nvanetworkapp.com/${filePath}`;
 
     return { uploadUrl, publicUrl };
   } catch (error) {
-    throw new functions.https.HttpsError("internal", error.message);
+    throw new HttpsError("internal", error.message);
   }
 });
 
@@ -8541,15 +8543,4 @@ exports.requestPayout = onCall(async (request) => {
     }
 });
 
-exports.getRoastRoomToken = functions
-  .runWith({ secrets: [livekitApiKey, livekitApiSecret] })
-  .https.onCall(async (data, context) => {
-      // Use livekitApiKey.value() and livekitApiSecret.value() inside this function block
-  });
-
-exports.yourStorageUploadFunction = functions
-  .runWith({ secrets: [r2AccessKeyId, r2SecretAccessKey] })
-  .https.onCall(async (data, context) => {
-      // Use r2AccessKeyId.value() and r2SecretAccessKey.value() inside this function block
-  });
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---
