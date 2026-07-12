@@ -10,6 +10,7 @@
     "runtime": "nodejs22"
   },
   "hosting": {
+    "site": "nvanetworkapp",
     "public": "dist",
     "ignore": [
       "firebase.json",

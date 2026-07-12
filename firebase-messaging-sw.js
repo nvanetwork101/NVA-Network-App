@@ -6,13 +6,15 @@ importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-comp
 
 // Bulletproof cache cleanup of old versions
 workbox.precaching.cleanupOutdatedCaches();
-workbox.precaching.precacheAndRoute(self.__WB_MANIFEST || []);
+
+// Store the single reference to satisfy Workbox's strict rules
+const precacheList = self.__WB_MANIFEST || [];
+workbox.precaching.precacheAndRoute(precacheList);
 
 // --- SPA NAVIGATION FALLBACK (Fixes Facebook/External Link Loading) ---
 // This tells the Service Worker to serve index.html for any unknown route (like /content/123)
 // FIX: We check if index.html is actually cached before registering the route.
 // This prevents the "Uncaught non-precached-url" error during Development.
-const precacheList = self.__WB_MANIFEST || [];
 const isIndexCached = precacheList.some(entry => entry.url === 'index.html' || entry.url === '/index.html');
 
 if (isIndexCached) {

@@ -12,8 +12,8 @@ export default defineConfig({
       registerType: 'prompt',
       // --- THE DEFINITIVE FIX ---
       // 1. The strategy remains 'injectManifest' because we have a custom service worker.
-      strategy: 'injectManifest',
-      // 2. We REMOVE 'srcDir: 'public'' entirely. The plugin now correctly looks in the project root.
+      strategies: 'injectManifest',
+      srcDir: '.', // Explicitly tell it to look in the root folder
       // 3. We explicitly name our service worker file, which is now in the root.
       filename: 'firebase-messaging-sw.js',
       // --- END OF FIX ---
