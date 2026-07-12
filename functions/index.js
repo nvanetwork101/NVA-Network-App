@@ -1,5 +1,6 @@
 // FORCED UPDATE: 2025-10-04 23:59
 // The Cloud Functions for Firebase SDK to create Cloud Functions and set up triggers.
+const functions = require("firebase-functions/v1");
 const {FieldValue} = require("firebase-admin/firestore"); // <-- ADD THIS LINE
 const {onValueWritten} = require("firebase-functions/v2/database");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
@@ -7,6 +8,13 @@ const {onDocumentUpdated, onDocumentDeleted, onDocumentCreated} = require("fireb
 const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {logger} = require("firebase-functions");
 const {onRequest} = require("firebase-functions/v2/https");
+
+const { defineSecret } = require('firebase-functions/params');
+
+const livekitApiKey = defineSecret('LIVEKIT_API_KEY');
+const livekitApiSecret = defineSecret('LIVEKIT_API_SECRET');
+const r2AccessKeyId = defineSecret('R2_ACCESS_KEY_ID');
+const r2SecretAccessKey = defineSecret('R2_SECRET_ACCESS_KEY');
 
 // The Firebase Admin SDK to access Firestore.
 const admin = require("firebase-admin");
@@ -7456,7 +7464,7 @@ exports.sendRoastReaction = onCall({ enforceAppCheck: false }, async (request) =
     return { success: true };
 });
 
-const functions = require("firebase-functions");
+
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
@@ -8532,4 +8540,16 @@ exports.requestPayout = onCall(async (request) => {
         throw new HttpsError("internal", "An unexpected error occurred during submission.");
     }
 });
+
+exports.getRoastRoomToken = functions
+  .runWith({ secrets: [livekitApiKey, livekitApiSecret] })
+  .https.onCall(async (data, context) => {
+      // Use livekitApiKey.value() and livekitApiSecret.value() inside this function block
+  });
+
+exports.yourStorageUploadFunction = functions
+  .runWith({ secrets: [r2AccessKeyId, r2SecretAccessKey] })
+  .https.onCall(async (data, context) => {
+      // Use r2AccessKeyId.value() and r2SecretAccessKey.value() inside this function block
+  });
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---
