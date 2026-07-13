@@ -11,7 +11,7 @@ import CompetitionHomeScreenBanner from './CompetitionHomeScreenBanner';
 // Legacy PromotedSlot and Campaigns removed for CenterStage Engine
 
 // --- Main HomeScreen Component ---
-    const HomeScreen = ({ currentUser, creatorProfile, showMessage, handleVideoPress, handleLogout, setActiveScreen, activeCompetition }) => {
+    const HomeScreen = ({ currentUser, creatorProfile, showMessage, handleVideoPress, handleLogout, setActiveScreen, activeCompetition, setSelectedUserId }) => {
     
     // --- STATE & REFS (Gutted Live Feed & Added Live Arenas) ---
     const [rawLayout, setRawLayout] = useState(null);
@@ -507,6 +507,7 @@ import CompetitionHomeScreenBanner from './CompetitionHomeScreenBanner';
                                     key={room.id} 
                                     onClick={() => {
                                         if (room.liveRoomType === 'roast') {
+                                            setSelectedUserId(room.id);
                                             setActiveScreen('RoastRoom'); // FIX: Navigates directly to the Arena
                                             showMessage(`Dropping into ${room.creatorName}'s Live Roast Room...`);
                                         }

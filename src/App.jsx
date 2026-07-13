@@ -1286,7 +1286,7 @@ case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} se
       case 'Contact': return <ContactScreen setActiveScreen={handleNavigate} showMessage={showMessage} currentUser={currentUser} />;
       case 'MusicCharts': return <MusicChartsScreen setActiveScreen={handleNavigate} currentUser={currentUser} handleVideoPress={handleVideoPress} showMessage={showMessage} />;
       case 'RoastRoom': return <RoastRoomScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} hostId={selectedUserId || currentUser?.uid} />;
-      case 'LiveDirectory': return <LiveDirectoryScreen setActiveScreen={handleNavigate} currentUser={currentUser} showMessage={showMessage} />;
+      case 'LiveDirectory': return <LiveDirectoryScreen setActiveScreen={handleNavigate} currentUser={currentUser} showMessage={showMessage} setSelectedUserId={setSelectedUserId} />;
       case 'FilmClubHub': return <FilmClubHubScreen setActiveScreen={handleNavigate} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />;
 
       case 'NotificationInbox': return <NotificationInboxScreen setActiveScreen={handleNavigate} currentUser={currentUser} dismissNotification={dismissNotification} markNotificationAsRead={markNotificationAsRead} markAllAsRead={markAllAsRead} />;
@@ -1294,7 +1294,7 @@ case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} se
       case 'ChatMessageScreen': return <ChatMessageScreen chatId={selectedChatId} currentUser={currentUser} creatorProfile={creatorProfile} setActiveScreen={handleNavigate} showMessage={showMessage} setSelectedUserId={setSelectedUserId} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />;
       case 'PrivacyPolicy': return <PrivacyPolicyScreen setActiveScreen={handleNavigate} />;
       case 'TermsOfService': return <TermsOfServiceScreen setActiveScreen={handleNavigate} />;
-      case 'Home': default: return <HomeScreen currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} />;
+      case 'Home': default: return <HomeScreen currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleVideoPress={handleVideoPress} handleLogout={handleLogout} setActiveScreen={handleNavigate} featuredContentSlots={featuredContentSlots} activeCompetition={activeCompetition} setSelectedUserId={setSelectedUserId} />;
     }
   };
 

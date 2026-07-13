@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 
-const LiveDirectoryScreen = ({ setActiveScreen, currentUser, showMessage }) => {
+const LiveDirectoryScreen = ({ setActiveScreen, currentUser, showMessage, setSelectedUserId }) => {
     const [liveCreators, setLiveCreators] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -30,6 +30,7 @@ const LiveDirectoryScreen = ({ setActiveScreen, currentUser, showMessage }) => {
             return;
         }
         showMessage(`Connecting to ${room.creatorName}'s Arena...`);
+        setSelectedUserId(room.id);
         // Navigate globally to Roast Room
         setActiveScreen('RoastRoom');
     };
