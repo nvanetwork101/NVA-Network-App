@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { LiveKitRoom, RoomAudioRenderer, useTracks, VideoTrack, useRoomContext } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import "@livekit/components-styles";
-import { db, functions, doc, onSnapshot, updateDoc, httpsCallable } from '../firebase';
+import { db, functions, doc, onSnapshot, updateDoc, setDoc, httpsCallable } from '../firebase';
 
 const LIVEKIT_URL = "wss://livekit.nvanetworkapp.com";
 
@@ -744,7 +744,7 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
     useEffect(() => {
         if (currentUser && currentUser.uid === hostId) {
             updateDoc(doc(db, "creators", currentUser.uid), { isLive: true, liveRoomType: "roast" }).catch(() => {});
-            updateDoc(doc(db, "live_arena", hostId), { hostId: currentUser.uid, status: 'idle' }).catch(() => {});
+            setDoc(doc(db, "live_arena", hostId), { hostId: currentUser.uid, status: 'idle' }, { merge: true }).catch(() => {});
         }
     }, [currentUser, hostId]);
 
