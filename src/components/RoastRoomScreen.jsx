@@ -826,8 +826,8 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                 serverUrl={LIVEKIT_URL} 
                 token={token} 
                 connect={true} 
-                video={false}
-                audio={false}
+                video={isStreamHost || localMediaIntent}
+                audio={isStreamHost || localMediaIntent}
                 style={{ width: '100%', height: '100%' }}
             >
                 <RoastRoomContent battleState={battleState} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} handleExit={handleExit} setLocalMediaIntent={setLocalMediaIntent} hostId={hostId} />
