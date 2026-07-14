@@ -1302,13 +1302,12 @@ case 'AdminDashboard': return <AdminDashboardScreen showMessage={showMessage} se
   const memoizedScreen = useMemo(() => renderScreen(), [
     activeScreen, 
     currentUser?.uid, 
-    creatorProfile?.roastTokens,   // Safely triggers UI updates ONLY when tokens change
-    creatorProfile?.totalEarnings, // Safely triggers UI updates ONLY when earnings change
-    creatorProfile?.role,          // Safely triggers UI updates ONLY when role changes
+    creatorProfile, // <-- UNLOCKS INSTANT PROFILE & GALLERY RENDERING
     selectedUserId, 
     selectedOpportunity?.id, 
     liveEvent?.id, 
-    isLive, // Keeps streams completely stable, eliminating 1-second unmount loops
+    isLive,
+    countdownText,
     deepLinkedReplayId,
     pledgeContext,
     selectedChatId,

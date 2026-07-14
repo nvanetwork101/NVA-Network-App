@@ -75,12 +75,21 @@ const GalleryImageAdjustModal = ({ isUploading, imageFile, onSave, onCancel, asp
         let newX = e.clientX - dragStart.x;
         let newY = e.clientY - dragStart.y;
         
-        // Constrain dragging so the image always covers the canvas
         const minX = CANVAS_WIDTH - (imgElement.width * scale);
         const minY = CANVAS_HEIGHT - (imgElement.height * scale);
         
-        newX = Math.min(0, Math.max(minX, newX));
-        newY = Math.min(0, Math.max(minY, newY));
+        // Dynamic boundary tracking: adapts if zoomed in or out
+        if (minX < 0) {
+            newX = Math.min(0, Math.max(minX, newX));
+        } else {
+            newX = Math.min(minX, Math.max(0, newX));
+        }
+        
+        if (minY < 0) {
+            newY = Math.min(0, Math.max(minY, newY));
+        } else {
+            newY = Math.min(minY, Math.max(0, newY));
+        }
         
         setPosition({ x: newX, y: newY });
     };
@@ -126,7 +135,7 @@ const GalleryImageAdjustModal = ({ isUploading, imageFile, onSave, onCancel, asp
                     <label style={{ color: '#FFF', fontSize: '12px', display: 'block', marginBottom: '10px' }}>Zoom</label>
                     <input 
                         type="range" 
-                        min={imgElement ? Math.max(CANVAS_WIDTH / imgElement.width, CANVAS_HEIGHT / imgElement.height) : 0.1} 
+                        min={imgElement ? Math.min(CANVAS_WIDTH / imgElement.width, CANVAS_HEIGHT / imgElement.height) * 0.4 : 0.1} 
                         max={3} 
                         step="0.01" 
                         value={scale} 

@@ -5593,7 +5593,8 @@ async function deleteQueryBatch(db, query, resolve) {
         const adminRef = db.collection('creators').doc(adminUid);
         const subcollectionsToWipe = ['followers', 'following', 'feed', 'notifications', 'blockedUsers'];
         for (const subCol of subcollectionsToWipe) {
-            await deleteCollection(adminRef.collection(subCol));
+            // THE FIX: Pass "db" as the first argument to satisfy the function signature
+            await deleteCollection(db, adminRef.collection(subCol));
         }
 
        // Reset Admin's active enrollment flags so you can cleanly re-test registration!
@@ -5607,7 +5608,7 @@ async function deleteQueryBatch(db, query, resolve) {
             isContestant: false,
             badges: [],
             role: currentRole, // Guarantees role persistence
-            cooldowns: FieldValue.delete() // THE FIX: Prevents undefined property crash
+            cooldowns: admin.firestore.FieldValue.delete() // THE FIX: Securely reference FieldValue via admin constructor
         });
 
         logger.info(`Deleted ${userDeletionPromises.length / 2} user accounts, sanitized Admin subcollections, and reset testing flags.`);
@@ -7328,7 +7329,8 @@ exports.getRoastRoomToken = onCall({
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-exports.clockIntoRoast = onCall({ enforceAppCheck: false, timeoutSeconds: 120 }, async (request) => {
+// CLOCK-IN: Starts the match instantly and returns immediately (No blocking delays)
+exports.clockIntoRoast = onCall({ enforceAppCheck: false }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
     
     const { hostId } = request.data || {};
@@ -7339,88 +7341,135 @@ exports.clockIntoRoast = onCall({ enforceAppCheck: false, timeoutSeconds: 120 },
     const arenaRef = db.collection("live_arena").doc(hostId);
     const userRef = db.collection("creators").doc(uid);
 
-    const activeHostId = hostId;
-
     try {
-            await db.runTransaction(async (transaction) => {
-                const arenaSnap = await transaction.get(arenaRef);
-                const userSnap = await transaction.get(userRef);
-                const hostRef = db.collection("creators").doc(activeHostId);
-                const hostSnap = await transaction.get(hostRef);
-                
-                if (arenaSnap.exists && arenaSnap.data()?.status !== 'idle') {
-                    throw new HttpsError('failed-precondition', 'Arena is currently occupied!');
-                }
-                if ((userSnap.data()?.roastTokens || 0) < 5) {
-                    throw new HttpsError('failed-precondition', 'Insufficient Roast Passes (Need 5).');
-                }
+        await db.runTransaction(async (transaction) => {
+            const arenaSnap = await transaction.get(arenaRef);
+            const userSnap = await transaction.get(userRef);
+            const hostRef = db.collection("creators").doc(hostId);
+            const hostSnap = await transaction.get(hostRef);
+            
+            if (arenaSnap.exists && arenaSnap.data()?.status !== 'idle') {
+                throw new HttpsError('failed-precondition', 'Arena is currently occupied!');
+            }
+            if ((userSnap.data()?.roastTokens || 0) < 5) {
+                throw new HttpsError('failed-precondition', 'Insufficient Roast Passes (Need 5).');
+            }
 
-                // 1. Deduct 5 tokens to enter
-                transaction.update(userRef, { roastTokens: admin.firestore.FieldValue.increment(-5) });
+            // Deduct 5 tokens to enter the Clock-In Queue
+            transaction.update(userRef, { roastTokens: admin.firestore.FieldValue.increment(-5) });
 
-                // 2. Route the 5 tokens value (100 GYD) directly to the Host's earnings
-                transaction.update(hostRef, { totalEarnings: admin.firestore.FieldValue.increment(100) });
-                
-                // 3. Initialize Battle State (Phase 1)
-                transaction.set(arenaRef, {
-                    status: 'suspense', // Frontend Trigger
-                    hostId: activeHostId,
-                    roasterId: uid,
-                    roasterName: userSnap.data()?.creatorName || 'NVA Contender',
-                    currentReceiver: 'none',
-                    timer: 5,
-                    fireCount: 0,
-                    tomatoCount: 0
-                }, { merge: true });
+            // Host receives 100% of the Queue Entry Fee (50 Yield Units)
+            transaction.update(hostRef, { totalEarnings: admin.firestore.FieldValue.increment(50) });
+
+            // Detailed Financial Accounting: Log Queue Entry
+            const txRef = db.collection("financial_transactions").doc();
+            transaction.set(txRef, {
+                type: "CLOCK_IN_QUEUE_FEE", senderId: uid, receiverId: hostId, amountTokens: 5, yield: 50, timestamp: admin.firestore.FieldValue.serverTimestamp()
             });
-
-        // --- THE SEQUENTIAL STOPWATCH (Server-Side) ---
-        
-        // End of Phase 1 -> Start Phase 2: Roaster's Turn (30s)
-        await delay(5000);
-        await arenaRef.update({ status: 'battle', currentReceiver: 'roaster', timer: 30 }); // Frontend Trigger
-
-        // End of Phase 2 -> Start Phase 3: Transition (5s)
-        await delay(30000);
-        await arenaRef.update({ status: 'suspense', currentReceiver: 'none', timer: 5 }); // Frontend Trigger
-
-        // End of Phase 3 -> Start Phase 4: Host's Clapback (30s)
-        await delay(5000);
-        await arenaRef.update({ status: 'battle', currentReceiver: 'host', timer: 30 }); // Frontend Trigger
-
-        // End of Phase 4 -> Phase 5: Result Calculation & Tax The Loser
-        await delay(30000);
-        
-        const finalSnap = await arenaRef.get();
-        const data = finalSnap.data();
-        const netScore = (data.fireCount || 0) - (data.tomatoCount || 0);
-        
-        // "Zero Points" Concept: If Fire dominates, the Host loses influence. If Tomatoes (boos) dominate, the Host gains influence.
-        const streakChange = netScore > 0 ? -1 : 1; 
-
-        await arenaRef.update({
-            status: 'idle',
-            roasterId: null,
-            currentReceiver: 'host',
-            timer: 0,
-            hostStreak: admin.firestore.FieldValue.increment(streakChange),
-            fireCount: 0,
-            tomatoCount: 0
+            
+            // Initialize Match & 50/50 Equilibrium Scale
+            transaction.set(arenaRef, {
+                status: 'suspense',
+                hostId: hostId,
+                roasterId: uid,
+                roasterName: userSnap.data()?.creatorName || 'NVA Contender',
+                currentReceiver: 'none',
+                timer: 5,
+                scale: 50, // 50% Equilibrium Start
+                superSaiyanMode: false,
+                splatMode: false
+                // Emoji counts NOT reset here to preserve 'Badges of Honor'
+            }, { merge: true });
         });
 
         return { success: true };
     } catch (error) {
-        console.error("Battle failed:", error);
-        await arenaRef.update({ status: 'idle', timer: 0 }).catch(() => {});
+        console.error("Clock-in failed:", error);
         throw error;
     }
 });
 
-// GIFT LOGIC: Routes money to the correct person based on the "Receiver" variable
+// PHASE TRANSITIONER: Authorized Host client triggers non-blocking phase updates
+exports.advanceArenaPhase = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+    
+    const { hostId } = request.data || {};
+    if (!hostId) throw new HttpsError('invalid-argument', 'Missing hostId parameter.');
+
+    const uid = request.auth.uid;
+    if (uid !== hostId) throw new HttpsError('permission-denied', 'Only the Host can tick the match.');
+
+    const db = admin.firestore();
+    const arenaRef = db.collection("live_arena").doc(hostId);
+    
+    await db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(arenaRef);
+        if (!snap.exists) return;
+        const data = snap.data();
+
+        // Guard: Prevent double-execution of transitions
+        if (data.timer > 0) return;
+
+        let nextStatus = 'idle';
+        let nextReceiver = 'none';
+        let nextTimer = 0;
+        let streakChange = 0;
+
+        if (data.status === 'suspense' && data.currentReceiver === 'none') {
+            if (data.roasterId && data.fireCount === 0 && data.tomatoCount === 0) {
+                // Suspense -> Roaster's Turn (30s)
+                nextStatus = 'battle';
+                nextReceiver = 'roaster';
+                nextTimer = 30;
+            } else {
+                // Suspense -> Host's Clapback (30s)
+                nextStatus = 'battle';
+                nextReceiver = 'host';
+                nextTimer = 30;
+            }
+        } else if (data.status === 'battle' && data.currentReceiver === 'roaster') {
+            // Roaster's Turn -> Transition Suspense (5s)
+            nextStatus = 'suspense';
+            nextReceiver = 'none';
+            nextTimer = 5;
+        } else if (data.status === 'battle' && data.currentReceiver === 'host') {
+            // Host's Clapback -> End of match (Reset to Idle)
+            const netScore = (data.fireCount || 0) - (data.tomatoCount || 0);
+            streakChange = netScore > 0 ? -1 : 1;
+            nextStatus = 'idle';
+            nextReceiver = 'host';
+            nextTimer = 0;
+        }
+
+        if (nextStatus === 'idle') {
+            transaction.update(arenaRef, {
+                status: 'idle',
+                roasterId: null,
+                currentReceiver: 'host',
+                timer: 0,
+                hostStreak: admin.firestore.FieldValue.increment(streakChange),
+                scale: 50, // Resets Tug-of-war for next guest
+                superSaiyanMode: false,
+                splatMode: false,
+                hostMutePenalty: false
+                // DELETED: fireCount/tomatoCount resets to persist Badges of Honor
+            });
+        } else {
+            transaction.update(arenaRef, {
+                status: nextStatus,
+                currentReceiver: nextReceiver,
+                timer: nextTimer
+            });
+        }
+    });
+
+    return { success: true };
+});
+
 exports.sendRoastReaction = onCall({ enforceAppCheck: false }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
     
-    const { reactionType, hostId } = request.data || {}; // 'fire' or 'tomato' and dynamic hostId
+    const { reactionType, hostId } = request.data || {};
     if (!hostId) throw new HttpsError('invalid-argument', 'Missing hostId parameter.');
 
     const db = admin.firestore();
@@ -7431,37 +7480,72 @@ exports.sendRoastReaction = onCall({ enforceAppCheck: false }, async (request) =
     const arenaData = arenaSnap.data();
 
     const roasterId = arenaData.roasterId;
-    const receiverRole = arenaData.currentReceiver; // 'host', 'roaster', or 'none'
+    const receiverRole = arenaData.currentReceiver;
 
-    let finalRecipientId = hostId; // Default to host during idle/suspense phases
+    let finalRecipientId = hostId;
     if (receiverRole === 'roaster') finalRecipientId = roasterId;
     if (receiverRole === 'host') finalRecipientId = hostId;
 
-    // TAX THE LOSER LOGIC:
-    // If it's a Tomato (Boo), the money is ripped away and given to the OPPONENT.
-    if (reactionType === 'tomato') {
-        if (receiverRole === 'roaster') finalRecipientId = hostId;
-        else if (receiverRole === 'host' && roasterId) finalRecipientId = roasterId; // If no roaster exists, host keeps it
+    // 5% Tug-of-War Scale Math & Emoji Tally
+    let currentScale = arenaData.scale !== undefined ? arenaData.scale : 50;
+    let updateFields = {};
+    const isTomato = reactionType === 'tomato';
+    
+    // Tomato = -5%, Positive (Fire/Laugh/Theme) = +5%
+    const scaleShift = isTomato ? -5 : 5;
+    currentScale = Math.max(0, Math.min(100, currentScale + scaleShift));
+    
+    updateFields.scale = currentScale;
+    updateFields[`${reactionType}Count`] = admin.firestore.FieldValue.increment(1);
+
+    // 100% / 0% Boundary Actions (Super Saiyan / Splat / Host Penalty)
+    if (currentScale >= 100) {
+        updateFields.guestStreak = admin.firestore.FieldValue.increment(1);
+        updateFields.scale = 50; // Reset to 50/50
+        updateFields.superSaiyanMode = 'roaster';
+    } else if (currentScale <= 0) {
+        updateFields.hostStreak = admin.firestore.FieldValue.increment(1);
+        updateFields.scale = 50; // Reset to 50/50
+        updateFields.splatMode = 'roaster'; // Triggers front-end kick/boot logic
         
-        await arenaRef.update({ tomatoCount: FieldValue.increment(1) });
-    } else {
-        await arenaRef.update({ fireCount: FieldValue.increment(1) });
+        // Host Penalty check for "That's Debatable" mode
+        if (arenaData.liveRoomType === 'debate') {
+            updateFields.hostMutePenalty = true;
+        }
     }
 
-    if (!finalRecipientId) return { success: false, message: "No active target" };
+    await arenaRef.update(updateFields);
 
-    // Transaction: Deduct 1 Pass from sender, deposit 20 GYD to recipient
     const senderRef = db.collection("creators").doc(request.auth.uid);
-    const recipientRef = db.collection("creators").doc(finalRecipientId);
+    const hostRef = db.collection("creators").doc(hostId);
+    const guestRef = roasterId ? db.collection("creators").doc(roasterId) : null;
 
     await db.runTransaction(async (t) => {
         const sDoc = await t.get(senderRef);
         if ((sDoc.data().roastTokens || 0) < 1) {
-            throw new HttpsError('failed-precondition', 'Out of tokens!');
+            throw new HttpsError('failed-precondition', 'Out of tokens! Need 1 to react.');
         }
         
-        t.update(senderRef, { roastTokens: FieldValue.increment(-1) });
-        t.update(recipientRef, { totalEarnings: FieldValue.increment(20) }); // Fair platform split
+        // 1 Token universal cost
+        t.update(senderRef, { roastTokens: admin.firestore.FieldValue.increment(-1) });
+        
+        const totalYield = 10; // 1 Token = 10 Yield Units
+
+        // Presence-Aware Financial Split
+        if (roasterId) {
+            // Arena Mode (Host + Guest): 50/50 Split
+            t.update(hostRef, { totalEarnings: admin.firestore.FieldValue.increment(totalYield / 2) });
+            t.update(guestRef, { totalEarnings: admin.firestore.FieldValue.increment(totalYield / 2) });
+            
+            const txRef = db.collection("financial_transactions").doc();
+            t.set(txRef, { type: "REACTION_SPLIT", senderId: request.auth.uid, hostId: hostId, guestId: roasterId, emoji: reactionType, amountTokens: 1, hostYield: totalYield/2, guestYield: totalYield/2, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+        } else {
+            // Solo Mode (Host Only): 100% Yield
+            t.update(hostRef, { totalEarnings: admin.firestore.FieldValue.increment(totalYield) });
+            
+            const txRef = db.collection("financial_transactions").doc();
+            t.set(txRef, { type: "REACTION_SOLO", senderId: request.auth.uid, receiverId: hostId, emoji: reactionType, amountTokens: 1, yield: totalYield, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+        }
     });
 
     return { success: true };

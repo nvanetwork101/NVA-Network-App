@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, query, orderBy, updateDoc, setDoc, deleteDoc, where } from '../firebase';
     import formatCurrency from '../utils/formatCurrency';
 
-    function AdminSiteManagerScreen({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile, allUsers }) {
+    function AdminSiteManagerScreen({ showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile, allUsers, setSelectedUserId }) {
     const [socialLinks, setSocialLinks] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -544,6 +544,26 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
         setOnConfirmationAction(() => () => {}); // Set a dummy action, as the button inside the component handles it
         setShowConfirmationModal(true);
         };
+
+        const handleAdminTestHostLive = async () => {
+            if (!creatorProfile?.uid) {
+                showMessage("Error: Admin profile UID not found.");
+                return;
+            }
+            showMessage("Igniting admin-only Live Arena...");
+            try {
+                await Promise.all([
+                    updateDoc(doc(db, "creators", creatorProfile.uid), { isLive: true, liveRoomType: 'roast' }),
+                    setDoc(doc(db, "live_arena", creatorProfile.uid), { hostId: creatorProfile.uid, status: 'idle' }, { merge: true })
+                ]);
+                if (typeof setSelectedUserId === 'function') {
+                    setSelectedUserId(creatorProfile.uid);
+                }
+                setActiveScreen('RoastRoom');
+            } catch (error) {
+                showMessage(`Test ignition failed: ${error.message}`);
+            }
+        };
     
         const handleClearOwnFeed = () => {
         setConfirmationTitle("Clear Your Personal Feed?");
@@ -789,6 +809,17 @@ import { db, functions, httpsCallable, collection, doc, getDoc, onSnapshot, quer
                     </div>
                 </div>
             </div>
+            {/* === ADMIN LIVE ARENA TESTER (HIDDEN FROM PUBLIC) === */}
+            <div className="dashboardSection" style={{ border: '2px solid #FF4500', marginTop: '20px' }}>
+                <p className="dashboardSectionTitle" style={{ color: '#FF4500' }}>🛠️ Admin Live Arena Tester</p>
+                <p className="paragraph" style={{ color: '#AAA', fontSize: '13px', marginBottom: '15px' }}>
+                    Surgically launch and enter the Live Arena under your Admin account for end-to-end sandbox testing. This bypasses all public dashboard listings.
+                </p>
+                <button className="button" onClick={handleAdminTestHostLive} style={{ backgroundColor: '#FF4500', margin: 0 }}>
+                    <span className="buttonText">🎙️ Host Test Live (Admin-Only)</span>
+                </button>
+            </div>
+
             <div className="dashboardSection" style={{ border: '2px solid #00FFFF', marginTop: '20px' }}><p className="dashboardSectionTitle">System Status</p><button className="button" onClick={handleRunDiagnostics} style={{ backgroundColor: '#008080' }} disabled={isDiagnosing}><span className="buttonText">{isDiagnosing ? 'Running...' : 'Run System Diagnostics'}</span></button>{diagnosticResults && (<div style={{ marginTop: '15px', color: '#FFF' }}>{diagnosticResults.error ? (<p style={{ color: '#DC3545' }}>Error: {diagnosticResults.error}</p>) : (<table style={{ width: '100%', borderCollapse: 'collapse' }}><tbody><tr style={{ borderBottom: '1px solid #3A3A3A' }}><td style={{ padding: '8px 0', fontWeight: 'bold' }}>Project ID:</td><td style={{ textAlign: 'right' }}>{diagnosticResults.projectID}</td></tr><tr style={{ borderBottom: '1px solid #3A3A3A' }}><td style={{ padding: '8px 0', fontWeight: 'bold' }}>Database Connectivity:</td><td style={{ textAlign: 'right', color: diagnosticResults.dbConnectivity === 'Success' ? '#00FF00' : '#DC3545', fontWeight: 'bold' }}>{diagnosticResults.dbConnectivity}</td></tr></tbody></table>)}</div>)}</div>
         </div>
     );

@@ -1279,10 +1279,31 @@ const AdminDashboardScreen = ({
                                     {homeScreenLayout?.showBoxOffice !== false ? 'Disable Box Office' : 'Enable Box Office'}
                                 </button>
                             </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#111', padding: '15px', borderRadius: '8px', border: '1px solid #222', marginTop: '10px' }}>
+                                <div>
+                                    <p style={{ margin: '0', color: '#FFD700', fontWeight: 'bold', fontSize: '15px' }}>🍿 Host Watch Party Button</p>
+                                    <p style={{ margin: '4px 0 0', color: '#888', fontSize: '12px' }}>Enable/Disable the "Host Watch Party" button in the Film Arena for all users.</p>
+                                </div>
+                                <button 
+                                    className={`adminActionButton ${homeScreenLayout?.showHostWatchParty !== false ? 'reject' : 'approve'}`}
+                                    style={{ margin: 0, minWidth: '130px' }}
+                                    onClick={async () => {
+                                        const isCurrentlyVisible = homeScreenLayout?.showHostWatchParty !== false;
+                                        showMessage(`${isCurrentlyVisible ? 'Disabling' : 'Enabling'} Host Watch Party...`);
+                                        try {
+                                            await setDoc(doc(db, "settings", "homeScreenLayout"), { showHostWatchParty: !isCurrentlyVisible }, { merge: true });
+                                            showMessage("Watch Party button toggled!");
+                                        } catch (error) { showMessage("Error updating layout."); }
+                                    }}
+                                >
+                                    {homeScreenLayout?.showHostWatchParty !== false ? 'Disable Button' : 'Enable Button'}
+                                </button>
+                            </div>
                         </section>
 
                         <AdminSiteManagerScreen 
-                            {...{showMessage, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile}} 
+                            {...{showMessage, setActiveScreen, setShowConfirmationModal, setConfirmationTitle, setConfirmationMessage, setOnConfirmationAction, creatorProfile, setSelectedUserId}} 
                             allUsers={allUsers}
                         onReconcileUsers={() => {
                             setConfirmationTitle("Reconcile Auth & Firestore Users?");

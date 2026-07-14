@@ -38,12 +38,19 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
     }, [battleState.timer, battleState.status]);
 
     useEffect(() => {
-        if (localTimer <= 0) return;
+        if (localTimer <= 0) {
+            // Trigger authoritative phase transition only if you are the Host
+            if (isHost && battleState.status !== 'idle') {
+                const advanceFunc = httpsCallable(functions, 'advanceArenaPhase');
+                advanceFunc({ hostId }).catch(() => {});
+            }
+            return;
+        }
         const interval = setInterval(() => {
             setLocalTimer(prev => Math.max(0, prev - 1));
         }, 1000);
         return () => clearInterval(interval);
-    }, [localTimer]);
+    }, [localTimer, isHost, battleState.status]);
 
     // --- AUTOMATIC AUDIO MUTING (Isolates the active speaker) ---
     useEffect(() => {
@@ -255,6 +262,35 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                 
                 .hud-warning-border { box-shadow: inset 0 0 60px 15px rgba(255, 0, 0, 0.8) !important; }
                 .shake-active { animation: screen-shake 0.3s infinite; box-shadow: inset 0 0 40px 10px rgba(255, 69, 0, 0.6); }
+                
+                /* Streak Animation FX */
+                @keyframes card-burn {
+                    0% { box-shadow: 0 0 10px #FF4500, inset 0 0 10px #FF4500; border-color: #FF4500; }
+                    50% { box-shadow: 0 0 30px #FFD700, inset 0 0 20px #FF8C00; border-color: #FFD700; }
+                    100% { box-shadow: 0 0 10px #FF4500, inset 0 0 10px #FF4500; border-color: #FF4500; }
+                }
+                @keyframes card-splat {
+                    0% { transform: scale(1); filter: sepia(50%) hue-rotate(-50deg); }
+                    50% { transform: scale(0.95); filter: sepia(80%) hue-rotate(-50deg); }
+                    100% { transform: scale(1); filter: sepia(50%) hue-rotate(-50deg); }
+                }
+                .fire-streak {
+                    animation: card-burn 1.5s infinite alternate !important;
+                    border: 3px solid #FF4500 !important;
+                }
+                .tomato-streak {
+                    animation: card-splat 1s infinite alternate !important;
+                    border: 3px solid #DC3545 !important;
+                }
+                .tomato-splat-overlay {
+                    position: absolute;
+                    inset: 0;
+                    background: url('/images/tomato-splat.png') no-repeat center;
+                    background-size: contain;
+                    pointer-events: none;
+                    z-index: 10;
+                    opacity: 0.85;
+                }
                 
                 @keyframes pulse-hud {
                     0% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
@@ -517,83 +553,81 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                             return pId === battleState.hostId || pId === battleState.roasterId;
                         });
                         
+                        const hasRoaster = !!battleState.roasterId;
+                        
                         return (
-                            <div className="video-grid" style={{ gridTemplateColumns: visibleTracks.length > 1 ? '1fr 1fr' : '1fr', gridTemplateRows: visibleTracks.length > 1 && window.innerWidth < 768 ? '1fr 1fr' : '1fr', width: '100%', height: '100%' }}>
-                                {visibleTracks.length > 0 ? visibleTracks.map((t) => {
+                            <div className="video-grid" style={{ gridTemplateColumns: hasRoaster ? '1fr 1fr' : '1fr', width: '100%', height: '100%' }}>
+                                {/* CARD 1: THE HOST */}
+                                {(() => {
+                                    let streakClass = "";
+                                    if (battleState.consecutiveFireCount >= 3 && battleState.currentReceiver === 'host') {
+                                        streakClass = "fire-streak";
+                                    } else if (battleState.consecutiveTomatoCount >= 3 && battleState.currentReceiver === 'host') {
+                                        streakClass = "tomato-streak";
+                                    }
+
                                     return (
-                                        <div key={`${t.participant.identity}-${t.source}`} className="video-cell">
-                                            <VideoTrack trackRef={t} style={{ height: '100%', width: '100%', objectFit: 'cover' }} />
+                                        <div className={`video-cell ${streakClass}`} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                            {streakClass === 'tomato-streak' && <div className="tomato-splat-overlay" />}
+                                            <div style={{ width: '120px', height: '120px', borderRadius: '50%', background: 'linear-gradient(45deg, #1a1a1a, #333)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px', border: '2px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+                                                🎙️
+                                            </div>
+                                            <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', letterSpacing: '0.05em' }}>
+                                                {hostRealName.toUpperCase()} (HOST)
+                                            </span>
                                             
-                                            {/* Renders a clean indicator with a Drop button ONLY on the Roaster's video cell */}
-                                            {t.participant.identity === battleState.roasterId && (
-                                                <div className="glass-pill" style={{ position: 'absolute', bottom: '16px', left: '16px', display: 'flex', alignItems: 'center', gap: '8px', zIndex: 60, maxWidth: '80%' }}>
-                                                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#FF4500', boxShadow: '0 0 8px #FF4500' }}></div>
-                                                    <span className="text-truncate" style={{ color: '#FFF', fontSize: '12px', fontWeight: '900' }}>
-                                                        {t.participant.name?.toUpperCase() || 'CONTENDER'}
-                                                    </span>
-                                                    {isHost && (
-                                                        <button 
-                                                            onClick={async (e) => {
-                                                                e.stopPropagation();
-                                                                try {
-                                                                    const kickFunc = httpsCallable(functions, 'kickParticipant');
-                                                                    await kickFunc({ identity: t.participant.identity });
-                                                                } catch (err) { showMessage("Kick failed."); }
-                                                            }}
-                                                            style={{ border: 'none', background: 'rgba(220,53,69,0.85)', borderRadius: '20px', color: '#FFF', padding: '3px 8px', marginLeft: '6px', fontSize: '9px', fontWeight: '900', cursor: 'pointer', textTransform: 'uppercase' }}
-                                                        >
-                                                            Drop
-                                                        </button>
-                                                    )}
-                                                </div>
+                                            {/* Authoritative Mic Activation button for Host */}
+                                            {isHost && !room?.localParticipant?.isMicrophoneEnabled && (
+                                                <button 
+                                                    onClick={async (e) => {
+                                                        e.preventDefault();
+                                                        try { await room.localParticipant.setMicrophoneEnabled(true); } 
+                                                        catch (err) { showMessage("Microphone blocked."); }
+                                                    }}
+                                                    style={{ background: '#4ADE80', color: '#000', padding: '10px 20px', borderRadius: '20px', fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', border: 'none', cursor: 'pointer', pointerEvents: 'auto', zIndex: 100 }}
+                                                >
+                                                    🎙️ ACTIVATE MIC
+                                                </button>
                                             )}
                                         </div>
                                     );
-                                }) : (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#333' }}>
-                                        <div style={{ width: '80px', height: '80px', borderRadius: '50%', border: '1px solid #333', background: 'rgba(255,255,255,0.02)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-                                            <span style={{ fontSize: '24px', opacity: 0.5 }}>🎙️</span>
-                                        </div>
-                                        <p style={{ fontWeight: '800', fontSize: '11px', letterSpacing: '0.1em', color: '#666', marginBottom: '24px' }}>AWAITING SIGNAL...</p>
-                                        
-                                        {/* Host go-live button (Required to satisfy browser getUserMedia click gesture on load) */}
-                                        {isHost && (
-                                            <button 
-                                                onClick={async (e) => {
-                                                    e.preventDefault();
-                                                    let camSuccess = false;
-                                                    try {
-                                                        await room.localParticipant.setCameraEnabled(true);
-                                                        camSuccess = true;
-                                                    } catch (err) {
-                                                        console.warn("No camera hardware found, attempting microphone only.");
-                                                    }
-                                                    try {
-                                                        await room.localParticipant.setMicrophoneEnabled(true);
-                                                    } catch (err) {
-                                                        if (!camSuccess) {
-                                                            showMessage("Hardware blocked or not found.");
-                                                        }
-                                                    }
-                                                }}
-                                                style={{ background: '#4ADE80', color: '#000', padding: '12px 24px', borderRadius: '24px', fontSize: '13px', fontWeight: '900', textTransform: 'uppercase', border: 'none', cursor: 'pointer', boxShadow: '0 4px 15px rgba(74,222,128,0.4)', pointerEvents: 'auto', zIndex: 100 }}
-                                            >
-                                                👑 START STREAMING
-                                            </button>
-                                        )}
+                                })()}
 
-                                        {/* Roaster Hardware Setup HUD overlay (Presented during the 5s warning countdown) */}
-                                        {isRoaster && battleState.status === 'suspense' && !roasterMediaChoice && (
-                                            <div className="game-hud-overlay" style={{ background: 'rgba(10, 10, 10, 0.95)', border: '2px solid #FF4500', padding: '24px', borderRadius: '16px', pointerEvents: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.8)' }}>
-                                                <h3 style={{ color: '#FFF', fontFamily: 'Impact, sans-serif', fontSize: '20px', letterSpacing: '0.05em', margin: '0 0 16px', textTransform: 'uppercase' }}>CHOOSE YOUR WEAPON</h3>
-                                                <div style={{ display: 'flex', gap: '12px' }}>
-                                                    <button onClick={() => selectRoasterHardware('both')} style={{ background: '#FF4500', color: '#FFF', border: 'none', padding: '10px 18px', borderRadius: '8px', fontWeight: '900', fontSize: '11px', cursor: 'pointer', textTransform: 'uppercase' }}>🎥 Camera & Mic</button>
-                                                    <button onClick={() => selectRoasterHardware('audio')} style={{ background: 'rgba(255,255,255,0.1)', color: '#FFF', border: '1px solid rgba(255,255,255,0.2)', padding: '10px 18px', borderRadius: '8px', fontWeight: '900', fontSize: '11px', cursor: 'pointer', textTransform: 'uppercase' }}>🎙️ Mic Only</button>
-                                                </div>
+                                {/* CARD 2: THE CHALLENGER (Only renders if a user is clocked in) */}
+                                {hasRoaster && (() => {
+                                    let streakClass = "";
+                                    if (battleState.consecutiveFireCount >= 3 && battleState.currentReceiver === 'roaster') {
+                                        streakClass = "fire-streak";
+                                    } else if (battleState.consecutiveTomatoCount >= 3 && battleState.currentReceiver === 'roaster') {
+                                        streakClass = "tomato-streak";
+                                    }
+
+                                    return (
+                                        <div className={`video-cell ${streakClass}`} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                            {streakClass === 'tomato-streak' && <div className="tomato-splat-overlay" />}
+                                            <div style={{ width: '120px', height: '120px', borderRadius: '50%', background: 'linear-gradient(45deg, #111, #222)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px', border: '2px solid #FF4500', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+                                                ⚡
                                             </div>
-                                        )}
-                                    </div>
-                                )}
+                                            <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', letterSpacing: '0.05em' }}>
+                                                {battleState.roasterName ? battleState.roasterName.toUpperCase() : 'CONTENDER'}
+                                            </span>
+
+                                            {/* Authoritative Mic Activation button for Challenger */}
+                                            {isRoaster && !room?.localParticipant?.isMicrophoneEnabled && (
+                                                <button 
+                                                    onClick={async (e) => {
+                                                        e.preventDefault();
+                                                        try { await room.localParticipant.setMicrophoneEnabled(true); } 
+                                                        catch (err) { showMessage("Microphone blocked."); }
+                                                    }}
+                                                    style={{ background: '#FF4500', color: '#FFF', padding: '10px 20px', borderRadius: '20px', fontSize: '12px', fontWeight: '900', textTransform: 'uppercase', border: 'none', cursor: 'pointer', pointerEvents: 'auto', zIndex: 100 }}
+                                                >
+                                                    🎙️ ACTIVATE MIC
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         );
                     })()}
@@ -826,7 +860,7 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                 serverUrl={LIVEKIT_URL} 
                 token={token} 
                 connect={true} 
-                video={isStreamHost || localMediaIntent}
+                video={false} // <-- FORCED AUDIO-ONLY
                 audio={isStreamHost || localMediaIntent}
                 style={{ width: '100%', height: '100%' }}
             >

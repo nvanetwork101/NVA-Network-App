@@ -6,23 +6,25 @@ import { collection, query, where, orderBy, onSnapshot } from "firebase/firestor
 const LiveDirectoryScreen = ({ setActiveScreen, currentUser, showMessage, setSelectedUserId }) => {
     const [liveCreators, setLiveCreators] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [selectedCategory, setSelectedCategory] = useState(null);
+
+    const ROOM_CATEGORIES = [
+        { id: 'shoot_shot', title: "Shoot Your Shot", icon: "💘", desc: "Dating & Matchmaking" },
+        { id: 'debate', title: "That's Debatable", icon: "⚖️", desc: "Head-to-head topical debates" },
+        { id: 'cypher', title: "The Cypher Stage", icon: "🎤", desc: "Audio-only freestyles" },
+        { id: 'roast', title: "Comedy Roast", icon: "🔥", desc: "Vocal critiques & roasts" }
+    ];
 
     useEffect(() => {
-        // Querying all active live creators, simulating Influence Rank via followerCount ordering
-        const q = query(
-            collection(db, "creators"),
-            where("isLive", "==", true),
-            orderBy("followerCount", "desc")
-        );
-        
+        const q = query(collection(db, "creators"), where("isLive", "==", true), orderBy("followerCount", "desc"));
         const unsub = onSnapshot(q, (snapshot) => {
-            const fetched = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            setLiveCreators(fetched);
+            setLiveCreators(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
             setIsLoading(false);
         });
-
         return () => unsub();
     }, []);
+
+    const filteredCreators = selectedCategory ? liveCreators.filter(c => c.liveRoomType === selectedCategory) : liveCreators;
 
     const handleJoinArena = (room) => {
         if (!currentUser) {
@@ -97,18 +99,40 @@ const LiveDirectoryScreen = ({ setActiveScreen, currentUser, showMessage, setSel
             </div>
 
             <div style={{ padding: '20px' }}>
+                {/* Category Selection Dashboard */}
+                {!selectedCategory ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+                        {ROOM_CATEGORIES.map(cat => {
+                            const count = liveCreators.filter(c => c.liveRoomType === cat.id).length;
+                            return (
+                                <div key={cat.id} onClick={() => setSelectedCategory(cat.id)} style={{ background: 'rgba(30,30,30,0.8)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px', padding: '20px', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', transition: 'transform 0.2s' }} onMouseDown={e => e.currentTarget.style.transform='scale(0.95)'} onMouseUp={e => e.currentTarget.style.transform='scale(1)'}>
+                                    <span style={{ fontSize: '40px', marginBottom: '10px' }}>{cat.icon}</span>
+                                    <h3 style={{ margin: 0, color: '#FFF', fontSize: '16px', fontWeight: '900' }}>{cat.title}</h3>
+                                    <p style={{ margin: '5px 0 10px 0', color: '#888', fontSize: '11px' }}>{cat.desc}</p>
+                                    <span style={{ background: '#FF4500', color: '#FFF', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 'bold', marginTop: '10px' }}>{count} ACTIVE</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <button onClick={() => setSelectedCategory(null)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#FFF', padding: '8px 16px', borderRadius: '20px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>← Back</button>
+                        <h2 style={{ margin: 0, color: '#FFF', fontSize: '18px' }}>{ROOM_CATEGORIES.find(c => c.id === selectedCategory)?.title}</h2>
+                    </div>
+                )}
+
                 {isLoading ? (
                     <div style={{ textAlign: 'center', color: '#666', marginTop: '40px', fontSize: '14px', fontStyle: 'italic' }}>
                         Scanning frequencies...
                     </div>
-                ) : liveCreators.length === 0 ? (
+                ) : filteredCreators.length === 0 && selectedCategory ? (
                     <div style={{ textAlign: 'center', background: 'rgba(255,255,255,0.02)', padding: '40px 20px', borderRadius: '12px', border: '1px dashed #333', marginTop: '20px' }}>
-                        <p style={{ margin: 0, color: '#888', fontSize: '14px' }}>No active broadcasts right now.</p>
+                        <p style={{ margin: 0, color: '#888', fontSize: '14px' }}>No active broadcasts in this arena.</p>
                         <p style={{ margin: '10px 0 0 0', color: '#555', fontSize: '12px' }}>Check back later or go live from your Dashboard.</p>
                     </div>
                 ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px' }}>
-                        {liveCreators.map((creator, index) => {
+                        {filteredCreators.map((creator, index) => {
                             // "IN HEAT" if a specific flag is active (future-proofing for battle status), else "IDLE"
                             const isBattleActive = creator.battleStatus === 'IN HEAT';
                             const influenceRank = index + 1; // Since query is ordered by followerCount

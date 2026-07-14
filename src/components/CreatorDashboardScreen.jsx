@@ -673,18 +673,22 @@ const CreatorDashboardScreen = ({
         if (galleryInputRef.current) galleryInputRef.current.value = null;
     };
 
-    const deleteGalleryImage = async (slot) => {
-        if (!window.confirm("Remove this image from your exhibition?")) return;
-        try {
-            const currentGallery = { ...creatorProfile.studioGallery };
-            delete currentGallery[slot];
-            const creatorRef = doc(db, "creators", currentUser.uid);
-            await updateDoc(creatorRef, { studioGallery: currentGallery });
-            setCreatorProfile(prev => ({ ...prev, studioGallery: currentGallery }));
-            showMessage("Image removed.");
-        } catch (error) {
-            showMessage(`Removal failed: ${error.message}`);
-        }
+    const deleteGalleryImage = (slot) => {
+        setConfirmationTitle("Remove Image?");
+        setConfirmationMessage("Remove this image from your exhibition? This action cannot be undone.");
+        setOnConfirmationAction(() => async () => {
+            try {
+                const currentGallery = { ...creatorProfile.studioGallery };
+                currentGallery[slot] = null; // Forces Firestore to overwrite and clear the old URL
+                const creatorRef = doc(db, "creators", currentUser.uid);
+                await updateDoc(creatorRef, { studioGallery: currentGallery });
+                setCreatorProfile(prev => ({ ...prev, studioGallery: currentGallery }));
+                showMessage("Image removed.");
+            } catch (error) {
+                showMessage(`Removal failed: ${error.message}`);
+            }
+        });
+        setShowConfirmationModal(true);
     };
 
     const handleVideoUrlChange = (e) => {
@@ -1527,7 +1531,7 @@ const CreatorDashboardScreen = ({
                                             <span style={{ color: '#FFD700', fontSize: '12px', fontWeight: 'bold' }}>Uploading...</span>
                                         ) : imgUrl ? (
                                             <>
-                                                <img src={imgUrl} alt={`Slot ${index}`} />
+                                                <img key={imgUrl} src={imgUrl} alt={`Slot ${index}`} />
                                                 <button 
                                                     onClick={(e) => { e.stopPropagation(); deleteGalleryImage(index); }}
                                                     style={{ position: 'absolute', top: '8px', right: '8px', background: 'rgba(220,53,69,0.9)', color: '#FFF', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}

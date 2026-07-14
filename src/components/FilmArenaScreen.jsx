@@ -34,10 +34,19 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
     
     // THE FIX: Removed the "isTicketed" restriction so Free events created in Admin Event Manager populate in the Arena.
     const [liveEvents, setLiveEvents] = useState([]);
+    const [homeScreenLayout, setHomeScreenLayout] = useState({});
+    
     useEffect(() => {
         const q = query(collection(db, "events")); 
         const unsub = onSnapshot(q, (snap) => {
             setLiveEvents(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+        return () => unsub();
+    }, []);
+
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, "settings", "homeScreenLayout"), (snap) => {
+            if (snap.exists()) setHomeScreenLayout(snap.data());
         });
         return () => unsub();
     }, []);
@@ -1210,7 +1219,7 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
             {/* NEW GLASSMORPHIC ACTION BAR (Host Watch Party Advert & Admin Queue) */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '12px 20px', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
                 <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-                    {currentUser && (
+                    {currentUser && homeScreenLayout?.showHostWatchParty !== false && (
                         <button 
                             onClick={() => {
                                 setOpenedFromArenaTab(false); // Flags as Watch Party request (disables custom upload)
