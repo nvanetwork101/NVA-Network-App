@@ -38,6 +38,7 @@ function MyContentLibraryScreen({
     const [customThumbnailPreview, setCustomThumbnailPreview] = useState('');
     const [autoThumbnailPreview, setAutoThumbnailPreview] = useState('');
     const [isScraping, setIsScraping] = useState(false); // Tracks auto-pulling state
+    const [showTitleEmojiPicker, setShowTitleEmojiPicker] = useState(false); // Tracks inline emoji picker state
     const thumbnailFileInputRef = useRef(null);
     
     const [availableCategories, setAvailableCategories] = useState([]);
@@ -299,6 +300,12 @@ function MyContentLibraryScreen({
 
         const getCreatorArtisticRole = () => {
             if (!creatorProfile) return 'Artist';
+            
+            // THE FIX: Immediately prioritize the verified creatorField role set on their profile [1.1.6]
+            if (creatorProfile.creatorField) {
+                return creatorProfile.creatorField;
+            }
+
             const knownRoles = ['Actor', 'Comedian', 'Designer', 'Filmmaker', 'Influencer', 'Musician', 'Poet', 'Voice Artist'];
             const searchFields = [
                 creatorProfile.talent,
@@ -524,7 +531,52 @@ function MyContentLibraryScreen({
                 <div className="glass-panel">
                     <p className="dashboardSectionTitle" style={{ color: '#FFD700', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '16px' }}>🎬 Add New Content to Library</p>
                     <div className="videoLinkSection">
-                        <div className="formGroup"><label htmlFor="contentTitle" className="formLabel">Title:</label><input type="text" id="contentTitle" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} required /></div>
+                        <div className="formGroup">
+                            <label htmlFor="contentTitle" className="formLabel">Title:</label>
+                            <div style={{ display: 'flex', alignItems: 'center', background: '#1A1A1A', border: '1px solid #333', borderRadius: '8px', padding: '4px 6px 4px 16px', gap: '8px', position: 'relative' }}>
+                                <input 
+                                    type="text" 
+                                    id="contentTitle" 
+                                    className="formInput" 
+                                    value={title} 
+                                    onChange={(e) => setTitle(e.target.value)} 
+                                    placeholder="Enter your content title..."
+                                    required 
+                                    style={{ flex: 1, background: 'transparent', border: 'none', color: '#FFF', fontSize: '13px', outline: 'none', padding: '8px 0', margin: 0 }}
+                                />
+                                
+                                {/* Inline, entertainment-focused emoji picker */}
+                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                    {showTitleEmojiPicker && (
+                                        <div style={{ position: 'absolute', bottom: '40px', right: '-10px', padding: '8px', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', background: 'rgba(26,26,26,0.95)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,215,0,0.3)', borderRadius: '12px', zIndex: 110, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
+                                            {['😌','😂','😍','😘','😎','☹️','😭','👍🏽','🙏🏽','🔥','💯','👀','💩','😈','😷'].map(emo => (
+                                                <button 
+                                                    key={emo} 
+                                                    type="button" 
+                                                    onClick={(e) => { 
+                                                        e.preventDefault(); 
+                                                        setTitle(prev => prev + emo); 
+                                                        setShowTitleEmojiPicker(false); 
+                                                    }} 
+                                                    style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', transition: 'transform 0.1s' }} 
+                                                    onMouseDown={e => e.currentTarget.style.transform='scale(0.9)'} 
+                                                    onMouseUp={e => e.currentTarget.style.transform='scale(1)'}
+                                                >
+                                                    {emo}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setShowTitleEmojiPicker(!showTitleEmojiPicker)} 
+                                        style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '0 8px', color: showTitleEmojiPicker ? '#FFD700' : '#FFF' }}
+                                    >
+                                        😀
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                         <div className="formGroup"><label htmlFor="contentDescription" className="formLabel">Description (Optional):</label><textarea id="contentDescription" className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="A brief summary of your content"></textarea></div>
                         <div className="formGroup"><label htmlFor="contentType" className="formLabel">Content Type:</label><select id="contentType" className="formInput" value={contentType} onChange={(e) => setContentType(e.target.value)} required><option value="" disabled>-- Select a Category --</option>{availableCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select></div>
                         <div className="formGroup"><label htmlFor="videoLinkInput" className="formLabel">URL:</label><input type="url" id="videoLinkInput" className="formInput" value={videoLinkInput} onChange={(e) => setVideoLinkInput(e.target.value)} placeholder="Paste your video link here" /></div>
