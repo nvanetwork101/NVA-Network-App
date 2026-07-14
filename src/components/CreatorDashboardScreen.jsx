@@ -1482,27 +1482,43 @@ const CreatorDashboardScreen = ({
                             💡 <strong style={{ color: '#FFD700' }}>Payout Policy:</strong> Minimum balance required for payout is <strong style={{ color: '#FFF' }}>10,000 GYD</strong>. Please note that creators are responsible for covering any transaction processing fees upon payout request approval.
                         </div>
 
-                        {/* --- WEEKLY TOP EARNERS LEADERBOARD (MOCK) --- */}
+                        {/* --- REAL-TIME WEEKLY TOP PERFORMERS LEADERBOARD --- */}
                         <div className="leaderboard-card">
                             <div className="leaderboard-header">
-                                <p className="leaderboard-title"><span style={{color: '#FFD700'}}>🏆</span> This Week's Top Earners</p>
+                                <p className="leaderboard-title"><span style={{color: '#FFD700'}}>🏆</span> This Week's Top Performers</p>
                                 <p className="leaderboard-subtitle">Bi-Weekly Competition</p>
                             </div>
-                            {[1, 2, 3].map((rank) => (
-                                <div key={rank} className="leaderboard-row">
-                                    <div className="supporter-info">
-                                        <div className={`rank-circle rank-${rank}`}>{rank}</div>
-                                        <span className="supporter-name">Creator {rank}</span>
+                            {leaderboardUsers.slice(0, 3).map((user, index) => {
+                                const rank = index + 1;
+                                return (
+                                    <div key={user.id} className="leaderboard-row" style={{ cursor: 'pointer' }} onClick={() => {
+                                        window.dispatchEvent(new CustomEvent('navigateToUserProfile', { detail: { userId: user.id } }));
+                                    }}>
+                                        <div className="supporter-info">
+                                            <div className={`rank-circle rank-${rank}`}>{rank}</div>
+                                            <span className="supporter-name" style={{ fontWeight: 'bold' }}>{user.creatorName || "NVA Creator"}</span>
+                                        </div>
+                                        <span className="supporter-amount" style={{ color: '#FFD700' }}>
+                                            {(user.giftsReceived || 0).toLocaleString()} 🎁
+                                        </span>
                                     </div>
-                                    <span className="supporter-amount">---</span>
-                                </div>
-                            ))}
-                            <div className="leaderboard-row" style={{background: 'rgba(255,215,0,0.1)', borderRadius: '8px', padding: '10px', marginTop: '10px', border: '1px solid rgba(255,215,0,0.3)'}}>
+                                );
+                            })}
+                            {leaderboardUsers.length === 0 && (
+                                <p style={{ color: '#666', fontSize: '12px', fontStyle: 'italic', padding: '10px 0', textAlign: 'center' }}>
+                                    Recalculating leaderboard...
+                                </p>
+                            )}
+                            <div className="leaderboard-row" style={{background: 'rgba(255,215,0,0.05)', borderRadius: '8px', padding: '10px', marginTop: '10px', border: '1px solid rgba(255,215,0,0.15)'}}>
                                 <div className="supporter-info">
-                                    <div className="rank-circle rank-other">--</div>
-                                    <span className="supporter-name" style={{color: '#FFD700'}}>You</span>
+                                    <div className="rank-circle rank-other" style={{ background: '#333', color: '#FFF' }}>
+                                        {myRank !== '--' ? myRank.replace('#', '') : '--'}
+                                    </div>
+                                    <span className="supporter-name" style={{color: '#FFD700', fontWeight: 'bold'}}>You (Your Stats)</span>
                                 </div>
-                                <span className="supporter-amount" style={{color: '#FFF'}}>$0</span>
+                                <span className="supporter-amount" style={{color: '#FFF'}}>
+                                    {(creatorProfile.giftsReceived || 0).toLocaleString()} 🎁
+                                </span>
                             </div>
                             <p style={{textAlign: 'center', fontSize: '10px', color: '#888', marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px'}}>Top performers qualify for the <strong>100K GYD</strong> bi-weekly prize</p>
                         </div>
