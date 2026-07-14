@@ -6129,7 +6129,7 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
             }
         } else if (screen === 'user' && id) {
             const docSnap = await db.doc(`creators/${id}`).get();
-            if (docSnap.exists()) {
+            if (docSnap.exists) {
                 const data = docSnap.data();
                 
                 const isGalleryView = parts[2] === 'gallery';
