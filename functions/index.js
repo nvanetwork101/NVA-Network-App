@@ -6135,10 +6135,10 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                 const isExhibitor = ['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach'].includes(data.creatorField);
 
                 if (isExhibitor && hasGallery) {
-                    // THE EXHIBITION COLLAGE PIVOT: Intercepts and serves the custom gallery hero piece
+                    // THE EXHIBITION COLLAGE PIVOT: Intercepts and serves the custom scalable SVG collage generator
                     ogTitle = `Exhibition Gallery: @${data.creatorName || 'Artist'}`;
                     ogDescription = data.bio ? `Explore the creative portfolio of @${data.creatorName}: ${data.bio}` : `Explore the creative portfolio of @${data.creatorName} on the NVA Network.`;
-                    ogImage = data.studioGallery[0] || data.studioGallery[1] || data.studioGallery[2] || data.profilePictureUrl || ogImage;
+                    ogImage = `https://us-central1-nvanetworkapp.cloudfunctions.net/generateExhibitionSvg?id=${id}`;
                 } else {
                     ogTitle = data.creatorName || "NVA Network Profile";
                     ogDescription = data.bio || ogDescription;
@@ -8635,6 +8635,75 @@ exports.requestPayout = onCall(async (request) => {
         logger.error(`Error processing payout request for ${uid}:`, error);
         if (error instanceof HttpsError) throw error;
         throw new HttpsError("internal", "An unexpected error occurred during submission.");
+    }
+});
+
+// Dynamic, infinite-resolution SVG collage card generator
+exports.generateExhibitionSvg = onRequest({ cors: true }, async (request, response) => {
+    const db = admin.firestore();
+    const { id } = request.query;
+
+    if (!id) {
+        response.status(400).send("Missing creator ID.");
+        return;
+    }
+
+    try {
+        const docSnap = await db.doc(`creators/${id}`).get();
+        if (!docSnap.exists) {
+            response.status(404).send("Creator not found.");
+            return;
+        }
+
+        const data = docSnap.data();
+        const gallery = data.studioGallery || {};
+        const creatorName = (data.creatorName || "NVA Artist").toUpperCase();
+
+        // Safe fallback placeholders for un-uploaded slots to prevent broken SVG links
+        const slot0 = gallery[0] || "https://placehold.co/550x490/1a1a1a/333?text=Exhibition+Hero";
+        const slot1 = gallery[1] || "https://placehold.co/270x235/111/222?text=Slot+1";
+        const slot2 = gallery[2] || "https://placehold.co/270x235/111/222?text=Slot+2";
+        const slot3 = gallery[3] || "https://placehold.co/270x235/111/222?text=Slot+3";
+        const slot4 = gallery[4] || "https://placehold.co/270x235/111/222?text=Slot+4";
+
+        // Generate dynamic, scalable SVG string matching your 5-image masonry grid exactly
+        const svgString = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+          <style>
+            .banner-text { font-family: system-ui, -apple-system, sans-serif; font-size: 30px; font-weight: 900; letter-spacing: 2px; }
+          </style>
+          <rect width="1200" height="630" fill="#0D0D0D"/>
+          
+          <!-- Image Masonry Layout -->
+          <image href="${slot0}" x="25" y="20" width="550" height="490" preserveAspectRatio="xMidYMid slice" clip-path="url(#corner-clip)"/>
+          <image href="${slot1}" x="600" y="20" width="270" height="235" preserveAspectRatio="xMidYMid slice" clip-path="url(#corner-clip)"/>
+          <image href="${slot2}" x="895" y="20" width="270" height="235" preserveAspectRatio="xMidYMid slice" clip-path="url(#corner-clip)"/>
+          <image href="${slot3}" x="600" y="275" width="270" height="235" preserveAspectRatio="xMidYMid slice" clip-path="url(#corner-clip)"/>
+          <image href="${slot4}" x="895" y="275" width="270" height="235" preserveAspectRatio="xMidYMid slice" clip-path="url(#corner-clip)"/>
+          
+          <!-- Gold Metallic Footer Banner -->
+          <rect x="0" y="530" width="1200" height="100" fill="url(#gold-grad)"/>
+          <text x="600" y="590" fill="#000" class="banner-text" text-anchor="middle">🎨 EXHIBITION GALLERY: @${creatorName}</text>
+          
+          <defs>
+            <clipPath id="corner-clip"><rect width="100%" height="100%" rx="16" ry="16"/></clipPath>
+            <linearGradient id="gold-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#BF953F"/>
+              <stop offset="25%" stop-color="#FCF6BA"/>
+              <stop offset="50%" stop-color="#B38728"/>
+              <stop offset="75%" stop-color="#FBF5B7"/>
+              <stop offset="100%" stop-color="#AA771C"/>
+            </linearGradient>
+          </defs>
+        </svg>`.trim();
+
+        response.set('Content-Type', 'image/svg+xml');
+        response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+        response.status(200).send(svgString);
+
+    } catch (error) {
+        logger.error(`SVG Generation failed:`, error);
+        response.status(500).send("Internal Server Error.");
     }
 });
 

@@ -676,8 +676,14 @@ const CreatorDashboardScreen = ({
     const handleShareGallery = (e) => {
         e.stopPropagation();
         if (!currentUser?.uid) return;
+        
+        // Dynamic in-app caption prompt (Keeps database profile bio completely untouched)
+        const customCaption = window.prompt("Add an optional caption to your shared exhibition link:");
+        const text = customCaption?.trim() 
+            ? `🎨 ${customCaption.trim()}` 
+            : `🎨 Check out my creative portfolio exhibition on the NVA Network!`;
+            
         const shareUrl = `${window.location.origin}/user/${currentUser.uid}`;
-        const text = `🎨 Check out my creative portfolio exhibition on the NVA Network!`;
         
         if (navigator.share) {
             navigator.share({
@@ -686,7 +692,8 @@ const CreatorDashboardScreen = ({
                 url: shareUrl
             }).catch(() => {});
         } else {
-            navigator.clipboard.writeText(shareUrl).then(() => {
+            // Append text and URL cleanly for manual copy fallbacks
+            navigator.clipboard.writeText(`${text}\n${shareUrl}`).then(() => {
                 showMessage("Exhibition link copied!");
             }).catch(() => showMessage("Failed to copy link."));
         }
