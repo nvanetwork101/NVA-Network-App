@@ -510,35 +510,49 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                 </button>
             </div>
 
-            {/* --- THE STREAK HUD (TOP CENTER, TRANSPARENT & STYLISH) --- */}
-            <div style={{ position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)', zIndex: 100, pointerEvents: 'none' }}>
-                <div className="glass-pill" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '6px 16px', border: `1px solid ${battleState.hostStreak >= 0 ? 'rgba(0,255,255,0.15)' : 'rgba(255,42,42,0.15)'}`, background: 'rgba(10, 10, 10, 0.4)', backdropFilter: 'blur(5px)', boxShadow: '0 4px 15px rgba(0,0,0,0.2)' }}>
-                    <span style={{ color: '#AAA', fontSize: '9px', fontWeight: '800', letterSpacing: '0.1em', textTransform: 'uppercase' }}>zero points streak</span>
-                    <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', fontFamily: 'monospace' }}>
-                        {battleState.hostStreak >= 0 ? `+${battleState.hostStreak}` : battleState.hostStreak}
-                    </span>
+            {/* --- TUG OF WAR SCALE & STREAK HUD --- */}
+            <div style={{ position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)', zIndex: 100, pointerEvents: 'none', width: '80%', maxWidth: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                <div className="glass-pill" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '6px 16px', border: '1px solid rgba(0,255,255,0.15)', background: 'rgba(10, 10, 10, 0.7)', backdropFilter: 'blur(5px)', boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
+                    <span style={{ color: '#FFD700', fontSize: '12px', fontWeight: '900' }}>HOST WINS: {battleState.hostStreak || 0}</span>
+                    <div style={{ width: '1px', height: '14px', background: 'rgba(255,255,255,0.15)' }}></div>
+                    <span style={{ color: '#FF4500', fontSize: '12px', fontWeight: '900' }}>GUEST WINS: {battleState.guestStreak || 0}</span>
                     {localTimer > 0 && (
                         <>
                             <div style={{ width: '1px', height: '14px', background: 'rgba(255,255,255,0.15)' }}></div>
-                            <div style={{ color: '#FFD700', fontSize: '14px', fontWeight: '900', fontFamily: 'monospace', textShadow: '0 0 10px rgba(255,215,0,0.4)' }}>
-                                00:{localTimer < 10 ? `0${localTimer}` : localTimer}
-                            </div>
+                            <div style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', fontFamily: 'monospace', textShadow: '0 0 10px rgba(255,255,255,0.5)' }}>00:{localTimer < 10 ? `0${localTimer}` : localTimer}</div>
                         </>
                     )}
                 </div>
+                
+                {/* 50/50 Balance Bar (Renders only during battle) */}
+                {battleState.roasterId && (
+                    <div style={{ width: '100%', height: '12px', background: '#111', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)', position: 'relative', boxShadow: '0 0 10px rgba(0,0,0,0.8)' }}>
+                        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${battleState.scale !== undefined ? battleState.scale : 50}%`, background: 'linear-gradient(90deg, #FF4500, #FFD700)', transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }}></div>
+                        <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: '2px', background: '#FFF', transform: 'translateX(-50%)', opacity: 0.5, boxShadow: '0 0 5px #FFF' }}></div>
+                    </div>
+                )}
             </div>
 
-            {/* --- EMOJI TOKEN COUNTS (TOP LEFT, DIRECTLY UNDER VIEW COUNT) --- */}
+            {/* --- EMOJI TOKEN COUNTS (Badges of Honor) --- */}
             <div style={{ position: 'absolute', top: '64px', left: '16px', zIndex: 100, pointerEvents: 'none' }}>
                 <div className="glass-pill" style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '8px 12px', background: 'rgba(10, 10, 10, 0.4)', backdropFilter: 'blur(5px)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 15px rgba(0,0,0,0.2)', alignItems: 'flex-start' }}>
-                    {['🔥', '😂', '💀', '🍅'].map(em => {
-                        const count = em === '🔥' ? battleState.fireCount : em === '🍅' ? battleState.tomatoCount : em === '😂' ? battleState.laughCount : battleState.skullCount;
-                        return (
-                            <span key={em} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#FFF', fontWeight: 'bold' }}>
-                                {em} <span style={{ color: '#FFD700', fontFamily: 'monospace', fontSize: '11px' }}>x{count || 0}</span>
+                    {(() => {
+                        let themeEmoji = '💀'; 
+                        if (battleState.liveRoomType === 'shoot_shot') themeEmoji = '🌹';
+                        if (battleState.liveRoomType === 'debate') themeEmoji = '💯';
+                        if (battleState.liveRoomType === 'cypher') themeEmoji = '🎤';
+                        
+                        return [
+                            { e: '🔥', c: battleState.fireCount },
+                            { e: '😂', c: battleState.laughCount },
+                            { e: themeEmoji, c: battleState.themeCount },
+                            { e: '🍅', c: battleState.tomatoCount }
+                        ].map(item => (
+                            <span key={item.e} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#FFF', fontWeight: 'bold' }}>
+                                {item.e} <span style={{ color: '#FFD700', fontFamily: 'monospace', fontSize: '11px' }}>x{item.c || 0}</span>
                             </span>
-                        );
-                    })}
+                        ));
+                    })()}
                 </div>
             </div>
 
@@ -559,18 +573,28 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                             <div className="video-grid" style={{ gridTemplateColumns: hasRoaster ? '1fr 1fr' : '1fr', width: '100%', height: '100%' }}>
                                 {/* CARD 1: THE HOST */}
                                 {(() => {
-                                    let streakClass = "";
-                                    if (battleState.consecutiveFireCount >= 3 && battleState.currentReceiver === 'host') {
-                                        streakClass = "fire-streak";
-                                    } else if (battleState.consecutiveTomatoCount >= 3 && battleState.currentReceiver === 'host') {
-                                        streakClass = "tomato-streak";
-                                    }
+                                    const isSuperSaiyan = battleState.superSaiyanMode === 'host';
+                                    const isSplatted = battleState.splatMode === 'host';
+                                    const isMuted = battleState.hostMutePenalty;
+                                    const scaleState = battleState.scale !== undefined ? battleState.scale : 50;
+                                    
+                                    // Scale-based dynamic avatar sizing
+                                    const hostDominance = 100 - scaleState; 
+                                    const avatarSize = 100 + (hostDominance / 2); // Breathes based on Tug of War
+                                    const glowIntensity = hostDominance > 70 ? '0 0 40px #FFD700' : '0 8px 32px rgba(0,0,0,0.5)';
 
                                     return (
-                                        <div className={`video-cell ${streakClass}`} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                                            {streakClass === 'tomato-streak' && <div className="tomato-splat-overlay" />}
-                                            <div style={{ width: '120px', height: '120px', borderRadius: '50%', background: 'linear-gradient(45deg, #1a1a1a, #333)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px', border: '2px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
-                                                🎙️
+                                        <div className={`video-cell ${isSuperSaiyan ? 'fire-streak' : isSplatted ? 'tomato-streak' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '15px', position: 'relative' }}>
+                                            {isSplatted && <div className="tomato-splat-overlay" />}
+                                            <div style={{ 
+                                                width: `${avatarSize}px`, height: `${avatarSize}px`, borderRadius: '50%', 
+                                                background: isSuperSaiyan ? 'linear-gradient(45deg, #FFD700, #FF4500)' : 'linear-gradient(45deg, #1a1a1a, #333)', 
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px', 
+                                                border: isSuperSaiyan ? '4px solid #FFF' : '2px solid rgba(255,255,255,0.1)', 
+                                                boxShadow: isSuperSaiyan ? '0 0 60px #FFD700, inset 0 0 20px #FFF' : glowIntensity,
+                                                transition: 'all 0.3s ease-out'
+                                            }}>
+                                                {isMuted ? '🔇' : isSuperSaiyan ? '🔥' : '🎙️'}
                                             </div>
                                             <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', letterSpacing: '0.05em' }}>
                                                 {hostRealName.toUpperCase()} (HOST)
@@ -595,18 +619,27 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
 
                                 {/* CARD 2: THE CHALLENGER (Only renders if a user is clocked in) */}
                                 {hasRoaster && (() => {
-                                    let streakClass = "";
-                                    if (battleState.consecutiveFireCount >= 3 && battleState.currentReceiver === 'roaster') {
-                                        streakClass = "fire-streak";
-                                    } else if (battleState.consecutiveTomatoCount >= 3 && battleState.currentReceiver === 'roaster') {
-                                        streakClass = "tomato-streak";
-                                    }
+                                    const isSuperSaiyan = battleState.superSaiyanMode === 'roaster';
+                                    const isSplatted = battleState.splatMode === 'roaster';
+                                    const scaleState = battleState.scale !== undefined ? battleState.scale : 50;
+                                    
+                                    // Scale-based dynamic avatar sizing
+                                    const guestDominance = scaleState;
+                                    const avatarSize = 100 + (guestDominance / 2);
+                                    const glowIntensity = guestDominance > 70 ? '0 0 40px #FFD700' : '0 8px 32px rgba(0,0,0,0.5)';
 
                                     return (
-                                        <div className={`video-cell ${streakClass}`} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                                            {streakClass === 'tomato-streak' && <div className="tomato-splat-overlay" />}
-                                            <div style={{ width: '120px', height: '120px', borderRadius: '50%', background: 'linear-gradient(45deg, #111, #222)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px', border: '2px solid #FF4500', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
-                                                ⚡
+                                        <div className={`video-cell ${isSuperSaiyan ? 'fire-streak' : isSplatted ? 'tomato-streak' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '15px', position: 'relative' }}>
+                                            {isSplatted && <div className="tomato-splat-overlay" />}
+                                            <div style={{ 
+                                                width: `${avatarSize}px`, height: `${avatarSize}px`, borderRadius: '50%', 
+                                                background: isSuperSaiyan ? 'linear-gradient(45deg, #FFD700, #FF4500)' : 'linear-gradient(45deg, #111, #222)', 
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '48px', 
+                                                border: isSuperSaiyan ? '4px solid #FFF' : '2px solid #FF4500', 
+                                                boxShadow: isSuperSaiyan ? '0 0 60px #FFD700, inset 0 0 20px #FFF' : glowIntensity,
+                                                transition: 'all 0.3s ease-out'
+                                            }}>
+                                                {isSuperSaiyan ? '🔥' : '⚡'}
                                             </div>
                                             <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', letterSpacing: '0.05em' }}>
                                                 {battleState.roasterName ? battleState.roasterName.toUpperCase() : 'CONTENDER'}
@@ -747,17 +780,24 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                 {/* 3. REACTION DOCK */}
                 <div style={{ display: 'flex', justifyContent: 'center', pointerEvents: 'auto' }}>
                     <div className="glass-pill" style={{ display: 'flex', gap: '12px', padding: '8px 16px', background: 'rgba(10,10,10,0.85)', boxShadow: '0 10px 30px rgba(0,0,0,0.6)' }}>
-                        {['🔥', '😂', '💀', '🍅'].map(emoji => (
-                            <button 
-                                key={emoji} 
-                                onClick={() => handleSendReaction(emoji)}
-                                style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '50%', cursor: 'pointer', transition: 'all 0.15s ease' }}
-                                onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(1.15)'; e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; }}
-                                onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-                            >
-                                {emoji}
-                            </button>
-                        ))}
+                        {(() => {
+                            let themeEmoji = '💀'; 
+                            if (battleState.liveRoomType === 'shoot_shot') themeEmoji = '🌹';
+                            if (battleState.liveRoomType === 'debate') themeEmoji = '💯';
+                            if (battleState.liveRoomType === 'cypher') themeEmoji = '🎤';
+                            
+                            return ['🔥', '😂', themeEmoji, '🍅'].map(emoji => (
+                                <button 
+                                    key={emoji} 
+                                    onClick={() => handleSendReaction(emoji === '🍅' ? 'tomato' : emoji === '🔥' ? 'fire' : emoji === '😂' ? 'laugh' : 'theme')}
+                                    style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '50%', cursor: 'pointer', transition: 'all 0.15s ease' }}
+                                    onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(1.15)'; e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; }}
+                                    onMouseUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+                                >
+                                    {emoji}
+                                </button>
+                            ));
+                        })()}
                     </div>
                 </div>
             </div>
@@ -777,10 +817,11 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
     // Auto-Claim: Dynamic Room Creator is instantly registered as the Host of their own stream
     useEffect(() => {
         if (currentUser && currentUser.uid === hostId) {
-            updateDoc(doc(db, "creators", currentUser.uid), { isLive: true, liveRoomType: "roast" }).catch(() => {});
-            setDoc(doc(db, "live_arena", hostId), { hostId: currentUser.uid, status: 'idle' }, { merge: true }).catch(() => {});
+            const roomType = creatorProfile?.liveRoomType || 'roast';
+            updateDoc(doc(db, "creators", currentUser.uid), { isLive: true, liveRoomType: roomType }).catch(() => {});
+            setDoc(doc(db, "live_arena", hostId), { hostId: currentUser.uid, status: 'idle', liveRoomType: roomType, scale: 50 }, { merge: true }).catch(() => {});
         }
-    }, [currentUser, hostId]);
+    }, [currentUser, hostId, creatorProfile]);
 
     useEffect(() => {
         const fetchToken = async () => {
@@ -814,12 +855,12 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                     roasterId: null,
                     currentReceiver: 'none',
                     timer: 0,
-                    hostStreak: 0,
-                    fireCount: 0,
-                    tomatoCount: 0,
-                    laughCount: 0,
-                    skullCount: 0
+                    scale: 50,
+                    superSaiyanMode: false,
+                    splatMode: false
                 });
+                // Host terminating stream completely resets the Badges of Honor
+                await updateDoc(doc(db, "live_arena", hostId), { hostStreak: 0, guestStreak: 0, fireCount: 0, tomatoCount: 0, laughCount: 0, themeCount: 0 }).catch(() => {});
                 await updateDoc(doc(db, "creators", currentUser.uid), { isLive: false, liveRoomType: null });
             } else if (isActiveRoaster) {
                 await updateDoc(doc(db, "live_arena", hostId), {
@@ -827,11 +868,10 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                     roasterId: null,
                     currentReceiver: 'host',
                     timer: 0,
-                    hostStreak: 0,
-                    fireCount: 0,
-                    tomatoCount: 0,
-                    laughCount: 0,
-                    skullCount: 0
+                    scale: 50,
+                    superSaiyanMode: false,
+                    splatMode: false
+                    // Guest exit preserves the Badges and Tally for the Host's next match
                 });
             }
         } catch (e) {

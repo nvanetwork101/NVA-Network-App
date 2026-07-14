@@ -72,6 +72,14 @@
         "function": "generateSharePreviewV2"
       },
       {
+        "source": "/CenterStage/**",
+        "function": "generateSharePreviewV2"
+      },
+      {
+        "source": "/CenterStage",
+        "function": "generateSharePreviewV2"
+      },
+      {
         "source": "!/__/**",
         "destination": "/index.html"
       }

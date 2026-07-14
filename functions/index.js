@@ -6130,9 +6130,20 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
             const docSnap = await db.doc(`creators/${id}`).get();
             if (docSnap.exists) {
                 const data = docSnap.data();
-                ogTitle = data.creatorName || "NVA Network Profile";
-                ogDescription = data.bio || ogDescription;
-                ogImage = data.profilePictureUrl || ogImage;
+                
+                const hasGallery = data.studioGallery && (data.studioGallery[0] || data.studioGallery[1] || data.studioGallery[2] || data.studioGallery[3] || data.studioGallery[4]);
+                const isExhibitor = ['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach'].includes(data.creatorField);
+
+                if (isExhibitor && hasGallery) {
+                    // THE EXHIBITION COLLAGE PIVOT: Intercepts and serves the custom gallery hero piece
+                    ogTitle = `Exhibition Gallery: @${data.creatorName || 'Artist'}`;
+                    ogDescription = data.bio ? `Explore the creative portfolio of @${data.creatorName}: ${data.bio}` : `Explore the creative portfolio of @${data.creatorName} on the NVA Network.`;
+                    ogImage = data.studioGallery[0] || data.studioGallery[1] || data.studioGallery[2] || data.profilePictureUrl || ogImage;
+                } else {
+                    ogTitle = data.creatorName || "NVA Network Profile";
+                    ogDescription = data.bio || ogDescription;
+                    ogImage = data.profilePictureUrl || ogImage;
+                }
                 debugMessage = `<!-- NVA DEBUG: Rendered user profile: ${id} -->`;
             }
       

@@ -673,6 +673,25 @@ const CreatorDashboardScreen = ({
         if (galleryInputRef.current) galleryInputRef.current.value = null;
     };
 
+    const handleShareGallery = (e) => {
+        e.stopPropagation();
+        if (!currentUser?.uid) return;
+        const shareUrl = `${window.location.origin}/user/${currentUser.uid}`;
+        const text = `🎨 Check out my creative portfolio exhibition on the NVA Network!`;
+        
+        if (navigator.share) {
+            navigator.share({
+                title: `${creatorProfile.creatorName || 'My'} Exhibition`,
+                text: text,
+                url: shareUrl
+            }).catch(() => {});
+        } else {
+            navigator.clipboard.writeText(shareUrl).then(() => {
+                showMessage("Exhibition link copied!");
+            }).catch(() => showMessage("Failed to copy link."));
+        }
+    };
+
     const deleteGalleryImage = (slot) => {
         setConfirmationTitle("Remove Image?");
         setConfirmationMessage("Remove this image from your exhibition? This action cannot be undone.");
@@ -1511,6 +1530,14 @@ const CreatorDashboardScreen = ({
                                 <p style={{ margin: 0, color: '#FFD700', fontSize: '18px', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase' }}>🎨 The Exhibition Room</p>
                                 <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '12px' }}>Your creative portfolio. Tap any slot to upload a high-quality image.</p>
                             </div>
+                            <button 
+                                onClick={handleShareGallery} 
+                                style={{ background: 'transparent', border: '1px solid #FFD700', color: '#FFD700', padding: '6px 16px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', textTransform: 'uppercase' }}
+                                onMouseOver={e => { e.currentTarget.style.backgroundColor = 'rgba(255, 215, 0, 0.1)'; }}
+                                onMouseOut={e => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                            >
+                                🔗 Share Exhibition
+                            </button>
                         </div>
                         
                         <input type="file" ref={galleryInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleGalleryFileSelect} />

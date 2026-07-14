@@ -1222,7 +1222,7 @@ function DiscoverScreen({
 
                                                         {/* Share Button (Shrunk) */}
                                                         <div style={{ transform: 'scale(0.85)', transformOrigin: 'center' }}>
-                                                            <ShareButton title={masterEventDetails.eventTitle} text={`Watch "${masterEventDetails.eventTitle}" LIVE in ${masterEventDetails.room || 'the Arena'}!`} url={'/discover'} showMessage={showMessage} />
+                                                            <ShareButton title={masterEventDetails.eventTitle} text={`Watch "${masterEventDetails.eventTitle}" LIVE in ${masterEventDetails.room || 'the Arena'}!`} url={`/content/${masterEventDetails.id}`} showMessage={showMessage} />
                                                         </div>
                                                     </div>
                                                 </div>

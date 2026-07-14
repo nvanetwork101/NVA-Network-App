@@ -1058,7 +1058,7 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
     };
 
     const handleShareReview = async (review) => {
-        const shareUrl = `${window.location.origin}/FilmArena`;
+        const shareUrl = `${window.location.origin}/content/${selectedMovie.id}`;
         const ratingEmoji = review.isCritic ? '🍅' : '🍿';
         const text = `${ratingEmoji} I gave "${selectedMovie.title}" a ${review.score}% rating!\n\n"${review.reviewText}"\n\nJoin the debate on NVA Network:`;
         
@@ -1850,7 +1850,7 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
                                             <ShareButton 
                                                 title={selectedMovie.title} 
                                                 text={`Check out "${selectedMovie.title}" on the NVA Network Film Arena!`} 
-                                                url={`/FilmArena`} 
+                                                url={`/content/${selectedMovie.id}`} 
                                                 showMessage={showMessage} 
                                             />
                                             
