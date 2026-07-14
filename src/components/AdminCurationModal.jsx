@@ -28,6 +28,8 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
         };
     }, [imageToCrop]);
 
+    const [isScraping, setIsScraping] = useState(false); // Tracks auto-pulling state
+
     useEffect(() => {
         if (imageFile) {
             const objectUrl = URL.createObjectURL(imageFile);
@@ -41,9 +43,11 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
 
         // Automated TikTok Curation Scraper Proxy
         const handlePull = async () => {
+            setIsScraping(true); // Start active scanning state
             const videoInfo = extractVideoInfo(destinationUrl);
             if (videoInfo && videoInfo.thumbnailUrl && videoInfo.thumbnailUrl !== 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA') {
                 setImagePreview(videoInfo.thumbnailUrl);
+                setIsScraping(false);
             } else if (destinationUrl.includes('tiktok.com')) {
                 try {
                     const getTikTok = httpsCallable(functions, 'getTikTokThumbnail');
@@ -53,9 +57,12 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
                     }
                 } catch (e) {
                     console.error("TikTok scrape failed:", e);
+                } finally {
+                    setIsScraping(false);
                 }
             } else {
                 setImagePreview('');
+                setIsScraping(false);
             }
         };
         handlePull();
@@ -157,7 +164,14 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
                     <label className="formLabel" style={{ color: '#FFD700', fontWeight: 'bold' }}>Upload Custom Image (Overrides Preview):</label>
                     <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" style={{ display: 'none' }} />
                     <button type="button" className="button" onClick={() => fileInputRef.current.click()} style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}><span className="buttonText">Choose Image File</span></button>
-                    {imagePreview && (<div style={{marginTop: '15px'}}><p className="formLabel">Final Preview:</p><img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '5px', border: '1px solid #333' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/200x120/555/FFF?text=No+Preview'; }} /></div>)}
+                    {imagePreview && (
+                        <div style={{marginTop: '15px'}}>
+                            <p className="formLabel" style={isScraping ? { color: '#00FFFF', animation: 'pulse 1.5s infinite' } : {}}>
+                                {isScraping ? "Scanning Link..." : "Final Preview:"}
+                            </p>
+                            <img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '5px', border: '1px solid #333', filter: isScraping ? 'brightness(0.3)' : 'none', transition: 'filter 0.3s' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/200x120/555/FFF?text=No+Preview'; }} />
+                        </div>
+                    )}
                 </div>
                 <div className="confirmationModalButtons"><button className="confirmationButton cancel" onClick={onCancel}>Cancel</button><button className="confirmationButton confirm" style={{ background: '#00FFFF', color: '#000', fontWeight: 'bold' }} onClick={handleSave} disabled={isUploading}>{isUploading ? 'Uploading...' : 'Save Link'}</button></div>
                 
@@ -341,6 +355,59 @@ function AdminCurationModal({ curationTarget, showMessage, onCancel, onSelect, c
 
     return (
         <div className="confirmationModalOverlay" style={{ zIndex: 2500, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+            <style>{`
+                /* Small Glassmorphic Cancel Pill */
+                .confirmationButton.cancel {
+                    background: rgba(220, 53, 69, 0.04) !important;
+                    border: 1px solid rgba(220, 53, 69, 0.25) !important;
+                    color: #FF4D4D !important;
+                    backdrop-filter: blur(8px) !important;
+                    -webkit-backdrop-filter: blur(8px) !important;
+                    transition: all 0.2s ease !important;
+                    font-weight: 800 !important;
+                    border-radius: 20px !important;
+                    padding: 6px 16px !important;
+                    font-size: 11px !important;
+                    text-transform: uppercase !important;
+                    letter-spacing: 0.5px !important;
+                }
+                .confirmationButton.cancel:hover {
+                    background: rgba(220, 53, 69, 0.12) !important;
+                    border-color: rgba(220, 53, 69, 0.5) !important;
+                }
+                .confirmationButton.cancel:active {
+                    background: #DC3545 !important;
+                    color: #FFF !important;
+                    box-shadow: 0 0 20px rgba(220, 53, 69, 0.6) !important;
+                    transform: scale(0.96) !important;
+                }
+
+                /* Small Glassmorphic Confirm/Save Pill */
+                .confirmationButton.confirm {
+                    background: rgba(74, 222, 128, 0.04) !important;
+                    border: 1px solid rgba(74, 222, 128, 0.25) !important;
+                    color: #4ADE80 !important;
+                    backdrop-filter: blur(8px) !important;
+                    -webkit-backdrop-filter: blur(8px) !important;
+                    transition: all 0.2s ease !important;
+                    font-weight: 800 !important;
+                    border-radius: 20px !important;
+                    padding: 6px 16px !important;
+                    font-size: 11px !important;
+                    text-transform: uppercase !important;
+                    letter-spacing: 0.5px !important;
+                }
+                .confirmationButton.confirm:hover {
+                    background: rgba(74, 222, 128, 0.12) !important;
+                    border-color: rgba(74, 222, 128, 0.5) !important;
+                }
+                .confirmationButton.confirm:active {
+                    background: #4ADE80 !important;
+                    color: #000 !important;
+                    box-shadow: 0 0 20px rgba(74, 222, 128, 0.6) !important;
+                    transform: scale(0.96) !important;
+                }
+            `}</style>
             <div className="confirmationModalContent" style={{ 
                 maxWidth: '700px', 
                 width: '90%',

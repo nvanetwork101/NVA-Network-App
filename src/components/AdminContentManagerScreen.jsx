@@ -20,6 +20,7 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
     const [customThumbnailFile, setCustomThumbnailFile] = useState(null);
     const [thumbnailPreview, setThumbnailPreview] = useState('');
     const [isUploading, setIsUploading] = useState(false);
+    const [isScraping, setIsScraping] = useState(false); // Tracks auto-pulling state
     const fileInputRef = useRef(null); 
 
     const [imageToCrop, setImageToCrop] = useState(null);
@@ -218,9 +219,11 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
         
         // Automated TikTok server-side scraper integration [1.1.2]
         const handlePull = async () => {
+            setIsScraping(true); // Start active scanning state
             const videoInfo = extractVideoInfo(mainUrl);
             if (videoInfo && videoInfo.thumbnailUrl && videoInfo.thumbnailUrl !== 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA') {
                 setThumbnailPreview(videoInfo.thumbnailUrl);
+                setIsScraping(false);
             } else if (mainUrl.includes('tiktok.com')) {
                 try {
                     const getTikTok = httpsCallable(functions, 'getTikTokThumbnail');
@@ -230,9 +233,12 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
                     }
                 } catch (e) {
                     console.error("TikTok link scrape failed:", e);
+                } finally {
+                    setIsScraping(false);
                 }
             } else {
                 setThumbnailPreview('');
+                setIsScraping(false);
             }
         };
         handlePull();
@@ -488,8 +494,10 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
                     
                     {thumbnailPreview && (
                         <div className="formGroup">
-                            <label className="formLabel">Final Thumbnail Preview:</label>
-                            <img src={thumbnailPreview} alt="Preview" style={{ maxWidth: '240px', borderRadius: '8px', marginTop: '5px', border: '1px solid #444' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/240x135/555/FFF?text=No+Preview'; }} />
+                            <label className="formLabel" style={isScraping ? { color: '#00FFFF', animation: 'pulse 1.5s infinite' } : {}}>
+                                {isScraping ? "Scanning Link..." : "Final Thumbnail Preview:"}
+                            </label>
+                            <img src={thumbnailPreview} alt="Preview" style={{ maxWidth: '240px', borderRadius: '8px', marginTop: '5px', border: '1px solid #444', filter: isScraping ? 'brightness(0.3)' : 'none', transition: 'filter 0.3s' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/240x135/555/FFF?text=No+Preview'; }} />
                         </div>
                     )}
 

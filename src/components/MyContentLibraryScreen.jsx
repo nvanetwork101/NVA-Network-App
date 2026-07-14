@@ -37,6 +37,7 @@ function MyContentLibraryScreen({
     const [customThumbnailFile, setCustomThumbnailFile] = useState(null);
     const [customThumbnailPreview, setCustomThumbnailPreview] = useState('');
     const [autoThumbnailPreview, setAutoThumbnailPreview] = useState('');
+    const [isScraping, setIsScraping] = useState(false); // Tracks auto-pulling state
     const thumbnailFileInputRef = useRef(null);
     
     const [availableCategories, setAvailableCategories] = useState([]);
@@ -90,10 +91,12 @@ function MyContentLibraryScreen({
     useEffect(() => {
         setAutoThumbnailPreview('');
         if (!videoLinkInput) return;
+        setIsScraping(true); // Trigger active scanning state
         const handler = setTimeout(async () => {
             const { thumbnailUrl } = extractVideoInfo(videoLinkInput);
             if (thumbnailUrl && thumbnailUrl !== 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA') {
                 setAutoThumbnailPreview(thumbnailUrl);
+                setIsScraping(false);
             } else if (videoLinkInput.includes('tiktok.com')) {
                 // SECURE SERVERLESS INTERCEPTOR: Bypasses client-side CORS to auto-pull TikTok thumbnails [1.1.2]
                 try {
@@ -104,9 +107,12 @@ function MyContentLibraryScreen({
                     }
                 } catch (e) {
                     console.error("TikTok link auto-scrape failed:", e);
+                } finally {
+                    setIsScraping(false);
                 }
             } else {
                 setAutoThumbnailPreview('');
+                setIsScraping(false);
             }
         }, 600);
         return () => clearTimeout(handler);
@@ -560,9 +566,11 @@ function MyContentLibraryScreen({
                                     onMouseEnter={e => { e.currentTarget.style.borderColor = '#00FFFF'; e.currentTarget.style.background = 'rgba(0,255,255,0.02)'; }}
                                     onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
                                 >
-                                    <span style={{ fontSize: '32px' }}>📷</span>
-                                    <span style={{ color: '#FFF', fontSize: '13px', fontWeight: 'bold' }}>Upload custom Image</span>
-                                    <span style={{ color: '#666', fontSize: '11px' }}>Supports JPEG, PNG, or WebP</span>
+                                    <span style={{ fontSize: '32px' }}>{isScraping ? "🔍" : "📷"}</span>
+                                    <span style={{ color: isScraping ? '#00FFFF' : '#FFF', fontSize: '13px', fontWeight: 'bold', animation: isScraping ? 'pulse 1.5s infinite' : 'none' }}>
+                                        {isScraping ? "Scanning Link..." : "Upload custom Image"}
+                                    </span>
+                                    <span style={{ color: '#666', fontSize: '11px' }}>{isScraping ? "Talking to media APIs" : "Supports JPEG, PNG, or WebP"}</span>
                                 </div>
                             )}
                         </div>
