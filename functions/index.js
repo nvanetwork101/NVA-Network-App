@@ -6072,7 +6072,8 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
     // --- 1. Define Default Meta Tags ---
     let ogTitle = "NVA Network";
     let ogDescription = "The Nexus of Viral Ascent - Discover, Compete, Connect.";
-    let ogImage = "https://firebasestorage.googleapis.com/v0/b/nvanetwork-33838.appspot.com/o/public_assets%2Fsocial_share_default.png?alt=media&token=3852c062-8173-4297-8a3a-23137d6e8779";
+    // THE FIX: Using a static path. Ensure you put 'social-share-logo.png' in your /public folder! [1]
+    let ogImage = "https://nvanetworkapp.com/social-share-logo.png";
     let debugMessage = "<!-- NVA DEBUG: Default tags were served. Path did not match a dynamic route. -->";
     
     const path = request.headers['x-original-url'] || request.path;
@@ -6128,38 +6129,37 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
             }
         } else if (screen === 'user' && id) {
             const docSnap = await db.doc(`creators/${id}`).get();
-            if (docSnap.exists) {
+            if (docSnap.exists()) {
                 const data = docSnap.data();
                 
-                const hasGallery = data.studioGallery && (data.studioGallery[0] || data.studioGallery[1] || data.studioGallery[2] || data.studioGallery[3] || data.studioGallery[4]);
-                const isExhibitor = ['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach'].includes(data.creatorField);
+                // THE FIX: Parse parameters to detect Gallery View and Custom Messages [1]
+                const fullUrlObj = new URL(request.url, `https://${request.headers.host}`);
+                const isGalleryView = fullUrlObj.searchParams.get('view') === 'gallery';
+                const customMsg = fullUrlObj.searchParams.get('msg');
 
-                if (isExhibitor && hasGallery) {
-                    // THE EXHIBITION COLLAGE PIVOT: Intercepts and serves the custom scalable SVG collage generator
-                    ogTitle = `Exhibition Gallery: @${data.creatorName || 'Artist'}`;
-                    ogDescription = data.bio ? `Explore the creative portfolio of @${data.creatorName}: ${data.bio}` : `Explore the creative portfolio of @${data.creatorName} on the NVA Network.`;
-                    ogImage = `https://us-central1-nvanetworkapp.cloudfunctions.net/generateExhibitionSvg?id=${id}`;
+                if (isGalleryView) {
+                    const gallery = data.studioGallery || {};
+                    ogTitle = `Exhibition Room: @${data.creatorName || 'Artist'}`;
+                    // 1. Inject custom message if provided on phone, otherwise use bio [1]
+                    ogDescription = customMsg || (data.bio ? `Explore the creative portfolio of @${data.creatorName}: ${data.bio}` : `Explore the creative portfolio of @${data.creatorName} on NVA Network.`);
+                    
+                    // 2. CRITICAL FIX: Use Slot 0 (JPG/PNG). Social crawlers block SVG collages [1]
+                    ogImage = gallery[0] || data.profilePictureUrl || ogImage;
                 } else {
                     ogTitle = data.creatorName || "NVA Network Profile";
                     ogDescription = data.bio || ogDescription;
                     ogImage = data.profilePictureUrl || ogImage;
                 }
-                debugMessage = `<!-- NVA DEBUG: Rendered user profile: ${id} -->`;
+                debugMessage = `<!-- NVA DEBUG: Rendered ${isGalleryView ? 'Gallery' : 'Profile'}: ${id} -->`;
             }
       
         } else if (screen === 'competition') {
             let compDocSnap;
             if (id) {
-                // If an ID is in the URL, fetch that specific competition
                 compDocSnap = await db.doc(`competitions/${id}`).get();
-                debugMessage = `<!-- NVA DEBUG: Attempting to render specific competition: ${id} -->`;
             } else {
-                // If no ID, fall back to finding the latest active competition
                 const querySnap = await db.collection("competitions").where("status", "in", ["Accepting Entries", "Live Voting"]).orderBy("createdAt", "desc").limit(1).get();
-                if (!querySnap.empty) {
-                    compDocSnap = querySnap.docs[0];
-                    debugMessage = `<!-- NVA DEBUG: No ID found, rendered latest active competition: ${compDocSnap.id} -->`;
-                }
+                if (!querySnap.empty) compDocSnap = querySnap.docs[0];
             }
             if (compDocSnap && compDocSnap.exists) {
                 const data = compDocSnap.data();
@@ -6175,12 +6175,10 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                     ogTitle = `Vote for ${data.creatorName} on NVA CenterStage!`;
                     ogDescription = `Support ${data.creatorName} in the NVA Docu-Series Challenges. Tap here to send a gift and cast your vote!`;
                     ogImage = data.profilePictureUrl || ogImage;
-                    debugMessage = `<!-- NVA DEBUG: Rendered CenterStage contestant: ${id} -->`;
                 }
             } else {
                 ogTitle = "NVA CenterStage - The Docu-Series Challenges";
                 ogDescription = "Step into the arena! Vote for your favorite actors, see who takes the crown, and send gifts to influence the leaderboard.";
-                debugMessage = `<!-- NVA DEBUG: Rendered CenterStage Main Arena -->`;
             }
         } else if (screen === 'discover') {
             const docSnap = await db.doc("settings/liveEvent").get();
@@ -6189,7 +6187,6 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                 ogTitle = data.eventTitle || "Live Premiere Event";
                 ogDescription = "Check out the latest live event on NVA Network!";
                 ogImage = data.eventImageUrl || ogImage;
-                debugMessage = `<!-- NVA DEBUG: Rendered live event: ${data.eventId} -->`;
             }
         }
 
@@ -6200,9 +6197,6 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
         logger.error(`Error fetching social preview for path '${path}':`, error);
         debugMessage = `<!-- NVA DEBUG: A database error occurred: ${error.message} -->`;
     }
-
-    // TEMPORARY DEBUG LOG: Log the final tags before they are rendered into HTML
-    logger.info(`[DEBUG SSR] FINAL TAGS`, { ogTitle, ogDescription, ogImage, finalUrl, debugMessage });
 
     const html = `
       <!DOCTYPE html>

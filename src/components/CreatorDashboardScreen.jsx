@@ -205,6 +205,7 @@ const CreatorDashboardScreen = ({
     const [isEnrollmentLoading, setIsEnrollmentLoading] = useState(true); 
     const [globalConfig, setGlobalConfig] = useState(null);
     const [isEditingProfile, setIsEditingProfile] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false); // [1]
     
     // Age Verification & Legal Consent States
     const [editDateOfBirth, setEditDateOfBirth] = useState('');
@@ -735,58 +736,24 @@ const CreatorDashboardScreen = ({
     const handleShareGallery = (e) => {
         e.stopPropagation();
         if (!currentUser?.uid) return;
+        setIsShareModalOpen(true); // Simply open the dedicated local modal [1]
+    };
 
-        setConfirmationTitle("Share Exhibition");
-        setConfirmationMessage(
-            <div style={{
-                background: `linear-gradient(135deg, ${roleColor}15 0%, rgba(20, 20, 20, 0.95) 100%)`,
-                backdropFilter: 'blur(20px)',
-                border: `1.5px solid ${roleColor}44`,
-                padding: '24px 20px',
-                borderRadius: '16px',
-                textAlign: 'left',
-                marginTop: '10px'
-            }}>
-                <p style={{ color: '#FFF', fontSize: '12px', marginBottom: '12px', fontWeight: '600' }}>
-                    Add an optional custom caption:
-                </p>
-                <div className="formGroup" style={{ marginBottom: '5px' }}>
-                    <textarea 
-                        id="share-gallery-caption-input"
-                        className="formTextarea" 
-                        rows="2"
-                        placeholder="e.g. Check out my new creative studio exhibition!" 
-                        style={{ 
-                            borderColor: roleColor, 
-                            color: '#FFF', 
-                            background: 'rgba(0, 0, 0, 0.45)', 
-                            fontSize: '13px', 
-                            minHeight: '60px',
-                            resize: 'none'
-                        }}
-                    />
-                </div>
-            </div>
-        );
+    const executeShareFinal = () => {
+        const rawMsg = shareCaption.trim();
+        // THE FIX: We pass the message in the URL (?msg=...) so the Backend Crawler can "read" it [1]
+        const encodedMsg = rawMsg ? `&msg=${encodeURIComponent(rawMsg)}` : "";
+        const shareUrl = `${window.location.origin}/user/${currentUser.uid}?view=gallery${encodedMsg}`;
         
-        setOnConfirmationAction(() => () => {
-            const inputElement = document.getElementById('share-gallery-caption-input');
-            const finalCaption = inputElement ? inputElement.value.trim() : "";
-            
-            setShowConfirmationModal(false);
-            const shareUrl = `${window.location.origin}/user/${currentUser.uid}?view=gallery#gallery`;
-            const text = finalCaption 
-                ? `🎨 ${finalCaption}` 
-                : `🎨 Check out my creative Exhibition Room on NVA Network! View my custom design gallery:`;
+        const text = `🎨 View my Exhibition Room on NVA Network:`;
 
-            if (navigator.share) {
-                navigator.share({ title: `${creatorProfile.creatorName || 'My'} Exhibition`, text, url: shareUrl }).catch(() => {});
-            } else {
-                navigator.clipboard.writeText(`${text}\n${shareUrl}`).then(() => showMessage("Link copied!")).catch(() => {});
-            }
-        });
-        
-        setShowConfirmationModal(true);
+        if (navigator.share) {
+            navigator.share({ title: `${creatorProfile.creatorName || 'My'} Exhibition`, text, url: shareUrl }).catch(() => {});
+        } else {
+            navigator.clipboard.writeText(`${text}\n${shareUrl}`).then(() => showMessage("Link copied!")).catch(() => {});
+        }
+        setIsShareModalOpen(false);
+        setShareCaption('');
     };
 
     const deleteGalleryImage = (slot) => {
@@ -1074,6 +1041,21 @@ const CreatorDashboardScreen = ({
             color: #000 !important;
             box-shadow: 0 0 25px rgba(255, 69, 0, 0.5), inset 0 0 10px rgba(0,0,0,0.2) !important;
             transform: scale(1.01);
+        }
+
+        /* --- LOCAL SHARE MODAL STYLES [1] --- */
+        .local-share-btn { 
+            flex: 1; padding: 12px; border-radius: 12px; font-size: 11px; font-weight: 900; 
+            text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: all 0.2s;
+        }
+        .local-share-btn.confirm { 
+            background: rgba(255, 215, 0, 0.08); border: 1px solid rgba(255, 215, 0, 0.3); color: #FFD700; 
+        }
+        .local-share-btn.confirm:active { 
+            background: #FFD700 !important; color: #000 !important; box-shadow: 0 0 20px #FFD700; transform: scale(0.95);
+        }
+        .local-share-btn.cancel {
+            background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); color: #888;
         }
 
         /* ===== STUDIO GALLERY (PINTEREST MASONRY) ===== */
@@ -2411,6 +2393,38 @@ const CreatorDashboardScreen = ({
                                     {isSubmittingFilm ? 'Submitting...' : 'Submit to Admin Queue'}
                                 </button>
                             </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ====== DEDICATED LOCAL SHARE MODAL (Fixed Typing & Responsive Buttons) ====== */}
+            {isShareModalOpen && (
+                <div className="modal-backdrop" style={{ zIndex: 3000 }} onClick={() => setIsShareModalOpen(false)}>
+                    <div className="modal-content" style={{ maxWidth: '420px', border: `1px solid ${roleColor}66`, background: '#0A0A0A' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <p className="modal-title" style={{ color: roleColor }}>Share Exhibition</p>
+                        </div>
+                        <div className="modal-body">
+                            <p style={{ color: '#AAA', fontSize: '12px', marginBottom: '15px', lineHeight: '1.4' }}>
+                                Add an optional custom message to your gallery link:
+                            </p>
+                            <textarea 
+                                className="formTextarea" 
+                                rows="3"
+                                autoFocus
+                                value={shareCaption}
+                                onChange={(e) => setShareCaption(e.target.value)}
+                                placeholder="e.g. Check out my new creative studio exhibition!" 
+                                style={{ 
+                                    borderColor: `${roleColor}44`, color: '#FFF', background: 'rgba(255, 255, 255, 0.02)', 
+                                    fontSize: '13px', minHeight: '80px', resize: 'none', marginBottom: '20px'
+                                }}
+                            />
+                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                <button className="local-share-btn cancel" onClick={() => setIsShareModalOpen(false)}>Cancel</button>
+                                <button className="local-share-btn confirm" onClick={executeShareFinal}>Confirm & Share</button>
+                            </div>
                         </div>
                     </div>
                 </div>
