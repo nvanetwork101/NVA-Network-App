@@ -788,9 +788,22 @@ const UserProfileScreen = ({
                         </div>
                         {/* 🛡️ ADMIN AUDIT PORTAL */}
                         {creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority' || creatorProfile.role === 'super_admin') && profile.realName && (
-                            <p style={{ fontSize: '11px', color: '#888', margin: '-4px 0 10px 0', fontStyle: 'italic', textAlign: 'center', width: '100%' }}>
-                                🛡️ Admin View • Legal Name: {profile.realName}
-                            </p>
+                            <div style={{ background: 'rgba(255, 215, 0, 0.05)', border: '1px dashed rgba(255, 215, 0, 0.3)', padding: '12px 15px', borderRadius: '12px', margin: '-4px auto 15px auto', fontSize: '11px', color: '#AAA', maxWidth: '320px', textAlign: 'left', lineHeight: '1.4' }}>
+                                <p style={{ margin: '0 0 6px 0', color: '#FFD700', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🛡️ Private Admin Verification Portal</p>
+                                <div><span style={{ color: '#888' }}>Verified Legal Name:</span> <strong style={{ color: '#FFF' }}>{profile.realName}</strong></div>
+                                {profile.dateOfBirth && (
+                                    <div style={{ marginTop: '2px' }}><span style={{ color: '#888' }}>Date of Birth:</span> <strong style={{ color: '#FFF' }}>{profile.dateOfBirth}</strong> (Age: {(() => {
+                                        const today = new Date();
+                                        const birthDate = new Date(profile.dateOfBirth);
+                                        let calculatedAge = today.getFullYear() - birthDate.getFullYear();
+                                        const m = today.getMonth() - birthDate.getMonth();
+                                        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                                            calculatedAge--;
+                                        }
+                                        return calculatedAge;
+                                    })()})</div>
+                                )}
+                            </div>
                         )}
                         <p style={{ color: '#AAA', fontSize: '13px', maxWidth: '85%', margin: '0 auto 10px auto', lineHeight: '1.4' }}>
                             {profile.bio || "Welcome to my profile! Supporting the arts."}

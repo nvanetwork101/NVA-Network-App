@@ -205,6 +205,11 @@ const CreatorDashboardScreen = ({
     const [isEnrollmentLoading, setIsEnrollmentLoading] = useState(true); 
     const [globalConfig, setGlobalConfig] = useState(null);
     const [isEditingProfile, setIsEditingProfile] = useState(false);
+    
+    // Age Verification & Legal Consent States
+    const [editDateOfBirth, setEditDateOfBirth] = useState('');
+    const [hasAcceptedLegalTerms, setHasAcceptedLegalTerms] = useState(false);
+    const [shareCaption, setShareCaption] = useState(''); // Hoisted for global modal access
     const [isTokenVaultOpen, setIsTokenVaultOpen] = useState(false); // NEW: Shop Toggle
     const [payoutHistory, setPayoutHistory] = useState([]); // THE FIX: Moved to top level
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false); // THE FIX: Moved to top level
@@ -405,6 +410,11 @@ const CreatorDashboardScreen = ({
     // Opens advanced Creator tools based on chosen field, enrollment, or admin overrides
     const hasCreatorAccess = useMemo(() => {
         if (isAdminOrAuthority) return true;
+        
+        // Strict Gatekeeper: Creators must record a legal name and birthdate to unlock payouts
+        const hasVerifiedIdentity = !!creatorProfile?.realName && !!creatorProfile?.dateOfBirth;
+        if (!hasVerifiedIdentity) return false;
+
         if (enrollmentStatus?.status === 'approved') return true;
         if (creatorProfile?.creatorField) return true; // Unlocked if they chose a specific field
         if (creatorProfile?.isContestant || creatorProfile?.isFilmClub) return true;
@@ -545,9 +555,11 @@ const CreatorDashboardScreen = ({
         if (creatorProfile) {
             setEditCreatorName(creatorProfile.creatorName || '');
             setEditRealName(creatorProfile.realName || ''); // Syncs Legal Real Name
+            setEditDateOfBirth(creatorProfile.dateOfBirth || ''); // Syncs Date of Birth
             setEditBio(creatorProfile.bio || '');
             setEditCreatorField(creatorProfile.creatorField || '');
             setEditExistingWorkLink(creatorProfile.existingWorkLink || '');
+            setHasAcceptedLegalTerms(false); // Reset checkbox state on re-entry
         }
     }, [creatorProfile]);
 
@@ -570,9 +582,23 @@ const CreatorDashboardScreen = ({
             const isStaff = currentRole === 'admin' || currentRole === 'authority';
             const newRole = isStaff ? currentRole : (isUpgradingToCreator ? 'creator' : 'user');
 
+            // Calculate exact integer age securely for database storage
+            let ageVal = null;
+            if (editDateOfBirth) {
+                const today = new Date();
+                const birthDate = new Date(editDateOfBirth);
+                ageVal = today.getFullYear() - birthDate.getFullYear();
+                const m = today.getMonth() - birthDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                    ageVal--;
+                }
+            }
+
             await updateDoc(creatorRef, { 
                 creatorName: editCreatorName, 
                 realName: editRealName, // Saves private legal name
+                dateOfBirth: editDateOfBirth || null,
+                age: ageVal,
                 bio: editBio, 
                 creatorField: editCreatorField, 
                 role: newRole, 
@@ -584,6 +610,8 @@ const CreatorDashboardScreen = ({
                 ...prev, 
                 creatorName: editCreatorName, 
                 realName: editRealName, // Syncs private legal name
+                dateOfBirth: editDateOfBirth || null,
+                age: ageVal,
                 bio: editBio, 
                 creatorField: editCreatorField, 
                 role: newRole, 
@@ -600,7 +628,38 @@ const CreatorDashboardScreen = ({
     };
 
     const handleSaveProfile = async () => { 
-        if (!editCreatorName) { showMessage("Creator name cannot be empty."); return; } 
+        if (!editCreatorName.trim()) { showMessage("Artist/Stage Name cannot be empty."); return; } 
+        
+        const isUpgradingToCreator = !!editCreatorField;
+        if (isUpgradingToCreator) {
+            if (!editRealName.trim()) {
+                showMessage("Legal Real Name is mandatory to unlock creator roles.");
+                return;
+            }
+            if (!editDateOfBirth) {
+                showMessage("Date of Birth is mandatory to verify age requirements.");
+                return;
+            }
+            
+            // Process exact age evaluation
+            const today = new Date();
+            const birthDate = new Date(editDateOfBirth);
+            let calculatedAge = today.getFullYear() - birthDate.getFullYear();
+            const m = today.getMonth() - birthDate.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+                calculatedAge--;
+            }
+            
+            if (calculatedAge < 18) {
+                showMessage("CRITICAL ERROR: You must be at least 18 years old to unlock monetization and creator privileges.");
+                return;
+            }
+            
+            if (!hasAcceptedLegalTerms) {
+                showMessage("You must agree to the Terms of Service & certify your information is true before saving.");
+                return;
+            }
+        }
         
         // Intercept save if they are selecting or changing their creator field
         if (editCreatorField !== (creatorProfile.creatorField || '')) {
@@ -676,27 +735,58 @@ const CreatorDashboardScreen = ({
     const handleShareGallery = (e) => {
         e.stopPropagation();
         if (!currentUser?.uid) return;
+
+        setConfirmationTitle("Share Exhibition");
+        setConfirmationMessage(
+            <div style={{
+                background: `linear-gradient(135deg, ${roleColor}15 0%, rgba(20, 20, 20, 0.95) 100%)`,
+                backdropFilter: 'blur(20px)',
+                border: `1.5px solid ${roleColor}44`,
+                padding: '24px 20px',
+                borderRadius: '16px',
+                textAlign: 'left',
+                marginTop: '10px'
+            }}>
+                <p style={{ color: '#FFF', fontSize: '12px', marginBottom: '12px', fontWeight: '600' }}>
+                    Add an optional custom caption:
+                </p>
+                <div className="formGroup" style={{ marginBottom: '5px' }}>
+                    <textarea 
+                        id="share-gallery-caption-input"
+                        className="formTextarea" 
+                        rows="2"
+                        placeholder="e.g. Check out my new creative studio exhibition!" 
+                        style={{ 
+                            borderColor: roleColor, 
+                            color: '#FFF', 
+                            background: 'rgba(0, 0, 0, 0.45)', 
+                            fontSize: '13px', 
+                            minHeight: '60px',
+                            resize: 'none'
+                        }}
+                    />
+                </div>
+            </div>
+        );
         
-        // Dynamic in-app caption prompt (Keeps database profile bio completely untouched)
-        const customCaption = window.prompt("Add an optional caption to your shared exhibition link:");
-        const text = customCaption?.trim() 
-            ? `🎨 ${customCaption.trim()}` 
-            : `🎨 Check out my creative portfolio exhibition on the NVA Network!`;
+        setOnConfirmationAction(() => () => {
+            const inputElement = document.getElementById('share-gallery-caption-input');
+            const finalCaption = inputElement ? inputElement.value.trim() : "";
             
-        const shareUrl = `${window.location.origin}/user/${currentUser.uid}`;
+            setShowConfirmationModal(false);
+            const shareUrl = `${window.location.origin}/user/${currentUser.uid}?view=gallery#gallery`;
+            const text = finalCaption 
+                ? `🎨 ${finalCaption}` 
+                : `🎨 Check out my creative Exhibition Room on NVA Network! View my custom design gallery:`;
+
+            if (navigator.share) {
+                navigator.share({ title: `${creatorProfile.creatorName || 'My'} Exhibition`, text, url: shareUrl }).catch(() => {});
+            } else {
+                navigator.clipboard.writeText(`${text}\n${shareUrl}`).then(() => showMessage("Link copied!")).catch(() => {});
+            }
+        });
         
-        if (navigator.share) {
-            navigator.share({
-                title: `${creatorProfile.creatorName || 'My'} Exhibition`,
-                text: text,
-                url: shareUrl
-            }).catch(() => {});
-        } else {
-            // Append text and URL cleanly for manual copy fallbacks
-            navigator.clipboard.writeText(`${text}\n${shareUrl}`).then(() => {
-                showMessage("Exhibition link copied!");
-            }).catch(() => showMessage("Failed to copy link."));
-        }
+        setShowConfirmationModal(true);
     };
 
     const deleteGalleryImage = (slot) => {
@@ -705,7 +795,7 @@ const CreatorDashboardScreen = ({
         setOnConfirmationAction(() => async () => {
             try {
                 const currentGallery = { ...creatorProfile.studioGallery };
-                currentGallery[slot] = null; // Forces Firestore to overwrite and clear the old URL
+                currentGallery[slot] = null; 
                 const creatorRef = doc(db, "creators", currentUser.uid);
                 await updateDoc(creatorRef, { studioGallery: currentGallery });
                 setCreatorProfile(prev => ({ ...prev, studioGallery: currentGallery }));
@@ -748,74 +838,51 @@ const CreatorDashboardScreen = ({
 
     const handleFilmSubmit = async (e) => {
         e.preventDefault();
-        if (!filmForm.posterUrl) return showMessage("A movie poster is mandatory. Please upload one or provide a video link that auto-pulls a thumbnail.");
+        if (!filmForm.posterUrl) return showMessage("A movie poster is mandatory.");
         if (!filmForm.type) return showMessage("Please select a release strategy.");
-        if (filmForm.type === 'premiere' && !filmForm.premiereDate) return showMessage("Please select a Premiere Date/Time.");
-        if (filmForm.type === 'premiere' && !filmForm.room) return showMessage("Please select a Virtual Room.");
         
         setIsSubmittingFilm(true);
         try {
-            // THE FIX: Enforce 3-hour Timeslot Locking for Original Premieres
             if (filmForm.type === 'premiere') {
                 const reqTime = new Date(filmForm.premiereDate).getTime();
                 const threeHours = 3 * 60 * 60 * 1000;
-                
-                // Check Live Movies
                 const qMovies = query(collection(db, "movies"), where("room", "==", filmForm.room));
                 const snapMovies = await getDocs(qMovies);
                 for (let d of snapMovies.docs) {
                     const data = d.data();
                     if (data.premiereDate && Math.abs(new Date(data.premiereDate).getTime() - reqTime) < threeHours && d.id !== editingFilmId) {
                         setIsSubmittingFilm(false);
-                        return showMessage(`❌ ${filmForm.room} is already booked within 3 hours of that time.`);
-                    }
-                }
-                // Check Pending Suggestions
-                const qSugg = query(collection(db, "movieSuggestions"), where("room", "==", filmForm.room), where("status", "==", "pending"));
-                const snapSugg = await getDocs(qSugg);
-                for (let d of snapSugg.docs) {
-                    const data = d.data();
-                    if (data.premiereDate && Math.abs(new Date(data.premiereDate).getTime() - reqTime) < threeHours && d.id !== editingFilmId) {
-                        setIsSubmittingFilm(false);
-                        return showMessage(`❌ ${filmForm.room} is already pending booking within 3 hours of that time.`);
+                        return showMessage(`❌ Room is booked.`);
                     }
                 }
             }
 
             if (editingFilmId) {
-                // IT'S AN EDIT
                 if (filmForm.type === originalFilmType || filmForm.type === 'free') {
-                    // Instant Edit: Metadata only, or downgrading to a Free Showcase (No admin approval needed)
                     await updateDoc(doc(db, "movies", editingFilmId), {
                         title: filmForm.title, genre: filmForm.genre, synopsis: filmForm.synopsis,
                         credits: filmForm.credits, videoUrl: filmForm.videoUrl, trailerUrl: filmForm.trailerUrl || null, posterUrl: filmForm.posterUrl,
                         type: filmForm.type, premiereDate: filmForm.premiereDate || null, room: filmForm.room || 'Room 1'
                     });
-                    showMessage("Film details updated instantly!");
+                    showMessage("Details updated!");
                 } else {
-                    // Monetization Trigger: Trying to upgrade to Donations/Premiere requires Admin Re-Approval
                     await addDoc(collection(db, "movieSuggestions"), {
                         ...filmForm, creatorId: currentUser.uid, suggestedBy: currentUser.uid,
-                        suggestedByName: creatorProfile.creatorName, isCustomProduction: true, category: "custom",
-                        status: "pending", timestamp: new Date().toISOString()
+                        suggestedByName: creatorProfile.creatorName, status: "pending", timestamp: new Date().toISOString()
                     });
-                    await deleteDoc(doc(db, "movies", editingFilmId)); // Pulled from Live Arena
-                    showMessage("Monetization requested! Film removed from live Arena and sent back to Admin Queue for approval.");
+                    await deleteDoc(doc(db, "movies", editingFilmId));
+                    showMessage("Monetization requested!");
                 }
             } else {
-                // IT'S A NEW SUBMISSION
                 await addDoc(collection(db, "movieSuggestions"), {
                     ...filmForm, creatorId: currentUser.uid, suggestedBy: currentUser.uid,
-                    suggestedByName: creatorProfile.creatorName, isCustomProduction: true, category: "custom",
-                    status: "pending", timestamp: new Date().toISOString()
+                    suggestedByName: creatorProfile.creatorName, status: "pending", timestamp: new Date().toISOString()
                 });
-                showMessage("Film successfully submitted to the Admin Queue!");
+                showMessage("Submitted to Admin Queue!");
             }
-            
             setShowFilmOfficeModal(false);
             setEditingFilmId(null);
-            setOriginalFilmType(null);
-            setFilmForm({ title: '', genre: 'Drama', synopsis: '', credits: '', videoUrl: '', trailerUrl: '', posterUrl: '', type: '', premiereDate: '', room: 'Room 1', ticketPrice: '5.00' }); // Added trailerUrl
+            setFilmForm({ title: '', genre: 'Drama', synopsis: '', credits: '', videoUrl: '', trailerUrl: '', posterUrl: '', type: '', premiereDate: '', room: 'Room 1', ticketPrice: '5.00' });
         } catch (error) {
             showMessage(`Submission failed: ${error.message}`);
         } finally {
@@ -823,47 +890,35 @@ const CreatorDashboardScreen = ({
         }
     };
 
-    // --- HANDLER for user account deletion ---
     const handleDeleteAccount = async () => {
         setIsDeleting(true);
         showMessage("Processing account deletion...");
         try {
             const deleteOwnAccount = httpsCallable(functions, 'deleteOwnAccount');
             await deleteOwnAccount();
-            // No need to show a success message here. The onAuthStateChanged listener in App.jsx
-            // will detect the user deletion, log them out, and redirect them automatically.
         } catch (error) {
             showMessage(`Error: ${error.message}`);
-            setIsDeleting(false); // Only reset on error
+            setIsDeleting(false);
         }
     };
 
-    // THE PREMIERE SHIELD: Persistent 72-hour lock after premiere start (Moved to Top Level) [1]
     const hasActiveOrUpcomingPremiere = useMemo(() => {
-        // 1. Check live films in the Arena
         const liveLock = myArenaFilms.some(film => {
             if (film.type !== 'premiere' || !film.premiereDate) return false;
             const premiereTime = new Date(film.premiereDate).getTime();
-            const lockDuration = 72 * 60 * 60 * 1000; // 72 Hours
+            const lockDuration = 72 * 60 * 60 * 1000;
             return Date.now() < (premiereTime + lockDuration);
         });
-
-        // 2. Check persistent lock on profile (if film was deleted)
         const profileLockTime = creatorProfile?.payoutLockUntil ? (creatorProfile.payoutLockUntil.toDate ? creatorProfile.payoutLockUntil.toDate().getTime() : new Date(creatorProfile.payoutLockUntil).getTime()) : 0;
-        const profileLock = Date.now() < profileLockTime;
-
-        return liveLock || profileLock;
+        return liveLock || (Date.now() < profileLockTime);
     }, [myArenaFilms, creatorProfile?.payoutLockUntil]);
 
-    // Correct Hook Order: Define subExpiryData before any conditional early returns [1]
     const subExpiryData = useMemo(() => {
-        // EXEMPTION: Gold Club members do not see renewal warnings
         if (!creatorProfile?.subscriptionExpiresAt || !creatorProfile?.isFilmClub || creatorProfile?.badges?.includes("Gold Club")) return null;
         const expiry = new Date(creatorProfile.subscriptionExpiresAt).getTime();
         const now = Date.now();
         const diffDays = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
         const graceDays = Math.ceil(((expiry + (3 * 24 * 60 * 60 * 1000)) - now) / (1000 * 60 * 60 * 24));
-        
         return { diffDays, graceDays, isExpired: now > expiry, expiryStatus: now > expiry ? 'expired' : 'warning' };
     }, [creatorProfile]);
 
@@ -873,6 +928,12 @@ const CreatorDashboardScreen = ({
 
     // --- RENDER ---
     const modernButtonStyles = `
+        /* --- MODAL BUTTON MODERNIZATION --- */
+        .confirmationButton { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 12px !important; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 900 !important; font-size: 11px !important; padding: 10px 15px !important; flex: 1; min-width: 120px; }
+        .confirmationModalButtons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        .confirmationButton.confirm { background: rgba(255, 215, 0, 0.1) !important; border: 1px solid rgba(255, 215, 0, 0.3) !important; color: #FFD700 !important; backdrop-filter: blur(10px); }
+        .confirmationButton.confirm:hover { background: rgba(255, 215, 0, 0.2) !important; border-color: #FFD700 !important; }
+        .confirmationButton.confirm:active { background: #FFD700 !important; color: #000 !important; box-shadow: 0 0 30px rgba(255, 215, 0, 0.5) !important; transform: scale(0.95); }
         /* --- REWARDS & UI STYLES --- */
         .rewards-stats-card { background: rgba(30, 30, 30, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 20px; display: flex; justify-content: space-between; margin-bottom: 24px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
         .rewards-stat-col { text-align: center; flex: 1; border-right: 1px solid rgba(255, 255, 255, 0.1); }
@@ -925,6 +986,23 @@ const CreatorDashboardScreen = ({
         .profile-edit-button.save:hover { background-color: rgba(255, 215, 0, 0.1); box-shadow: 0 0 8px rgba(255, 215, 0, 0.5); }
         .profile-edit-button.cancel { border: 1px solid #555; color: #AAA; }
         .profile-edit-button.cancel:hover { background-color: #333; border-color: #777; color: #FFF; }
+
+        /* --- MODAL BUTTON MODERNIZATION --- */
+        .confirmationButton { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 12px !important; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 900 !important; font-size: 10px !important; padding: 10px 15px !important; flex: 1; min-width: 120px; }
+        .confirmationModalButtons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+        .confirmationButton.confirm { 
+            background: rgba(255, 215, 0, 0.1) !important; 
+            border: 1px solid rgba(255, 215, 0, 0.3) !important; 
+            color: #FFD700 !important; 
+            backdrop-filter: blur(10px);
+        }
+        .confirmationButton.confirm:hover { background: rgba(255, 215, 0, 0.2) !important; border-color: #FFD700 !important; }
+        .confirmationButton.confirm:active { 
+            background: #FFD700 !important; 
+            color: #000 !important; 
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.5) !important;
+            transform: scale(0.95);
+        }
 
         /* --- CINEMATIC MY HUB UI STYLES --- */
         .glass-panel {
@@ -1101,7 +1179,30 @@ const CreatorDashboardScreen = ({
                                 <div className="formGroup">
                                     <label htmlFor="editRealName" className="formLabel">Legal Real Name (First & Last Name):</label>
                                     <p style={{ color: '#888', fontSize: '11px', margin: '0 0 6px 0' }}>Strictly used for private, bank-grade Mobile Money Guyana (MMG) payout verification. This remains completely hidden from the public.</p>
-                                    <input type="text" id="editRealName" className="formInput" value={editRealName || ''} onChange={(e) => setEditRealName(e.target.value)} placeholder="e.g. John Doe" />
+                                    <input 
+                                        type="text" 
+                                        id="editRealName" 
+                                        className="formInput" 
+                                        value={editRealName || ''} 
+                                        onChange={(e) => setEditRealName(e.target.value)} 
+                                        placeholder="e.g. John Doe" 
+                                        disabled={!!creatorProfile.realName}
+                                        style={!!creatorProfile.realName ? { backgroundColor: '#333', color: '#888', cursor: 'not-allowed' } : {}}
+                                    />
+                                </div>
+                                <div className="formGroup">
+                                    <label htmlFor="editDateOfBirth" className="formLabel">Date of Birth:</label>
+                                    <p style={{ color: '#888', fontSize: '11px', margin: '0 0 6px 0' }}>Mandatory. Strictly used to verify legal age requirements (18+) for receiving payouts [1.1.6].</p>
+                                    <input 
+                                        type="date" 
+                                        id="editDateOfBirth" 
+                                        className="formInput" 
+                                        value={editDateOfBirth || ''} 
+                                        onChange={(e) => setEditDateOfBirth(e.target.value)} 
+                                        onClick={(e) => !creatorProfile.dateOfBirth && e.target.showPicker && e.target.showPicker()} 
+                                        disabled={!!creatorProfile.dateOfBirth}
+                                        style={!!creatorProfile.dateOfBirth ? { backgroundColor: '#333', color: '#888', cursor: 'not-allowed' } : {}}
+                                    />
                                 </div>
                                 <div className="formGroup"><label htmlFor="editBio" className="formLabel">Bio:</label><textarea id="editBio" className="formTextarea" value={editBio || ''} onChange={(e) => setEditBio(e.target.value)}></textarea></div>
                                 <div className="formGroup">
@@ -1126,6 +1227,21 @@ const CreatorDashboardScreen = ({
                                     </p>
                                 </div>
                                 <div className="formGroup"><label htmlFor="editExistingWork" className="formLabel">External Link (Optional):</label><input type="text" id="editExistingWork" className="formInput" value={editExistingWorkLink || ''} onChange={(e) => setEditExistingWorkLink(e.target.value)} placeholder="e.g., instagram.com/mywork" /></div>
+                                
+                                {editCreatorField && (!creatorProfile.realName || !creatorProfile.dateOfBirth) && (
+                                    <div className="formGroup" style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginTop: '15px', background: 'rgba(255,215,0,0.05)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,215,0,0.15)' }}>
+                                        <input 
+                                            type="checkbox" 
+                                            id="legalConsentCheck" 
+                                            checked={hasAcceptedLegalTerms} 
+                                            onChange={(e) => setHasAcceptedLegalTerms(e.target.checked)} 
+                                            style={{ marginTop: '4px', cursor: 'pointer', accentColor: '#FFD700' }} 
+                                        />
+                                        <label htmlFor="legalConsentCheck" style={{ fontSize: '11px', color: '#DDD', cursor: 'pointer', lineHeight: '1.4' }}>
+                                            I hereby solemnly declare and affirm that the legal real name and date of birth provided above are completely true, accurate, and correct. I acknowledge and agree that providing false identity information constitutes a violation of the NVA Network Terms of Service and will result in the immediate forfeiture of all platform earnings and permanent account termination.
+                                        </label>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <>
