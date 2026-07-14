@@ -377,6 +377,9 @@ function App() {
                 break;
               case 'user': 
                 if (id) { 
+                   if (parts[2] === 'gallery') {
+                       window.history.replaceState({}, document.title, `/user/${id}?view=gallery`);
+                   }
                    if (user && id === user.uid) { setActiveScreen('CreatorDashboard'); } 
                    else { setSelectedUserId(id); setActiveScreen('UserProfile'); } 
                 } 

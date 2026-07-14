@@ -6132,18 +6132,12 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 
-                // THE FIX: Parse parameters to detect Gallery View and Custom Messages [1]
-                const fullUrlObj = new URL(request.url, `https://${request.headers.host}`);
-                const isGalleryView = fullUrlObj.searchParams.get('view') === 'gallery';
-                const customMsg = fullUrlObj.searchParams.get('msg');
+                const isGalleryView = parts[2] === 'gallery';
 
                 if (isGalleryView) {
                     const gallery = data.studioGallery || {};
                     ogTitle = `Exhibition Room: @${data.creatorName || 'Artist'}`;
-                    // 1. Inject custom message if provided on phone, otherwise use bio [1]
-                    ogDescription = customMsg || (data.bio ? `Explore the creative portfolio of @${data.creatorName}: ${data.bio}` : `Explore the creative portfolio of @${data.creatorName} on NVA Network.`);
-                    
-                    // 2. CRITICAL FIX: Use Slot 0 (JPG/PNG). Social crawlers block SVG collages [1]
+                    ogDescription = data.bio ? `Explore the creative portfolio of @${data.creatorName}: ${data.bio}` : `Explore the creative portfolio of @${data.creatorName} on NVA Network.`;
                     ogImage = gallery[0] || data.profilePictureUrl || ogImage;
                 } else {
                     ogTitle = data.creatorName || "NVA Network Profile";
