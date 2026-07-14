@@ -8695,4 +8695,22 @@ exports.generateExhibitionSvg = onRequest({ cors: true }, async (request, respon
     }
 });
 
+// Server-Side TikTok oEmbed Scraper Proxy (Bypasses Browser CORS limits)
+exports.getTikTokThumbnail = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+    
+    const { url } = request.data || {};
+    if (!url) throw new HttpsError('invalid-argument', 'Missing url parameter.');
+
+    try {
+        const response = await fetch(`https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`);
+        if (!response.ok) throw new Error("TikTok oEmbed request failed.");
+        
+        const data = await response.json();
+        return { thumbnailUrl: data.thumbnail_url || null };
+    } catch (error) {
+        console.error("TikTok Scraper Error:", error.message);
+        return { thumbnailUrl: null };
+    }
+});
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---

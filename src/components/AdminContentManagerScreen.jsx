@@ -215,12 +215,27 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
             setThumbnailPreview('');
             return;
         }
-        const videoInfo = extractVideoInfo(mainUrl);
-        if (videoInfo && videoInfo.thumbnailUrl) {
-            setThumbnailPreview(videoInfo.thumbnailUrl);
-        } else {
-            setThumbnailPreview('');
-        }
+        
+        // Automated TikTok server-side scraper integration [1.1.2]
+        const handlePull = async () => {
+            const videoInfo = extractVideoInfo(mainUrl);
+            if (videoInfo && videoInfo.thumbnailUrl && videoInfo.thumbnailUrl !== 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA') {
+                setThumbnailPreview(videoInfo.thumbnailUrl);
+            } else if (mainUrl.includes('tiktok.com')) {
+                try {
+                    const getTikTok = httpsCallable(functions, 'getTikTokThumbnail');
+                    const res = await getTikTok({ url: mainUrl });
+                    if (res.data.thumbnailUrl) {
+                        setThumbnailPreview(res.data.thumbnailUrl);
+                    }
+                } catch (e) {
+                    console.error("TikTok link scrape failed:", e);
+                }
+            } else {
+                setThumbnailPreview('');
+            }
+        };
+        handlePull();
     }, [mainUrl, customThumbnailFile]);
 
     const handleFileSelect = (e) => {

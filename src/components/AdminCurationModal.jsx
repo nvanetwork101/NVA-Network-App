@@ -29,28 +29,36 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
     }, [imageToCrop]);
 
     useEffect(() => {
-        // If a file is selected, create a blob URL for it.
         if (imageFile) {
             const objectUrl = URL.createObjectURL(imageFile);
             setImagePreview(objectUrl);
-
-            // This is the cleanup function. It runs when the component unmounts
-            // or when imageFile changes again, preventing memory leaks and errors.
             return () => URL.revokeObjectURL(objectUrl);
         }
-        
-        // If no file is selected, fall back to getting a thumbnail from the destination URL.
         if (!destinationUrl) {
             setImagePreview('');
             return;
         }
 
-        const videoInfo = extractVideoInfo(destinationUrl);
-        if (videoInfo && videoInfo.thumbnailUrl !== 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA') {
-            setImagePreview(videoInfo.thumbnailUrl);
-        } else {
-            setImagePreview('');
-        }
+        // Automated TikTok Curation Scraper Proxy
+        const handlePull = async () => {
+            const videoInfo = extractVideoInfo(destinationUrl);
+            if (videoInfo && videoInfo.thumbnailUrl && videoInfo.thumbnailUrl !== 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA') {
+                setImagePreview(videoInfo.thumbnailUrl);
+            } else if (destinationUrl.includes('tiktok.com')) {
+                try {
+                    const getTikTok = httpsCallable(functions, 'getTikTokThumbnail');
+                    const res = await getTikTok({ url: destinationUrl });
+                    if (res.data.thumbnailUrl) {
+                        setImagePreview(res.data.thumbnailUrl);
+                    }
+                } catch (e) {
+                    console.error("TikTok scrape failed:", e);
+                }
+            } else {
+                setImagePreview('');
+            }
+        };
+        handlePull();
     }, [imageFile, destinationUrl]);
 
     const handleFileSelect = (e) => {
@@ -59,7 +67,6 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
             setImageToCrop(URL.createObjectURL(file));
             setShowCropModal(true);
         }
-        // Clear the input value so the same file can be selected again
         e.target.value = null; 
     };
 
@@ -72,8 +79,7 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
         setImageToCrop(null);
     };
 
-        const handleCropCancel = () => {
-        // THE FIX: Revoke the blob URL to prevent memory leaks and errors.
+    const handleCropCancel = () => {
         if (imageToCrop) {
             URL.revokeObjectURL(imageToCrop);
         }
@@ -100,7 +106,7 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
                 onSave({
                     type: 'external',
                     title,
-                    description, // <-- THE FIX
+                    description,
                     externalLink: destinationUrl,
                     imageUrl: finalImageUrl,
                     orderIndex: Date.now()
@@ -116,7 +122,7 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
             onSave({
                 type: 'external',
                 title,
-                description, // <-- THE FIX
+                description,
                 externalLink: destinationUrl,
                 imageUrl: imagePreview || 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA',
                 orderIndex: Date.now()
@@ -126,20 +132,34 @@ const AddExternalLinkModal = ({ showMessage, onSave, onCancel }) => {
     };
 
     return (
-        <div className="confirmationModalOverlay" style={{ zIndex: 3000 }}>
-            <div className="confirmationModalContent" style={{ textAlign: 'left', maxWidth: '500px' }}>
-                <p className="confirmationModalTitle">Add External Link</p>
-                <div className="formGroup"><label className="formLabel">Title:</label><input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Summer Festival Tickets" required/></div>
+        <div className="confirmationModalOverlay" style={{ zIndex: 3000, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+            <div className="confirmationModalContent" style={{ 
+                textAlign: 'left', 
+                maxWidth: '500px', 
+                width: '90%',
+                maxHeight: '85vh',
+                overflowY: 'auto',
+                background: 'rgba(26, 26, 26, 0.75)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '20px',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+                padding: '24px 20px'
+            }}>
+                <p className="confirmationModalTitle" style={{ color: '#00FFFF', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>Add External Link</p>
+                <div className="formGroup"><label className="formLabel">Title:</label><input type="text" className="formInput" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g., Summer Festival Tickets" required style={{ background: 'rgba(0,0,0,0.3)' }}/></div>
                 <div className="formGroup">
                     <label className="formLabel">Description:</label>
-                    <textarea className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional: A brief summary of the content." rows="3"></textarea>
+                    <textarea className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional: A brief summary of the content." rows="2" style={{ resize: 'none', background: 'rgba(0,0,0,0.3)' }}></textarea>
                 </div>
-                <div className="formGroup"><label className="formLabel">Destination URL:</label><input type="url" className="formInput" value={destinationUrl} onChange={(e) => { setDestinationUrl(e.target.value); setImageFile(null); }} placeholder="https://www.externalsite.com/page" required/><p className="smallText" style={{textAlign: 'left', color: '#AAA', marginTop: '5px'}}>The app will try to fetch a preview from this link.</p></div>
-                <hr style={{borderColor: '#333', margin: '15px 0'}}/>
-                <div className="formGroup"><label className="formLabel">Upload Custom Image (Overrides Preview):</label><input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" style={{ display: 'none' }} /><button type="button" className="button" onClick={() => fileInputRef.current.click()} style={{ width: '100%', backgroundColor: '#3A3A3A' }}><span className="buttonText">Choose Image File</span></button>
-                    {imagePreview && (<div style={{marginTop: '15px'}}><p className="formLabel">Final Preview:</p><img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '5px' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/200x120/555/FFF?text=No+Preview'; }} /></div>)}
+                <div className="formGroup"><label className="formLabel">Destination URL:</label><input type="url" className="formInput" value={destinationUrl} onChange={(e) => { setDestinationUrl(e.target.value); setImageFile(null); }} placeholder="https://www.externalsite.com/page" required style={{ background: 'rgba(0,0,0,0.3)' }}/><p className="smallText" style={{textAlign: 'left', color: '#888', marginTop: '5px'}}>The app will try to fetch a preview from this link.</p></div>
+                <hr style={{borderColor: 'rgba(255,255,255,0.05)', margin: '15px 0'}}/>
+                <div className="formGroup">
+                    <label className="formLabel" style={{ color: '#FFD700', fontWeight: 'bold' }}>Upload Custom Image (Overrides Preview):</label>
+                    <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" style={{ display: 'none' }} />
+                    <button type="button" className="button" onClick={() => fileInputRef.current.click()} style={{ width: '100%', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}><span className="buttonText">Choose Image File</span></button>
+                    {imagePreview && (<div style={{marginTop: '15px'}}><p className="formLabel">Final Preview:</p><img src={imagePreview} alt="Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '5px', border: '1px solid #333' }} onError={(e) => { e.target.onerror = null; e.target.src='https://placehold.co/200x120/555/FFF?text=No+Preview'; }} /></div>)}
                 </div>
-                <div className="confirmationModalButtons"><button className="confirmationButton cancel" onClick={onCancel}>Cancel</button><button className="confirmationButton confirm" onClick={handleSave} disabled={isUploading}>{isUploading ? 'Uploading...' : 'Save Link'}</button></div>
+                <div className="confirmationModalButtons"><button className="confirmationButton cancel" onClick={onCancel}>Cancel</button><button className="confirmationButton confirm" style={{ background: '#00FFFF', color: '#000', fontWeight: 'bold' }} onClick={handleSave} disabled={isUploading}>{isUploading ? 'Uploading...' : 'Save Link'}</button></div>
                 
                 {showCropModal && <ThumbnailAdjustModal imageUrl={imageToCrop} onSave={handleCropComplete} onCancel={handleCropCancel} showMessage={showMessage} isUploading={isUploading} />}
             </div>
@@ -168,16 +188,27 @@ const ContentSelectorModal = ({ onSelect, onCancel, showMessage }) => {
     const filteredItems = contentItems.filter(item => item.title.toLowerCase().includes(searchTerm.toLowerCase()) || item.creatorName.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
-        <div className="confirmationModalOverlay" style={{ zIndex: 4000 }}>
-            <div className="confirmationModalContent" style={{ maxWidth: '600px', textAlign: 'left' }}>
-                <p className="confirmationModalTitle">Select Content from Library</p>
-                <div className="formGroup"><input type="text" className="formInput" placeholder="Search by title or creator..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
-                <div className="dashboardContentList" style={{ maxHeight: '40vh', overflowY: 'auto', marginBottom: '20px' }}>
-                    {loading ? <p>Loading...</p> : filteredItems.map(item => (
-                        <div key={item.id} className="adminDashboardItem" style={{ cursor: 'pointer' }} onClick={() => onSelect(item)}>
-                            <img src={item.customThumbnailUrl} style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px' }} alt={item.title} />
-                            <div style={{ flexGrow: 1, marginLeft: '10px' }}><p className="adminDashboardItemTitle">{item.title}</p><p style={{ fontSize: '12px', color: '#AAA' }}>by {item.creatorName}</p></div>
-                            <button className="adminActionButton approve">Select</button>
+        <div className="confirmationModalOverlay" style={{ zIndex: 4000, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+            <div className="confirmationModalContent" style={{ 
+                maxWidth: '600px', 
+                width: '90%',
+                maxHeight: '85vh',
+                overflowY: 'auto',
+                background: 'rgba(26, 26, 26, 0.75)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '20px',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+                padding: '24px 20px',
+                textAlign: 'left' 
+            }}>
+                <p className="confirmationModalTitle" style={{ color: '#FFD700', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>Select Content from Library</p>
+                <div className="formGroup"><input type="text" className="formInput" placeholder="Search by title or creator..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ background: 'rgba(0,0,0,0.3)' }} /></div>
+                <div className="dashboardContentList" style={{ maxHeight: '35vh', overflowY: 'auto', marginBottom: '20px', paddingRight: '4px' }}>
+                    {loading ? <p style={{ color: '#FFD700', textAlign: 'center' }}>Loading library...</p> : filteredItems.map(item => (
+                        <div key={item.id} className="adminDashboardItem" style={{ cursor: 'pointer', background: 'rgba(0,0,0,0.2)' }} onClick={() => onSelect(item)}>
+                            <img src={item.customThumbnailUrl} style={{ width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #333' }} alt={item.title} />
+                            <div style={{ flexGrow: 1, marginLeft: '10px' }}><p className="adminDashboardItemTitle">{item.title}</p><p style={{ fontSize: '12px', color: '#888' }}>by {item.creatorName}</p></div>
+                            <button className="adminActionButton approve" style={{ margin: 0 }}>Select</button>
                         </div>
                     ))}
                 </div>
@@ -309,23 +340,37 @@ function AdminCurationModal({ curationTarget, showMessage, onCancel, onSelect, c
     };
 
     return (
-        <div className="confirmationModalOverlay" style={{ zIndex: 2500 }}>
-            <div className="confirmationModalContent" style={{ maxWidth: '700px', textAlign: 'left' }}>
-                <p className="confirmationModalTitle">Manage {curationTarget} Section</p>
-                <div className="dashboardContentList" style={{ maxHeight: '40vh', overflowY: 'auto', marginBottom: '20px' }}>
-                    {loading || isSaving ? <p>Loading...</p> : 
+        <div className="confirmationModalOverlay" style={{ zIndex: 2500, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
+            <div className="confirmationModalContent" style={{ 
+                maxWidth: '700px', 
+                width: '90%',
+                maxHeight: '85vh',
+                overflowY: 'auto',
+                background: 'rgba(26, 26, 26, 0.75)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '20px',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+                padding: '24px 20px',
+                textAlign: 'left' 
+            }}>
+                <p className="confirmationModalTitle" style={{ color: '#FFD700', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>Manage {curationTarget} Section</p>
+                <div className="dashboardContentList" style={{ maxHeight: '35vh', overflowY: 'auto', marginBottom: '20px', paddingRight: '4px' }}>
+                    {loading || isSaving ? <p style={{ color: '#FFD700', textAlign: 'center' }}>Processing...</p> : 
                         curatedItems.length === 0 ? <p className="dashboardItem">This section is empty.</p> :
                         curatedItems.map((item, index) => (
-                            <div key={item.id || item.title + index} className="adminDashboardItem">
-                                <img src={item.customThumbnailUrl || item.imageUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px'}} alt={item.title}/>
-                                <div style={{flexGrow: 1, marginLeft: '10px'}}><p className="adminDashboardItemTitle">{item.title}</p><p style={{fontSize: '12px', color: '#AAA'}}>by {item.creatorName || '...loading'}</p></div>
-                                <div style={{display: 'flex', gap: '5px'}}><button onClick={() => handleMove(index, -1)} disabled={index === 0} className="adminActionButton" style={{width: '30px'}}>▲</button><button onClick={() => handleMove(index, 1)} disabled={index === curatedItems.length - 1} className="adminActionButton" style={{width: '30px'}}>▼</button><button onClick={() => handleRemove(index)} className="adminActionButton reject">Remove</button></div>
+                            <div key={item.id || item.title + index} className="adminDashboardItem" style={{ background: 'rgba(0,0,0,0.2)' }}>
+                                <img src={item.customThumbnailUrl || item.imageUrl} style={{width: '80px', height: '45px', objectFit: 'cover', borderRadius: '4px', border: '1px solid #333'}} alt={item.title}/>
+                                <div style={{flexGrow: 1, marginLeft: '10px'}}><p className="adminDashboardItemTitle">{item.title}</p><p style={{fontSize: '12px', color: '#888'}}>by {item.creatorName || '...loading'}</p></div>
+                                <div style={{display: 'flex', gap: '5px'}}><button onClick={() => handleMove(index, -1)} disabled={index === 0} className="adminActionButton" style={{width: '30px', margin: 0}}>▲</button><button onClick={() => handleMove(index, 1)} disabled={index === curatedItems.length - 1} className="adminActionButton" style={{width: '30px', margin: 0}}>▼</button><button onClick={() => handleRemove(index)} className="adminActionButton reject" style={{ margin: 0 }}>Remove</button></div>
                             </div>
                         ))
                     }
                 </div>
-                <div className="flex justify-around gap-4 my-4"><button className="button" onClick={() => setShowContentSelector(true)} disabled={isSaving}><span className="buttonText">Add from Library</span></button><button className="button" onClick={() => setShowExternalLinkModal(true)} disabled={isSaving}><span className="buttonText">Add External URL</span></button></div>
-                <div className="confirmationModalButtons"><button className="confirmationButton cancel" onClick={onCancel}>Cancel</button><button className="confirmationButton confirm" onClick={handleSaveChanges} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Changes'}</button></div>
+                <div className="flex justify-around gap-4 my-4" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '15px 0' }}>
+                    <button className="button" onClick={() => setShowContentSelector(true)} disabled={isSaving} style={{ margin: 0 }}><span className="buttonText">Add from Library</span></button>
+                    <button className="button" onClick={() => setShowExternalLinkModal(true)} disabled={isSaving} style={{ margin: 0 }}><span className="buttonText">Add External URL</span></button>
+                </div>
+                <div className="confirmationModalButtons" style={{ marginTop: '15px' }}><button className="confirmationButton cancel" onClick={onCancel}>Cancel</button><button className="confirmationButton confirm" style={{ background: '#00FF00', color: '#000', fontWeight: 'bold' }} onClick={handleSaveChanges} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Changes'}</button></div>
                 {showContentSelector && <ContentSelectorModal showMessage={showMessage} onSelect={handleSelectInternalContent} onCancel={() => setShowContentSelector(false)} />}
                 {showExternalLinkModal && <AddExternalLinkModal showMessage={showMessage} onSave={handleSaveExternalLink} onCancel={() => setShowExternalLinkModal(false)} />}
             </div>

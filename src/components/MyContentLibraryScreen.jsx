@@ -90,10 +90,21 @@ function MyContentLibraryScreen({
     useEffect(() => {
         setAutoThumbnailPreview('');
         if (!videoLinkInput) return;
-        const handler = setTimeout(() => {
+        const handler = setTimeout(async () => {
             const { thumbnailUrl } = extractVideoInfo(videoLinkInput);
             if (thumbnailUrl && thumbnailUrl !== 'https://placehold.co/300x200/2A2A2A/FFF?text=NVA') {
                 setAutoThumbnailPreview(thumbnailUrl);
+            } else if (videoLinkInput.includes('tiktok.com')) {
+                // SECURE SERVERLESS INTERCEPTOR: Bypasses client-side CORS to auto-pull TikTok thumbnails [1.1.2]
+                try {
+                    const getTikTok = httpsCallable(functions, 'getTikTokThumbnail');
+                    const res = await getTikTok({ url: videoLinkInput });
+                    if (res.data.thumbnailUrl) {
+                        setAutoThumbnailPreview(res.data.thumbnailUrl);
+                    }
+                } catch (e) {
+                    console.error("TikTok link auto-scrape failed:", e);
+                }
             } else {
                 setAutoThumbnailPreview('');
             }
@@ -512,16 +523,48 @@ function MyContentLibraryScreen({
                         <div className="formGroup"><label htmlFor="contentType" className="formLabel">Content Type:</label><select id="contentType" className="formInput" value={contentType} onChange={(e) => setContentType(e.target.value)} required><option value="" disabled>-- Select a Category --</option>{availableCategories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}</select></div>
                         <div className="formGroup"><label htmlFor="videoLinkInput" className="formLabel">URL:</label><input type="url" id="videoLinkInput" className="formInput" value={videoLinkInput} onChange={(e) => setVideoLinkInput(e.target.value)} placeholder="Paste your video link here" /></div>
                         
-                        {currentThumbnail && (
-                            <div style={{ width: '100%', maxWidth: '200px', aspectRatio: '16/9', background: '#0a0a0a', borderRadius: '8px', overflow: 'hidden', marginBottom: '15px', border: '1px solid #333' }}>
-                                <img src={currentThumbnail} alt="Thumbnail Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                            </div>
-                        )}
-                        
                         <div className="formGroup">
-                            <label className="formLabel">Custom Thumbnail (Optional):</label>
-                            <input type="file" ref={thumbnailFileInputRef} onChange={handleThumbnailFileSelect} accept="image/*" style={{display: 'none'}} />
-                            <button type="button" className="button" onClick={() => thumbnailFileInputRef.current.click()} style={{width: '100%', backgroundColor: '#222', border: '1px solid #444', color: '#FFF'}}><span className="buttonText">Upload Custom Image</span></button>
+                            <label className="formLabel">Movie Poster/Video Thumbnail</label>
+                            <input 
+                                type="file" 
+                                ref={thumbnailFileInputRef} 
+                                onChange={handleThumbnailFileSelect} 
+                                accept="image/*" 
+                                style={{ display: 'none' }} 
+                            />
+                            
+                            {currentThumbnail ? (
+                                /* Case 1: Active Thumbnail Preview with Hovering Clear Button */
+                                <div style={{ position: 'relative', width: '100%', height: '180px', borderRadius: '12px', overflow: 'hidden', border: '1px solid #FFD700', backgroundColor: '#000', boxShadow: '0 0 15px rgba(255,215,0,0.1)' }}>
+                                    <img src={currentThumbnail} alt="Thumbnail Preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                    <button 
+                                        type="button" 
+                                        onClick={() => {
+                                            if (customThumbnailPreview && customThumbnailPreview.startsWith('blob:')) {
+                                                URL.revokeObjectURL(customThumbnailPreview);
+                                            }
+                                            setCustomThumbnailPreview('');
+                                            setAutoThumbnailPreview('');
+                                            setCustomThumbnailFile(null);
+                                        }} 
+                                        style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: 'rgba(220,53,69,0.95)', color: '#FFF', border: 'none', borderRadius: '40px', width: '28px', height: '28px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            ) : (
+                                /* Case 2: Interactive Fallback Canvas (Tapping triggers local file upload) */
+                                <div 
+                                    onClick={() => thumbnailFileInputRef.current.click()}
+                                    style={{ width: '100%', height: '180px', borderRadius: '12px', border: '2px dashed rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.02)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', gap: '8px' }}
+                                    onMouseEnter={e => { e.currentTarget.style.borderColor = '#00FFFF'; e.currentTarget.style.background = 'rgba(0,255,255,0.02)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+                                >
+                                    <span style={{ fontSize: '32px' }}>📷</span>
+                                    <span style={{ color: '#FFF', fontSize: '13px', fontWeight: 'bold' }}>Upload custom Image</span>
+                                    <span style={{ color: '#666', fontSize: '11px' }}>Supports JPEG, PNG, or WebP</span>
+                                </div>
+                            )}
                         </div>
 
                         {/* MONETIZATION GATE UI */}
