@@ -650,7 +650,6 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                             }}>
                                                 {isSuperSaiyan ? '🔥' : '⚡'}
                                             </div>
-                                            </div>
                                             <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', letterSpacing: '0.05em' }}>
                                                 {battleState.roasterName ? battleState.roasterName.toUpperCase() : 'CONTENDER'}
                                             </span>
