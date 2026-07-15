@@ -843,8 +843,6 @@ const CenterStageScreen = ({ setActiveScreen, currentUser, showMessage, targetCo
                                     filter: isFuture ? 'grayscale(1)' : 'none',
                                     pointerEvents: isFuture ? 'none' : 'auto',
                                     borderColor: isSelected ? '#A855F7' : (idx < currentStageIndex ? '#4ADE80' : '#2A2A2A')
-                                }}
-                                style={{ 
                                     cursor: isFuture ? 'not-allowed' : 'pointer', 
                                     opacity: isFuture ? 0.35 : 1,
                                     pointerEvents: isFuture ? 'none' : 'auto'

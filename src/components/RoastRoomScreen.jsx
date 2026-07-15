@@ -607,7 +607,6 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                             }}>
                                                 {isMuted ? '🔇' : isSuperSaiyan ? '🔥' : '🎙️'}
                                             </div>
-                                            </div>
                                             <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', letterSpacing: '0.05em' }}>
                                                 {hostRealName.toUpperCase()} (HOST)
                                             </span>
