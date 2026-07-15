@@ -56,13 +56,13 @@ function ClassroomStage({ currentUser, creatorProfile, showMessage, handleExit }
     }
 
     return (
-        /* THE FIX: Automatically trigger camera/mic only if user is the authorized Director [1] */
+        /* THE FIX: Initialize audio as true so students can publish their mics once admitted */
         <LiveKitRoom 
             serverUrl={LIVEKIT_URL} 
             token={token} 
             connect={true}
             video={isHost}
-            audio={isHost}
+            audio={true} 
         >
             <ClassroomStageContent 
                 classState={classState} 
@@ -79,7 +79,28 @@ function ClassroomStage({ currentUser, creatorProfile, showMessage, handleExit }
 
 // --- CLASSROOM CONTENT CONTROLLER ---
 function ClassroomStageContent({ classState, currentUser, creatorProfile, showMessage, handleExit, isHost }) {
+    const room = useRoomContext();
     const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+    const [isMicEnabled, setIsMicEnabled] = useState(false);
+
+    // Sync microphone state on room connection
+    useEffect(() => {
+        if (room?.localParticipant) {
+            setIsMicEnabled(room.localParticipant.isMicrophoneEnabled);
+        }
+    }, [room]);
+
+    const handleToggleMic = async () => {
+        if (!room) return;
+        try {
+            const newState = !isMicEnabled;
+            await room.localParticipant.setMicrophoneEnabled(newState);
+            setIsMicEnabled(newState);
+            showMessage(newState ? "🎤 Microphone Unmuted" : "🔇 Microphone Muted");
+        } catch (err) {
+            showMessage("Failed to access microphone.");
+        }
+    };
     
     // Firestore Admittance check for students
     const isAdmitted = useMemo(() => {
@@ -199,11 +220,29 @@ function ClassroomStageContent({ classState, currentUser, creatorProfile, showMe
                     {isHost && <span style={{ background: '#A855F7', color: '#000', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '4px' }}>DIRECTOR</span>}
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
+                    {/* Live Microphone Controller */}
+                    <button 
+                        onClick={handleToggleMic} 
+                        style={{ 
+                            background: isMicEnabled ? 'rgba(74, 222, 128, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
+                            border: isMicEnabled ? '1px solid #4ADE80' : '1px solid #EF4444', 
+                            color: isMicEnabled ? '#4ADE80' : '#EF4444', 
+                            padding: '6px 15px', 
+                            borderRadius: '6px', 
+                            fontSize: '12px', 
+                            fontWeight: 'bold', 
+                            cursor: 'pointer' 
+                        }}
+                    >
+                        {isMicEnabled ? "🎙️ Mute" : "🔇 Unmute"}
+                    </button>
+
                     {isHost && (
                         <button onClick={handleMuteAll} style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #EF4444', color: '#EF4444', padding: '6px 15px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
                             Mute All Mics
                         </button>
                     )}
+                    
                     <button onClick={handleExit} style={{ background: 'rgba(255, 0, 0, 0.15)', border: '1px solid #FF0000', color: '#FF0000', padding: '6px 15px', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
                         Leave Stage
                     </button>

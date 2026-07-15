@@ -128,17 +128,17 @@ const DiscoverUsersScreen = ({ showMessage, setActiveScreen, setSelectedUserId, 
                     <div className="formGroup" style={{ flex: 1, minWidth: '150px' }}>
                         <label htmlFor="roleFilter" className="formLabel">Filter by Role:</label>
                         <select 
-                            id="roleFilter" 
-                            className="formInput" 
-                            value={roleFilter} 
-                            onChange={(e) => setRoleFilter(e.target.value)}
-                            style={{ backgroundColor: '#1A1A1A', color: '#FFF' }}
-                        >
-                            <option value="All">All Roles</option>
-                            {['Actor', 'Comedian', 'Designer', 'Filmmaker', 'Influencer', 'Musician', 'Poet', 'Voice Artist'].map(role => (
-                                <option key={role} value={role}>{role}</option>
-                            ))}
-                        </select>
+                                id="roleFilter" 
+                                className="formInput" 
+                                value={roleFilter} 
+                                onChange={(e) => setRoleFilter(e.target.value)}
+                                style={{ backgroundColor: '#1A1A1A', color: '#FFF' }}
+                            >
+                                <option value="All">All Roles</option>
+                                {['Actor', 'Comedian', 'Craft', 'Designer', 'Filmmaker', 'Health & Fitness', 'Influencer', 'Musician', 'Poet'].map(role => (
+                                    <option key={role} value={role}>{role}</option>
+                                ))}
+                            </select>
                     </div>
                 </div>
                 <button type="submit" className="button" disabled={isLoading} style={{ marginTop: '0' }}>

@@ -729,17 +729,45 @@ const CreatorDashboardScreen = ({
             await updateDoc(doc(db, "creators", currentUser.uid), { heroProduct: updatedHero });
             setCreatorProfile(prev => ({ ...prev, heroProduct: updatedHero }));
             showMessage("Product image updated!");
-        } catch (error) { showMessage(`Upload failed: ${error.message}`); } 
-        finally { setIsUploadingHero(false); if (heroInputRef.current) heroInputRef.current.value = null; }
+        } catch (error) { 
+            showMessage(`Upload failed: ${error.message}`); 
+        } finally { 
+            setIsUploadingHero(false); 
+            if (heroInputRef.current) heroInputRef.current.value = null; 
+        }
     };
 
     const handleSaveHeroDetails = async () => {
         try {
-            const updatedHero = { ...creatorProfile.heroProduct, price: heroForm.price, whatsapp: heroForm.whatsapp };
+            // Safely initialize the map if the database has it set to null/empty
+            const currentHero = creatorProfile.heroProduct || { imageUrl: null };
+            const updatedHero = { 
+                imageUrl: currentHero.imageUrl || null, 
+                price: heroForm.price, 
+                whatsapp: heroForm.whatsapp 
+            };
+            
             await updateDoc(doc(db, "creators", currentUser.uid), { heroProduct: updatedHero });
             setCreatorProfile(prev => ({ ...prev, heroProduct: updatedHero }));
             showMessage("Product details saved!");
         } catch (error) { showMessage(`Save failed: ${error.message}`); }
+    };
+
+    const handleDeleteHeroProduct = () => {
+        setConfirmationTitle("Remove Hero Product?");
+        setConfirmationMessage("Are you sure you want to permanently remove this hero product? This will clear the image, price, and contact info.");
+        setOnConfirmationAction(() => async () => {
+            try {
+                const creatorRef = doc(db, "creators", currentUser.uid);
+                await updateDoc(creatorRef, { heroProduct: null });
+                setCreatorProfile(prev => ({ ...prev, heroProduct: null }));
+                setHeroForm({ price: '', whatsapp: '' });
+                showMessage("Hero product removed.");
+            } catch (error) {
+                showMessage(`Removal failed: ${error.message}`);
+            }
+        });
+        setShowConfirmationModal(true);
     };
 
     const handleGalleryFileSelect = (e) => {
@@ -1825,7 +1853,14 @@ const CreatorDashboardScreen = ({
                                 {isUploadingHero ? (
                                     <span style={{ color: roleColor, fontSize: '12px', fontWeight: 'bold' }}>Uploading...</span>
                                 ) : creatorProfile?.heroProduct?.imageUrl ? (
-                                    <img src={creatorProfile.heroProduct.imageUrl} alt="Hero Product" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    <>
+                                        <img src={creatorProfile.heroProduct.imageUrl} alt="Hero Product" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        <button 
+                                            type="button"
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteHeroProduct(); }}
+                                            style={{ position: 'absolute', top: '8px', right: '8px', backgroundColor: 'rgba(220,53,69,0.9)', color: '#FFF', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
+                                        >✕</button>
+                                    </>
                                 ) : (
                                     <span style={{ color: '#555', fontSize: '32px' }}>+</span>
                                 )}
@@ -1849,7 +1884,7 @@ const CreatorDashboardScreen = ({
                                     <input 
                                         type="text" 
                                         className="cs-input" 
-                                        style={{ fontSize: '14px', color: '#FFF' }} 
+                                        style={{ fontSize: '14px', color: '#FFF', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }} 
                                         placeholder="e.g. 592-555-5555" 
                                         value={heroForm.whatsapp} 
                                         onChange={e => setHeroForm({...heroForm, whatsapp: e.target.value})} 

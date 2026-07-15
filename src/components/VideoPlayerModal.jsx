@@ -398,33 +398,18 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
 .success-state { text-align: center; padding: 30px 20px; }
 .success-check { width: 64px; height: 64px; background: rgba(74, 222, 128, 0.1); border: 2px solid #4ADE80; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 28px; color: #4ADE80; box-shadow: 0 0 30px rgba(74,222,128,0.2); }
             `}</style>
-            <div className={`w-full h-full md:max-w-[1150px] md:max-h-[98vh] md:rounded-2xl overflow-hidden relative flex flex-col shadow-2xl`} style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div className={`w-full h-full md:max-w-[1150px] md:max-h-[95vh] md:rounded-2xl overflow-hidden relative flex flex-col shadow-2xl`} style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
                 <button type="button" className="closeButton" onClick={(e) => { e.stopPropagation(); onClose(); }}>×</button>
                 
-                {/* This container grows to fill parent, centers content, and provides the black background for letterboxing */}
-                <div className="flex-1 min-h-[200px] flex justify-center items-center bg-black p-1 overflow-hidden">
-                
-                    {/* 
-                      Aspect-Ratio Lock: Scaling to fill vertical space.
-                      The video will now push "left and right" more to maintain 16:9 while filling the new vertical height.
-                    */}
-                    <div 
-                        className="flex items-center justify-center relative"
-                        style={{
-                            width: 'auto',
-                            height: '100%',
-                            aspectRatio: isVertical && !isLocked ? '9 / 16' : '16 / 9',
-                            maxWidth: '100%',
-                            maxHeight: '100%'
-                        }}
-                    >
+                {/* The video section wraps your aspect ratio tightly at the top with NO vertical letterbox voids [1.1.2] */}
+                <div className="w-full flex-shrink-0 flex justify-center items-center bg-black overflow-hidden" style={{ aspectRatio: isVertical && !isLocked ? '9 / 16' : '16 / 9' }}>
+                    <div style={{ width: '100%', height: '100%' }}>
                         {memoizedPlayer}
                     </div>
-
                 </div>
                 
-                {/* UI FIX: Parent container has NO padding to ensure scrollbar stays at the absolute edge */}
-                <div className="premium-glass-info w-full flex-shrink-0 md:max-h-[48vh] flex flex-col" style={{ minHeight: '320px', overflow: 'hidden', padding: 0 }}>
+                {/* The info and comments section now consumes the entire remaining vertical screen, stretching upwards [1.1.2]! */}
+                <div className="premium-glass-info w-full flex-1 flex flex-col min-h-0" style={{ overflow: 'hidden', padding: 0 }}>
                     
                     {/* 1. SNAPPED HEADER: Title & Share (Padded locally, No cutoff possible) */}
                     <div className="flex justify-between items-start gap-4 flex-shrink-0" style={{ padding: '16px 16px 12px 16px' }}>
@@ -529,10 +514,10 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                         </div>
                     )}
 
-                    {/* SCROLLABLE COMMENTS AREA */}
-                    <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '15px' }}>
+                    {/* SCROLLABLE COMMENTS AREA (Now fully stretched upwards to consume empty space!) */}
+                    <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '15px', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                         <p style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: '900', color: '#FFD700', textTransform: 'uppercase', letterSpacing: '1px' }}>Audience Thoughts</p>
-                        <div style={{ minHeight: '100px', background: '#0F0F0F', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ flex: 1, background: '#0F0F0F', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}>
                             {comments.length > 0 ? comments.map(comment => (
                                 <div key={comment.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '13px', lineHeight: '1.4' }}>
                                     <span style={{ fontWeight: 'bold', color: generateColorFromId(comment.userId), flexShrink: 0, cursor: 'pointer' }} onClick={() => executeSafeNavigation('navigateToUserProfile', { userId: comment.userId })}>{comment.userName}:</span>
