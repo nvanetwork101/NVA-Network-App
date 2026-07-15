@@ -1157,74 +1157,101 @@ const UserProfileScreen = ({
                     </div>
                 )}
                 
-                {/* ====== THE HERO PRODUCT SHOWCASE CARD (Dialogue Design) ====== */}
+                {/* ====== THE HERO PRODUCT SHOWCASE CARD (Symmetrical Centered Dialogue) ====== */}
                 {['Craft', 'Designer', 'Crafter / Designer'].includes(profile?.creatorField) && profile?.heroProduct?.imageUrl && (
                     <div className="atelier-container" style={{ 
-                        padding: '24px', 
-                        background: `linear-gradient(135deg, ${roleColor}25 0%, rgba(10,10,10,0.95) 100%)`, 
+                        padding: '28px', 
+                        background: `linear-gradient(135deg, ${roleColor}1A 0%, rgba(10,10,10,0.98) 100%)`, 
                         border: `2px solid ${roleColor}88`, 
                         borderRadius: '32px 32px 32px 8px', // Asymmetric Speech Bubble Dialogue Box
                         marginTop: '30px', 
                         position: 'relative', 
                         overflow: 'hidden',
-                        boxShadow: `0 10px 40px rgba(0,0,0,0.7), 0 0 30px ${roleColor}22`
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center', // Symmetrical alignment
+                        textAlign: 'center',
+                        boxShadow: `0 15px 50px rgba(0,0,0,0.8), 0 0 35px ${roleColor}15`
                     }}>
-                        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: `linear-gradient(90deg, ${roleColor}, transparent)` }}></div>
+                        {/* Glowing Accent Top Line */}
+                        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px', background: `linear-gradient(90deg, transparent, ${roleColor}, transparent)` }}></div>
                         
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                            <p style={{ margin: 0, color: '#FFF', fontSize: '18px', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                                🔥 <span style={{ color: roleColor }}>{profile.creatorField.includes('Design') ? "BUY MY FIT" : "BEST SELLER"}</span>
+                        {/* Centered Category Theme Label */}
+                        <div style={{ marginBottom: '20px' }}>
+                            <p style={{ margin: 0, color: '#FFF', fontSize: '18px', fontWeight: '900', letterSpacing: '3px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                                🔥 <span style={{ color: roleColor, textShadow: `0 0 10px ${roleColor}33` }}>{profile.creatorField.includes('Design') ? "BUY MY FIT" : "BEST SELLER"}</span>
+                            </p>
+                            <p style={{ margin: '6px 0 0 0', color: '#666', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                                Premium Featured Creation
                             </p>
                         </div>
 
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', alignItems: 'center' }}>
-                            {/* Clipped Speech-Bubble Product Image & WhatsApp Icon below it */}
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                                <div 
-                                    onClick={() => setSelectedExhibitionImage(profile.heroProduct.imageUrl)}
-                                    style={{ width: '150px', height: '150px', borderRadius: '24px 24px 24px 6px', border: `2px solid ${roleColor}44`, overflow: 'hidden', cursor: 'zoom-in', boxShadow: `0 0 20px ${roleColor}33` }}
-                                >
-                                    <img src={profile.heroProduct.imageUrl} alt="Hero Product" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                </div>
-                                
-                                {profile.heroProduct.whatsapp && (
-                                    <div 
-                                        onClick={() => {
-                                            const cleanNum = profile.heroProduct.whatsapp.replace(/\D/g, '');
-                                            const messageText = encodeURIComponent(`Hi ${profile.creatorName}, I saw your featured "${profile.creatorField.includes('Design') ? 'Fit' : 'Best Seller'}" on NVA Network and I am interested in buying it!`);
-                                            window.open(`https://wa.me/${cleanNum}?text=${messageText}`, '_blank');
-                                        }}
-                                        style={{ 
-                                            display: 'flex', 
-                                            alignItems: 'center', 
-                                            gap: '8px', 
-                                            padding: '6px 14px', 
-                                            borderRadius: '12px', 
-                                            background: 'rgba(74, 222, 128, 0.05)', 
-                                            border: '1px solid rgba(74, 222, 128, 0.25)', 
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s ease-out',
-                                            boxShadow: '0 4px 15px rgba(74, 222, 128, 0.05)'
-                                        }}
-                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#4ADE80'; e.currentTarget.style.background = 'rgba(74, 222, 128, 0.15)'; e.currentTarget.style.boxShadow = '0 0 15px rgba(74, 222, 128, 0.3)'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(74, 222, 128, 0.25)'; e.currentTarget.style.background = 'rgba(74, 222, 128, 0.05)'; e.currentTarget.style.boxShadow = 'none'; }}
-                                    >
-                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="#4ADE80"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.05 11.95.05c3.178.001 6.165 1.24 8.413 3.488 2.248 2.248 3.487 5.234 3.487 8.411-1.35 6.602-6.686 11.901-13.237 11.901-2.003 0-3.968-.505-5.714-1.464L0 24zm6.602-3.483l.416.247c1.472.873 3.167 1.334 4.887 1.335 5.926 0 10.749-4.793 10.752-10.692.001-2.857-1.111-5.541-3.13-7.561-2.019-2.02-4.704-3.132-7.567-3.132-5.932 0-10.759 4.797-10.763 10.696-.001 2.051.542 4.053 1.571 5.801l.271.46L1.87 21.6l4.789-1.083z"/></svg>
-                                        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#FFF', fontSize: '13px', fontWeight: '800' }}>
-                                            {profile.heroProduct.whatsapp}
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Dialogue Price Tag info next to it */}
-                            <div style={{ flex: 1, minWidth: '150px', display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'center' }}>
-                                <span style={{ fontSize: '10px', color: '#888', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>PRICE TAG</span>
-                                <span style={{ fontSize: '30px', fontWeight: '900', color: '#00FFFF', textShadow: '0 0 15px rgba(0, 255, 255, 0.4)', fontFamily: "'JetBrains Mono', monospace" }}>
-                                    {Number(profile.heroProduct.price || 0).toLocaleString()} <span style={{ fontSize: '14px', color: '#888' }}>GYD</span>
-                                </span>
+                        {/* Symmetrical Centered Image Container with Glow Backdrop */}
+                        <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: '24px', width: '100%' }}>
+                            {/* Radial Glow Backplate */}
+                            <div style={{ position: 'absolute', width: '160px', height: '160px', borderRadius: '50%', background: roleColor, opacity: 0.15, filter: 'blur(30px)', zIndex: 1 }}></div>
+                            
+                            <div 
+                                onClick={() => setSelectedExhibitionImage(profile.heroProduct.imageUrl)}
+                                style={{ 
+                                    width: '100%', 
+                                    maxWidth: '240px', 
+                                    aspectRatio: '1/1', 
+                                    borderRadius: '28px 28px 28px 8px', // Matching speech bubble cuts
+                                    border: `2px solid ${roleColor}55`, 
+                                    overflow: 'hidden', 
+                                    cursor: 'zoom-in', 
+                                    boxShadow: `0 12px 30px rgba(0,0,0,0.6), 0 0 25px ${roleColor}22`,
+                                    zIndex: 2,
+                                    transition: 'transform 0.3s ease'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.02)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; }}
+                            >
+                                <img src={profile.heroProduct.imageUrl} alt="Hero Product" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             </div>
                         </div>
+
+                        {/* Centered Price Tag */}
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', marginBottom: '20px' }}>
+                            <span style={{ fontSize: '10px', color: '#888', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase' }}>PRICE TAG</span>
+                            <span style={{ fontSize: '32px', fontWeight: '900', color: '#00FFFF', textShadow: '0 0 20px rgba(0, 255, 255, 0.4)', fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-1px' }}>
+                                {Number(profile.heroProduct.price || 0).toLocaleString()} <span style={{ fontSize: '16px', color: '#888', fontWeight: 'bold' }}>GYD</span>
+                            </span>
+                        </div>
+
+                        {/* Symmetrical Centered WhatsApp Contact Button */}
+                        {profile.heroProduct.whatsapp && (
+                            <div 
+                                onClick={() => {
+                                    const cleanNum = profile.heroProduct.whatsapp.replace(/\D/g, '');
+                                    const messageText = encodeURIComponent(`Hi ${profile.creatorName}, I saw your featured "${profile.creatorField.includes('Design') ? 'Fit' : 'Best Seller'}" on NVA Network and I am interested in buying it!`);
+                                    window.open(`https://wa.me/${cleanNum}?text=${messageText}`, '_blank');
+                                }}
+                                style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center',
+                                    gap: '10px', 
+                                    padding: '12px 28px', 
+                                    borderRadius: '16px', 
+                                    background: 'rgba(74, 222, 128, 0.08)', 
+                                    border: '1px solid rgba(74, 222, 128, 0.3)', 
+                                    cursor: 'pointer',
+                                    width: 'auto',
+                                    maxWidth: '220px',
+                                    transition: 'all 0.2s ease-out',
+                                    boxShadow: '0 4px 15px rgba(74, 222, 128, 0.05)'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#4ADE80'; e.currentTarget.style.background = 'rgba(74, 222, 128, 0.18)'; e.currentTarget.style.boxShadow = '0 0 20px rgba(74, 222, 128, 0.3)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'rgba(74, 222, 128, 0.3)'; e.currentTarget.style.background = 'rgba(74, 222, 128, 0.08)'; e.currentTarget.style.boxShadow = 'none'; }}
+                            >
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="#4ADE80"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.05 11.95.05c3.178.001 6.165 1.24 8.413 3.488 2.248 2.248 3.487 5.234 3.487 8.411-1.35 6.602-6.686 11.901-13.237 11.901-2.003 0-3.968-.505-5.714-1.464L0 24zm6.602-3.483l.416.247c1.472.873 3.167 1.334 4.887 1.335 5.926 0 10.749-4.793 10.752-10.692.001-2.857-1.111-5.541-3.13-7.561-2.019-2.02-4.704-3.132-7.567-3.132-5.932 0-10.759 4.797-10.763 10.696-.001 2.051.542 4.053 1.571 5.801l.271.46L1.87 21.6l4.789-1.083z"/></svg>
+                                <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#FFF', fontSize: '13px', fontWeight: '800', letterSpacing: '0.5px' }}>
+                                    {profile.heroProduct.whatsapp}
+                                </span>
+                            </div>
+                        )}
                     </div>
                 )}
 
