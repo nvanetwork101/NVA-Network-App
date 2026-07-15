@@ -28,7 +28,7 @@ const ClassroomViewerCount = () => {
 function ClassroomStage({ currentUser, creatorProfile, showMessage, handleExit }) {
     const [token, setToken] = useState(null);
     const [classState, setClassState] = useState({ status: 'idle', admittedUsers: [], spotlightedUids: [] });
-    const isHost = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';
+    const isHost = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin';
 
     useEffect(() => {
         const fetchToken = async () => {
@@ -74,6 +74,52 @@ function ClassroomStage({ currentUser, creatorProfile, showMessage, handleExit }
             />
             <RoomAudioRenderer />
         </LiveKitRoom>
+    );
+}
+
+// --- DYNAMIC CLASSROOM CARD (Replaces black screens with live pulsing avatars) ---
+function ClassroomParticipantCard({ track, roleColor = '#A855F7' }) {
+    const [studentProfile, setStudentProfile] = useState(null);
+    const isSpeaking = track.participant.isSpeaking;
+    const isCameraOn = track.participant.isCameraEnabled;
+
+    useEffect(() => {
+        const unsub = onSnapshot(doc(db, "creators", track.participant.identity), (snap) => {
+            if (snap.exists()) setStudentProfile(snap.data());
+        }, () => {});
+        return () => unsub();
+    }, [track.participant.identity]);
+
+    const isDirector = studentProfile?.role === 'admin' || studentProfile?.role === 'authority' || studentProfile?.role === 'super_admin';
+
+    return (
+        <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: '180px', borderRadius: '16px', overflow: 'hidden', border: `2px solid ${isSpeaking ? '#4ADE80' : (isDirector ? '#A855F7' : roleColor)}`, background: '#050505', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: isSpeaking ? '0 0 20px rgba(74, 222, 128, 0.2)' : 'none', transition: 'all 0.3s ease' }}>
+            
+            {isCameraOn ? (
+                <VideoTrack trackRef={track} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+                /* Dynamic Audio Avatar Display */
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', textAlign: 'center' }}>
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                        {/* Pulse Ring when speaking */}
+                        <div style={{ position: 'absolute', inset: -4, borderRadius: '50%', border: isSpeaking ? '3px solid #4ADE80' : 'none', animation: isSpeaking ? 'pulse-mic 1.5s infinite' : 'none' }}></div>
+                        <img 
+                            src={studentProfile?.profilePictureUrl || 'https://placehold.co/100?text=👤'} 
+                            alt="Avatar" 
+                            style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: `2px solid ${isSpeaking ? '#4ADE80' : '#444'}`, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }} 
+                        />
+                    </div>
+                    <span style={{ color: isDirector ? '#A855F7' : '#FFF', fontSize: '13px', fontWeight: '800', letterSpacing: '0.5px' }}>
+                        {isDirector ? "🎬 DIRECTOR" : `@${studentProfile?.creatorName?.toUpperCase() || 'STUDENT'}`}
+                    </span>
+                </div>
+            )}
+
+            {/* Float Badge */}
+            <div style={{ position: 'absolute', top: '15px', left: '15px', background: isSpeaking ? 'rgba(74, 222, 128, 0.85)' : 'rgba(10,10,10,0.75)', padding: '4px 12px', borderRadius: '20px', color: '#FFF', fontSize: '10px', fontWeight: '900', letterSpacing: '0.5px', textTransform: 'uppercase', backdropFilter: 'blur(5px)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                {isSpeaking ? "🎙️ Speaking" : "Muted"}
+            </div>
+        </div>
     );
 }
 
@@ -213,13 +259,44 @@ function ClassroomStageContent({ classState, currentUser, creatorProfile, showMe
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#0A0A0A', borderRadius: '16px', overflow: 'hidden', border: '1px solid #222' }}>
             
-            {/* Stage Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', background: '#111', borderBottom: '1px solid #222' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Stage Header (Fully Responsive Dual-Row Wrap) */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '15px 20px', background: '#111', borderBottom: '1px solid #222' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                     <ClassroomViewerCount />
                     {isHost && <span style={{ background: '#A855F7', color: '#000', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '4px' }}>DIRECTOR</span>}
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end', flexGrow: 1 }}>
+                    {/* Share Class Link Button */}
+                    <button 
+                        onClick={async () => {
+                            const shareUrl = `${window.location.origin}/FilmClubHub`;
+                            const text = `🎬 Join our Live Film Club Class Room now! Tap to attend:`;
+                            if (navigator.share) {
+                                try { await navigator.share({ title: 'Film Club Live Class', text, url: shareUrl }); }
+                                catch (err) { if (err.name !== 'AbortError') showMessage("Share failed."); }
+                            } else {
+                                navigator.clipboard.writeText(`${text} ${shareUrl}`).then(() => {
+                                    showMessage("Classroom link copied!");
+                                }).catch(() => showMessage("Failed to copy link."));
+                            }
+                        }}
+                        style={{ 
+                            background: 'rgba(168, 85, 247, 0.1)', 
+                            border: '1px solid #A855F7', 
+                            color: '#A855F7', 
+                            padding: '6px 15px', 
+                            borderRadius: '6px', 
+                            fontSize: '12px', 
+                            fontWeight: 'bold', 
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                        }}
+                    >
+                        <span>🔗 Share Class</span>
+                    </button>
+
                     {/* Live Microphone Controller */}
                     <button 
                         onClick={handleToggleMic} 
@@ -258,24 +335,18 @@ function ClassroomStageContent({ classState, currentUser, creatorProfile, showMe
                     {/* Spotlight Scene Grid */}
                     <div style={{ flex: 1, display: 'grid', gridTemplateColumns: spotlightedTracks.length > 1 ? '1fr 1fr' : '1fr', gap: '15px' }}>
                         {spotlightedTracks.map(t => (
-                            <div key={`${t.participant.identity}-${t.source}`} style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', border: '2px solid #A855F7', background: '#000' }}>
-                                <VideoTrack trackRef={t} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                <div style={{ position: 'absolute', top: '15px', left: '15px', background: 'rgba(168,85,247,0.85)', padding: '4px 12px', borderRadius: '20px', color: '#FFF', fontSize: '11px', fontWeight: 'bold' }}>
-                                    🎬 SPOTLIGHT • @{t.participant.name || t.participant.identity.slice(0,8)}
-                                </div>
+                            <div key={`${t.participant.identity}-${t.source}`} style={{ position: 'relative', width: '100%', height: '100%' }}>
+                                <ClassroomParticipantCard track={t} roleColor="#A855F7" />
                             </div>
                         ))}
                     </div>
 
                     {/* Minimized Gallery (For non-spotlighted students) */}
                     {galleryTracks.length > 0 && (
-                        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', padding: '5px', height: '120px', background: '#111', borderRadius: '12px' }}>
+                        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', padding: '5px', height: '180px', background: '#111', borderRadius: '12px' }}>
                             {galleryTracks.map(t => (
-                                <div key={`${t.participant.identity}-${t.source}`} style={{ position: 'relative', width: '160px', height: '100px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #333', flexShrink: 0 }}>
-                                    <VideoTrack trackRef={t} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                    <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(0,0,0,0.6)', padding: '2px 8px', borderRadius: '4px', color: '#FFF', fontSize: '10px' }}>
-                                        @{t.participant.name || t.participant.identity.slice(0,6)}
-                                    </div>
+                                <div key={`${t.participant.identity}-${t.source}`} style={{ position: 'relative', width: '160px', height: '100%', flexShrink: 0 }}>
+                                    <ClassroomParticipantCard track={t} roleColor="#444" />
                                 </div>
                             ))}
                         </div>
@@ -287,6 +358,32 @@ function ClassroomStageContent({ classState, currentUser, creatorProfile, showMe
                     <div style={{ flex: 1, background: '#111', borderLeft: '1px solid #222', padding: '15px', display: 'flex', flexDirection: 'column', gap: '15px', overflowY: 'auto' }}>
                         <p style={{ margin: 0, color: '#A855F7', fontSize: '11px', fontWeight: '900', letterSpacing: '1px', textTransform: 'uppercase' }}>STUDENT COMMAND CENTER</p>
                         
+                        {/* ADMIT ALL BUTTON */}
+                        <button 
+                            onClick={async () => {
+                                try {
+                                    const currentAdmitted = Array.isArray(classState.admittedUsers) ? classState.admittedUsers : [];
+                                    const pendingIds = tracks
+                                        .map(t => t.participant.identity)
+                                        .filter(id => id !== currentUser?.uid && !currentAdmitted.includes(id));
+                                    
+                                    if (pendingIds.length > 0) {
+                                        await updateDoc(doc(db, "live_arena", "film-club-class"), {
+                                            admittedUsers: [...currentAdmitted, ...pendingIds]
+                                        });
+                                        showMessage("All pending students admitted!");
+                                    } else {
+                                        showMessage("No pending students to admit.");
+                                    }
+                                } catch (e) { showMessage("Admit All failed."); }
+                            }}
+                            style={{ width: '100%', padding: '12px', background: 'rgba(34, 197, 94, 0.1)', border: '1px solid #22C55E', color: '#22C55E', borderRadius: '8px', fontWeight: '900', fontSize: '11px', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = '#22C55E'; e.currentTarget.style.color = '#000'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(34, 197, 94, 0.1)'; e.currentTarget.style.color = '#22C55E'; }}
+                        >
+                            ➕ Admit All Students
+                        </button>
+
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {tracks.map(t => {
                                 const isSelf = t.participant.identity === currentUser?.uid;
@@ -336,7 +433,7 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
     const chatEndRef = useRef(null);
 
     const hasClubAccess = useMemo(() => {
-        return creatorProfile?.isFilmClub || creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';
+        return creatorProfile?.isFilmClub || creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin';
     }, [creatorProfile]);
 
     const isEnrollmentOpen = useMemo(() => {
