@@ -56,12 +56,12 @@ function ClassroomStage({ currentUser, creatorProfile, showMessage, handleExit }
     }
 
     return (
-        /* THE FIX: Initialize audio as true so students can publish their mics once admitted */
+        /* FORCE AUDIO-ONLY: Bypasses webcam conflicts and stops disconnect loops */
         <LiveKitRoom 
             serverUrl={LIVEKIT_URL} 
             token={token} 
             connect={true}
-            video={isHost}
+            video={false} 
             audio={true} 
         >
             <ClassroomStageContent 
@@ -95,25 +95,21 @@ function ClassroomParticipantCard({ track, roleColor = '#A855F7' }) {
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: '180px', borderRadius: '16px', overflow: 'hidden', border: `2px solid ${isSpeaking ? '#4ADE80' : (isDirector ? '#A855F7' : roleColor)}`, background: '#050505', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: isSpeaking ? '0 0 20px rgba(74, 222, 128, 0.2)' : 'none', transition: 'all 0.3s ease' }}>
             
-            {isCameraOn ? (
-                <VideoTrack trackRef={track} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-                /* Dynamic Audio Avatar Display */
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', textAlign: 'center' }}>
-                    <div style={{ position: 'relative', display: 'inline-block' }}>
-                        {/* Pulse Ring when speaking */}
-                        <div style={{ position: 'absolute', inset: -4, borderRadius: '50%', border: isSpeaking ? '3px solid #4ADE80' : 'none', animation: isSpeaking ? 'pulse-mic 1.5s infinite' : 'none' }}></div>
-                        <img 
-                            src={studentProfile?.profilePictureUrl || 'https://placehold.co/100?text=👤'} 
-                            alt="Avatar" 
-                            style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: `2px solid ${isSpeaking ? '#4ADE80' : '#444'}`, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }} 
-                        />
-                    </div>
-                    <span style={{ color: isDirector ? '#A855F7' : '#FFF', fontSize: '13px', fontWeight: '800', letterSpacing: '0.5px' }}>
-                        {isDirector ? "🎬 DIRECTOR" : `@${studentProfile?.creatorName?.toUpperCase() || 'STUDENT'}`}
-                    </span>
+            {/* Clean, Centered Symmetrical Audio Avatar Display */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', textAlign: 'center' }}>
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                    {/* Pulse Ring when speaking */}
+                    <div style={{ position: 'absolute', inset: -4, borderRadius: '50%', border: isSpeaking ? '3px solid #4ADE80' : 'none', animation: isSpeaking ? 'pulse-mic 1.5s infinite' : 'none' }}></div>
+                    <img 
+                        src={studentProfile?.profilePictureUrl || 'https://placehold.co/100?text=👤'} 
+                        alt="Avatar" 
+                        style={{ width: '90px', height: '90px', borderRadius: '50%', objectFit: 'cover', border: `2px solid ${isSpeaking ? '#4ADE80' : '#444'}`, boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }} 
+                    />
                 </div>
-            )}
+                <span style={{ color: isDirector ? '#A855F7' : '#FFF', fontSize: '13px', fontWeight: '800', letterSpacing: '0.5px' }}>
+                    {isDirector ? "🎬 DIRECTOR" : `@${studentProfile?.creatorName?.toUpperCase() || 'STUDENT'}`}
+                </span>
+            </div>
 
             {/* Float Badge */}
             <div style={{ position: 'absolute', top: '15px', left: '15px', background: isSpeaking ? 'rgba(74, 222, 128, 0.85)' : 'rgba(10,10,10,0.75)', padding: '4px 12px', borderRadius: '20px', color: '#FFF', fontSize: '10px', fontWeight: '900', letterSpacing: '0.5px', textTransform: 'uppercase', backdropFilter: 'blur(5px)', border: '1px solid rgba(255,255,255,0.1)' }}>
