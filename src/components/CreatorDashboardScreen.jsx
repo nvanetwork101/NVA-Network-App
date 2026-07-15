@@ -300,26 +300,28 @@ const CreatorDashboardScreen = ({
             where("paymentType", "==", "giftToken")
         );
 
-        const unsub = onSnapshot(q, (snapshot) => {
-            const fetched = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            
-            // Filter in-memory for gifts received within the last 30 days
-            const now = Date.now();
-            const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
+        const unsub = onSnapshot(
+                q, 
+                (snapshot) => {
+                    const fetched = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                    const now = Date.now();
+                    const thirtyDaysAgo = now - (30 * 24 * 60 * 60 * 1000);
 
-            const filteredAndSorted = fetched
-                .filter(p => {
-                    const createdTime = p.createdAt?.toDate ? p.createdAt.toDate().getTime() : (p.createdAt ? new Date(p.createdAt).getTime() : 0);
-                    return createdTime >= thirtyDaysAgo;
-                })
-                .sort((a, b) => {
-                    const tA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-                    const tB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-                    return tB - tA; // Newest first
-                });
+                    const filteredAndSorted = fetched
+                        .filter(p => {
+                            const createdTime = p.createdAt?.toDate ? p.createdAt.toDate().getTime() : (p.createdAt ? new Date(p.createdAt).getTime() : 0);
+                            return createdTime >= thirtyDaysAgo;
+                        })
+                        .sort((a, b) => {
+                            const tA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+                            const tB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+                            return tB - tA;
+                        });
 
-            setMyGifters(filteredAndSorted);
-        });
+                    setMyGifters(filteredAndSorted);
+                },
+                () => {} // 100% Silent Catch for clean console
+            );
 
         return () => unsub();
     }, [currentUser]); 
@@ -363,6 +365,14 @@ const CreatorDashboardScreen = ({
     const [editingFilmId, setEditingFilmId] = useState(null); // Tracks if editing a live film
     const [originalFilmType, setOriginalFilmType] = useState(null); // Tracks original monetization status
 
+    // --- BID WARS STATES ---
+                const [myAuctions, setMyAuctions] = useState([]);
+                const [showAuctionModal, setShowAuctionModal] = useState(false);
+                const [isSubmittingAuction, setIsSubmittingAuction] = useState(false);
+                const [auctionTermsChecked, setAuctionTermsChecked] = useState(false);
+                const [auctionForm, setAuctionForm] = useState({ title: '', category: 'Electronics', description: '', startingBid: '' });
+                const [auctionImages, setAuctionImages] = useState([null, null, null, null, null]);
+
     // Listen for Filmmaker's Live Arena Films & Pending Submissions
     useEffect(() => {
         // THE FIX: Unlocks the listener for Standard Users hosting Watch Parties
@@ -379,7 +389,15 @@ const CreatorDashboardScreen = ({
         const qPending = query(collection(db, "movieSuggestions"), where("suggestedBy", "==", currentUser.uid), where("status", "==", "pending"));
         const unsubPending = onSnapshot(qPending, (snap) => setMyPendingFilms(snap.docs.map(d => ({id: d.id, ...d.data()}))));
 
-        return () => { unsubLive(); unsubPending(); };
+        // 3. Bid Wars Auctions Listener
+        const qAuctions = query(collection(db, "auctions"), where("sellerId", "==", currentUser.uid));
+        const unsubAuctions = onSnapshot(
+            qAuctions, 
+            (snap) => setMyAuctions(snap.docs.map(d => ({id: d.id, ...d.data()}))),
+            () => {} // 100% Silent Catch for clean console
+        );
+
+        return () => { unsubLive(); unsubPending(); unsubAuctions(); };
     }, [currentUser, creatorProfile?.creatorField, creatorProfile?.role]);
     const [editBio, setEditBio] = useState('');
     const [editCreatorField, setEditCreatorField] = useState('');
@@ -396,6 +414,11 @@ const CreatorDashboardScreen = ({
     const galleryInputRef = useRef(null);
     const [showGalleryAdjustModal, setShowGalleryAdjustModal] = useState(false);
     const [galleryFileToAdjust, setGalleryFileToAdjust] = useState(null);
+
+    // --- HERO PRODUCT STATE ---
+    const [isUploadingHero, setIsUploadingHero] = useState(false);
+    const heroInputRef = useRef(null);
+    const [heroForm, setHeroForm] = useState({ price: '', whatsapp: '' });
 
     // --- NEW STATE for Account Deletion ---
     const [isDeleting, setIsDeleting] = useState(false);
@@ -559,6 +582,11 @@ const CreatorDashboardScreen = ({
             setEditCreatorField(creatorProfile.creatorField || '');
             setEditExistingWorkLink(creatorProfile.existingWorkLink || '');
             setHasAcceptedLegalTerms(false); // Reset checkbox state on re-entry
+            
+            setHeroForm({
+                price: creatorProfile.heroProduct?.price || '',
+                whatsapp: creatorProfile.heroProduct?.whatsapp || ''
+            });
         }
     }, [creatorProfile]);
 
@@ -684,6 +712,35 @@ const CreatorDashboardScreen = ({
     const triggerProfilePictureUpload = (e) => { const file = e.target.files[0]; if (file) { setImageFileToAdjust(file); setShowImageAdjustModal(true); } };
     const handleSaveAdjustedProfilePicture = async (adjustedBlob) => { if (!currentUser || !adjustedBlob) return; setIsUploadingPFP(true); showMessage("Uploading..."); try { const filePath = `profile_pictures/${currentUser.uid}/profile_${Date.now()}.png`; const storageRefPath = ref(storage, filePath); const snapshot = await uploadBytes(storageRefPath, adjustedBlob); const downloadURL = await getDownloadURL(snapshot.ref); const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { profilePictureUrl: downloadURL }); setCreatorProfile(prev => ({ ...prev, profilePictureUrl: downloadURL })); setShowImageAdjustModal(false); showMessage("Profile picture updated!"); } catch (error) { showMessage(`Failed to update profile picture: ${error.message}`); } finally { if (profilePictureInputRef.current) { profilePictureInputRef.current.value = null; } setIsUploadingPFP(false); } };
     const handleCancelAdjust = () => { setImageFileToAdjust(null); setShowImageAdjustModal(false); };
+
+    // --- HERO PRODUCT HANDLERS ($0 Storage Overwrite) ---
+    const handleHeroUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file || !currentUser) return;
+        setIsUploadingHero(true);
+        showMessage("Uploading Hero Product...");
+        try {
+            const filePath = `hero_products/${currentUser.uid}/hero.jpg`;
+            const storageRefPath = ref(storage, filePath);
+            const snapshot = await uploadBytes(storageRefPath, file);
+            const downloadURL = (await getDownloadURL(snapshot.ref)) + `?v=${Date.now()}`;
+            
+            const updatedHero = { ...creatorProfile.heroProduct, imageUrl: downloadURL };
+            await updateDoc(doc(db, "creators", currentUser.uid), { heroProduct: updatedHero });
+            setCreatorProfile(prev => ({ ...prev, heroProduct: updatedHero }));
+            showMessage("Product image updated!");
+        } catch (error) { showMessage(`Upload failed: ${error.message}`); } 
+        finally { setIsUploadingHero(false); if (heroInputRef.current) heroInputRef.current.value = null; }
+    };
+
+    const handleSaveHeroDetails = async () => {
+        try {
+            const updatedHero = { ...creatorProfile.heroProduct, price: heroForm.price, whatsapp: heroForm.whatsapp };
+            await updateDoc(doc(db, "creators", currentUser.uid), { heroProduct: updatedHero });
+            setCreatorProfile(prev => ({ ...prev, heroProduct: updatedHero }));
+            showMessage("Product details saved!");
+        } catch (error) { showMessage(`Save failed: ${error.message}`); }
+    };
 
     const handleGalleryFileSelect = (e) => {
         const file = e.target.files[0];
@@ -844,6 +901,93 @@ const CreatorDashboardScreen = ({
         } finally {
             setIsSubmittingFilm(false);
         }
+    };
+
+    // --- BID WARS HANDLERS ---
+    const handleAuctionSubmit = async (e) => {
+        e.preventDefault();
+        
+        const validImages = auctionImages.filter(Boolean);
+        if (validImages.length === 0) return showMessage("At least one image is mandatory.");
+        if (!auctionTermsChecked) return showMessage("You must agree to the Terms.");
+
+        // Enforce the 5 active listings cap
+        const activeCount = myAuctions.filter(a => ['pending', 'approved', 'active'].includes(a.status)).length;
+        if (activeCount >= 5) {
+            return showMessage("🛑 Maximum limit of 5 active listings reached.");
+        }
+
+        setIsSubmittingAuction(true);
+        showMessage("Uploading listing photos...");
+        try {
+            // Dynamically determine the next available flat listing slot (0 to 4)
+            const usedSlots = myAuctions.map(a => a.listingSlot || 0);
+            let listingSlot = 0;
+            for (let i = 0; i < 5; i++) {
+                if (!usedSlots.includes(i)) {
+                    listingSlot = i;
+                    break;
+                }
+            }
+
+            // Upload selected images to static slots to allow permanent overwriting (zero storage cost) [1.1.6]
+            const imageUrls = [];
+            for (let i = 0; i < 5; i++) {
+                const imageFile = auctionImages[i];
+                if (imageFile) {
+                    const filePath = `bidwars_auctions/${currentUser.uid}/listing_${listingSlot}/img_${i}.jpg`;
+                    const storageRefPath = ref(storage, filePath);
+                    const snapshot = await uploadBytes(storageRefPath, imageFile);
+                    imageUrls[i] = await getDownloadURL(snapshot.ref);
+                } else {
+                    imageUrls[i] = null; // Keep slots aligned
+                }
+            }
+
+            await addDoc(collection(db, "auctions"), {
+                sellerId: currentUser.uid,
+                sellerName: creatorProfile.creatorName,
+                title: auctionForm.title,
+                category: auctionForm.category,
+                description: auctionForm.description,
+                startingBid: Number(auctionForm.startingBid),
+                imageUrls: imageUrls.filter(Boolean), // Store array of URLs instead of single video
+                listingSlot: listingSlot,
+                status: 'pending',
+                createdAt: new Date().toISOString()
+            });
+
+            showMessage("Auction submitted to Admin Queue!");
+            setShowAuctionModal(false);
+            setAuctionForm({ title: '', category: 'Electronics', description: '', startingBid: '' });
+            setAuctionImages([null, null, null, null, null]);
+            setAuctionTermsChecked(false);
+        } catch (error) {
+            showMessage(`Submission failed: ${error.message}`);
+        } finally {
+            setIsSubmittingAuction(false);
+        }
+    };
+
+    const handleActivateAuction = (auction) => {
+        if ((creatorProfile?.arenaTokens || 0) < 20) {
+            showMessage("You need 20 Tokens to launch this auction. Please visit the Vault.");
+            return;
+        }
+
+        setConfirmationTitle("Launch Auction Live?");
+        setConfirmationMessage(`20 Tokens will be deducted. Your auction for "${auction.title}" will go live in the Arena for 72 hours.`);
+        setOnConfirmationAction(() => async () => {
+            showMessage("Launching Auction...");
+            try {
+                const executeLaunch = httpsCallable(functions, 'activateBidWarsAuction');
+                await executeLaunch({ auctionId: auction.id });
+                showMessage("Auction is now LIVE!");
+            } catch (err) {
+                showMessage("Failed to launch: " + err.message);
+            }
+        });
+        setShowConfirmationModal(true);
     };
 
     const handleDeleteAccount = async () => {
@@ -1077,6 +1221,17 @@ const CreatorDashboardScreen = ({
                         )}
                     </>
                 )}
+
+                {/* === BID WARS ACTIVATION BANNERS === */}
+                {myAuctions.filter(a => a.status === 'approved').map(auction => (
+                    <div key={auction.id} className="dashboardSection" style={{ border: '2px dashed #FFD700', backgroundColor: 'rgba(255, 215, 0, 0.1)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px' }} onClick={() => handleActivateAuction(auction)}>
+                        <div>
+                            <p className="dashboardSectionTitle" style={{ color: '#FFD700', margin: '0 0 5px 0' }}>⚠️ Auction Approved: {auction.title}</p>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#FFF' }}>Click here to pay <strong style={{color: '#FFD700'}}>20 Tokens</strong> and launch it live for 3 days.</p>
+                        </div>
+                        <span style={{ fontSize: '24px' }}>🚀</span>
+                    </div>
+                ))}
 
                 {/* === START: NVA ENROLLMENT STATUS PANEL === */}
                 {shouldShowEnrollmentBanner && (
@@ -1374,40 +1529,33 @@ const CreatorDashboardScreen = ({
                         );
                         })()}
 
-                        {/* === NEW: THE ROAST PASS WALLET (Wrapped in Admin Toggle & Made Free to Host) === */}
-                        {globalConfig?.isLiveArenaEnabled !== false && (
-                            <div className="glass-panel" style={{ border: '1px solid #FF4500', background: 'rgba(255, 69, 0, 0.05)', marginBottom: '24px' }}>
+                        {/* === ARENA WALLET === */}
+                        {(globalConfig?.isLiveArenaEnabled !== false || creatorProfile?.role === 'super_admin') && (
+                            <div className="glass-panel" style={{ border: '1px solid #FFD700', background: 'rgba(255, 215, 0, 0.05)', marginBottom: '24px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                                     <div>
-                                        <p style={{ margin: 0, color: '#FF4500', fontSize: '11px', fontWeight: '900', letterSpacing: '2px' }}>🔥 ROAST ROOM WALLET</p>
+                                        <p style={{ margin: 0, color: '#FFD700', fontSize: '11px', fontWeight: '900', letterSpacing: '2px' }}>🔥 ARENA TOKEN WALLET</p>
                                         <p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#FFF' }}>
-                                            {creatorProfile.roastTokens || 0} <span style={{ fontSize: '14px', color: '#888' }}>Tokens Available</span>
+                                            {creatorProfile.arenaTokens || 0} <span style={{ fontSize: '14px', color: '#888' }}>Tokens Available</span>
                                         </p>
                                     </div>
                                     <div className="badge-pill" style={{ borderColor: '#FFD700', color: '#FFD700', background: 'rgba(255, 215, 0, 0.1)' }}>
-                                        HOT SEAT READY
+                                        READY FOR ENTRY
                                     </div>
                                 </div>
                                 
-                                <p style={{ color: '#888', fontSize: '12px', marginBottom: '15px' }}>Hosting is completely free! Tokens are only required to Step to the Mic or react in other Arenas.</p>
+                                <p style={{ color: '#888', fontSize: '12px', marginBottom: '15px' }}>Step into the multi-room Live Arena. Pitch your hustle, debate, cypher, or enter the hot seat. Tokens are required to tip the scale or clock in.</p>
                                 
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                                     <button 
-                                        className="modern-button roast-ignite-btn" 
+                                        className="modern-button" 
                                         style={{ 
-                                            padding: '14px', fontWeight: '900', borderRadius: '10px',
-                                            textTransform: 'uppercase', letterSpacing: '1px', cursor: 'pointer', border: 'none' 
+                                            background: '#FFD700', color: '#000', padding: '14px', fontWeight: '900', borderRadius: '10px',
+                                            textTransform: 'uppercase', letterSpacing: '1px', cursor: 'pointer', border: 'none', boxShadow: '0 0 15px rgba(255,215,0,0.4)'
                                         }}
-                                        onClick={async () => {
-                                            showMessage("Igniting Roast Arena...");
-                                            try {
-                                                const userRef = doc(db, "creators", currentUser.uid);
-                                                await updateDoc(userRef, { isLive: true, liveRoomType: 'roast' });
-                                                setActiveScreen('RoastRoom');
-                                            } catch (e) { showMessage("Ignition sequence failed."); }
-                                        }}
+                                        onClick={() => setActiveScreen('LiveDirectory')}
                                     >
-                                        🎙️ HOST ROAST & GO LIVE
+                                        🎙️ ENTER LIVE ARENA
                                     </button>
 
                                     <button 
@@ -1419,8 +1567,44 @@ const CreatorDashboardScreen = ({
                                         }}
                                         onClick={() => setIsTokenVaultOpen(true)}
                                     >
-                                        🛒 BUY ROAST TOKENS
+                                        🛒 BUY ARENA TOKENS
                                     </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ====== BID WARS: MY AUCTIONS PANEL ====== */}
+                        {(globalConfig?.isBidWarsEnabled !== false || creatorProfile?.role === 'super_admin') && (
+                            <div className="glass-panel" style={{ background: 'linear-gradient(180deg, rgba(30,15,0,0.9) 0%, rgba(10,5,0,0.95) 100%)', border: '1px solid rgba(255, 140, 0, 0.3)', marginBottom: '24px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                                    <div>
+                                        <p style={{ margin: 0, color: '#FF8C00', fontSize: '18px', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase' }}>🔨 Bid Wars Auctions</p>
+                                        <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '12px' }}>List physical items, let the arena bid, hand over the PIN, get paid.</p>
+                                    </div>
+                                    <button className="modern-button" style={{ background: '#FF8C00', color: '#000', border: 'none', padding: '10px 20px', fontWeight: '900', borderRadius: '8px', cursor: 'pointer' }} onClick={() => setShowAuctionModal(true)}>
+                                        + NEW AUCTION
+                                    </button>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {myAuctions.map(a => (
+                                        <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0a0a', padding: '10px 15px', borderRadius: '8px', border: `1px solid ${a.status === 'active' ? '#4ADE80' : a.status === 'pending' ? '#FFD700' : '#444'}` }}>
+                                            <div>
+                                                <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>{a.title}</p>
+                                                <p style={{ margin: '2px 0 0 0', color: '#AAA', fontSize: '11px' }}>Starting Bid: {a.startingBid} GYD</p>
+                                            </div>
+                                            {a.status === 'approved' ? (
+                                                <button onClick={() => handleActivateAuction(a)} style={{ background: '#FF8C00', color: '#000', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                                                    🚀 Launch Live (20 Tokens)
+                                                </button>
+                                            ) : (
+                                                <span style={{ fontSize: '10px', fontWeight: 'bold', padding: '4px 8px', borderRadius: '6px', background: a.status === 'active' ? 'rgba(74, 222, 128, 0.2)' : 'rgba(255, 215, 0, 0.2)', color: a.status === 'active' ? '#4ADE80' : '#FFD700', textTransform: 'uppercase' }}>
+                                                    {a.status}
+                                                </span>
+                                            )}
+                                        </div>
+                                    ))}
+                                    {myAuctions.length === 0 && <p style={{ color: '#555', fontSize: '12px', textAlign: 'center', margin: 0, padding: '10px 0' }}>No active or pending auctions.</p>}
                                 </div>
                             </div>
                         )}
@@ -1616,6 +1800,86 @@ const CreatorDashboardScreen = ({
                         <p className="analytics-label">Blocked Users</p>
                     </div>
                 </div>
+
+                {/* ====== HERO PRODUCT SLOT (Designers & Crafters Only) ====== */}
+                {['Craft', 'Designer', 'Crafter / Designer'].includes(creatorProfile?.creatorField) && (
+                    <div className="glass-panel" style={{ padding: '24px', background: 'linear-gradient(135deg, rgba(20,20,20,0.9), rgba(0,0,0,0.95))', border: `1px solid ${roleColor}44`, marginBottom: '24px', position: 'relative', overflow: 'hidden' }}>
+                        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '3px', background: `linear-gradient(90deg, ${roleColor}, transparent)` }}></div>
+                        
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                            <div>
+                                <p style={{ margin: 0, color: '#FFF', fontSize: '18px', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase' }}>
+                                    🔥 <span style={{ color: roleColor }}>{creatorProfile.creatorField.includes('Design') ? "BUY MY FIT" : "BEST SELLER"}</span>
+                                </p>
+                                <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '12px' }}>Your premium hero item featured on your public content card.</p>
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
+                            {/* Image Overwrite Slot */}
+                            <div 
+                                onClick={() => !isUploadingHero && heroInputRef.current.click()}
+                                style={{ width: '140px', height: '140px', background: 'rgba(0,0,0,0.5)', borderRadius: '12px', border: `2px dashed ${roleColor}66`, cursor: isUploadingHero ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', boxShadow: `0 0 15px ${roleColor}22` }}
+                            >
+                                <input type="file" ref={heroInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleHeroUpload} />
+                                {isUploadingHero ? (
+                                    <span style={{ color: roleColor, fontSize: '12px', fontWeight: 'bold' }}>Uploading...</span>
+                                ) : creatorProfile?.heroProduct?.imageUrl ? (
+                                    <img src={creatorProfile.heroProduct.imageUrl} alt="Hero Product" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                    <span style={{ color: '#555', fontSize: '32px' }}>+</span>
+                                )}
+                            </div>
+
+                            {/* Details Form */}
+                            <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: '10px', justifyContent: 'center' }}>
+                                <div>
+                                    <label style={{ fontSize: '10px', color: '#AAA', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>Price Tag (GYD)</label>
+                                    <input 
+                                        type="number" 
+                                        className="cs-input" 
+                                        style={{ fontSize: '16px', fontWeight: 'bold', color: '#00FFFF', background: 'rgba(0,255,255,0.05)', border: '1px solid rgba(0,255,255,0.2)' }} 
+                                        placeholder="e.g. 15000" 
+                                        value={heroForm.price} 
+                                        onChange={e => setHeroForm({...heroForm, price: e.target.value})} 
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ fontSize: '10px', color: '#AAA', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>WhatsApp Contact #</label>
+                                    <input 
+                                        type="text" 
+                                        className="cs-input" 
+                                        style={{ fontSize: '14px', color: '#FFF' }} 
+                                        placeholder="e.g. 592-555-5555" 
+                                        value={heroForm.whatsapp} 
+                                        onChange={e => setHeroForm({...heroForm, whatsapp: e.target.value})} 
+                                    />
+                                </div>
+                                <button 
+                                    onClick={handleSaveHeroDetails} 
+                                    className="modern-button" 
+                                    style={{ 
+                                        background: `linear-gradient(90deg, ${roleColor}33, rgba(255,255,255,0.05))`, 
+                                        color: '#FFF', 
+                                        border: `1px solid ${roleColor}88`, 
+                                        padding: '10px', 
+                                        fontWeight: '900', 
+                                        borderRadius: '8px', 
+                                        cursor: 'pointer', 
+                                        marginTop: '5px',
+                                        backdropFilter: 'blur(5px)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '1px'
+                                    }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 0 15px ${roleColor}66`; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; }}
+                                >
+                                    💾 Save Details
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* ====== THE EXHIBITION ROOM (Craft/Design/Fitness Only) ====== */}
                 {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach'].includes(creatorProfile?.creatorField) && (
@@ -2258,6 +2522,90 @@ const CreatorDashboardScreen = ({
                 setPledgeContext={setPledgeContext}
                 setActiveScreen={setActiveScreen}
             />
+
+            {/* ====== BID WARS SUBMISSION MODAL ====== */}
+            {showAuctionModal && (
+                <div className="modal-backdrop" onClick={() => setShowAuctionModal(false)}>
+                    <div className="modal-content" style={{ maxWidth: '500px', border: '1px solid #FF8C00', background: '#0a0a0a' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <p className="modal-title" style={{ color: '#FF8C00' }}>🔨 Create Auction Listing</p>
+                            <button className="modal-close-button" onClick={() => setShowAuctionModal(false)}>&times;</button>
+                        </div>
+                        <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto', padding: '20px' }}>
+                            <form onSubmit={handleAuctionSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                <div className="formGroup">
+                                    <label className="formLabel">Item Title</label>
+                                    <input type="text" className="formInput" value={auctionForm.title} onChange={e => setAuctionForm({...auctionForm, title: e.target.value})} required />
+                                </div>
+                                <div className="formGroup">
+                                    <label className="formLabel">Category</label>
+                                    <select className="formInput" value={auctionForm.category} onChange={e => setAuctionForm({...auctionForm, category: e.target.value})}>
+                                        {["Electronics", "Fashion", "Art", "Automotive", "Services", "Other"].map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
+                                </div>
+                                <div className="formGroup">
+                                    <label className="formLabel">Item Description & Condition</label>
+                                    <textarea className="formTextarea" value={auctionForm.description} onChange={e => setAuctionForm({...auctionForm, description: e.target.value})} required />
+                                </div>
+                                <div className="formGroup">
+                                    <label className="formLabel">Starting Bid (GYD)</label>
+                                    <input type="number" min="100" className="formInput" value={auctionForm.startingBid} onChange={e => setAuctionForm({...auctionForm, startingBid: e.target.value})} required />
+                                </div>
+                                <div className="formGroup">
+                                    <label className="formLabel">Listing Photos (Max 5) <span style={{color:'#FF8C00'}}>*</span></label>
+                                    <p style={{fontSize: '11px', color: '#888', margin: '0 0 8px 0'}}>Tap any slot to upload/overwrite images. At least 1 image is required.</p>
+                                    
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', marginTop: '5px' }}>
+                                        {[0, 1, 2, 3, 4].map(idx => {
+                                            const file = auctionImages[idx];
+                                            return (
+                                                <div 
+                                                    key={idx} 
+                                                    onClick={() => !isSubmittingAuction && document.getElementById(`auctionImg_${idx}`).click()}
+                                                    style={{ aspectRatio: '1/1', background: 'rgba(0,0,0,0.5)', borderRadius: '8px', border: file ? '2px solid #FF8C00' : '1px solid #333', cursor: isSubmittingAuction ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}
+                                                >
+                                                    <input type="file" id={`auctionImg_${idx}`} accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                                                        const targetFile = e.target.files[0];
+                                                        if (targetFile) {
+                                                            const newImgs = [...auctionImages];
+                                                            newImgs[idx] = targetFile;
+                                                            setAuctionImages(newImgs);
+                                                        }
+                                                    }} />
+                                                    {file ? (
+                                                        <>
+                                                            <img src={URL.createObjectURL(file)} alt={`Slot ${idx}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                            <button 
+                                                                type="button" 
+                                                                onClick={(e) => { e.stopPropagation(); const newImgs = [...auctionImages]; newImgs[idx] = null; setAuctionImages(newImgs); }}
+                                                                style={{ position: 'absolute', top: '2px', right: '2px', backgroundColor: 'rgba(220,53,69,0.9)', color: '#FFF', border: 'none', borderRadius: '50%', width: '16px', height: '16px', cursor: 'pointer', fontSize: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                                ✕
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <span style={{ color: '#555', fontSize: '20px' }}>+</span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div style={{ background: 'rgba(255, 140, 0, 0.05)', border: '1px dashed rgba(255, 140, 0, 0.3)', padding: '12px', borderRadius: '8px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                                    <input type="checkbox" id="auctionTerms" checked={auctionTermsChecked} onChange={e => setAuctionTermsChecked(e.target.checked)} style={{ marginTop: '4px', cursor: 'pointer' }} />
+                                    <label htmlFor="auctionTerms" style={{ color: '#DDD', fontSize: '11px', lineHeight: '1.4', cursor: 'pointer' }}>
+                                        I certify that the uploaded photos accurately represent the current working condition of this item. I acknowledge that if the buyer refuses the item on-the-spot because it does not match this description, my 20-token listing fee is forfeited. I agree that a 15% platform fee will be deducted from my final token earnings upon MMG cash-out [1.1.6].
+                                    </label>
+                                </div>
+
+                                <button className="modern-button" type="submit" disabled={isSubmittingAuction || !auctionTermsChecked} style={{ background: auctionTermsChecked ? '#FF8C00' : '#444', color: '#000', border: 'none', padding: '15px', fontWeight: '900', fontSize: '16px', borderRadius: '8px', marginTop: '10px', cursor: auctionTermsChecked ? 'pointer' : 'not-allowed' }}>
+                                    {isSubmittingAuction ? 'Uploading Proof...' : 'Submit for Admin Review'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ====== MY FILM OFFICE SUBMISSION MODAL ====== */}
             {showFilmOfficeModal && (

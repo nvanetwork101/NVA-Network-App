@@ -171,29 +171,41 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
         };
     }, [room]);
 
-    const handleSendReaction = async (emoji) => {
-        if ((creatorProfile?.roastTokens || 0) < 1) {
+    const handleSendReaction = async (emojiString) => {
+        if ((creatorProfile?.arenaTokens || 0) < 1) {
             showMessage("1 Token required. Top up in the Vault.");
             return;
         }
 
+        // Determine emoji symbol based on string ID for local flight
+        let localEmoji = emojiString;
+        if (emojiString === 'fire') localEmoji = '🔥';
+        if (emojiString === 'tomato') localEmoji = '🍅';
+        if (emojiString === 'laugh') localEmoji = '😂';
+        if (emojiString === 'theme') {
+            if (battleState.liveRoomType === 'shoot_shot') localEmoji = '🌹';
+            else if (battleState.liveRoomType === 'debate') localEmoji = '💯';
+            else if (battleState.liveRoomType === 'cypher') localEmoji = '🎤';
+            else if (battleState.liveRoomType === 'pitch') localEmoji = '💼';
+            else localEmoji = '💀';
+        }
+
         const id = Date.now();
         const randomX = Math.floor(Math.random() * 60) + 20;
-        setFlyingEmojis(prev => [...prev, { id, emoji, x: randomX }]);
+        setFlyingEmojis(prev => [...prev, { id, emoji: localEmoji, x: randomX }]);
         setTimeout(() => setFlyingEmojis(prev => prev.filter(e => e.id !== id)), 2000);
 
-        // Broadcast to other participants in the room
         if (room) {
             const encoder = new TextEncoder();
-            const data = encoder.encode(JSON.stringify({ type: 'reaction', emoji }));
+            const data = encoder.encode(JSON.stringify({ type: 'reaction', emoji: localEmoji }));
             room.localParticipant.publishData(data, { reliable: true }).catch(() => {});
         }
 
         try {
-            const sendFunc = httpsCallable(functions, 'sendRoastReaction');
-            await sendFunc({ reactionType: emoji === '🔥' ? 'fire' : 'tomato', hostId });
+            const sendFunc = httpsCallable(functions, 'sendArenaReaction');
+            await sendFunc({ reactionType: emojiString, hostId });
         } catch (err) { 
-            console.error("Firebase reaction sync failed:", err); 
+            console.error("Reaction sync failed:", err); 
         }
     };
 
@@ -219,13 +231,13 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
     };
 
     const handleClockIn = async () => {
-        if ((creatorProfile?.roastTokens || 0) < 5) {
+        if ((creatorProfile?.arenaTokens || 0) < 5) {
             showMessage("5 Tokens required to Step to the Mic.");
             return;
         }
         try {
             setLocalMediaIntent(true);
-            const clockFunc = httpsCallable(functions, 'clockIntoRoast');
+            const clockFunc = httpsCallable(functions, 'clockIntoArena');
             await clockFunc({ hostId });
         } catch (err) { 
             setLocalMediaIntent(false);
@@ -497,7 +509,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                     <ViewerCount />
                     <div className="glass-pill" style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', color: '#FFD700', fontSize: '11px', fontWeight: '800' }}>
                         <span>🎟️</span>
-                        <span>{creatorProfile?.roastTokens || 0} TOKENS</span>
+                        <span>{creatorProfile?.arenaTokens || 0} TOKENS</span>
                     </div>
                     <button onClick={handleShareArena} className="glass-pill" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', cursor: 'pointer', color: '#FFF', border: '1px solid rgba(255, 255, 255, 0.1)', background: 'rgba(15, 15, 15, 0.65)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'} onMouseLeave={e => e.currentTarget.style.background = 'rgba(15,15,15,0.65)'}>
                         <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
@@ -541,6 +553,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                         if (battleState.liveRoomType === 'shoot_shot') themeEmoji = '🌹';
                         if (battleState.liveRoomType === 'debate') themeEmoji = '💯';
                         if (battleState.liveRoomType === 'cypher') themeEmoji = '🎤';
+                        if (battleState.liveRoomType === 'pitch') themeEmoji = '💼';
                         
                         return [
                             { e: '🔥', c: battleState.fireCount },
@@ -577,10 +590,8 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                     const isSplatted = battleState.splatMode === 'host';
                                     const isMuted = battleState.hostMutePenalty;
                                     const scaleState = battleState.scale !== undefined ? battleState.scale : 50;
-                                    
-                                    // Scale-based dynamic avatar sizing
                                     const hostDominance = 100 - scaleState; 
-                                    const avatarSize = 100 + (hostDominance / 2); // Breathes based on Tug of War
+                                    const avatarSize = 100 + (hostDominance / 2);
                                     const glowIntensity = hostDominance > 70 ? '0 0 40px #FFD700' : '0 8px 32px rgba(0,0,0,0.5)';
 
                                     return (
@@ -595,6 +606,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                                 transition: 'all 0.3s ease-out'
                                             }}>
                                                 {isMuted ? '🔇' : isSuperSaiyan ? '🔥' : '🎙️'}
+                                            </div>
                                             </div>
                                             <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', letterSpacing: '0.05em' }}>
                                                 {hostRealName.toUpperCase()} (HOST)
@@ -622,8 +634,6 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                     const isSuperSaiyan = battleState.superSaiyanMode === 'roaster';
                                     const isSplatted = battleState.splatMode === 'roaster';
                                     const scaleState = battleState.scale !== undefined ? battleState.scale : 50;
-                                    
-                                    // Scale-based dynamic avatar sizing
                                     const guestDominance = scaleState;
                                     const avatarSize = 100 + (guestDominance / 2);
                                     const glowIntensity = guestDominance > 70 ? '0 0 40px #FFD700' : '0 8px 32px rgba(0,0,0,0.5)';
@@ -640,6 +650,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                                                 transition: 'all 0.3s ease-out'
                                             }}>
                                                 {isSuperSaiyan ? '🔥' : '⚡'}
+                                            </div>
                                             </div>
                                             <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', letterSpacing: '0.05em' }}>
                                                 {battleState.roasterName ? battleState.roasterName.toUpperCase() : 'CONTENDER'}
@@ -785,6 +796,7 @@ function RoastRoomContent({ battleState, currentUser, creatorProfile, showMessag
                             if (battleState.liveRoomType === 'shoot_shot') themeEmoji = '🌹';
                             if (battleState.liveRoomType === 'debate') themeEmoji = '💯';
                             if (battleState.liveRoomType === 'cypher') themeEmoji = '🎤';
+                            if (battleState.liveRoomType === 'pitch') themeEmoji = '💼';
                             
                             return ['🔥', '😂', themeEmoji, '🍅'].map(emoji => (
                                 <button 
@@ -814,7 +826,6 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
     const isStreamHost = currentUser?.uid === battleState.hostId || currentUser?.uid === hostId;
     const isRoaster = currentUser?.uid === battleState.roasterId;
 
-    // Auto-Claim: Dynamic Room Creator is instantly registered as the Host of their own stream
     useEffect(() => {
         if (currentUser && currentUser.uid === hostId) {
             const roomType = creatorProfile?.liveRoomType || 'roast';
@@ -859,7 +870,6 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                     superSaiyanMode: false,
                     splatMode: false
                 });
-                // Host terminating stream completely resets the Badges of Honor
                 await updateDoc(doc(db, "live_arena", hostId), { hostStreak: 0, guestStreak: 0, fireCount: 0, tomatoCount: 0, laughCount: 0, themeCount: 0 }).catch(() => {});
                 await updateDoc(doc(db, "creators", currentUser.uid), { isLive: false, liveRoomType: null });
             } else if (isActiveRoaster) {
@@ -871,7 +881,6 @@ function RoastRoomScreen({ setActiveScreen, currentUser, creatorProfile, showMes
                     scale: 50,
                     superSaiyanMode: false,
                     splatMode: false
-                    // Guest exit preserves the Badges and Tally for the Host's next match
                 });
             }
         } catch (e) {

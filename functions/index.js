@@ -7322,14 +7322,8 @@ exports.getRoastRoomToken = onCall({
     }
 });
 
-// =====================================================================
-// ================== LIVE ROAST ARENA ORCHESTRATOR ====================
-// =====================================================================
-
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// CLOCK-IN: Starts the match instantly and returns immediately (No blocking delays)
-exports.clockIntoRoast = onCall({ enforceAppCheck: false }, async (request) => {
+// CLOCK-IN: Starts the match instantly and returns immediately
+exports.clockIntoArena = onCall({ enforceAppCheck: false }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
     
     const { hostId } = request.data || {};
@@ -7345,28 +7339,24 @@ exports.clockIntoRoast = onCall({ enforceAppCheck: false }, async (request) => {
             const arenaSnap = await transaction.get(arenaRef);
             const userSnap = await transaction.get(userRef);
             const hostRef = db.collection("creators").doc(hostId);
-            const hostSnap = await transaction.get(hostRef);
             
             if (arenaSnap.exists && arenaSnap.data()?.status !== 'idle') {
                 throw new HttpsError('failed-precondition', 'Arena is currently occupied!');
             }
-            if ((userSnap.data()?.roastTokens || 0) < 5) {
-                throw new HttpsError('failed-precondition', 'Insufficient Roast Passes (Need 5).');
+            if ((userSnap.data()?.arenaTokens || 0) < 5) {
+                throw new HttpsError('failed-precondition', 'Insufficient Arena Tokens (Need 5).');
             }
 
-            // Deduct 5 tokens to enter the Clock-In Queue
-            transaction.update(userRef, { roastTokens: admin.firestore.FieldValue.increment(-5) });
+            // Deduct 5 tokens to enter the Queue
+            transaction.update(userRef, { arenaTokens: admin.firestore.FieldValue.increment(-5) });
 
-            // Host receives 100% of the Queue Entry Fee (50 Yield Units)
+            // Host receives 100% of Queue Entry Fee (50 Yield Units)
             transaction.update(hostRef, { totalEarnings: admin.firestore.FieldValue.increment(50) });
 
-            // Detailed Financial Accounting: Log Queue Entry
+            // Log Queue Entry
             const txRef = db.collection("financial_transactions").doc();
-            transaction.set(txRef, {
-                type: "CLOCK_IN_QUEUE_FEE", senderId: uid, receiverId: hostId, amountTokens: 5, yield: 50, timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
+            transaction.set(txRef, { type: "CLOCK_IN_QUEUE_FEE", senderId: uid, receiverId: hostId, amountTokens: 5, yield: 50, timestamp: admin.firestore.FieldValue.serverTimestamp() });
             
-            // Initialize Match & 50/50 Equilibrium Scale
             transaction.set(arenaRef, {
                 status: 'suspense',
                 hostId: hostId,
@@ -7374,27 +7364,20 @@ exports.clockIntoRoast = onCall({ enforceAppCheck: false }, async (request) => {
                 roasterName: userSnap.data()?.creatorName || 'NVA Contender',
                 currentReceiver: 'none',
                 timer: 5,
-                scale: 50, // 50% Equilibrium Start
+                scale: 50,
                 superSaiyanMode: false,
                 splatMode: false
-                // Emoji counts NOT reset here to preserve 'Badges of Honor'
             }, { merge: true });
         });
 
         return { success: true };
-    } catch (error) {
-        console.error("Clock-in failed:", error);
-        throw error;
-    }
+    } catch (error) { throw error; }
 });
 
-// PHASE TRANSITIONER: Authorized Host client triggers non-blocking phase updates
 exports.advanceArenaPhase = onCall({ enforceAppCheck: false }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
     
     const { hostId } = request.data || {};
-    if (!hostId) throw new HttpsError('invalid-argument', 'Missing hostId parameter.');
-
     const uid = request.auth.uid;
     if (uid !== hostId) throw new HttpsError('permission-denied', 'Only the Host can tick the match.');
 
@@ -7405,112 +7388,68 @@ exports.advanceArenaPhase = onCall({ enforceAppCheck: false }, async (request) =
         const snap = await transaction.get(arenaRef);
         if (!snap.exists) return;
         const data = snap.data();
-
-        // Guard: Prevent double-execution of transitions
         if (data.timer > 0) return;
 
-        let nextStatus = 'idle';
-        let nextReceiver = 'none';
-        let nextTimer = 0;
-        let streakChange = 0;
+        let nextStatus = 'idle'; let nextReceiver = 'none'; let nextTimer = 0; let streakChange = 0;
 
         if (data.status === 'suspense' && data.currentReceiver === 'none') {
-            if (data.roasterId && data.fireCount === 0 && data.tomatoCount === 0) {
-                // Suspense -> Roaster's Turn (30s)
-                nextStatus = 'battle';
-                nextReceiver = 'roaster';
-                nextTimer = 30;
+            if (data.roasterId && (data.scale === 50)) {
+                nextStatus = 'battle'; nextReceiver = 'roaster'; nextTimer = 60; // Extended phase
             } else {
-                // Suspense -> Host's Clapback (30s)
-                nextStatus = 'battle';
-                nextReceiver = 'host';
-                nextTimer = 30;
+                nextStatus = 'battle'; nextReceiver = 'host'; nextTimer = 30;
             }
         } else if (data.status === 'battle' && data.currentReceiver === 'roaster') {
-            // Roaster's Turn -> Transition Suspense (5s)
-            nextStatus = 'suspense';
-            nextReceiver = 'none';
-            nextTimer = 5;
+            nextStatus = 'suspense'; nextReceiver = 'none'; nextTimer = 5;
         } else if (data.status === 'battle' && data.currentReceiver === 'host') {
-            // Host's Clapback -> End of match (Reset to Idle)
-            const netScore = (data.fireCount || 0) - (data.tomatoCount || 0);
-            streakChange = netScore > 0 ? -1 : 1;
-            nextStatus = 'idle';
-            nextReceiver = 'host';
-            nextTimer = 0;
+            const isGuestWin = data.scale > 50;
+            streakChange = isGuestWin ? -1 : 1;
+            nextStatus = 'idle'; nextReceiver = 'host'; nextTimer = 0;
         }
 
         if (nextStatus === 'idle') {
             transaction.update(arenaRef, {
-                status: 'idle',
-                roasterId: null,
-                currentReceiver: 'host',
-                timer: 0,
+                status: 'idle', roasterId: null, currentReceiver: 'host', timer: 0,
                 hostStreak: admin.firestore.FieldValue.increment(streakChange),
-                scale: 50, // Resets Tug-of-war for next guest
-                superSaiyanMode: false,
-                splatMode: false,
-                hostMutePenalty: false
-                // DELETED: fireCount/tomatoCount resets to persist Badges of Honor
+                scale: 50, superSaiyanMode: false, splatMode: false, hostMutePenalty: false
             });
         } else {
-            transaction.update(arenaRef, {
-                status: nextStatus,
-                currentReceiver: nextReceiver,
-                timer: nextTimer
-            });
+            transaction.update(arenaRef, { status: nextStatus, currentReceiver: nextReceiver, timer: nextTimer });
         }
     });
 
     return { success: true };
 });
 
-exports.sendRoastReaction = onCall({ enforceAppCheck: false }, async (request) => {
+exports.sendArenaReaction = onCall({ enforceAppCheck: false }, async (request) => {
     if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
     
     const { reactionType, hostId } = request.data || {};
-    if (!hostId) throw new HttpsError('invalid-argument', 'Missing hostId parameter.');
-
     const db = admin.firestore();
     const arenaRef = db.collection("live_arena").doc(hostId);
     const arenaSnap = await arenaRef.get();
     
     if (!arenaSnap.exists) throw new HttpsError('not-found', 'Arena not initialized.');
     const arenaData = arenaSnap.data();
-
     const roasterId = arenaData.roasterId;
-    const receiverRole = arenaData.currentReceiver;
 
-    let finalRecipientId = hostId;
-    if (receiverRole === 'roaster') finalRecipientId = roasterId;
-    if (receiverRole === 'host') finalRecipientId = hostId;
-
-    // 5% Tug-of-War Scale Math & Emoji Tally
     let currentScale = arenaData.scale !== undefined ? arenaData.scale : 50;
     let updateFields = {};
     const isTomato = reactionType === 'tomato';
-    
-    // Tomato = -5%, Positive (Fire/Laugh/Theme) = +5%
     const scaleShift = isTomato ? -5 : 5;
-    currentScale = Math.max(0, Math.min(100, currentScale + scaleShift));
     
+    currentScale = Math.max(0, Math.min(100, currentScale + scaleShift));
     updateFields.scale = currentScale;
     updateFields[`${reactionType}Count`] = admin.firestore.FieldValue.increment(1);
 
-    // 100% / 0% Boundary Actions (Super Saiyan / Splat / Host Penalty)
     if (currentScale >= 100) {
         updateFields.guestStreak = admin.firestore.FieldValue.increment(1);
-        updateFields.scale = 50; // Reset to 50/50
+        updateFields.scale = 50;
         updateFields.superSaiyanMode = 'roaster';
     } else if (currentScale <= 0) {
         updateFields.hostStreak = admin.firestore.FieldValue.increment(1);
-        updateFields.scale = 50; // Reset to 50/50
-        updateFields.splatMode = 'roaster'; // Triggers front-end kick/boot logic
-        
-        // Host Penalty check for "That's Debatable" mode
-        if (arenaData.liveRoomType === 'debate') {
-            updateFields.hostMutePenalty = true;
-        }
+        updateFields.scale = 50;
+        updateFields.splatMode = 'roaster';
+        if (arenaData.liveRoomType === 'debate') updateFields.hostMutePenalty = true;
     }
 
     await arenaRef.update(updateFields);
@@ -7521,33 +7460,117 @@ exports.sendRoastReaction = onCall({ enforceAppCheck: false }, async (request) =
 
     await db.runTransaction(async (t) => {
         const sDoc = await t.get(senderRef);
-        if ((sDoc.data().roastTokens || 0) < 1) {
-            throw new HttpsError('failed-precondition', 'Out of tokens! Need 1 to react.');
-        }
+        if ((sDoc.data().arenaTokens || 0) < 1) throw new HttpsError('failed-precondition', 'Out of tokens!');
         
-        // 1 Token universal cost
-        t.update(senderRef, { roastTokens: admin.firestore.FieldValue.increment(-1) });
-        
-        const totalYield = 10; // 1 Token = 10 Yield Units
+        t.update(senderRef, { arenaTokens: admin.firestore.FieldValue.increment(-1) });
+        const totalYield = 10; 
 
-        // Presence-Aware Financial Split
         if (roasterId) {
-            // Arena Mode (Host + Guest): 50/50 Split
             t.update(hostRef, { totalEarnings: admin.firestore.FieldValue.increment(totalYield / 2) });
             t.update(guestRef, { totalEarnings: admin.firestore.FieldValue.increment(totalYield / 2) });
-            
             const txRef = db.collection("financial_transactions").doc();
             t.set(txRef, { type: "REACTION_SPLIT", senderId: request.auth.uid, hostId: hostId, guestId: roasterId, emoji: reactionType, amountTokens: 1, hostYield: totalYield/2, guestYield: totalYield/2, timestamp: admin.firestore.FieldValue.serverTimestamp() });
         } else {
-            // Solo Mode (Host Only): 100% Yield
             t.update(hostRef, { totalEarnings: admin.firestore.FieldValue.increment(totalYield) });
-            
             const txRef = db.collection("financial_transactions").doc();
             t.set(txRef, { type: "REACTION_SOLO", senderId: request.auth.uid, receiverId: hostId, emoji: reactionType, amountTokens: 1, yield: totalYield, timestamp: admin.firestore.FieldValue.serverTimestamp() });
         }
     });
 
     return { success: true };
+});
+
+exports.activateBidWarsAuction = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+    const { auctionId } = request.data || {};
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+    const auctionRef = db.collection("auctions").doc(auctionId);
+    const sellerRef = db.collection("creators").doc(uid);
+
+    await db.runTransaction(async (t) => {
+        const sellerSnap = await t.get(sellerRef);
+        const auctionSnap = await t.get(auctionRef);
+
+        if (auctionSnap.data().sellerId !== uid) throw new HttpsError('permission-denied', 'Not your auction.');
+        if ((sellerSnap.data().arenaTokens || 0) < 20) throw new HttpsError('failed-precondition', 'Insufficient Arena Tokens.');
+
+        t.update(sellerRef, { arenaTokens: admin.firestore.FieldValue.increment(-20) });
+        
+        const txRef = db.collection("financial_transactions").doc();
+        t.set(txRef, { type: "BID_WARS_LISTING_FEE", senderId: uid, amountTokens: 20, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 72);
+        const secretPin = Math.floor(100000 + Math.random() * 900000).toString();
+
+        t.update(auctionRef, {
+            status: 'active',
+            secretPin: secretPin,
+            expiresAt: expiresAt.toISOString(),
+            highestBid: auctionSnap.data().startingBid,
+            highestBidderId: null,
+            escrowedTokens: 0
+        });
+    });
+    return { success: true };
+});
+
+exports.placeBidWarsBid = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+    const { auctionId, bidAmount } = request.data || {};
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+    const auctionRef = db.collection("auctions").doc(auctionId);
+    const bidderRef = db.collection("creators").doc(uid);
+
+    await db.runTransaction(async (t) => {
+        const auctionSnap = await t.get(auctionRef);
+        const bidderSnap = await t.get(bidderRef);
+        const data = auctionSnap.data();
+
+        if (data.status !== 'active') throw new HttpsError('failed-precondition', 'Auction not active.');
+        if (new Date(data.expiresAt) < new Date()) throw new HttpsError('failed-precondition', 'Auction expired.');
+        if (uid === data.sellerId) throw new HttpsError('invalid-argument', 'Cannot bid on your own item.');
+        if (bidAmount <= data.highestBid) throw new HttpsError('invalid-argument', 'Bid must be higher.');
+        if ((bidderSnap.data().arenaTokens || 0) < bidAmount) throw new HttpsError('failed-precondition', 'Insufficient Arena Tokens.');
+
+        if (data.highestBidderId) {
+            const prevBidderRef = db.collection("creators").doc(data.highestBidderId);
+            t.update(prevBidderRef, { arenaTokens: admin.firestore.FieldValue.increment(data.escrowedTokens) });
+        }
+
+        t.update(bidderRef, { arenaTokens: admin.firestore.FieldValue.increment(-bidAmount) });
+        t.update(auctionRef, { highestBid: bidAmount, highestBidderId: uid, highestBidderName: bidderSnap.data().creatorName, escrowedTokens: bidAmount });
+    });
+    return { success: true };
+});
+
+exports.releaseBidWarsEscrow = onCall({ enforceAppCheck: false }, async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Login required.');
+    const { auctionId, providedPin } = request.data || {};
+    const uid = request.auth.uid;
+    const db = admin.firestore();
+    const auctionRef = db.collection("auctions").doc(auctionId);
+
+    await db.runTransaction(async (t) => {
+        const snap = await t.get(auctionRef);
+        const data = snap.data();
+
+        if (data.sellerId !== uid) throw new HttpsError('permission-denied', 'Only seller can input PIN.');
+        if (data.secretPin !== providedPin) throw new HttpsError('invalid-argument', 'Invalid PIN.');
+        
+        if (data.highestBidderId && data.escrowedTokens > 0) {
+            const tokenToCashValue = data.escrowedTokens * 10;
+            const sellerRef = db.collection("creators").doc(uid);
+            t.update(sellerRef, { totalEarnings: admin.firestore.FieldValue.increment(tokenToCashValue) });
+            
+            const txRef = db.collection("financial_transactions").doc();
+            t.set(txRef, { type: "BID_WARS_COMPLETED", sellerId: uid, buyerId: data.highestBidderId, tokensEscrowed: data.escrowedTokens, cashYield: tokenToCashValue, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+        }
+        t.delete(auctionRef);
+    });
+    return { success: true, message: "Tokens released to earnings!" };
 });
 
 

@@ -60,6 +60,7 @@ const AdminDashboardScreen = ({
     const [pendingPledges, setPendingPledges] = useState([]);
     const [monetizationQueue, setMonetizationQueue] = useState([]); 
     const [pendingPayouts, setPendingPayouts] = useState([]); 
+    const [pendingAuctions, setPendingAuctions] = useState([]); 
 
     // --- SYSTEM FINANCE HUB STATES ---
     const [systemReportData, setSystemReportData] = useState(null);
@@ -424,6 +425,10 @@ const AdminDashboardScreen = ({
         safeSubscribe(query(contentRef, where('monetizationStatus', '==', 'pending')), 
             (s) => setMonetizationQueue(s.docs.map(d=>({id:d.id,...d.data()}))), 'monetizationQueue');
 
+        // NEW: Bid Wars Approval Queue
+        safeSubscribe(query(collection(db, "auctions"), where('status', '==', 'pending')), 
+            (s) => setPendingAuctions(s.docs.map(d=>({id:d.id,...d.data()}))), 'pendingAuctions');
+
         // Admin Only Data
         if (creatorProfile.role === 'admin' || creatorProfile.role === 'authority' || creatorProfile.role === 'super_admin') {
             safeSubscribe(query(collection(db, "reports"), where("status", "==", "pending")), (s) => setPendingReportsCount(s.size), 'reports');
@@ -576,6 +581,29 @@ const AdminDashboardScreen = ({
             showMessage(result.data.message);
         } catch (error) { showMessage(`Error: ${error.message}`); } 
         finally { setUserToSuspend(null); }
+    };
+
+    // --- BID WARS QUEUE HANDLERS ---
+    const handleApproveAuction = async (auction) => {
+        setConfirmationTitle("Approve Auction?");
+        setConfirmationMessage(`Verify that the 10-second proof video for "${auction.title}" meets guidelines. This will allow the seller to pay 20 Tokens and launch it live.`);
+        setOnConfirmationAction(() => async () => {
+            showMessage("Approving auction...");
+            try {
+                await updateDoc(doc(db, "auctions", auction.id), { status: 'approved' });
+                showMessage("Auction Approved!");
+            } catch (error) { showMessage(`Error: ${error.message}`); }
+        });
+        setShowConfirmationModal(true);
+    };
+
+    const handleRejectAuction = async (auction) => {
+        if (window.confirm("Reject and delete this auction?")) {
+            try {
+                await deleteDoc(doc(db, "auctions", auction.id));
+                showMessage("Auction rejected and deleted.");
+            } catch (error) { showMessage(`Error: ${error.message}`); }
+        }
     };
 
     // --- MONETIZATION QUEUE HANDLERS ---
@@ -866,6 +894,9 @@ const AdminDashboardScreen = ({
                             </button>
                             <button className={`admin-nav-button ${selectedAdminSubScreen === 'CategoryManager' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('CategoryManager')}>Categories</button>
                             <button className={`admin-nav-button ${selectedAdminSubScreen === 'BoxOffice' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('BoxOffice')}>Box Office</button>
+                            <button className={`admin-nav-button ${selectedAdminSubScreen === 'BidWars' ? 'active' : ''}`} onClick={() => setSelectedAdminSubScreen('BidWars')}>
+                                Bid Wars {pendingAuctions.length > 0 && <span style={{color: '#FFD700'}}>({pendingAuctions.length})</span>}
+                            </button>
                             {creatorProfile.role === 'super_admin' && (
                                 <button className={`admin-nav-button ${selectedAdminSubScreen === 'Financials' ? 'active' : ''}`} style={{ borderColor: '#00FF00', color: '#00FF00' }} onClick={() => setSelectedAdminSubScreen('Financials')}>Finance Command</button>
                             )}
@@ -889,6 +920,45 @@ const AdminDashboardScreen = ({
                 {selectedAdminSubScreen === 'CategoryManager' && <AdminCategoryManagerScreen showMessage={showMessage} setShowConfirmationModal={setShowConfirmationModal} setConfirmationTitle={setConfirmationTitle} setConfirmationMessage={setConfirmationMessage} setOnConfirmationAction={setOnConfirmationAction} />}
                 {selectedAdminSubScreen === 'BoxOffice' && <AdminBoxOfficeScreen showMessage={showMessage} />}
                 
+                {/* ====== BID WARS GATEKEEPER ====== */}
+                {selectedAdminSubScreen === 'BidWars' && (
+                    <section className="dashboardSection" style={{ border: '2px solid #FF8C00', background: 'rgba(255, 140, 0, 0.05)' }}>
+                        <p className="dashboardSectionTitle" style={{ color: '#FF8C00', margin: 0 }}>🔨 Bid Wars: Approval Queue</p>
+                        <p style={{ color: '#AAA', fontSize: '12px', margin: '8px 0 16px 0' }}>Verify the 10-second proof videos. Ensure the item powers on and matches the description.</p>
+                        
+                        {pendingAuctions.length > 0 ? (
+                            <div className="dashboardContentList">
+                                {pendingAuctions.map(auction => (
+                                    <div key={auction.id} className="adminDashboardItem" style={{ display: 'flex', flexDirection: 'column', background: '#111', padding: '15px', border: '1px solid #333', borderRadius: '8px', marginBottom: '12px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                                            <div>
+                                                <p style={{ margin: 0, fontWeight: 'bold', fontSize: '16px', color: '#FFF' }}>{auction.title}</p>
+                                                <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#AAA' }}>Category: {auction.category} | Seller: <span style={{ color: '#FFD700' }}>{auction.sellerName}</span></p>
+                                                <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: '#DDD', maxWidth: '80%' }}>"{auction.description}"</p>
+                                                <p style={{ margin: '6px 0 0 0', fontSize: '14px', color: '#4ADE80', fontWeight: 'bold' }}>Starting Bid: {auction.startingBid} GYD</p>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '10px' }}>
+                                                <button className="adminActionButton reject" onClick={() => handleRejectAuction(auction)}>Reject</button>
+                                                <button className="adminActionButton approve" style={{ background: '#FF8C00', color: '#000', borderColor: '#FF8C00' }} onClick={() => handleApproveAuction(auction)}>Approve & Notify</button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', background: '#000', padding: '10px', borderRadius: '6px', border: '1px solid #222' }}>
+                                            {auction.imageUrls && auction.imageUrls.map((url, imgIdx) => (
+                                                <div key={imgIdx} style={{ width: '120px', height: '120px', flexShrink: 0, borderRadius: '4px', overflow: 'hidden', border: '1px solid #333' }}>
+                                                    <img src={url} alt={`Listing Pic ${imgIdx}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <p style={{ color: '#888', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No pending auctions in the queue.</p>
+                        )}
+                    </section>
+                )}
+
                 {/* ====== THE NVA FINANCIAL COMMAND CENTER ====== */}
                 {selectedAdminSubScreen === 'Financials' && (
                     <section className="dashboardSection printable-content" style={{ border: '2px solid #00FF00', background: 'rgba(0, 255, 0, 0.02)' }}>
@@ -1233,26 +1303,49 @@ const AdminDashboardScreen = ({
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#111', padding: '15px', borderRadius: '8px', border: '1px solid #222', marginTop: '10px' }}>
                                 <div>
-                                    <p style={{ margin: '0', color: '#FF1493', fontWeight: 'bold', fontSize: '15px' }}>🎤 Live Roast Arena</p>
-                                    <p style={{ margin: '4px 0 0', color: '#888', fontSize: '12px' }}>Enable/Disable the real-time Jitsi/LiveKit Roast feature for all users.</p>
+                                    <p style={{ margin: '0', color: '#FF1493', fontWeight: 'bold', fontSize: '15px' }}>🏟️ Live Arena Ecosystem</p>
+                                    <p style={{ margin: '4px 0 0', color: '#888', fontSize: '12px' }}>Hides the Live Arena globally while under construction. <strong style={{color: '#FFD700'}}>Super Admins bypass this to test freely.</strong></p>
                                 </div>
                                 <button 
                                     className={`adminActionButton ${homeScreenLayout?.showRoastArena !== false ? 'reject' : 'approve'}`}
                                     style={{ margin: 0, minWidth: '130px' }}
                                     onClick={async () => {
                                         const isCurrentlyVisible = homeScreenLayout?.showRoastArena !== false;
-                                        showMessage(`${isCurrentlyVisible ? 'Disabling' : 'Enabling'} Roast Arena...`);
+                                        showMessage(`${isCurrentlyVisible ? 'Disabling' : 'Enabling'} Live Arena Ecosystem...`);
                                         try {
-                                            // THE FIX: Simultaneously updates both configurations so the switch kills access on all dashboards and home screens at once
                                             await Promise.all([
                                                 setDoc(doc(db, "settings", "homeScreenLayout"), { showRoastArena: !isCurrentlyVisible }, { merge: true }),
                                                 setDoc(doc(db, "settings", "enrollmentConfig"), { isLiveArenaEnabled: !isCurrentlyVisible }, { merge: true })
                                             ]);
-                                            showMessage("Roast Arena toggled globally!");
+                                            showMessage("Live Arena toggled globally!");
                                         } catch (error) { showMessage("Error updating layout."); }
                                     }}
                                 >
                                     {homeScreenLayout?.showRoastArena !== false ? 'Disable Arena' : 'Enable Arena'}
+                                </button>
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#111', padding: '15px', borderRadius: '8px', border: '1px solid #222', marginTop: '10px' }}>
+                                <div>
+                                    <p style={{ margin: '0', color: '#FF8C00', fontWeight: 'bold', fontSize: '15px' }}>🔨 Bid Wars System</p>
+                                    <p style={{ margin: '4px 0 0', color: '#888', fontSize: '12px' }}>Hides the Bid Wars panel globally while under construction. <strong style={{color: '#FFD700'}}>Super Admins bypass this to test freely.</strong></p>
+                                </div>
+                                <button 
+                                    className={`adminActionButton ${homeScreenLayout?.showBidWars !== false ? 'reject' : 'approve'}`}
+                                    style={{ margin: 0, minWidth: '130px' }}
+                                    onClick={async () => {
+                                        const isCurrentlyVisible = homeScreenLayout?.showBidWars !== false;
+                                        showMessage(`${isCurrentlyVisible ? 'Disabling' : 'Enabling'} Bid Wars System...`);
+                                        try {
+                                            await Promise.all([
+                                                setDoc(doc(db, "settings", "homeScreenLayout"), { showBidWars: !isCurrentlyVisible }, { merge: true }),
+                                                setDoc(doc(db, "settings", "enrollmentConfig"), { isBidWarsEnabled: !isCurrentlyVisible }, { merge: true })
+                                            ]);
+                                            showMessage("Bid Wars toggled globally!");
+                                        } catch (error) { showMessage("Error updating layout."); }
+                                    }}
+                                >
+                                    {homeScreenLayout?.showBidWars !== false ? 'Disable Bid Wars' : 'Enable Bid Wars'}
                                 </button>
                             </div>
 
