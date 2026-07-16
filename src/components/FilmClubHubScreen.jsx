@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LiveKitRoom, RoomAudioRenderer, useTracks, VideoTrack, useRoomContext } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import "@livekit/components-styles";
-import { db, functions, doc, collection, onSnapshot, updateDoc, setDoc, getDoc, addDoc, query, orderBy, limit } from '../firebase';
+import { db, functions, doc, collection, onSnapshot, updateDoc, setDoc, getDoc, addDoc, query, orderBy, limit, where } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
 
 // THE DEFINITIVE SECURITY FIX: Synchronized with SSL-certified infrastructure [1]
@@ -432,8 +432,30 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
     const [unreadLoungeCount, setUnreadLoungeCount] = useState(0);
     const [showLoungeEmoji, setShowLoungeEmoji] = useState(false);
 
-    // Deterministic glassmorphic tint generator for different users [1.1.6]
-    const getUserBubbleStyle = (userId) => {
+    // --- REAL-TIME TYPING ENGINE ---
+    const [typers, setTypers] = useState([]);
+    const typingTimeoutRef = useRef(null);
+
+    // --- LOUNGE THREADED REPLY ENGINE ---
+    const [replyTo, setReplyTo] = useState(null);
+    const isModerator = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin';
+
+    // Dynamic Date Separator Formatter [1.1.6]
+    const formatMessageDate = (dateString) => {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return '';
+        
+        const today = new Date();
+        const yesterday = new Date();
+        yesterday.setDate(today.getDate() - 1);
+        
+        if (date.toDateString() === today.toDateString()) return 'Today';
+        if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
+        return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+    };
+
+    // Symmetrical Sequential Color Assigner (Zero Collisions & Stable per User) [1.1.6]
+    const userColorsMap = useMemo(() => {
         const colors = [
             'rgba(255, 69, 0, 0.05)',   // Red-Orange
             'rgba(0, 191, 255, 0.05)',  // Deep Sky Blue
@@ -452,11 +474,21 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
             'rgba(234, 179, 8, 0.2)',
             'rgba(6, 182, 212, 0.2)'
         ];
-        if (!userId) return { background: 'rgba(255,255,255,0.02)', borderColor: '#222' };
-        const hash = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        const index = hash % colors.length;
-        return { background: colors[index], borderColor: borders[index] };
-    };
+        const mapping = {};
+        let colorIdx = 0;
+
+        loungeMessages.forEach(msg => {
+            if (msg.userId && !mapping[msg.userId]) {
+                mapping[msg.userId] = {
+                    background: colors[colorIdx],
+                    borderColor: borders[colorIdx]
+                };
+                colorIdx = (colorIdx + 1) % colors.length; // Dynamic loop-back [1.1.6]
+            }
+        });
+        return mapping;
+    }, [loungeMessages]);
+
     const [lastViewedLounge, setLastViewedLounge] = useState(() => {
         return Number(localStorage.getItem(`film_lounge_last_viewed_${currentUser?.uid}`)) || Date.now();
     });
@@ -469,6 +501,35 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
             setLastViewedLounge(now);
             localStorage.setItem(`film_lounge_last_viewed_${currentUser?.uid}`, now.toString());
         }
+    };
+
+    const handleInputChange = (e) => {
+        setNewMsg(e.target.value);
+        triggerTypingIndicator();
+    };
+
+    const triggerTypingIndicator = async () => {
+        if (!currentUser) return;
+        
+        if (!typingTimeoutRef.current) {
+            // Write to Firestore that I am currently typing
+            const typingRef = doc(db, "film_club_typing", currentUser.uid);
+            setDoc(typingRef, {
+                uid: currentUser.uid,
+                userName: creatorProfile?.creatorName || 'Student',
+                isTyping: true,
+                updatedAt: new Date().toISOString()
+            }).catch(() => {});
+        }
+
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+        // Remove my typing status after 2.5 seconds of inactivity
+        typingTimeoutRef.current = setTimeout(async () => {
+            const typingRef = doc(db, "film_club_typing", currentUser.uid);
+            updateDoc(typingRef, { isTyping: false }).catch(() => {});
+            typingTimeoutRef.current = null;
+        }, 2500);
     };
 
     const hasClubAccess = useMemo(() => {
@@ -493,8 +554,8 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                 setNotices(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             });
 
-            // Stream lounge chat (Audited to fetch newest 50 messages instead of oldest 50)
-            const loungeQuery = query(collection(db, "film_club_lounge"), orderBy("createdAt", "desc"), limit(50));
+            // Stream lounge chat (Audited to fetch newest 200 messages instead of oldest 50)
+            const loungeQuery = query(collection(db, "film_club_lounge"), orderBy("createdAt", "desc"), limit(200));
             const unsubLounge = onSnapshot(
                 loungeQuery, 
                 (snap) => {
@@ -514,11 +575,25 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                 () => {}
             );
 
-            return () => { unsubConfig(); unsubNotices(); unsubLounge(); };
+            // Stream real-time typers list
+            const typingQuery = query(collection(db, "film_club_typing"), where("isTyping", "==", true));
+            const unsubTyping = onSnapshot(
+                typingQuery,
+                (snap) => {
+                    const activeTypers = snap.docs
+                        .map(d => d.data())
+                        .filter(t => t.uid !== currentUser?.uid) // Exclude myself
+                        .map(t => t.userName);
+                    setTypers(activeTypers);
+                },
+                () => {}
+            );
+
+            return () => { unsubConfig(); unsubNotices(); unsubLounge(); unsubTyping(); };
         }
 
         return () => unsubConfig();
-    }, [hasClubAccess]);
+    }, [hasClubAccess, activeTab, lastViewedLounge]);
 
     // Auto scroll chat
     useEffect(() => {
@@ -541,18 +616,30 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
         } catch (err) { showMessage("Notice post failed."); }
     };
 
-    // Handle posting a message to Lounge
+    // Handle posting a message to Lounge (Supports nested quoting)
     const handleSendLoungeMsg = async () => {
         if (!newMsg.trim()) return;
         try {
-            await addDoc(collection(db, "film_club_lounge"), {
+            const payload = {
                 text: newMsg.trim(),
                 userId: currentUser.uid,
                 userName: creatorProfile?.creatorName || 'Student',
                 userAvatar: creatorProfile?.profilePictureUrl || '',
                 createdAt: new Date().toISOString()
-            });
+            };
+
+            // Attach quote map if replying
+            if (replyTo) {
+                payload.replyTo = {
+                    messageId: replyTo.id,
+                    text: replyTo.text,
+                    userName: replyTo.userName
+                };
+            }
+
+            await addDoc(collection(db, "film_club_lounge"), payload);
             setNewMsg('');
+            setReplyTo(null);
         } catch (err) { showMessage("Send failed."); }
     };
 
@@ -703,35 +790,93 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                 {activeTab === 'lounge' && (
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         <div style={{ flex: 1, overflowY: 'auto', paddingRight: '5px', marginBottom: '15px' }}>
-                            {loungeMessages.length > 0 ? loungeMessages.map(msg => {
-                                const bubbleStyle = getUserBubbleStyle(msg.userId);
-                                return (
-                                    <div key={msg.id} className="chat-msg-row">
-                                        <img src={msg.userAvatar || 'https://placehold.co/36'} alt="avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} />
-                                        <div style={{ flex: 1, padding: '10px', borderRadius: '8px', background: bubbleStyle.background, border: `1px solid ${bubbleStyle.borderColor}`, backdropFilter: 'blur(5px)' }}>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                                <span style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '12px' }}>{msg.userName}</span>
-                                                <span style={{ color: '#555', fontSize: '10px' }}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            {(() => {
+                                let lastDate = null;
+                                return loungeMessages.length > 0 ? loungeMessages.map(msg => {
+                                    const msgDate = new Date(msg.createdAt).toDateString();
+                                    const showDateSeparator = msgDate !== lastDate;
+                                    lastDate = msgDate;
+
+                                    const bubbleStyle = userColorsMap[msg.userId] || { background: 'rgba(255,255,255,0.02)', borderColor: '#222' };
+                                    const dateLabel = formatMessageDate(msg.createdAt);
+
+                                    return (
+                                        <div key={msg.id}>
+                                            {/* Center-Aligned Date Badge Separator */}
+                                            {showDateSeparator && (
+                                                <div style={{ display: 'flex', justifyContent: 'center', margin: '20px 0', position: 'relative', alignItems: 'center' }}>
+                                                    <div style={{ position: 'absolute', left: 0, right: 0, height: '1px', background: 'rgba(255,255,255,0.05)', zIndex: 1 }}></div>
+                                                    <span style={{ position: 'relative', zIndex: 2, background: '#0D0D0D', padding: '4px 14px', borderRadius: '12px', fontSize: '10px', color: '#888', fontWeight: '900', letterSpacing: '1px', textTransform: 'uppercase', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                        {dateLabel}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <div className="chat-msg-row">
+                                                <img src={msg.userAvatar || 'https://placehold.co/36'} alt="avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} />
+                                                <div style={{ flex: 1, padding: '10px', borderRadius: '8px', background: bubbleStyle.background, border: `1px solid ${bubbleStyle.borderColor}`, backdropFilter: 'blur(5px)' }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', alignItems: 'center' }}>
+                                                        <span style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '12px' }}>{msg.userName}</span>
+                                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                            <span style={{ color: '#555', fontSize: '10px' }}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                            {/* Reply Trigger */}
+                                                            <span 
+                                                                onClick={() => setReplyTo({ id: msg.id, text: msg.text, userName: msg.userName })}
+                                                                style={{ cursor: 'pointer', color: '#888', fontSize: '11px' }}
+                                                                title="Reply to message"
+                                                            >↩️</span>
+                                                            {/* Author & Moderator Delete Trigger */}
+                                                            {(currentUser?.uid === msg.userId || isModerator) && (
+                                                                <span 
+                                                                    onClick={async () => {
+                                                                        if (window.confirm("Delete this message?")) {
+                                                                            await deleteDoc(doc(db, "film_club_lounge", msg.id)).catch(() => {});
+                                                                        }
+                                                                    }}
+                                                                    style={{ cursor: 'pointer', color: '#EF4444', fontSize: '11px' }}
+                                                                    title="Delete message"
+                                                                >🗑️</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    {/* Threaded Reply Box */}
+                                                    {msg.replyTo && (
+                                                        <div style={{ background: 'rgba(0,0,0,0.3)', borderLeft: '3px solid #FFD700', padding: '6px 12px', borderRadius: '4px', marginBottom: '8px', fontSize: '11px', color: '#BBB', fontStyle: 'italic', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                                            <strong style={{ color: '#FFD700', fontSize: '10px', display: 'block', marginBottom: '2px', fontStyle: 'normal' }}>@{msg.replyTo.userName}</strong>
+                                                            {msg.replyTo.text}
+                                                        </div>
+                                                    )}
+                                                    <p style={{ margin: 0, color: '#FFF', fontSize: '13px', lineHeight: '1.4' }}>{msg.text}</p>
+                                                </div>
                                             </div>
-                                            <p style={{ margin: 0, color: '#FFF', fontSize: '13px', lineHeight: '1.4' }}>{msg.text}</p>
                                         </div>
-                                    </div>
+                                    );
+                                }) : (
+                                    <p style={{ color: '#666', fontSize: '13px', textAlign: 'center', fontStyle: 'italic' }}>Welcome to the Lounge! Start a relaxed discussion on any acting or film topic...</p>
                                 );
-                            }) : (
-                                <p style={{ color: '#666', fontSize: '13px', textAlign: 'center', fontStyle: 'italic' }}>Welcome to the Lounge! Start a relaxed discussion on any acting or film topic...</p>
-                            )}
+                            })()}
                             <div ref={chatEndRef} />
                         </div>
 
+                        {/* Reply Closeable Indicator Strip */}
+                        {replyTo && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.15)', borderLeft: '3px solid #FFD700', padding: '8px 16px', borderRadius: '8px', marginBottom: '8px' }}>
+                                <div style={{ fontSize: '11px', color: '#DDD', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '85%' }}>
+                                    <span style={{ color: '#FFD700', fontWeight: 'bold' }}>Replying to @{replyTo.userName}: </span>
+                                    <span style={{ fontStyle: 'italic' }}>"{replyTo.text}"</span>
+                                </div>
+                                <button onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px' }}>&times;</button>
+                            </div>
+                        )}
+
                         {/* Input Row */}
                         <div style={{ display: 'flex', gap: '8px', background: '#0D0D0D', padding: '10px', borderRadius: '8px', border: '1px solid #222', position: 'relative' }}>
-                            <input className="formInput" placeholder="Say something..." value={newMsg} onChange={e => setNewMsg(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleSendLoungeMsg(); }} style={{ flex: 1, margin: 0, background: '#000' }} />
+                            <input className="formInput" placeholder="Say something..." value={newMsg} onChange={handleInputChange} onKeyDown={e => { if (e.key === 'Enter') handleSendLoungeMsg(); }} style={{ flex: 1, margin: 0, background: '#000' }} />
                             
                             {/* Scrollable 50-Emoji Popover Picker */}
                             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                                 {showLoungeEmoji && (
                                     <div style={{ position: 'absolute', bottom: '50px', right: 0, width: '260px', height: '180px', overflowY: 'auto', background: '#111', border: '1px solid #333', borderRadius: '12px', padding: '10px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px', zIndex: 100, boxShadow: '0 10px 30px rgba(0,0,0,0.8)' }}>
-                                        {['😀','😂','🤣','😊','😍','🥰','😘','😜','😎','🤩','🥳','😏','😒','😔','🥺','😭','😤','😡','🤯','😳','😱','🥱','😴','🤐','🤔','🤫','😬','🙄','😮','👾','👽','🐱','🐶','🦊','🦁','🍉','🍓','🍕','🍔','🍟','🎉','🔥','🎈','⚡','💎','💻','🎬','👑','🎭','🤝'].map(emo => (
+                                        {['😀','😂','🤣','😊','😍','🥰','😘','😜','😎','🤩','🥳','😏','😒','😔','🥺','😭','😤','😡','🤯','😳','😱','🥱','😴','🤐','🤔','🤫','😬','🙄','😮','👾','👽','🐱','🐶','🦊','🦁','🍉','🍓','🍕','🍔','🍟','🎉','🔥','🎈','⚡','👀','💯','🎬','👑','🎭','🤝'].map(emo => (
                                             <button key={emo} onClick={() => { setNewMsg(prev => prev + emo); setShowLoungeEmoji(false); }} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', transition: 'transform 0.1s' }} onMouseDown={e => e.currentTarget.style.transform='scale(0.9)'} onMouseUp={e => e.currentTarget.style.transform='scale(1)'}>
                                                 {emo}
                                             </button>
@@ -743,7 +888,30 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                                 </button>
                             </div>
 
-                            <button className="button" onClick={handleSendLoungeMsg} style={{ margin: 0, padding: '0 20px', background: '#FFD700', color: '#000', fontWeight: 'bold' }}>Send</button>
+                            {/* Modern Glassmorphic Send Button */}
+                            <button 
+                                className="button" 
+                                onClick={handleSendLoungeMsg} 
+                                style={{ 
+                                    margin: 0, 
+                                    padding: '0 24px', 
+                                    background: 'rgba(255, 215, 0, 0.04)', 
+                                    border: '1px solid rgba(255, 215, 0, 0.25)', 
+                                    color: '#FFD700', 
+                                    fontWeight: '900',
+                                    fontSize: '12px',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '1px',
+                                    borderRadius: '10px',
+                                    backdropFilter: 'blur(10px)',
+                                    transition: 'all 0.2s ease-out',
+                                    boxShadow: '0 4px 15px rgba(255, 215, 0, 0.03)'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 215, 0, 0.12)'; e.currentTarget.style.borderColor = 'rgba(255, 215, 0, 0.5)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 215, 0, 0.04)'; e.currentTarget.style.borderColor = 'rgba(255, 215, 0, 0.25)'; }}
+                            >
+                                Send
+                            </button>
                         </div>
                     </div>
                 )}
