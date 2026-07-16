@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { LiveKitRoom, RoomAudioRenderer, useTracks, VideoTrack, useRoomContext } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import "@livekit/components-styles";
-import { db, functions, doc, collection, onSnapshot, updateDoc, setDoc, getDoc, addDoc, query, orderBy, limit, where } from '../firebase';
+import { db, functions, doc, collection, onSnapshot, updateDoc, setDoc, getDoc, addDoc, deleteDoc, query, orderBy, limit, where } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
 
 // THE DEFINITIVE SECURITY FIX: Synchronized with SSL-certified infrastructure [1]
@@ -438,6 +438,7 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
 
     // --- LOUNGE THREADED REPLY ENGINE ---
     const [replyTo, setReplyTo] = useState(null);
+    const [messageToDelete, setMessageToDelete] = useState(null);
     const isModerator = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin';
 
     // Dynamic Date Separator Formatter [1.1.6]
@@ -489,18 +490,17 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
         return mapping;
     }, [loungeMessages]);
 
-    // Prevents stale closures in snapshot listeners [1.1.6]
-    const lastViewedLoungeRef = useRef(
-        Number(localStorage.getItem(`film_lounge_last_viewed_${currentUser?.uid}`)) || Date.now()
+    // Symmetrical Read Receipt Engine (ID-Based to prevent timezone/clock drift)
+    const readMessagesRef = useRef(
+        new Set(JSON.parse(localStorage.getItem(`film_lounge_read_${currentUser?.uid}`) || "[]"))
     );
 
     const handleTabChange = (tabName) => {
         setActiveScreenTab(tabName);
         if (tabName === 'lounge') {
             setUnreadLoungeCount(0);
-            const now = Date.now();
-            lastViewedLoungeRef.current = now;
-            localStorage.setItem(`film_lounge_last_viewed_${currentUser?.uid}`, now.toString());
+            const currentRead = Array.from(readMessagesRef.current);
+            localStorage.setItem(`film_lounge_read_${currentUser?.uid}`, JSON.stringify(currentRead));
         }
     };
 
@@ -565,17 +565,11 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                     setLoungeMessages(msgs);
 
                     if (activeTab === 'lounge') {
-                        // Actively update read-status while user is in the chat
                         setUnreadLoungeCount(0);
-                        const now = Date.now();
-                        lastViewedLoungeRef.current = now;
-                        localStorage.setItem(`film_lounge_last_viewed_${currentUser?.uid}`, now.toString());
+                        msgs.forEach(m => readMessagesRef.current.add(m.id));
+                        localStorage.setItem(`film_lounge_read_${currentUser?.uid}`, JSON.stringify(Array.from(readMessagesRef.current)));
                     } else {
-                        // Calculate unread count cleanly on other tabs
-                        const count = msgs.filter(m => {
-                            const createdTime = new Date(m.createdAt).getTime();
-                            return createdTime > lastViewedLoungeRef.current;
-                        }).length;
+                        const count = msgs.filter(m => !readMessagesRef.current.has(m.id)).length;
                         setUnreadLoungeCount(count);
                     }
                 },
@@ -844,11 +838,7 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                                                             {/* Author & Moderator Delete Trigger */}
                                                             {(currentUser?.uid === msg.userId || isModerator) && (
                                                                 <span 
-                                                                    onClick={async () => {
-                                                                        if (window.confirm("Delete this message?")) {
-                                                                            await deleteDoc(doc(db, "film_club_lounge", msg.id)).catch(() => {});
-                                                                        }
-                                                                    }}
+                                                                    onClick={() => setMessageToDelete(msg.id)}
                                                                     style={{ cursor: 'pointer', color: '#EF4444', fontSize: '11px' }}
                                                                     title="Delete message"
                                                                 >🗑️</span>
@@ -944,6 +934,28 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                 )}
 
             </div>
+
+            {/* CUSTOM IN-APP DELETE MODAL */}
+            {messageToDelete && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ background: '#111', border: '1px solid #333', padding: '25px', borderRadius: '16px', maxWidth: '320px', width: '90%', textAlign: 'center', boxShadow: '0 10px 40px rgba(0,0,0,0.9)' }}>
+                        <div style={{ fontSize: '30px', marginBottom: '10px' }}>🗑️</div>
+                        <h3 style={{ color: '#FFF', margin: '0 0 10px 0', fontSize: '18px' }}>Delete Message?</h3>
+                        <p style={{ color: '#888', fontSize: '13px', margin: '0 0 20px 0', lineHeight: '1.5' }}>This action cannot be undone. Are you sure you want to remove this message?</p>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setMessageToDelete(null)} style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid #444', color: '#FFF', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+                            <button 
+                                onClick={async () => {
+                                    const targetId = messageToDelete;
+                                    setMessageToDelete(null);
+                                    await deleteDoc(doc(db, "film_club_lounge", targetId)).catch(() => {});
+                                }} 
+                                style={{ flex: 1, padding: '10px', background: '#EF4444', border: 'none', color: '#FFF', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                            >Delete</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

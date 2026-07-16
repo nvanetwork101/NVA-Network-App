@@ -4771,6 +4771,55 @@ exports.triggerManualAutomation = onCall(async (request) => {
     return { success: true, message: "Comment posted." };
 });
 
+exports.likeComment = onCall(async (request) => {
+    const uid = request.auth.uid;
+    if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in to like a comment."); }
+
+    const { itemId, itemType, commentId } = request.data;
+    if (!itemId || !itemType || !commentId) { throw new HttpsError("invalid-argument", "Missing required data."); }
+
+    const db = admin.firestore();
+    
+    let itemRef;
+    if (itemType === 'content') {
+        itemRef = db.doc(`artifacts/production-app-id/public/data/content_items/${itemId}`);
+    } else if (itemType === 'opportunity') {
+        itemRef = db.doc(`opportunities/${itemId}`);
+    } else if (itemType === 'event') {
+        itemRef = db.doc(`events/${itemId}`);
+    } else {
+        throw new HttpsError("invalid-argument", `Unsupported itemType: '${itemType}'.`);
+    }
+
+    const commentRef = itemRef.collection("comments").doc(commentId);
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const commentDoc = await transaction.get(commentRef);
+            if (!commentDoc.exists) { throw new HttpsError("not-found", "Comment not found."); }
+            
+            const commentData = commentDoc.data();
+            const likedBy = commentData.likedBy || [];
+            
+            if (likedBy.includes(uid)) {
+                // User already liked, so UNLIKE (remove from array)
+                transaction.update(commentRef, { 
+                    likedBy: admin.firestore.FieldValue.arrayRemove(uid) 
+                });
+            } else {
+                // User has not liked, so LIKE (add to array)
+                transaction.update(commentRef, { 
+                    likedBy: admin.firestore.FieldValue.arrayUnion(uid) 
+                });
+            }
+        });
+        return { success: true };
+    } catch (error) {
+        logger.error(`Error toggling like on comment '${commentId}' by user '${uid}'`, { error });
+        throw new HttpsError("internal", "Error processing like toggle.");
+    }
+});
+
 exports.deleteComment = onCall(async (request) => {
     const uid = request.auth.uid;
     if (!uid) {
@@ -5959,12 +6008,29 @@ exports.saveFCMToken = onCall({ enforceAppCheck: false, cors: true }, async (req
         throw new HttpsError("invalid-argument", "Missing FCM token.");
     }
     const userRef = admin.firestore().collection("creators").doc(uid);
-    // This is the fix: .set({ merge: true }) will create the document if it's missing,
-    // or update the fcmTokens field if the document already exists.
-    await userRef.set({
-        fcmTokens: admin.firestore.FieldValue.arrayUnion(token)
-    }, { merge: true }); // The critical merge option
-    return { success: true, message: "Token saved." };
+    
+    await admin.firestore().runTransaction(async (t) => {
+        const doc = await t.get(userRef);
+        let tokens = doc.exists ? (doc.data().fcmTokens || []) : [];
+        if (!tokens.includes(token)) {
+            tokens.push(token);
+            // SURGICAL FIX: Culling limit. Keeps only the 3 most recent devices/sessions to stop phantom spam.
+            if (tokens.length > 3) tokens = tokens.slice(-3);
+            t.set(userRef, { fcmTokens: tokens }, { merge: true });
+        }
+    });
+    return { success: true, message: "Token saved securely." };
+});
+
+exports.removeFCMToken = onCall({ enforceAppCheck: false, cors: true }, async (request) => {
+    const uid = request.auth?.uid;
+    const { token } = request.data || {};
+    if (!uid || !token) return { success: false };
+    
+    await admin.firestore().collection("creators").doc(uid).update({
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(token)
+    });
+    return { success: true };
 });
 
 // Called when a user wants to clear their badge and mark all notifications as read.
@@ -6387,7 +6453,9 @@ exports.toggleGoldClubStatus = onCall({ enforceAppCheck: false }, async (request
     if (isGold) {
         newBadges = currentBadges.filter(b => b !== "Gold Club");
     } else {
-        newBadges = [...currentBadges, "Gold Club"];
+        // Strip standard badges when upgrading to Gold Club VIP to prevent duplicates
+        newBadges = currentBadges.filter(b => b !== "Film Club" && b !== "Class Member");
+        newBadges.push("Gold Club");
     }
 
     const appRef = db.doc(`enrollmentApplications/${targetUserId}`);
@@ -6799,8 +6867,11 @@ exports.onEnrollmentUpdated = onDocumentUpdated("enrollmentApplications/{userId}
                 expiryDate.setDate(expiryDate.getDate() + 30);
                 updates.subscriptionExpiresAt = expiryDate.toISOString();
                 
-                if (!newBadges.includes("Film Club")) newBadges.push("Film Club");
-                if (!newBadges.includes("Class Member")) newBadges.push("Class Member");
+                // If they are Gold Club VIP, do NOT give them the standard blue badges
+                if (!newBadges.includes("Gold Club")) {
+                    if (!newBadges.includes("Film Club")) newBadges.push("Film Club");
+                    if (!newBadges.includes("Class Member")) newBadges.push("Class Member");
+                }
             }
             
             // Only add Contestant if it's in the CURRENT application options
@@ -8736,4 +8807,55 @@ exports.getTikTokThumbnail = onCall({ enforceAppCheck: false }, async (request) 
         return { thumbnailUrl: null };
     }
 });
+
+// =====================================================================
+// ============ START: FILM CLUB BULLETIN PUSH ENGINE ==================
+// =====================================================================
+exports.onFilmClubNoticeCreated = onDocumentCreated("film_club_notices/{noticeId}", async (event) => {
+    const noticeData = event.data.data();
+    if (!noticeData) return null;
+    
+    const db = admin.firestore();
+    const { text, creatorName } = noticeData;
+    
+    try {
+        const clubMembersSnap = await db.collection("creators").where("isFilmClub", "==", true).get();
+        if (clubMembersSnap.empty) return null;
+        
+        const batch = db.batch();
+        const notificationsRef = db.collection("notifications");
+        let writeCount = 0;
+        
+        clubMembersSnap.forEach(doc => {
+            // Bypass sending push back to the Director who posted it
+            if (creatorName !== doc.data().creatorName) {
+                batch.set(notificationsRef.doc(), {
+                    userId: doc.id,
+                    title: "📌 New Film Club Bulletin!",
+                    body: text.substring(0, 100),
+                    link: "/FilmClubHub",
+                    deliveryType: ["inbox", "push"],
+                    notificationType: "FILM_CLUB_NOTICE",
+                    isRead: false,
+                    status: "pending",
+                    sound: true,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+                batch.update(doc.ref, { 
+                    unreadNotificationCount: admin.firestore.FieldValue.increment(1) 
+                });
+                writeCount += 2;
+            }
+        });
+        
+        if (writeCount > 0) {
+            await batch.commit();
+            logger.info(`Broadcasted Film Club bulletin to ${writeCount / 2} members.`);
+        }
+    } catch (error) {
+        logger.error(`Error in onFilmClubNoticeCreated:`, error);
+    }
+    return null;
+});
+
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---

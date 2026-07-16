@@ -1,7 +1,7 @@
 // src/components/VideoPlayerModal.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db, functions, httpsCallable, doc, onSnapshot, getDoc, setDoc } from '../firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, orderBy, limit } from 'firebase/firestore';
 import LikeButton from './LikeButton.jsx';
 import RoleBadge from './RoleBadge.jsx';
 
@@ -73,7 +73,17 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
     const [comments, setComments] = useState([]);
     const [newCommentText, setNewCommentText] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [replyingTo, setReplyingTo] = useState(null);
     const commentsEndRef = useRef(null);
+
+    // Threading & Pagination State
+    const [commentLimit, setCommentLimit] = useState(10);
+    const [expandedThreads, setExpandedThreads] = useState({});
+    
+    const toggleThread = (id, e) => {
+        if (e) e.stopPropagation();
+        setExpandedThreads(prev => ({ ...prev, [id]: !prev[id] }));
+    };
 
     // --- GIFT MODAL STATE ---
     const [isGiftModalOpen, setIsGiftModalOpen] = useState(false);
@@ -148,22 +158,18 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
             : `artifacts/production-app-id/public/data/content_items/${liveContentItem.id}/comments`;
     }, [liveContentItem, itemType]);
 
-    // Real-time listener for upward-scrolling comment stream
+    // Real-time listener with Pagination (Limit 10)
     useEffect(() => {
         if (!collectionPath || !currentUser) return;
         const commentsRef = collection(db, collectionPath);
-        const q = query(commentsRef, orderBy('createdAt', 'asc')); // Ascending pushes new comments upwards
+        // Descending brings the newest top-level comments to the top (YouTube Style)
+        const q = query(commentsRef, orderBy('createdAt', 'desc'), limit(commentLimit));
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             setComments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         });
         return () => unsubscribe();
-    }, [collectionPath, currentUser]);
-
-    // Keep comments box scrolled to the bottom (newest comments flow up)
-    useEffect(() => {
-        commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [comments]);
+    }, [collectionPath, currentUser, commentLimit]);
 
     const handleSubmitComment = async () => {
         if (!newCommentText.trim()) return;
@@ -174,14 +180,44 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                 itemId: liveContentItem.id,
                 itemType: itemType,
                 text: newCommentText.trim(),
-                replyTo: null
+                replyTo: replyingTo || null
             });
             setNewCommentText('');
+            setReplyingTo(null);
         } catch (error) {
             console.error(error);
             showMessage("Failed to submit comment.");
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const handleDeleteComment = async (commentId) => {
+        try {
+            const delCommentFunction = httpsCallable(functions, 'deleteComment');
+            await delCommentFunction({
+                itemId: liveContentItem.id,
+                itemType: itemType,
+                commentId: commentId
+            });
+        } catch (error) {
+            console.error(error);
+            showMessage("Failed to delete comment.");
+        }
+    };
+
+    const handleLikeComment = async (commentId) => {
+        if (!currentUser) return showMessage("Please log in to like comments.");
+        try {
+            const likeCommentFunction = httpsCallable(functions, 'likeComment');
+            await likeCommentFunction({
+                itemId: liveContentItem.id,
+                itemType: itemType,
+                commentId: commentId
+            });
+        } catch (error) {
+            console.error(error);
+            showMessage("Failed to like comment.");
         }
     };
 
@@ -517,23 +553,158 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                     {/* SCROLLABLE COMMENTS AREA (Now fully stretched upwards to consume empty space!) */}
                     <div style={{ marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '15px', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
                         <p style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: '900', color: '#FFD700', textTransform: 'uppercase', letterSpacing: '1px' }}>Audience Thoughts</p>
-                        <div style={{ flex: 1, background: '#0F0F0F', borderRadius: '8px', padding: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}>
-                            {comments.length > 0 ? comments.map(comment => (
-                                <div key={comment.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '13px', lineHeight: '1.4' }}>
-                                    <span style={{ fontWeight: 'bold', color: generateColorFromId(comment.userId), flexShrink: 0, cursor: 'pointer' }} onClick={() => executeSafeNavigation('navigateToUserProfile', { userId: comment.userId })}>{comment.userName}:</span>
-                                    <span style={{ color: '#E0E0E0' }}>{comment.text}</span>
-                                </div>
-                            )) : (
-                                <p style={{ color: '#666', fontSize: '12px', margin: 'auto 0', textAlign: 'center' }}>No comments yet. Share your thoughts below!</p>
-                            )}
-                            <div ref={commentsEndRef} />
+                        <div style={{ flex: 1, background: '#0F0F0F', borderRadius: '8px', padding: '16px 12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: '16px', overflowY: 'auto' }}>
+                            {(() => {
+                                if (comments.length === 0) return <p style={{ color: '#666', fontSize: '12px', margin: 'auto 0', textAlign: 'center' }}>No comments yet. Share your thoughts below!</p>;
+
+                                const repliesMap = {};
+                                const rootComments = [];
+                                
+                                // Process timeline logic so parent threads and replies read naturally chronological 
+                                const sortedComments = [...comments].sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+
+                                sortedComments.forEach(comment => {
+                                    let parentId = comment.replyTo?.id || (typeof comment.replyTo === 'string' ? comment.replyTo : null);
+                                    if (parentId) {
+                                        if (!repliesMap[parentId]) repliesMap[parentId] = [];
+                                        repliesMap[parentId].push(comment);
+                                    }
+                                });
+
+                                sortedComments.forEach(comment => {
+                                    let parentId = comment.replyTo?.id || (typeof comment.replyTo === 'string' ? comment.replyTo : null);
+                                    if (!parentId || !sortedComments.some(c => c.id === parentId)) {
+                                        rootComments.push(comment);
+                                    }
+                                });
+
+                                // Latest root comments at the top (YouTube format)
+                                rootComments.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+                                const renderCommentUI = (comment, isReply = false) => {
+                                    let timeString = 'Just now';
+                                    if (comment.createdAt) {
+                                        const date = comment.createdAt.toDate ? comment.createdAt.toDate() : new Date(comment.createdAt);
+                                        const diff = Math.floor((new Date() - date) / 1000);
+                                        if (diff > 86400) timeString = `${Math.floor(diff / 86400)}d ago`;
+                                        else if (diff > 3600) timeString = `${Math.floor(diff / 3600)}h ago`;
+                                        else if (diff > 60) timeString = `${Math.floor(diff / 60)}m ago`;
+                                    }
+
+                                    const threadReplies = repliesMap[comment.id] || [];
+
+                                    return (
+                                        <div key={comment.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: isReply ? '12px' : '0' }}>
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', fontSize: '13px', lineHeight: '1.4' }}>
+                                                <img 
+                                                    src={comment.userProfilePicture || 'https://placehold.co/40x40/333/FFF?text=U'} 
+                                                    alt="Avatar" 
+                                                    style={{ width: isReply ? '28px' : '36px', height: isReply ? '28px' : '36px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0, cursor: 'pointer', border: '1px solid rgba(255,255,255,0.1)' }}
+                                                    onClick={(e) => { e.stopPropagation(); executeSafeNavigation('navigateToUserProfile', { userId: comment.userId }); }}
+                                                />
+                                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <span 
+                                                            style={{ fontWeight: 'bold', color: generateColorFromId(comment.userId), cursor: 'pointer', fontSize: '13px' }} 
+                                                            onClick={(e) => { e.stopPropagation(); executeSafeNavigation('navigateToUserProfile', { userId: comment.userId }); }}
+                                                        >
+                                                            @{comment.userName.replace(/\s+/g, '').toLowerCase()}
+                                                        </span>
+                                                        <span style={{ color: '#888', fontSize: '12px' }}>{timeString}</span>
+                                                    </div>
+                                                    <div style={{ color: '#E0E0E0', fontSize: '14px', wordBreak: 'break-word', marginTop: '2px' }}>
+                                                        {isReply && comment.replyTo?.userName && <span style={{ color: '#00FFFF', fontWeight: 'bold', marginRight: '6px' }}>@{comment.replyTo.userName.replace(/\s+/g, '').toLowerCase()}</span>}
+                                                        {comment.text}
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginTop: '6px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#AAA' }}>
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); handleLikeComment(comment.id); }}
+                                                                style={{ background: 'none', border: 'none', color: comment.likedBy?.includes(currentUser?.uid) ? '#3EA6FF' : 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: 0, transition: 'color 0.2s' }} 
+                                                                title={comment.likedBy?.includes(currentUser?.uid) ? "Unlike" : "Like"}
+                                                            >
+                                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"></path></svg>
+                                                                {comment.likedBy?.length > 0 ? comment.likedBy.length : ''}
+                                                            </button>
+                                                            <button style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'not-allowed', display: 'flex', alignItems: 'center', fontSize: '12px', padding: 0, opacity: 0.5 }} title="Dislike (Placeholder)">
+                                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"></path></svg>
+                                                            </button>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => setReplyingTo({ id: comment.id, userName: comment.userName, userId: comment.userId })}
+                                                            style={{ background: 'none', border: 'none', color: '#FFF', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', padding: '4px 12px', borderRadius: '16px' }}
+                                                            onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                                            onMouseOut={(e) => e.target.style.background = 'none'}
+                                                        >
+                                                            Reply
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {(currentUser?.uid === comment.userId || currentUser?.uid === liveContentItem?.creatorId || viewerProfile?.role === 'admin' || viewerProfile?.role === 'authority') && (
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); handleDeleteComment(comment.id); }}
+                                                        style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: '8px', fontSize: '16px', flexShrink: 0, opacity: 0.6, borderRadius: '50%' }}
+                                                        title="Delete Comment"
+                                                        onMouseOver={(e) => { e.target.style.opacity = 1; e.target.style.background = 'rgba(239, 68, 68, 0.1)'; }}
+                                                        onMouseOut={(e) => { e.target.style.opacity = 0.6; e.target.style.background = 'none'; }}
+                                                    >
+                                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z"></path></svg>
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Nested Dropdown Button for Replies */}
+                                            {threadReplies.length > 0 && !isReply && (
+                                                <div style={{ marginLeft: '48px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                    <button 
+                                                        onClick={(e) => toggleThread(comment.id, e)}
+                                                        style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: '#3EA6FF', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', padding: '6px 12px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                        onMouseOver={(e) => e.target.style.background = 'rgba(62, 166, 255, 0.1)'}
+                                                        onMouseOut={(e) => e.target.style.background = 'none'}
+                                                    >
+                                                        {expandedThreads[comment.id] ? '▴ Hide replies' : `▾ ${threadReplies.length} replies`}
+                                                    </button>
+                                                    
+                                                    {expandedThreads[comment.id] && (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                            {threadReplies.map(reply => renderCommentUI(reply, true))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                };
+
+                                return (
+                                    <>
+                                        {rootComments.map(c => renderCommentUI(c, false))}
+                                        {comments.length >= commentLimit && (
+                                            <button 
+                                                onClick={() => setCommentLimit(prev => prev + 10)}
+                                                style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', color: '#FFF', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginTop: '8px', textAlign: 'center' }}
+                                                onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                                onMouseOut={(e) => e.target.style.background = 'rgba(255,255,255,0.05)'}
+                                            >
+                                                Load more comments...
+                                            </button>
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
 
                 {/* FIXED FOOTER: The Input section stays pinned to the bottom */}
                 {currentUser && (
-                    <div style={{ marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid rgba(255,255,255,0.08)', background: 'transparent' }}>
+                    <div style={{ marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid rgba(255,255,255,0.08)', background: 'transparent', padding: '12px 16px' }}>
+                        {replyingTo && (
+                            <div style={{ background: 'rgba(0, 255, 255, 0.08)', border: '1px solid rgba(0, 255, 255, 0.3)', color: '#00FFFF', fontSize: '11px', fontWeight: '900', padding: '4px 10px', borderRadius: '20px', display: 'inline-flex', alignItems: 'center', gap: '6px', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                <span>💬 Replying to @{replyingTo.userName}</span>
+                                <button type="button" onClick={() => setReplyingTo(null)} style={{ background: 'none', border: 'none', color: '#00FFFF', cursor: 'pointer', padding: 0, marginLeft: '6px' }}>✕</button>
+                            </div>
+                        )}
                         <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
                             {['👍', '👎', '❤️', '😂', '🔥', '😢', '😡'].map(emoji => (
                                 <button
