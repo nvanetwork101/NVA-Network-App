@@ -428,6 +428,49 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
     const [isSubmittingLead, setIsSubmittingLead] = useState(false);
     const chatEndRef = useRef(null);
 
+    // --- LOUNGE LOCAL BADGE ENGINE ---
+    const [unreadLoungeCount, setUnreadLoungeCount] = useState(0);
+    const [showLoungeEmoji, setShowLoungeEmoji] = useState(false);
+
+    // Deterministic glassmorphic tint generator for different users [1.1.6]
+    const getUserBubbleStyle = (userId) => {
+        const colors = [
+            'rgba(255, 69, 0, 0.05)',   // Red-Orange
+            'rgba(0, 191, 255, 0.05)',  // Deep Sky Blue
+            'rgba(74, 222, 128, 0.05)',  // Lime Green
+            'rgba(168, 85, 247, 0.05)',  // Purple
+            'rgba(236, 72, 153, 0.05)',  // Deep Pink
+            'rgba(234, 179, 8, 0.05)',   // Gold
+            'rgba(6, 182, 212, 0.05)'    // Cyan
+        ];
+        const borders = [
+            'rgba(255, 69, 0, 0.2)',
+            'rgba(0, 191, 255, 0.2)',
+            'rgba(74, 222, 128, 0.2)',
+            'rgba(168, 85, 247, 0.2)',
+            'rgba(236, 72, 153, 0.2)',
+            'rgba(234, 179, 8, 0.2)',
+            'rgba(6, 182, 212, 0.2)'
+        ];
+        if (!userId) return { background: 'rgba(255,255,255,0.02)', borderColor: '#222' };
+        const hash = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        const index = hash % colors.length;
+        return { background: colors[index], borderColor: borders[index] };
+    };
+    const [lastViewedLounge, setLastViewedLounge] = useState(() => {
+        return Number(localStorage.getItem(`film_lounge_last_viewed_${currentUser?.uid}`)) || Date.now();
+    });
+
+    const handleTabChange = (tabName) => {
+        setActiveScreenTab(tabName);
+        if (tabName === 'lounge') {
+            setUnreadLoungeCount(0);
+            const now = Date.now();
+            setLastViewedLounge(now);
+            localStorage.setItem(`film_lounge_last_viewed_${currentUser?.uid}`, now.toString());
+        }
+    };
+
     const hasClubAccess = useMemo(() => {
         return creatorProfile?.isFilmClub || creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin';
     }, [creatorProfile]);
@@ -450,11 +493,26 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                 setNotices(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
             });
 
-            // Stream lounge chat
-            const loungeQuery = query(collection(db, "film_club_lounge"), orderBy("createdAt", "asc"), limit(50));
-            const unsubLounge = onSnapshot(loungeQuery, (snap) => {
-                setLoungeMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-            });
+            // Stream lounge chat (Audited to fetch newest 50 messages instead of oldest 50)
+            const loungeQuery = query(collection(db, "film_club_lounge"), orderBy("createdAt", "desc"), limit(50));
+            const unsubLounge = onSnapshot(
+                loungeQuery, 
+                (snap) => {
+                    const msgs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    msgs.reverse(); // Display oldest to newest on screen
+                    setLoungeMessages(msgs);
+
+                    // If user is on a different tab, calculate the unread count since they last viewed
+                    if (activeTab !== 'lounge') {
+                        const count = msgs.filter(m => {
+                            const createdTime = new Date(m.createdAt).getTime();
+                            return createdTime > lastViewedLounge;
+                        }).length;
+                        setUnreadLoungeCount(count);
+                    }
+                },
+                () => {}
+            );
 
             return () => { unsubConfig(); unsubNotices(); unsubLounge(); };
         }
@@ -601,9 +659,13 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
 
             {/* Tab Swapper */}
             <div className="tab-bar">
-                <button className={`tab-btn ${activeTab === 'notices' ? 'active' : ''}`} onClick={() => setActiveScreenTab('notices')}>📌 Bulletin</button>
-                <button className={`tab-btn ${activeTab === 'lounge' ? 'active' : ''}`} onClick={() => setActiveScreenTab('lounge')}>💬 Lounge</button>
-                <button className={`tab-btn ${activeTab === 'stage' ? 'active' : ''}`} onClick={() => setActiveScreenTab('stage')}>🎭 Club Room</button>
+                <button className={`tab-btn ${activeTab === 'notices' ? 'active' : ''}`} onClick={() => handleTabChange('notices')}>📌 Bulletin</button>
+                <button className={`tab-btn ${activeTab === 'lounge' ? 'active' : ''}`} onClick={() => handleTabChange('lounge')}>
+                    💬 Lounge {unreadLoungeCount > 0 && (
+                        <span style={{ background: '#EF4444', color: '#FFF', fontSize: '10px', padding: '2px 7px', borderRadius: '10px', marginLeft: '6px', fontWeight: '900' }}>{unreadLoungeCount}</span>
+                    )}
+                </button>
+                <button className={`tab-btn ${activeTab === 'stage' ? 'active' : ''}`} onClick={() => handleTabChange('stage')}>🎭 Club Room</button>
             </div>
 
             {/* Tab Views */}
@@ -612,8 +674,8 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                 {/* Tab 1: Notice Board */}
                 {activeTab === 'notices' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                        {/* Notice Board Input (Host Only) */}
-                        {(creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority') && (
+                        {/* Notice Board Input (Host & Super Admin Bypass) */}
+                        {(creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin') && (
                             <div style={{ background: 'rgba(255,215,0,0.02)', border: '1px solid rgba(255,215,0,0.2)', padding: '15px', borderRadius: '12px' }}>
                                 <p style={{ margin: '0 0 10px 0', color: '#FFD700', fontSize: '12px', fontWeight: '900' }}>📣 POST NEW BULLETIN NOTICE</p>
                                 <textarea className="formTextarea" placeholder="Write announcement details..." value={newNotice} onChange={e => setNewNotice(e.target.value)} style={{ marginBottom: '10px' }} />
@@ -641,26 +703,46 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                 {activeTab === 'lounge' && (
                     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         <div style={{ flex: 1, overflowY: 'auto', paddingRight: '5px', marginBottom: '15px' }}>
-                            {loungeMessages.length > 0 ? loungeMessages.map(msg => (
-                                <div key={msg.id} className="chat-msg-row">
-                                    <img src={msg.userAvatar || 'https://placehold.co/36'} alt="avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} />
-                                    <div style={{ flex: 1, background: 'rgba(255,255,255,0.02)', border: '1px solid #222', padding: '10px', borderRadius: '8px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                            <span style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '12px' }}>{msg.userName}</span>
-                                            <span style={{ color: '#555', fontSize: '10px' }}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            {loungeMessages.length > 0 ? loungeMessages.map(msg => {
+                                const bubbleStyle = getUserBubbleStyle(msg.userId);
+                                return (
+                                    <div key={msg.id} className="chat-msg-row">
+                                        <img src={msg.userAvatar || 'https://placehold.co/36'} alt="avatar" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} />
+                                        <div style={{ flex: 1, padding: '10px', borderRadius: '8px', background: bubbleStyle.background, border: `1px solid ${bubbleStyle.borderColor}`, backdropFilter: 'blur(5px)' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                <span style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '12px' }}>{msg.userName}</span>
+                                                <span style={{ color: '#555', fontSize: '10px' }}>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            </div>
+                                            <p style={{ margin: 0, color: '#FFF', fontSize: '13px', lineHeight: '1.4' }}>{msg.text}</p>
                                         </div>
-                                        <p style={{ margin: 0, color: '#FFF', fontSize: '13px', lineHeight: '1.4' }}>{msg.text}</p>
                                     </div>
-                                </div>
-                            )) : (
+                                );
+                            }) : (
                                 <p style={{ color: '#666', fontSize: '13px', textAlign: 'center', fontStyle: 'italic' }}>Welcome to the Lounge! Start a relaxed discussion on any acting or film topic...</p>
                             )}
                             <div ref={chatEndRef} />
                         </div>
 
                         {/* Input Row */}
-                        <div style={{ display: 'flex', gap: '8px', background: '#0D0D0D', padding: '10px', borderRadius: '8px', border: '1px solid #222' }}>
+                        <div style={{ display: 'flex', gap: '8px', background: '#0D0D0D', padding: '10px', borderRadius: '8px', border: '1px solid #222', position: 'relative' }}>
                             <input className="formInput" placeholder="Say something..." value={newMsg} onChange={e => setNewMsg(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleSendLoungeMsg(); }} style={{ flex: 1, margin: 0, background: '#000' }} />
+                            
+                            {/* Scrollable 50-Emoji Popover Picker */}
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                {showLoungeEmoji && (
+                                    <div style={{ position: 'absolute', bottom: '50px', right: 0, width: '260px', height: '180px', overflowY: 'auto', background: '#111', border: '1px solid #333', borderRadius: '12px', padding: '10px', display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px', zIndex: 100, boxShadow: '0 10px 30px rgba(0,0,0,0.8)' }}>
+                                        {['😀','😂','🤣','😊','😍','🥰','😘','😜','😎','🤩','🥳','😏','😒','😔','🥺','😭','😤','😡','🤯','😳','😱','🥱','😴','🤐','🤔','🤫','😬','🙄','😮','👾','👽','🐱','🐶','🦊','🦁','🍉','🍓','🍕','🍔','🍟','🎉','🔥','🎈','⚡','💎','💻','🎬','👑','🎭','🤝'].map(emo => (
+                                            <button key={emo} onClick={() => { setNewMsg(prev => prev + emo); setShowLoungeEmoji(false); }} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', transition: 'transform 0.1s' }} onMouseDown={e => e.currentTarget.style.transform='scale(0.9)'} onMouseUp={e => e.currentTarget.style.transform='scale(1)'}>
+                                                {emo}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                <button onClick={() => setShowLoungeEmoji(!showLoungeEmoji)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '0 4px', color: showLoungeEmoji ? '#FFD700' : '#FFF' }}>
+                                    😀
+                                </button>
+                            </div>
+
                             <button className="button" onClick={handleSendLoungeMsg} style={{ margin: 0, padding: '0 20px', background: '#FFD700', color: '#000', fontWeight: 'bold' }}>Send</button>
                         </div>
                     </div>
