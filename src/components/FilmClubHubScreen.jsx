@@ -6,7 +6,7 @@ import { db, functions, doc, collection, onSnapshot, updateDoc, setDoc, getDoc, 
 import { httpsCallable } from 'firebase/functions';
 
 // THE DEFINITIVE SECURITY FIX: Synchronized with SSL-certified infrastructure [1]
-const LIVEKIT_URL =  “wss://nva-network-g3yhgt5n.livekit.cloud";;
+const LIVEKIT_URL = "wss://nva-network-g3yhgt5n.livekit.cloud";
 
 // --- CHILD COMPONENT: CLASSROOM VIEWER COUNT ---
 const ClassroomViewerCount = () => {
