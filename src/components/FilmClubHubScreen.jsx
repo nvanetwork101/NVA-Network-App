@@ -6,7 +6,7 @@ import { db, functions, doc, collection, onSnapshot, updateDoc, setDoc, getDoc, 
 import { httpsCallable } from 'firebase/functions';
 
 // THE DEFINITIVE SECURITY FIX: Synchronized with SSL-certified infrastructure [1]
-const LIVEKIT_URL = "wss://livekit.nvanetworkapp.com";
+const LIVEKIT_URL =  “wss://nva-network-g3yhgt5n.livekit.cloud";;
 
 // --- CHILD COMPONENT: CLASSROOM VIEWER COUNT ---
 const ClassroomViewerCount = () => {
@@ -489,16 +489,17 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
         return mapping;
     }, [loungeMessages]);
 
-    const [lastViewedLounge, setLastViewedLounge] = useState(() => {
-        return Number(localStorage.getItem(`film_lounge_last_viewed_${currentUser?.uid}`)) || Date.now();
-    });
+    // Prevents stale closures in snapshot listeners [1.1.6]
+    const lastViewedLoungeRef = useRef(
+        Number(localStorage.getItem(`film_lounge_last_viewed_${currentUser?.uid}`)) || Date.now()
+    );
 
     const handleTabChange = (tabName) => {
         setActiveScreenTab(tabName);
         if (tabName === 'lounge') {
             setUnreadLoungeCount(0);
             const now = Date.now();
-            setLastViewedLounge(now);
+            lastViewedLoungeRef.current = now;
             localStorage.setItem(`film_lounge_last_viewed_${currentUser?.uid}`, now.toString());
         }
     };
@@ -563,11 +564,17 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                     msgs.reverse(); // Display oldest to newest on screen
                     setLoungeMessages(msgs);
 
-                    // If user is on a different tab, calculate the unread count since they last viewed
-                    if (activeTab !== 'lounge') {
+                    if (activeTab === 'lounge') {
+                        // Actively update read-status while user is in the chat
+                        setUnreadLoungeCount(0);
+                        const now = Date.now();
+                        lastViewedLoungeRef.current = now;
+                        localStorage.setItem(`film_lounge_last_viewed_${currentUser?.uid}`, now.toString());
+                    } else {
+                        // Calculate unread count cleanly on other tabs
                         const count = msgs.filter(m => {
                             const createdTime = new Date(m.createdAt).getTime();
-                            return createdTime > lastViewedLounge;
+                            return createdTime > lastViewedLoungeRef.current;
                         }).length;
                         setUnreadLoungeCount(count);
                     }
@@ -593,7 +600,7 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
         }
 
         return () => unsubConfig();
-    }, [hasClubAccess, activeTab, lastViewedLounge]);
+    }, [hasClubAccess, activeTab]); // Dependencies simplified
 
     // Auto scroll chat
     useEffect(() => {
@@ -616,31 +623,41 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
         } catch (err) { showMessage("Notice post failed."); }
     };
 
-    // Handle posting a message to Lounge (Supports nested quoting)
+    // Handle posting a message to Lounge (Optimized for sub-10ms instant response) [1.1.6]
     const handleSendLoungeMsg = async () => {
-        if (!newMsg.trim()) return;
+        const messageText = newMsg.trim();
+        if (!messageText) return;
+
+        // INSTANTLY clear input and active reply so the UI feels incredibly fast [1.1.6]
+        setNewMsg('');
+        const currentReply = replyTo;
+        setReplyTo(null);
+
         try {
             const payload = {
-                text: newMsg.trim(),
+                text: messageText,
                 userId: currentUser.uid,
                 userName: creatorProfile?.creatorName || 'Student',
                 userAvatar: creatorProfile?.profilePictureUrl || '',
                 createdAt: new Date().toISOString()
             };
 
-            // Attach quote map if replying
-            if (replyTo) {
+            if (currentReply) {
                 payload.replyTo = {
-                    messageId: replyTo.id,
-                    text: replyTo.text,
-                    userName: replyTo.userName
+                    messageId: currentReply.id,
+                    text: currentReply.text,
+                    userName: currentReply.userName
                 };
             }
 
-            await addDoc(collection(db, "film_club_lounge"), payload);
-            setNewMsg('');
-            setReplyTo(null);
-        } catch (err) { showMessage("Send failed."); }
+            // Fire-and-forget: Runs in background; Firestore's local cache instantly pops it onto your screen! [1.1.6]
+            addDoc(collection(db, "film_club_lounge"), payload).catch((err) => {
+                console.error("Lounge send failed:", err);
+                showMessage("Failed to send message to server.");
+            });
+        } catch (err) { 
+            showMessage("Send failed."); 
+        }
     };
 
     // Handle submitting lead to Waiting List

@@ -171,7 +171,8 @@ service cloud.firestore {
         get(/databases/$(database)/documents/creators/$(request.auth.uid)).data.get('isFilmClub', false) == true || 
         isModerator()
       );
-      allow update, delete: if isModerator();
+      allow update: if isModerator();
+      allow delete: if isModerator() || (isAuthenticated() && resource.data.userId == request.auth.uid);
     }
 
     match /filmClubWaitingList/{waitingId} {
