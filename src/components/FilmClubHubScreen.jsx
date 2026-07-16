@@ -552,7 +552,10 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
             // Stream notices
             const noticesQuery = query(collection(db, "film_club_notices"), orderBy("createdAt", "desc"), limit(20));
             const unsubNotices = onSnapshot(noticesQuery, (snap) => {
-                setNotices(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                const fetchedNotices = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // Sort in memory: Pinned notices forced to the absolute top
+                fetchedNotices.sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
+                setNotices(fetchedNotices);
             });
 
             // Stream lounge chat (Audited to fetch newest 200 messages instead of oldest 50)
@@ -783,9 +786,32 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
 
                         <div>
                             {notices.length > 0 ? notices.map(notice => (
-                                <div key={notice.id} className="notice-card">
-                                    <p style={{ margin: '0 0 10px 0', color: '#FFF', fontSize: '14px', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>{notice.text}</p>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#555', fontSize: '11px', fontWeight: 'bold' }}>
+                                <div key={notice.id} className="notice-card" style={{ border: notice.isPinned ? '1px solid #FFD700' : '1px solid #222', background: notice.isPinned ? 'rgba(255,215,0,0.03)' : 'rgba(255,255,255,0.02)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <p style={{ margin: '0 0 10px 0', color: '#FFF', fontSize: '14px', lineHeight: '1.5', whiteSpace: 'pre-wrap', flex: 1 }}>
+                                            {notice.isPinned && <span style={{ color: '#FFD700', marginRight: '6px', fontWeight: 'bold', fontSize: '11px', textTransform: 'uppercase' }}>📌 Pinned: </span>}
+                                            {notice.text}
+                                        </p>
+                                        
+                                        {/* Admin Controls: Pin and Delete */}
+                                        {(creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin') && (
+                                            <div style={{ display: 'flex', gap: '8px', marginLeft: '10px' }}>
+                                                <button 
+                                                    onClick={() => updateDoc(doc(db, "film_club_notices", notice.id), { isPinned: !notice.isPinned })} 
+                                                    style={{ background: notice.isPinned ? '#FFD700' : 'rgba(255,255,255,0.1)', color: notice.isPinned ? '#000' : '#FFF', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}
+                                                >
+                                                    {notice.isPinned ? "UNPIN" : "PIN"}
+                                                </button>
+                                                <button 
+                                                    onClick={() => { if(window.confirm("Permanently delete this notice?")) deleteDoc(doc(db, "film_club_notices", notice.id)).catch(()=>{}); }} 
+                                                    style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#EF4444', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}
+                                                >
+                                                    DELETE
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#555', fontSize: '11px', fontWeight: 'bold', marginTop: '5px' }}>
                                         <span>By: {notice.creatorName}</span>
                                         <span>{new Date(notice.createdAt).toLocaleString()}</span>
                                     </div>
