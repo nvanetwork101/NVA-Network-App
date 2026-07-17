@@ -629,6 +629,8 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
         } catch (err) { showMessage("Notice post failed."); }
     };
 
+    const [viewingAcksFor, setViewingAcksFor] = useState(null);
+
     const handleAcknowledgeNotice = async (noticeId, noticeData) => {
         if (!currentUser) return;
         const currentAcks = noticeData.acknowledgments || {};
@@ -637,7 +639,11 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
         if (currentAcks[currentUser.uid]) {
             delete currentAcks[currentUser.uid];
         } else {
-            currentAcks[currentUser.uid] = creatorProfile?.creatorName || 'Student';
+            // THE FIX: Saves both name and avatar for the new UI preview
+            currentAcks[currentUser.uid] = {
+                name: creatorProfile?.creatorName || 'Student',
+                avatar: creatorProfile?.profilePictureUrl || ''
+            };
         }
 
         try {
@@ -836,8 +842,8 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                                                 {/* MODERATOR AUDIT VIEW: Who has seen this? */}
                                                 {isModerator && Object.keys(notice.acknowledgments || {}).length > 0 && (
                                                     <span 
-                                                        onClick={() => showMessage("Confirmed By: " + Object.values(notice.acknowledgments).join(', '))}
-                                                        style={{ color: '#555', fontSize: '10px', cursor: 'help', textDecoration: 'underline', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+                                                        onClick={() => setViewingAcksFor(notice)}
+                                                        style={{ color: '#555', fontSize: '10px', cursor: 'pointer', textDecoration: 'underline', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}
                                                     >
                                                         Seen by {Object.keys(notice.acknowledgments).length}
                                                     </span>
@@ -1046,6 +1052,32 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                                 }} 
                                 style={{ flex: 1, padding: '10px', background: '#EF4444', border: 'none', color: '#FFF', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
                             >Delete</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* NEW SCROLLABLE ACKNOWLEDGMENT MODAL */}
+            {viewingAcksFor && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }} onClick={() => setViewingAcksFor(null)}>
+                    <div style={{ background: '#111', border: '1px solid #FFD700', padding: '20px', borderRadius: '16px', maxWidth: '350px', width: '90%', display: 'flex', flexDirection: 'column', maxHeight: '70vh', boxShadow: '0 10px 50px rgba(0,0,0,0.9)' }} onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #333', paddingBottom: '10px' }}>
+                            <h3 style={{ color: '#FFD700', margin: 0, fontSize: '16px', textTransform: 'uppercase', letterSpacing: '1px' }}>Read Receipts ({Object.keys(viewingAcksFor.acknowledgments || {}).length})</h3>
+                            <button onClick={() => setViewingAcksFor(null)} style={{ background: 'none', border: 'none', color: '#FFF', fontSize: '20px', cursor: 'pointer' }}>✕</button>
+                        </div>
+                        <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '5px' }}>
+                            {Object.entries(viewingAcksFor.acknowledgments || {}).map(([uid, data]) => {
+                                // Fallback ensuring older text-only logs don't break the new UI
+                                const name = typeof data === 'string' ? data : (data.name || 'Student');
+                                const avatar = typeof data === 'string' ? `https://placehold.co/40x40/333/FFF?text=${name.charAt(0)}` : (data.avatar || `https://placehold.co/40x40/333/FFF?text=${name.charAt(0)}`);
+                                
+                                return (
+                                    <div key={uid} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                        <img src={avatar} alt="avatar" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #444' }} />
+                                        <span style={{ color: '#FFF', fontSize: '14px', fontWeight: 'bold' }}>{name}</span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>

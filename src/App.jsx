@@ -365,7 +365,7 @@ function App() {
           const parts = path.split('/').filter(Boolean);
           
           if (parts.length > 0) {
-            const screen = parts[0];
+            const screen = parts[0].toLowerCase(); // THE FIX: Case-insensitivity prevents URL capitalizations from breaking routes
             const id = parts[1];
             
             switch (screen) {
@@ -387,12 +387,22 @@ function App() {
               case 'competition': 
                 setActiveScreen('CompetitionScreen'); 
                 break;
-              case 'promotedStatus': 
+              case 'promotedstatus': 
                 if (id) { setActiveScreen('Home'); } 
                 break;
-              case 'CenterStage':
+              case 'centerstage':
                 if (id) { setCenterStageTargetId(id); }
                 setActiveScreen('CenterStage');
+                break;
+              case 'chat':
+                if (id) { setSelectedChatId(id); setActiveScreen('ChatMessageScreen'); }
+                else { setActiveScreen('ChatList'); }
+                break;
+              case 'creatordashboard':
+                setActiveScreen('CreatorDashboard');
+                break;
+              case 'filmclubhub':
+                setActiveScreen('FilmClubHub');
                 break;
               case 'content': 
                 if (id) { 
@@ -694,15 +704,22 @@ useEffect(() => {
         setSelectedChatId(id);
         handleNavigate('ChatMessageScreen');
     };
+    const handleNavToCenterStage = (event) => {
+        const { id } = event.detail;
+        setCenterStageTargetId(id);
+        handleNavigate('CenterStage');
+    };
 
     window.addEventListener('navigateToOpportunity', handleNavToOpp);
     window.addEventListener('navigateToUser', handleNavToUser);
     window.addEventListener('navigateToChat', handleNavToChat);
+    window.addEventListener('navigateToCenterStage', handleNavToCenterStage);
 
     return () => {
         window.removeEventListener('navigateToOpportunity', handleNavToOpp);
         window.removeEventListener('navigateToUser', handleNavToUser);
         window.removeEventListener('navigateToChat', handleNavToChat);
+        window.removeEventListener('navigateToCenterStage', handleNavToCenterStage);
     };
 }, [handleNavigate, currentUser]); 
 // ======================== END: NOTIFICATION INBOX HANDLERS ========================

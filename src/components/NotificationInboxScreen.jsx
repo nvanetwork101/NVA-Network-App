@@ -87,6 +87,14 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
             case 'filmclubhub':
                 setActiveScreen('FilmClubHub');
                 break;
+            case 'centerstage':
+                // For CenterStage, the custom event is best since it needs to pass the target ID to App.jsx state
+                if (id) window.dispatchEvent(new CustomEvent('navigateToCenterStage', { detail: { id: id } }));
+                else setActiveScreen('CenterStage');
+                break;
+            case 'discover':
+                setActiveScreen('Discover');
+                break;
             default:
                 setActiveScreen('Home');
                 break;
