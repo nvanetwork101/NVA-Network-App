@@ -6277,17 +6277,16 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
     response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
     response.status(200).send(html);
 });
-// =====================================================================
-// ======================= NVA ENROLLMENT SYSTEM =======================
-// =====================================================================
-
 // Callable function for a user to submit their enrollment application.
 exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (request) => {
     const uid = request.auth.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to apply.");
     }
+
+    // SURGICAL FIX: Destructure ALL submitted fields at once to prevent 500 errors.
     const { selectedOptions, totalAmount, phoneNumber, age, experience } = request.data; 
+    
     if (!selectedOptions || !Array.isArray(selectedOptions) || selectedOptions.length === 0) {
         throw new HttpsError("invalid-argument", "You must select at least one program.");
     }
@@ -6309,123 +6308,89 @@ exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (
         }
 
         const userData = userDoc.data();
-        const config = configDoc.data();
-        // DEFINITIVE FIX: Check track-specific cooldowns instead of global blocks
+        const config = configDoc.data() || {};
+        
+        // 1. Check Cooldowns
         const userCooldowns = userData.cooldowns || {};
         for (const option of selectedOptions) {
             if (userCooldowns[option]) {
                 const cooldownTime = new Date(userCooldowns[option]).getTime();
                 if (!isNaN(cooldownTime) && Date.now() < cooldownTime) {
                     const remainingDays = Math.ceil((cooldownTime - Date.now()) / (24 * 60 * 60 * 1000));
-                    throw new HttpsError("failed-precondition", `Your profile is on a cooldown hold for ${option === 'filmClub' ? 'Film Club' : 'Docu-Series'}. You can apply again in ${remainingDays} day(s).`);
+                    throw new HttpsError("failed-precondition", `Track hold active. Re-apply in ${remainingDays} day(s).`);
                 }
             }
         }
         
-        // Fallback for legacy global hold
-        if (userData.cooldownUntil) {
-            const cooldownTime = new Date(userData.cooldownUntil).getTime();
-            if (!isNaN(cooldownTime) && Date.now() < cooldownTime) {
-                const remainingDays = Math.ceil((cooldownTime - Date.now()) / (24 * 60 * 60 * 1000));
-                throw new HttpsError("failed-precondition", `Your profile is on a global cooldown hold. You can apply again in ${remainingDays} day(s).`);
-            }
-        }
-        
-        // --- Check 3-Day & 30-Day Holds on Rejection or Deletion ---
+        // 2. Check Document Holds
         if (enrollmentDoc.exists) {
             const appData = enrollmentDoc.data();
-            const existingOpts = appData.selectedOptions || [];
             const history = appData.history || [];
-            
-            // Check if the user is adding any brand-new program options they haven't applied for yet
-            const isNewOptionSelected = selectedOptions.some(opt => !existingOpts.includes(opt));
-            
-            if (!isNewOptionSelected) {
-                const lastHistoryEntry = history[history.length - 1];
-                const isHoldCleared = lastHistoryEntry && lastHistoryEntry.status === "hold_cleared";
+            const lastEntry = history[history.length - 1];
+            const isHoldCleared = lastEntry?.status === "hold_cleared";
 
-                if (!isHoldCleared) {
-                    const wasPreviouslyApprovedOrEnrolled = history.some(h => h.status === "approved" || h.status === "enrolled" || h.status === "paymentPending");
-                    
-                    // ARCHITECTURAL FIX: Decoupled check. Only block if the SPECIFIC track being requested is in declinedOptions.
-                    const isGlobalHoldStatus = ["declined", "cancelled", "revoked"].includes(appData.status);
-                    const declinedOpts = appData.declinedOptions || [];
-                    const isTargetTrackLocked = selectedOptions.some(opt => declinedOpts.includes(opt));
+            if (!isHoldCleared) {
+                const wasVip = history.some(h => ["approved", "enrolled", "paymentPending"].includes(h.status));
+                const isLockedStatus = ["declined", "cancelled", "revoked"].includes(appData.status);
+                const isTargetTrackDeclined = (appData.declinedOptions || []).some(opt => selectedOptions.includes(opt));
 
-                    if (isGlobalHoldStatus && isTargetTrackLocked) {
-                        const lastUpdateTime = appData.updatedAt 
-                            ? (appData.updatedAt.toDate ? appData.updatedAt.toDate().getTime() : new Date(appData.updatedAt).getTime())
-                            : (appData.declinedAt ? (appData.declinedAt.toDate ? appData.declinedAt.toDate().getTime() : new Date(appData.declinedAt).getTime()) : Date.now());
-                        
-                        const cooldownMs = wasPreviouslyApprovedOrEnrolled ? (30 * 24 * 60 * 60 * 1000) : (3 * 24 * 60 * 60 * 1000);
-                        const timeElapsed = Date.now() - lastUpdateTime;
-
-                        if (timeElapsed < cooldownMs) {
-                            const remainingTime = cooldownMs - timeElapsed;
-                            const remainingDays = Math.ceil(remainingTime / (24 * 60 * 60 * 1000));
-                            throw new HttpsError("failed-precondition", `The selected track is on a ${wasPreviouslyApprovedOrEnrolled ? '30' : '3'}-day hold. You can reapply in ${remainingDays} day(s).`);
-                        }
-                    } else if (!isGlobalHoldStatus) {
-                        // If status is active (pending/approved), only block if they are trying to re-apply for the exact same track
-                        const isAlreadyActive = selectedOptions.some(opt => existingOpts.includes(opt));
-                        if (isAlreadyActive) {
-                            throw new HttpsError("already-exists", "You already have an active pending or approved application for this selection.");
-                        }
+                if (isLockedStatus && isTargetTrackDeclined) {
+                    const updateTime = appData.declinedAt?.toDate ? appData.declinedAt.toDate().getTime() : (appData.updatedAt ? new Date(appData.updatedAt).getTime() : Date.now());
+                    const cooldownMs = wasVip ? (30 * 24 * 60 * 60 * 1000) : (3 * 24 * 60 * 60 * 1000);
+                    if ((Date.now() - updateTime) < cooldownMs) {
+                        throw new HttpsError("failed-precondition", "Track hold is still active.");
                     }
                 }
             }
         }
 
-        if (!configDoc.exists) {
-            throw new HttpsError("failed-precondition", "Enrollment configuration is not available.");
-        }
-
-        const bioText = userData.bio || ""; // <-- PREVENT UNDEFINED ERROR
-
-        // --- Profile Completeness Validation ---
+        // 3. Mandatory Field Validation
+        const submittedExperience = experience || "";
         if (config.requireProfilePhoto && !userData.profilePictureUrl) {
             throw new HttpsError("failed-precondition", "A profile picture is required to apply.");
         }
         if (config.requirePhone && !phoneNumber) { 
-            throw new HttpsError("failed-precondition", "A phone number is required to apply.");
+            throw new HttpsError("failed-precondition", "A phone number is required.");
         }
-        if (config.requireExperience && (!bioText || bioText.length < 10)) {
-            throw new HttpsError("failed-precondition", "Your bio/experience is required (minimum 10 characters).");
+        if (!age) {
+            throw new HttpsError("failed-precondition", "Legal Age is mandatory.");
+        }
+        if (config.requireExperience && submittedExperience.length < 10) {
+            throw new HttpsError("failed-precondition", "Performing arts experience (min 10 chars) is required.");
         }
 
-        // DEFINITIVE FIX: Safely pull email from Auth Token, preventing crashes if 'email' is missing in Firestore
+        // 4. Construct Payload
         const userAuthEmail = request.auth.token.email || userData.email || "";
         const fallbackName = userAuthEmail ? userAuthEmail.split('@')[0] : "Applicant";
 
         const applicationData = {
             userId: uid,
             userName: userData.creatorName || fallbackName,
-            userEmail: userAuthEmail || "No Email Provided",
+            userEmail: userAuthEmail,
             profilePictureUrl: userData.profilePictureUrl || null,
             phone: phoneNumber || null,
             applicantAge: age || "N/A",
             applicantRole: userData.role || "user",
-            experience: experience || "None provided",
-            bio: bioText,
+            experience: submittedExperience,
+            bio: userData.bio || "",
             selectedOptions,
             totalAmount: totalAmount || 0,
             status: "pending",
             submittedAt: admin.firestore.FieldValue.serverTimestamp(),
-            history: [{
+            history: admin.firestore.FieldValue.arrayUnion({
                 status: "pending",
                 timestamp: new Date().toISOString(),
                 actor: "user"
-            }]
+            })
         };
 
         await enrollmentRef.set(applicationData, { merge: true });
-        logger.info(`User '${uid}' successfully submitted an enrollment application.`);
-        return { success: true, message: "Application submitted for review." };
+        return { success: true, message: "Application submitted." };
 
     } catch (error) {
-        logger.error(`Error in submitEnrollmentApplication for user '${uid}':`, error);
+        logger.error(`Application error for ${uid}:`, error);
         if (error instanceof HttpsError) throw error;
-        throw new HttpsError("internal", "An unexpected error occurred.");
+        throw new HttpsError("internal", error.message);
     }
 });
 

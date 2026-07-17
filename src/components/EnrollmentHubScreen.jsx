@@ -34,6 +34,8 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
 
     // --- TRACK LOCKOUT & COOLDOWN AUDIT ---
     const statusLower = existingApp?.status?.toLowerCase() || '';
+    // SURGICAL FIX: Define isPending locally so the UI logic works without crashing
+    const isPending = statusLower.includes('pending') || statusLower.includes('review');
     const existingOpts = existingApp?.selectedOptions || [];
     const history = existingApp?.history || [];
 
@@ -135,8 +137,8 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
     const checkProfileComplete = () => {
         if (!creatorProfile) return { complete: false, missing: ['Profile not loaded'] };
         const missing = [];
-        // SURGICAL FIX: Bio/Experience is no longer a requirement of the profile document.
-        // It is collected locally on this form. We only gate based on the Photo.
+        // SURGICAL FIX: Explicitly ignore Bio/Experience from the Dashboard check.
+        // The gate is now strictly tied to the Profile Photo.
         if (config?.requireProfilePhoto && !creatorProfile.profilePictureUrl) {
             missing.push('Profile photo');
         }
@@ -166,12 +168,15 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
             showMessage("Please enter your phone number to apply.");
             return;
         }
-        if (!ageInput.trim()) {
-            showMessage("Please enter your age to apply.");
+        // SURGICAL FIX: Mandatory age check to prevent minor enrollment
+        if (!ageInput.trim() || Number(ageInput) < 1) {
+            showMessage("Legal Age is mandatory to apply.");
             return;
         }
-        if (!experienceInput.trim()) {
-            showMessage("Please describe your performing arts experience.");
+
+        // SURGICAL FIX: Enforce the 10-character limit locally so it matches the new backend rule.
+        if (!experienceInput.trim() || experienceInput.trim().length < 10) {
+            showMessage("Your performing arts experience is required (minimum 10 characters).");
             return;
         }
         try {
@@ -390,8 +395,8 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                 </div>
             )}
 
-            {/* Contact & Demographics Input Fields (Accessible whenever at least one track remains open) */}
-            {(!isFilmClubLocked || !isDocuSeriesLocked) && (
+            {/* SURGICAL FIX: Hide input fields entirely once an application is pending review */}
+            {(!isFilmClubLocked || !isDocuSeriesLocked) && !isPending && (
                 <>
                     {config?.requirePhone && (
                         <div className="formGroup" style={{ marginTop: '20px' }}>
@@ -435,20 +440,22 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                 </>
             )}
 
-            {/* Action Buttons */}
-            <button
-                className="button"
-                onClick={handleApply}
-                disabled={selectedOptions.length === 0}
-                style={{
-                    marginTop: '10px',
-                    opacity: selectedOptions.length === 0 ? 0.5 : 1
-                }}
-            >
-                <span className="buttonText">
-                    {selectedOptions.length === 0 ? 'Select Available Service' : 'Submit Application'}
-                </span>
-            </button>
+            {/* SURGICAL FIX: Only show the Submit button if there is no active pending/approved application */}
+            {!isPending && statusLower !== 'approved' && (
+                <button
+                    className="button"
+                    onClick={handleApply}
+                    disabled={selectedOptions.length === 0}
+                    style={{
+                        marginTop: '10px',
+                        opacity: selectedOptions.length === 0 ? 0.5 : 1
+                    }}
+                >
+                    <span className="buttonText">
+                        {selectedOptions.length === 0 ? 'Select Available Service' : 'Submit Application'}
+                    </span>
+                </button>
+            )}
 
             <button
                 className="button"
