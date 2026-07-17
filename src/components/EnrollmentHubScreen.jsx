@@ -183,8 +183,8 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                 selectedOptions: mergedOptions,
                 totalAmount: calculateTotal(),
                 phoneNumber: phoneInput.trim() || "Not Provided",
-                age: Number(ageInput.trim()) || 0,
-                experience: experienceInput.trim() || "Not Provided"
+                age: ageInput.trim() || "N/A",
+                experience: experienceInput.trim() || "None provided"
             });
             
             setExistingApp(prev => ({ ...prev, status: 'pending', selectedOptions: mergedOptions }));

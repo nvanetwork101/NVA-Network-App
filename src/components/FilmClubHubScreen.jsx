@@ -47,6 +47,24 @@ function ClassroomStage({ currentUser, creatorProfile, showMessage, handleExit }
         return () => unsubClass();
     }, [creatorProfile, isHost]);
 
+    // TRUE ADMITTANCE HARD-GATE: Blocks LiveKit component from even existing until Director approves
+    const isAdmitted = isHost || (Array.isArray(classState.admittedUsers) && classState.admittedUsers.includes(currentUser?.uid));
+
+    if (!isAdmitted) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center', background: '#050505', minHeight: '50vh', borderRadius: '16px', border: '1px dashed #333' }}>
+                <div style={{ fontSize: '48px', animation: 'pulse-mic 2s infinite', marginBottom: '20px' }}>🚪</div>
+                <h3 style={{ color: '#FFF', fontSize: '20px', fontWeight: 'bold', margin: '0 0 10px 0' }}>The Green Room</h3>
+                <p style={{ color: '#888', fontSize: '14px', maxWidth: '300px', margin: 0, lineHeight: '1.5' }}>
+                    Welcome! You are safely checked in. Please wait here comfortably while the Director admits you into the classroom.
+                </p>
+                <button onClick={handleExit} style={{ marginTop: '25px', background: 'rgba(255,255,255,0.05)', border: '1px solid #444', color: '#FFF', padding: '10px 24px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    Exit Lobby
+                </button>
+            </div>
+        );
+    }
+
     if (!token) {
         return (
             <div style={{ padding: '40px', textAlign: 'center', color: '#888' }}>
@@ -122,7 +140,8 @@ function ClassroomParticipantCard({ track, roleColor = '#A855F7' }) {
 // --- CLASSROOM CONTENT CONTROLLER ---
 function ClassroomStageContent({ classState, currentUser, creatorProfile, showMessage, handleExit, isHost }) {
     const room = useRoomContext();
-    const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+    // SURGICAL FIX: Force strictly Microphone track routing. Requesting Camera here is what caused your massive bandwidth crashes and dropping audio.
+    const tracks = useTracks([{ source: Track.Source.Microphone, withPlaceholder: true }]);
     const [isMicEnabled, setIsMicEnabled] = useState(false);
 
     // Sync microphone state on room connection
@@ -235,22 +254,6 @@ function ClassroomStageContent({ classState, currentUser, creatorProfile, showMe
         }
         return { spotlightedTracks: sTracks, galleryTracks: gTracks };
     }, [admittedTracks, classState.spotlightedUids]);
-
-    // --- RENDER GREEN ROOM / WAITING LOBBY (For Students) ---
-    if (!isAdmitted) {
-        return (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center', background: '#050505', minHeight: '50vh', borderRadius: '16px', border: '1px dashed #333' }}>
-                <div style={{ fontSize: '48px', animation: 'pulse-mic 2s infinite', marginBottom: '20px' }}>🚪</div>
-                <h3 style={{ color: '#FFF', fontSize: '20px', fontWeight: 'bold', margin: '0 0 10px 0' }}>The Green Room</h3>
-                <p style={{ color: '#888', fontSize: '14px', maxWidth: '300px', margin: 0, lineHeight: '1.5' }}>
-                    Welcome! You are safely checked in. Please wait here comfortably while the Director admits you into the classroom.
-                </p>
-                <button onClick={handleExit} style={{ marginTop: '25px', background: 'rgba(255,255,255,0.05)', border: '1px solid #444', color: '#FFF', padding: '10px 24px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
-                    Exit Lobby
-                </button>
-            </div>
-        );
-    }
 
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#0A0A0A', borderRadius: '16px', overflow: 'hidden', border: '1px solid #222' }}>
@@ -439,6 +442,7 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
     // --- LOUNGE THREADED REPLY ENGINE ---
     const [replyTo, setReplyTo] = useState(null);
     const [messageToDelete, setMessageToDelete] = useState(null);
+    const [noticeToDelete, setNoticeToDelete] = useState(null);
     const isModerator = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin';
 
     // Dynamic Date Separator Formatter [1.1.6]
@@ -803,7 +807,7 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                                                     {notice.isPinned ? "UNPIN" : "PIN"}
                                                 </button>
                                                 <button 
-                                                    onClick={() => { if(window.confirm("Permanently delete this notice?")) deleteDoc(doc(db, "film_club_notices", notice.id)).catch(()=>{}); }} 
+                                                    onClick={() => setNoticeToDelete(notice.id)} 
                                                     style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#EF4444', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}
                                                 >
                                                     DELETE
@@ -975,6 +979,28 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
                                     const targetId = messageToDelete;
                                     setMessageToDelete(null);
                                     await deleteDoc(doc(db, "film_club_lounge", targetId)).catch(() => {});
+                                }} 
+                                style={{ flex: 1, padding: '10px', background: '#EF4444', border: 'none', color: '#FFF', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                            >Delete</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* CUSTOM IN-APP DELETE MODAL (BULLETIN) */}
+            {noticeToDelete && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ background: '#111', border: '1px solid #333', padding: '25px', borderRadius: '16px', maxWidth: '320px', width: '90%', textAlign: 'center', boxShadow: '0 10px 40px rgba(0,0,0,0.9)' }}>
+                        <div style={{ fontSize: '30px', marginBottom: '10px' }}>📌</div>
+                        <h3 style={{ color: '#FFF', margin: '0 0 10px 0', fontSize: '18px' }}>Delete Notice?</h3>
+                        <p style={{ color: '#888', fontSize: '13px', margin: '0 0 20px 0', lineHeight: '1.5' }}>This action cannot be undone. Are you sure you want to remove this bulletin?</p>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => setNoticeToDelete(null)} style={{ flex: 1, padding: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid #444', color: '#FFF', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+                            <button 
+                                onClick={async () => {
+                                    const targetId = noticeToDelete;
+                                    setNoticeToDelete(null);
+                                    await deleteDoc(doc(db, "film_club_notices", targetId)).catch(() => {});
                                 }} 
                                 style={{ flex: 1, padding: '10px', background: '#EF4444', border: 'none', color: '#FFF', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
                             >Delete</button>

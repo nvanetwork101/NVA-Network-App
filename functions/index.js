@@ -6287,7 +6287,7 @@ exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to apply.");
     }
-    const { selectedOptions, totalAmount, phoneNumber } = request.data; 
+    const { selectedOptions, totalAmount, phoneNumber, age, experience } = request.data; 
     if (!selectedOptions || !Array.isArray(selectedOptions) || selectedOptions.length === 0) {
         throw new HttpsError("invalid-argument", "You must select at least one program.");
     }
@@ -6403,6 +6403,9 @@ exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (
             userEmail: userAuthEmail || "No Email Provided",
             profilePictureUrl: userData.profilePictureUrl || null,
             phone: phoneNumber || null,
+            applicantAge: age || "N/A",
+            applicantRole: userData.role || "user",
+            experience: experience || "None provided",
             bio: bioText,
             selectedOptions,
             totalAmount: totalAmount || 0,
