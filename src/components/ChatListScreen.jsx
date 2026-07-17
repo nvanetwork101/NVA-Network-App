@@ -107,10 +107,19 @@ const ChatListScreen = ({
         if (!loading && currentUser) {
             const filtered = rawChats.filter(chat => {
                 const isHidden = chat.hiddenFor?.includes(currentUser.uid);
-                if (isHidden) return false;
                 const otherParticipantUid = chat.participants.find(uid => uid !== currentUser.uid);
                 const isBlocked = otherParticipantUid && blockedUserIds.has(otherParticipantUid);
-                if (isBlocked) return false;
+                
+                if (isHidden || isBlocked) {
+                    // THE DEFINITIVE GHOST BADGE FIX: Self-healing mechanism.
+                    // If a chat is unread but invisible to the user (deleted or blocked), 
+                    // silently mark it as read so the global navigation badge clears.
+                    if (chat.unreadBy?.includes(currentUser.uid)) {
+                        const markAsRead = httpsCallable(functions, 'markChatAsRead');
+                        markAsRead({ chatId: chat.id }).catch(() => {});
+                    }
+                    return false;
+                }
                 return true;
             });
             setFilteredChats(filtered);
@@ -154,6 +163,10 @@ const ChatListScreen = ({
         setConfirmationMessage("Are you sure you want to permanently delete this conversation from your list? This action cannot be undone.");
         setOnConfirmationAction(() => async () => {
             try {
+                // THE FIX: Purge the unread status BEFORE hiding the chat to prevent future leaks
+                const markAsReadFunction = httpsCallable(functions, 'markChatAsRead');
+                await markAsReadFunction({ chatId: chatId }).catch(() => {});
+                
                 const hideChatFunction = httpsCallable(functions, 'hideChatForUser');
                 await hideChatFunction({ chatId: chatId });
                 showMessage("Conversation deleted.");
