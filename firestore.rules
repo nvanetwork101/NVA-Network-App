@@ -166,7 +166,8 @@ service cloud.firestore {
         get(/databases/$(database)/documents/creators/$(request.auth.uid)).data.get('isFilmClub', false) == true || 
         isModerator()
       );
-      allow write: if isModerator();
+      allow create, delete: if isModerator();
+      allow update: if isModerator() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledgments']));
     }
 
     match /film_club_lounge/{msgId} {

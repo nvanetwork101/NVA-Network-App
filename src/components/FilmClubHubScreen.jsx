@@ -495,9 +495,14 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
     }, [loungeMessages]);
 
     // Symmetrical Read Receipt Engine (ID-Based to prevent timezone/clock drift)
-    const readMessagesRef = useRef(
-        new Set(JSON.parse(localStorage.getItem(`film_lounge_read_${currentUser?.uid}`) || "[]"))
-    );
+    const readMessagesRef = useRef(new Set());
+
+    // Sync local storage only after currentUser is fully resolved to prevent ghost badges on relog
+    useEffect(() => {
+        if (currentUser?.uid) {
+            readMessagesRef.current = new Set(JSON.parse(localStorage.getItem(`film_lounge_read_${currentUser.uid}`) || "[]"));
+        }
+    }, [currentUser?.uid]);
 
     const handleTabChange = (tabName) => {
         setActiveScreenTab(tabName);

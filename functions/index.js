@@ -195,6 +195,13 @@ exports.sendNotificationOnCreate = onDocumentCreated("notifications/{notificatio
                     }
                 }
             },
+            // 4. Android/WebPush High Priority force-wakes devices from Doze Mode
+            android: {
+                priority: 'high'
+            },
+            webpush: {
+                headers: { Urgency: 'high' }
+            },
             tokens: tokens,
         };
 

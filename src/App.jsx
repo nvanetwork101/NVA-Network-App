@@ -440,6 +440,11 @@ function App() {
             setUnreadChatCount(0);
             setToastQueue([]);
             processedToastIds.current.clear();
+            
+            // Clear PWA Badge on Logout
+            if (navigator.clearAppBadge) {
+                navigator.clearAppBadge().catch(() => {});
+            }
             return;
           }
 
@@ -508,7 +513,14 @@ function App() {
                 updateDoc(userDocRef, { role: 'super_admin' }).catch(() => {});
             }
             setCreatorProfile(pData);
-            setNotificationBadgeCount(pData.unreadNotificationCount || 0);
+            
+            const unreadCount = pData.unreadNotificationCount || 0;
+            setNotificationBadgeCount(unreadCount);
+            
+            // PWA Number Badge API Injection
+            if (navigator.setAppBadge) {
+                unreadCount > 0 ? navigator.setAppBadge(unreadCount).catch(() => {}) : navigator.clearAppBadge().catch(() => {});
+            }
           }
         }, (err) => console.warn("Snapshot sync postponed."));
 
