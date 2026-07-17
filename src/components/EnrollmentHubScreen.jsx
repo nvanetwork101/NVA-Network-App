@@ -135,11 +135,10 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
     const checkProfileComplete = () => {
         if (!creatorProfile) return { complete: false, missing: ['Profile not loaded'] };
         const missing = [];
+        // SURGICAL FIX: Bio/Experience is now a form field, not a profile requirement.
+        // We only gate based on the Profile Photo now.
         if (config?.requireProfilePhoto && !creatorProfile.profilePictureUrl) {
             missing.push('Profile photo');
-        }
-        if (config?.requireExperience && (!creatorProfile.bio || creatorProfile.bio.length < 10)) {
-            missing.push('Performing arts experience / bio');
         }
         return { complete: missing.length === 0, missing };
     };

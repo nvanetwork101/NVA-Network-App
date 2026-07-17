@@ -682,7 +682,9 @@ const CreatorDashboardScreen = ({
                 return;
             }
             
-            if (!hasAcceptedLegalTerms) {
+            // SURGICAL FIX: Only require the ToS checkbox if identity fields are being filled for the first time
+            const isIdentityMissing = !creatorProfile.realName || !creatorProfile.dateOfBirth;
+            if (isIdentityMissing && !hasAcceptedLegalTerms) {
                 showMessage("You must agree to the Terms of Service & certify your information is true before saving.");
                 return;
             }
