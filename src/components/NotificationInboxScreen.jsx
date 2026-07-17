@@ -62,7 +62,7 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
             setActiveScreen('Home');
             return;
         }
-        const screen = parts[0];
+        const screen = parts[0].toLowerCase();
         const id = parts[1];
         switch (screen) {
             case 'user':
@@ -77,9 +77,18 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
             case 'competition':
                 setActiveScreen('CompetitionScreen');
                 break;
+            case 'chat':
+                if (id) window.dispatchEvent(new CustomEvent('navigateToChat', { detail: { id: id } }));
+                else setActiveScreen('ChatList');
+                break;
+            case 'creatordashboard':
+                setActiveScreen('CreatorDashboard');
+                break;
+            case 'filmclubhub':
+                setActiveScreen('FilmClubHub');
+                break;
             default:
-                const screenName = screen.charAt(0).toUpperCase() + screen.slice(1);
-                setActiveScreen(screenName);
+                setActiveScreen('Home');
                 break;
         }
     };

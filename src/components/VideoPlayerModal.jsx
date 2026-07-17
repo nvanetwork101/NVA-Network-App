@@ -270,14 +270,16 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
         return () => clearTimeout(timer);
     }, [liveContentItem, currentUser, itemType]);
 
+    const hasTriggeredComments = useRef(false);
     useEffect(() => {
-        if (openCommentsProp && liveContentItem?.id) {
+        if (openCommentsProp && liveContentItem?.id && !hasTriggeredComments.current) {
+            hasTriggeredComments.current = true;
             const timer = setTimeout(() => {
                 window.dispatchEvent(new CustomEvent('openCommentsModal', { detail: { item: liveContentItem, itemType: itemType } }));
             }, 500); 
             return () => clearTimeout(timer);
         }
-    }, [openCommentsProp, liveContentItem, itemType]);
+    }, [openCommentsProp, liveContentItem?.id, itemType]);
 
     // SURGICAL FIX: Safe navigation bridge to prevent race conditions with history stack popping
     const executeSafeNavigation = (eventName, eventDetail) => {

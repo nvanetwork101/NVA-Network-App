@@ -89,9 +89,11 @@ export const useNotifications = (currentUser) => {
         const unseen = combined.filter(n => {
             if (seenIds.has(n.id)) return false;
             
-            // Only toast notifications that were actually created after the app loaded
-            const notifTime = n.timestamp?.toDate ? n.timestamp.toDate() : new Date(n.timestamp);
-            return notifTime > sessionStartTime.current;
+            const notifTime = n.timestamp?.toDate ? n.timestamp.toDate().getTime() : new Date(n.timestamp).getTime();
+            const now = Date.now();
+            
+            // Only toast if the notification was created within the last 30 seconds (prevents massive backlog storms on background wake)
+            return (now - notifTime) < 30000;
         });
         const unique = Array.from(new Map(unseen.map(item => [item.id, item])).values());
         

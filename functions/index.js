@@ -8826,4 +8826,40 @@ exports.onFilmClubNoticeCreated = onDocumentCreated("film_club_notices/{noticeId
     return null;
 });
 
+// =====================================================================
+// === SURGICAL FIX: PREVENT ZOMBIE BADGE LEAK ON NOTIFICATION DISMISS ===
+// =====================================================================
+exports.deleteNotification = onCall(async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Must be logged in.");
+
+    const { notificationId } = request.data;
+    if (!notificationId) throw new HttpsError("invalid-argument", "Missing notificationId.");
+
+    const db = admin.firestore();
+    const notifRef = db.collection("notifications").doc(notificationId);
+    const userRef = db.collection("creators").doc(uid);
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const notifDoc = await transaction.get(notifRef);
+            if (!notifDoc.exists) return; // Already deleted
+            
+            const data = notifDoc.data();
+            if (data.userId !== uid) throw new HttpsError("permission-denied", "Not your notification.");
+
+            // If dismissing an UNREAD notification, we MUST decrement the badge
+            if (data.isRead === false) {
+                transaction.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(-1) });
+            }
+            
+            transaction.delete(notifRef);
+        });
+        return { success: true };
+    } catch (error) {
+        logger.error(`Error deleting notification: ${error.message}`);
+        throw new HttpsError("internal", "Failed to delete notification.");
+    }
+});
+
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---

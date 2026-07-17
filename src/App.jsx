@@ -398,19 +398,27 @@ function App() {
                 if (id) { 
                   (async () => { 
                     try { 
-                      const appId = import.meta.env.VITE_APP_ID; 
+                      const appId = import.meta.env.VITE_APP_ID || "production-app-id"; 
                       let docSnap = await getDoc(doc(db, "artifacts", appId, "public", "data", "content_items", id)); 
+                      let itemData = null;
                       if (docSnap.exists()) { 
-                        const item = { id: docSnap.id, ...docSnap.data() }; 
-                        handleVideoPress(item.embedUrl || item.mainUrl, item); 
+                        itemData = { id: docSnap.id, ...docSnap.data() }; 
                       } else { 
                         docSnap = await getDoc(doc(db, "events", id)); 
-                        if (docSnap.exists() && docSnap.data().status === 'completed') { 
+                        if (docSnap.exists()) itemData = { id: docSnap.id, ...docSnap.data() }; 
+                      } 
+                      if (itemData) {
+                        const urlParams = new URLSearchParams(window.location.search);
+                        if (urlParams.get('action') === 'comment') setOpenCommentsOnLoad(true);
+                        
+                        if (itemData.status === 'completed' && !itemData.embedUrl) {
                           setDeepLinkedReplayId(id); 
-                          setActiveScreen('Discover'); 
-                        } else { 
-                          showMessage("Shared content could not be found."); 
-                        } 
+                          setActiveScreen('Discover');
+                        } else {
+                          handleVideoPress(itemData.embedUrl || itemData.mainUrl || itemData.liveStreamUrl, itemData); 
+                        }
+                      } else { 
+                        showMessage("Shared content could not be found."); 
                       } 
                     } catch (error) { 
                       showMessage("Error loading shared content."); 
@@ -658,30 +666,33 @@ useEffect(() => {
     const handleNavToOpp = (event) => {
         const { id } = event.detail;
         setSelectedOpportunity({ id: id });
-        handleNavigate('OpportunityDetailsScreen');
+        handleNavigate('OpportunityDetails');
     };
     const handleNavToUser = (event) => {
         const { id } = event.detail;
-
-        // This is the definitive fix:
         if (currentUser && id === currentUser.uid) {
-            // If the notification link is for the logged-in user, go to their private dashboard.
             handleNavigate('CreatorDashboard');
         } else {
-            // Otherwise, go to the public profile of the other user.
             setSelectedUserId(id);
             handleNavigate('UserProfile');
         }
     };
+    const handleNavToChat = (event) => {
+        const { id } = event.detail;
+        setSelectedChatId(id);
+        handleNavigate('ChatMessageScreen');
+    };
 
     window.addEventListener('navigateToOpportunity', handleNavToOpp);
     window.addEventListener('navigateToUser', handleNavToUser);
+    window.addEventListener('navigateToChat', handleNavToChat);
 
     return () => {
         window.removeEventListener('navigateToOpportunity', handleNavToOpp);
         window.removeEventListener('navigateToUser', handleNavToUser);
+        window.removeEventListener('navigateToChat', handleNavToChat);
     };
-}, [handleNavigate, currentUser]); // Added `currentUser` to the dependency array // Dependency on handleNavigate is correct
+}, [handleNavigate, currentUser]); 
 // ======================== END: NOTIFICATION INBOX HANDLERS ========================
 
     // ======================= START: CONTENT NOTIFICATION HANDLER =======================
