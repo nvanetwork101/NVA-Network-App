@@ -624,6 +624,22 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
         } catch (err) { showMessage("Notice post failed."); }
     };
 
+    const handleAcknowledgeNotice = async (noticeId, noticeData) => {
+        if (!currentUser) return;
+        const currentAcks = noticeData.acknowledgments || {};
+        
+        // Toggle Logic: Add if not there, remove if already there
+        if (currentAcks[currentUser.uid]) {
+            delete currentAcks[currentUser.uid];
+        } else {
+            currentAcks[currentUser.uid] = creatorProfile?.creatorName || 'Student';
+        }
+
+        try {
+            await updateDoc(doc(db, "film_club_notices", noticeId), { acknowledgments: currentAcks });
+        } catch (e) { showMessage("Failed to acknowledge."); }
+    };
+
     // Handle posting a message to Lounge (Optimized for sub-10ms instant response) [1.1.6]
     const handleSendLoungeMsg = async () => {
         const messageText = newMsg.trim();
@@ -790,32 +806,53 @@ const FilmClubHubScreen = ({ setActiveScreen, currentUser, creatorProfile, showM
 
                         <div>
                             {notices.length > 0 ? notices.map(notice => (
-                                <div key={notice.id} className="notice-card" style={{ border: notice.isPinned ? '1px solid #FFD700' : '1px solid #222', background: notice.isPinned ? 'rgba(255,215,0,0.03)' : 'rgba(255,255,255,0.02)' }}>
+                                <div key={notice.id} className="notice-card" style={{ border: notice.isPinned ? '1px solid #FFD700' : '1px solid #222', background: notice.isPinned ? 'rgba(255,215,0,0.03)' : 'rgba(255,255,255,0.02)', position: 'relative' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                        <p style={{ margin: '0 0 10px 0', color: '#FFF', fontSize: '14px', lineHeight: '1.5', whiteSpace: 'pre-wrap', flex: 1 }}>
-                                            {notice.isPinned && <span style={{ color: '#FFD700', marginRight: '6px', fontWeight: 'bold', fontSize: '11px', textTransform: 'uppercase' }}>📌 Pinned: </span>}
-                                            {notice.text}
-                                        </p>
-                                        
-                                        {/* Admin Controls: Pin and Delete */}
-                                        {(creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority' || creatorProfile?.role === 'super_admin') && (
-                                            <div style={{ display: 'flex', gap: '8px', marginLeft: '10px' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <p style={{ margin: '0 0 10px 0', color: '#FFF', fontSize: '14px', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                                                {notice.isPinned && <span style={{ color: '#FFD700', marginRight: '6px', fontWeight: 'bold', fontSize: '11px', textTransform: 'uppercase' }}>📌 Pinned: </span>}
+                                                {notice.text}
+                                            </p>
+                                            
+                                            {/* ACKNOWLEDGMENT BUTTON ENGINE */}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '12px' }}>
                                                 <button 
-                                                    onClick={() => updateDoc(doc(db, "film_club_notices", notice.id), { isPinned: !notice.isPinned })} 
-                                                    style={{ background: notice.isPinned ? '#FFD700' : 'rgba(255,255,255,0.1)', color: notice.isPinned ? '#000' : '#FFF', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}
+                                                    onClick={() => handleAcknowledgeNotice(notice.id, notice)}
+                                                    style={{ 
+                                                        background: notice.acknowledgments?.[currentUser?.uid] ? 'rgba(255, 215, 0, 0.15)' : 'rgba(255,255,255,0.05)', 
+                                                        color: notice.acknowledgments?.[currentUser?.uid] ? '#FFD700' : '#737373', 
+                                                        border: '1px solid ' + (notice.acknowledgments?.[currentUser?.uid] ? '#FFD700' : '#333'),
+                                                        padding: '5px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: '900', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '5px' 
+                                                    }}
                                                 >
+                                                    {notice.acknowledgments?.[currentUser?.uid] ? '✅ ACKNOWLEDGED' : '👍 ACKNOWLEDGE'}
+                                                </button>
+                                                
+                                                {/* MODERATOR AUDIT VIEW: Who has seen this? */}
+                                                {isModerator && Object.keys(notice.acknowledgments || {}).length > 0 && (
+                                                    <span 
+                                                        onClick={() => showMessage("Confirmed By: " + Object.values(notice.acknowledgments).join(', '))}
+                                                        style={{ color: '#555', fontSize: '10px', cursor: 'help', textDecoration: 'underline', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+                                                    >
+                                                        Seen by {Object.keys(notice.acknowledgments).length}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* ADMIN CONTROL CENTER */}
+                                        {isModerator && (
+                                            <div style={{ display: 'flex', gap: '8px', marginLeft: '10px' }}>
+                                                <button onClick={() => updateDoc(doc(db, "film_club_notices", notice.id), { isPinned: !notice.isPinned })} style={{ background: notice.isPinned ? '#FFD700' : 'rgba(255,255,255,0.1)', color: notice.isPinned ? '#000' : '#FFF', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
                                                     {notice.isPinned ? "UNPIN" : "PIN"}
                                                 </button>
-                                                <button 
-                                                    onClick={() => setNoticeToDelete(notice.id)} 
-                                                    style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#EF4444', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}
-                                                >
+                                                <button onClick={() => setNoticeToDelete(notice.id)} style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#EF4444', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '10px', fontWeight: 'bold' }}>
                                                     DELETE
                                                 </button>
                                             </div>
                                         )}
                                     </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#555', fontSize: '11px', fontWeight: 'bold', marginTop: '5px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#555', fontSize: '11px', fontWeight: 'bold', marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '8px' }}>
                                         <span>By: {notice.creatorName}</span>
                                         <span>{new Date(notice.createdAt).toLocaleString()}</span>
                                     </div>
