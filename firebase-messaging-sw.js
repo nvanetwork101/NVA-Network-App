@@ -72,31 +72,11 @@ if (!firebase.apps.length) {
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  console.log('[SW] Background message received:', payload);
-
-  if (!payload.data || !payload.data.title) {
-    console.error('[SW] Payload is missing data or title. Cannot display notification.');
-    return;
-  }
-
-  const notificationTitle = payload.data.title;
-  const notificationOptions = {
-    body: payload.data.body,
-    icon: '/icon-192x192.png',
-    data: {
-      link: payload.data.link || '/'
-    }
-  };
-
-  console.log('[SW] Attempting to show notification with title:', notificationTitle);
-
-  const notificationPromise = self.registration.showNotification(notificationTitle, notificationOptions);
-  
-  notificationPromise.catch(error => {
-    console.error('[SW] Error showing notification:', error);
-  });
-
-  return notificationPromise;
+  console.log('[SW] Background message received (Data Only):', payload);
+  // THE DEFINITIVE FIX: 
+  // We completely strip out the manual `showNotification` build. 
+  // FCM will now natively handle the popup from the server's `notification` block. 
+  // This prevents the echo/duplicate and stops confusing the Android Doze Mode battery optimizer.
 });
 
 self.addEventListener('notificationclick', (event) => {

@@ -175,18 +175,15 @@ exports.sendNotificationOnCreate = onDocumentCreated("notifications/{notificatio
         const unreadCount = userDoc.data().unreadNotificationCount || 0;
 
         const message = {
-            // 1. Notification block forces the popup to appear on screen
             notification: {
                 title: title,
                 body: body,
             },
-            // 2. Data block keeps your frontend routing intact
             data: {
                 title: title,
                 body: body,
                 link: link || '/'
             },
-            // 3. APNS block updates the iOS home screen icon badge count natively
             apns: {
                 payload: {
                     aps: {
@@ -195,12 +192,19 @@ exports.sendNotificationOnCreate = onDocumentCreated("notifications/{notificatio
                     }
                 }
             },
-            // 4. Android/WebPush High Priority force-wakes devices from Doze Mode
             android: {
-                priority: 'high'
+                priority: 'high',
+                notification: {
+                    icon: '/icon-192x192.png', // Injects your pink logo natively
+                    color: '#FFD700', // Uses NVA Gold for Android accents
+                    clickAction: 'FLUTTER_NOTIFICATION_CLICK' // Helps some OS routing
+                }
             },
             webpush: {
-                headers: { Urgency: 'high' }
+                headers: { Urgency: 'high' },
+                notification: {
+                    icon: '/icon-192x192.png' // Injects your pink logo natively for PWA
+                }
             },
             tokens: tokens,
         };
@@ -2009,7 +2013,9 @@ exports.onNewChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId
         if (!recipientId) return null;
 
         const senderDoc = await db.collection("creators").doc(senderId).get();
-        const senderName = senderDoc.exists ? senderDoc.data().creatorName : "Someone";
+        const senderData = senderDoc.exists ? senderDoc.data() : {};
+        // THE FIX: Uses the || operator to ensure if creatorName is blank or missing, it safely falls back.
+        const senderName = senderData.creatorName || senderData.displayName || "Someone";
 
         // Based on the requirements, chat messages are Push and Toast, but not permanent Inbox notifications.
         const notificationPayload = {
@@ -2165,7 +2171,8 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
                     text: text.trim()
                 },
                 lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-                unreadBy: admin.firestore.FieldValue.arrayUnion(otherParticipantId)
+                unreadBy: admin.firestore.FieldValue.arrayUnion(otherParticipantId),
+                hiddenFor: admin.firestore.FieldValue.arrayRemove(otherParticipantId) // <-- SURGICAL FIX: Unhides the chat instantly when a new message arrives
             });
         });
 
