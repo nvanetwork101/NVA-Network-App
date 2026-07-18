@@ -13,7 +13,9 @@ const RoleBadge = ({ profile }) => {
     }
 
     // --- PRIORITY 1.5: SPECIAL STATUS (GOLD CLUB) ---
-    if (Array.isArray(profile.badges) && profile.badges.includes('Gold Club')) {
+    const hasGoldClub = Array.isArray(profile.badges) && profile.badges.includes('Gold Club');
+    
+    if (hasGoldClub) {
         badgesToShow.push({ 
             key: 'goldclub', 
             text: 'GOLD CLUB', 
@@ -54,7 +56,8 @@ const RoleBadge = ({ profile }) => {
                                  profile.badges.includes('Class Member')
                              ));
 
-    if (hasFilmClubBadge) {
+    // THE FIX: Only award the standard Film Club badge if they DO NOT have the Gold Club badge
+    if (hasFilmClubBadge && !hasGoldClub) {
         badgesToShow.push({ key: 'filmclub', text: 'FILM CLUB', icon: '🍿', styles: { backgroundColor: '#4169E1', color: '#FFFFFF', border: 'none' }, iconColor: '#FFFFFF' });
     }
 
