@@ -1212,7 +1212,7 @@ const CreatorDashboardScreen = ({
             width: 100%; 
             max-width: 440px; 
             margin: 20px auto 0 auto; 
-            aspect-ratio: 1.15 / 1; /* Establishes a highly stable bounding box for overlapping ratios on iOS */
+            aspect-ratio: 1 / 1; /* THE FIX: Set to a perfect square container */
             background: rgba(0,0,0,0.15);
             border-radius: 20px;
             border: 1px solid rgba(255,255,255,0.04);
@@ -1245,13 +1245,13 @@ const CreatorDashboardScreen = ({
             object-fit: cover; 
         }
         
-        /* Hard-Gated Absolute Coordinate Map for 5-Photo Symmetrical Collage */
-        .slot-0 { width: 44%; height: 42%; top: 6%; left: 28%; z-index: 1; }
-        .slot-1 { width: 42%; height: 38%; top: 22%; left: 6%; z-index: 3; }
-        .slot-2 { width: 44%; height: 38%; top: 26%; left: 50%; z-index: 2; }
-        .slot-3 { width: 38%; height: 36%; top: 54%; left: 14%; z-index: 4; }
-        .slot-4 { width: 38%; height: 32%; top: 58%; left: 48%; z-index: 1; }
-    `;
+        /* THE FIX: Absolute Coordinate Map adjusted to make all slots perfect squares (matching 1:1 ratios) and shifted outward to reduce overlaps */
+        .slot-0 { width: 38%; height: 38%; top: 4%; left: 31%; z-index: 1; }
+        .slot-1 { width: 36%; height: 36%; top: 24%; left: 4%; z-index: 3; }
+        .slot-2 { width: 36%; height: 36%; top: 24%; left: 60%; z-index: 2; }
+        .slot-3 { width: 34%; height: 34%; top: 58%; left: 14%; z-index: 4; }
+        .slot-4 { width: 34%; height: 34%; top: 58%; left: 52%; z-index: 1; }
+    `; // <-- THE FIX: Closes the template literal string properly
 
     return (
         <>
@@ -1908,7 +1908,7 @@ const CreatorDashboardScreen = ({
                                     <input 
                                         type="number" 
                                         className="cs-input" 
-                                        style={{ fontSize: '16px', fontWeight: 'bold', color: '#00FFFF', background: 'rgba(0,255,255,0.05)', border: '1px solid rgba(0,255,255,0.2)' }} // THE FIX: Fully restored the unclosed style attribute and curly brackets
+                                        style={{ fontSize: '16px', fontWeight: 'bold', color: '#00FFFF', background: 'rgba(0,255,255,0.05)', border: '1px solid rgba(0,255,255,0.2)' }}
                                         placeholder="e.g. 15000" 
                                         value={heroForm.price} 
                                         onChange={e => setHeroForm({...heroForm, price: e.target.value})} 
@@ -2335,13 +2335,7 @@ const CreatorDashboardScreen = ({
                     imageFile={galleryFileToAdjust} 
                     onSave={handleSaveAdjustedGalleryImage} 
                     onCancel={handleCancelGalleryAdjust} 
-                    aspectRatio={
-                        uploadingSlot === 0 ? (2/3) : // Tall Slot
-                        uploadingSlot === 1 ? (2/1) : // Wide Slot
-                        (uploadingSlot === 2 || uploadingSlot === 3) ? (1/2) : // Extra Tall Slot
-                        uploadingSlot === 4 ? (4/1) : // Banner Slot
-                        1 // Fallback
-                    }
+                    aspectRatio={1} // THE FIX: Locks the crop utility to a perfect 1:1 square for all slots, aligning with the new Polaroid displays
                 />
             )}
 
