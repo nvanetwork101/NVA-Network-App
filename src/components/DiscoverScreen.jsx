@@ -888,6 +888,10 @@ function DiscoverScreen({
                 display: activeTab === 'Showcase' ? 'block' : 'none', 
                 animation: activeTab === 'Showcase' ? 'fadeIn 0.3s ease' : 'none' 
             }}>
+                    {/* Subtle, high-contrast sub-label for Showcase */}
+                    <p style={{ color: '#888', fontSize: '12px', margin: '-10px 0 20px 0', lineHeight: '1.4' }}>
+                        🍿 Welcome to the VOD Library. Stream original indie productions and send direct financial <strong>Donations</strong> to support monetized creators.
+                    </p>
                     
                     {/* THE FIX: Unified Dropdown + Search Bar for Showcase */}
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap' }}>
@@ -1436,6 +1440,26 @@ const roomLabel = isActuallyFree ? "🔓 NOW SHOWING: FREE" : ((movie.ticketsSol
                 )}
             </div>
 
+            {/* ==================== TAB 3.5: CASTING & AUDITIONS ==================== */}
+            <div className="tabContent" style={{ 
+                display: activeTab === 'Casting' ? 'block' : 'none', 
+                animation: activeTab === 'Casting' ? 'fadeIn 0.3s ease' : 'none',
+                marginBottom: '30px'
+            }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(229, 57, 161, 0.02)', border: '1px dashed rgba(229, 57, 161, 0.25)', borderRadius: '16px', padding: '40px 24px', textAlign: 'center', gap: '15px' }}>
+                    <span style={{ fontSize: '40px' }}>🎬</span>
+                    <div>
+                        <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '16px' }}>Casting Calls & Auditions</p>
+                        <p style={{ margin: '6px 0 0 0', color: '#888', fontSize: '12px', lineHeight: '1.5', maxWidth: '380px' }}>
+                            Casting calls, talent applications, and film tournament auditions unlock during active production cycles. 
+                        </p>
+                        <p style={{ margin: '4px 0 0 0', color: '#E539A1', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                            💡 Keep your Showcase Video updated to stay discoverable by directors!
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             {/* ==================== TAB 4: COMMUNITY (FEED, TALENT, CHARTS) ==================== */}
             <div className="tabContent" style={{ 
                 display: activeTab === 'Community' ? 'block' : 'none', 
@@ -1470,8 +1494,19 @@ const roomLabel = isActuallyFree ? "🔓 NOW SHOWING: FREE" : ((movie.ticketsSol
                         {loadingFollowing ? (
                             <p style={{ textAlign: 'center', color: '#FFD700' }}>Loading Feed...</p>
                         ) : followingFeed.length === 0 ? (
-                            <div style={{ textAlign: 'center', padding: '40px 10px', backgroundColor: '#111', borderRadius: '12px' }}>
-                                <p style={{ color: '#888', margin: 0 }}>You are not following any active creators yet, or they haven't posted.</p>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', padding: '30px 15px', textAlign: 'center', gap: '12px' }}>
+                                <span style={{ fontSize: '32px' }}>👥</span>
+                                <div>
+                                    <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>Your Feed is Empty</p>
+                                    <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '12px', lineHeight: '1.4' }}>Follow your favorite local actors, musicians, and filmmakers to build your custom timeline.</p>
+                                </div>
+                                <button 
+                                    className="modern-button" 
+                                    onClick={() => setCommunitySubTab('Discover Creators')}
+                                    style={{ background: 'rgba(0, 255, 255, 0.1)', color: '#00FFFF', border: '1px solid rgba(0, 255, 255, 0.3)', padding: '8px 16px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textTransform: 'uppercase' }}
+                                >
+                                    Find Creators
+                                </button>
                             </div>
                         ) : (
                             <div className="contentGrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '15px' }}>

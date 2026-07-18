@@ -118,7 +118,10 @@ const DiscoverUsersScreen = ({ showMessage, setActiveScreen, setSelectedUserId, 
 
     return (
         <div className="screenContainer">
-            <p className="heading">Discover Creators</p>
+            <p className="heading" style={{ marginBottom: '5px' }}>Discover Creators</p>
+            <p style={{ color: '#888', fontSize: '12px', margin: '0 0 20px 0', lineHeight: '1.4' }}>
+                🔍 Filter by role to find actors, filmmakers, comedians, and craftsmen to build your creative network.
+            </p>
             <form onSubmit={handleSearch} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                     <div className="formGroup" style={{ flex: 2, minWidth: '200px' }}>

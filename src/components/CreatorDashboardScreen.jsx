@@ -269,10 +269,10 @@ const CreatorDashboardScreen = ({
     }, [currentUser, creatorProfile?.purchasedTickets]);
 
     useEffect(() => {
-        // Query top 10 creators based on giftsReceived
+        // Query top 10 creators based on competitionGifts (Bi-Weekly)
         const q = query(
             collection(db, "creators"),
-            orderBy("giftsReceived", "desc"),
+            orderBy("competitionGifts", "desc"),
             limit(10)
         );
         const unsub = onSnapshot(q, (snapshot) => {
@@ -1479,8 +1479,8 @@ const CreatorDashboardScreen = ({
                 {/* === PROMINENT UPGRADE CARD FOR NORMAL USERS === */}
                 {!hasCreatorAccess && (
                     <div className="dashboardSection" style={{ border: '1px dashed #00FFFF', background: 'rgba(0, 255, 255, 0.05)', textAlign: 'center', padding: '25px', marginTop: '20px' }}>
-                        <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#00FFFF', margin: '0 0 10px 0' }}>Ready to Share Your Talent?</p>
-                        <p style={{ color: '#AAA', fontSize: '13px', marginBottom: '20px' }}>Upgrade to a Creator Role to unlock your content library, leaderboard stats, and creator tools.</p>
+                        <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#00FFFF', margin: '0 0 10px 0' }}>Start Earning as a Creator</p>
+                        <p style={{ color: '#AAA', fontSize: '13px', marginBottom: '20px' }}>Upgrade to a Creator Role to start receiving cash gifts, accept arena donations, and compete for rewards.</p>
                         {!isEditingProfile ? (
                             <button className="button" onClick={() => setIsEditingProfile(true)} style={{ backgroundColor: '#00FFFF', color: '#0A0A0A', margin: '0 auto', display: 'block', fontWeight: 'bold', border: 'none' }}>
                                 Choose a Creator Role
@@ -1746,7 +1746,7 @@ const CreatorDashboardScreen = ({
                                             <span className="supporter-name" style={{ fontWeight: 'bold' }}>{user.creatorName || "NVA Creator"}</span>
                                         </div>
                                         <span className="supporter-amount" style={{ color: '#FFD700' }}>
-                                            {(user.giftsReceived || 0).toLocaleString()} 🎁
+                                            {(user.competitionGifts || 0).toLocaleString()} 🎁
                                         </span>
                                     </div>
                                 );
@@ -1764,7 +1764,7 @@ const CreatorDashboardScreen = ({
                                     <span className="supporter-name" style={{color: '#FFD700', fontWeight: 'bold'}}>You (Your Stats)</span>
                                 </div>
                                 <span className="supporter-amount" style={{color: '#FFF'}}>
-                                    {(creatorProfile.giftsReceived || 0).toLocaleString()} 🎁
+                                    {(creatorProfile.competitionGifts || 0).toLocaleString()} 🎁
                                 </span>
                             </div>
                             <p style={{textAlign: 'center', fontSize: '10px', color: '#888', marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px'}}>Top performers qualify for the <strong>100K GYD</strong> bi-weekly prize</p>
@@ -1813,7 +1813,20 @@ const CreatorDashboardScreen = ({
                                     );
                                 })()
                             ) : (
-                                <p className="dashboardItem">You do not have a featured link set. Go to your library to set one.</p>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255, 215, 0, 0.02)', border: '1px dashed rgba(255, 215, 0, 0.15)', borderRadius: '16px', padding: '24px', textAlign: 'center', gap: '12px', marginTop: '10px' }}>
+                                    <span style={{ fontSize: '32px' }}>🌟</span>
+                                    <div>
+                                        <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>No Featured Video Yet</p>
+                                        <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '11px', lineHeight: '1.4' }}>Feature a video from your library to display on your public profile card.</p>
+                                    </div>
+                                    <button 
+                                        className="modern-button" 
+                                        onClick={() => { setActiveScreen('MyContentLibrary'); window.scrollTo(0, 0); }}
+                                        style={{ background: 'rgba(255, 215, 0, 0.1)', color: '#FFD700', border: '1px solid rgba(255, 215, 0, 0.3)', padding: '8px 16px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textTransform: 'uppercase' }}
+                                    >
+                                        Feature a Video
+                                    </button>
+                                </div>
                             )}
                         </div>
                     </>
@@ -2537,7 +2550,7 @@ const CreatorDashboardScreen = ({
                                                     </div>
                                                 </div>
                                                 <span style={{ fontFamily: 'monospace', color: '#FFD700', fontSize: '13px', fontWeight: 'bold' }}>
-                                                    {user.giftsReceived || 0} Gifts
+                                                    {user.competitionGifts || 0} Gifts
                                                 </span>
                                             </div>
                                         );
@@ -2600,6 +2613,9 @@ const CreatorDashboardScreen = ({
                             <button className="modal-close-button" onClick={() => setShowAuctionModal(false)}>&times;</button>
                         </div>
                         <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto', padding: '20px' }}>
+                            <div style={{ background: 'rgba(255, 140, 0, 0.05)', borderLeft: '3px solid #FF8C00', padding: '10px 14px', borderRadius: '0 8px 8px 0', fontSize: '11px', color: '#CCC', marginBottom: '15px', lineHeight: '1.4' }}>
+                                💡 <strong>Zero-Waste Listing Policy:</strong> Submitting is free. If approved, you must pay <strong>20 Arena Tokens</strong> to go live. Ensure item condition matches description perfectly to prevent token forfeiture.
+                            </div>
                             <form onSubmit={handleAuctionSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                                 <div className="formGroup">
                                     <label className="formLabel">Item Title</label>
@@ -2780,16 +2796,22 @@ const CreatorDashboardScreen = ({
 
                                 {filmForm.type === 'premiere' && (
                                     <div className="formGroup" style={{ marginTop: '10px', background: 'rgba(255,215,0,0.05)', padding: '15px', borderRadius: '8px', border: '1px dashed rgba(255,215,0,0.3)' }}>
-                                        <label className="formLabel" style={{ color: '#FFD700' }}>Select Virtual Room</label>
-                                        <select className="formInput" value={filmForm.room || 'Room 1'} onChange={e => setFilmForm({...filmForm, room: e.target.value})} style={{ background: '#000', color: '#FFF' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                            <label className="formLabel" style={{ color: '#FFD700', margin: 0 }}>Select Virtual Room</label>
+                                            <span style={{ fontSize: '12px', cursor: 'help', color: '#00FFFF' }} title="Virtual Rooms book out in 3-hour locks. You cannot book a room that has a screening within 3 hours of your time.">❔ Room Rules</span>
+                                        </div>
+                                        <select className="formInput" value={filmForm.room || 'Room 1'} onChange={e => setFilmForm({...filmForm, room: e.target.value})} style={{ background: '#000', color: '#FFF', marginTop: '6px' }}>
                                             {(creatorProfile?.role?.toLowerCase() === 'admin' ? ["Room 1", "Room 2", "Room 3", "Room 4", "Room 5", "Free Screening Room"] : ["Room 1", "Room 2", "Room 3", "Room 4", "Room 5"]).map(r => <option key={r} value={r}>{r}</option>)}
                                         </select>
                                         
                                         <label className="formLabel" style={{ color: '#FFD700', marginTop: '10px' }}>Schedule Premiere Date & Time (Tap icon to open Calendar)</label>
                                         <input type="datetime-local" className="formInput" style={{ background: '#000', color: '#FFF' }} value={filmForm.premiereDate} onClick={(e) => e.target.showPicker && e.target.showPicker()} onChange={e => setFilmForm({...filmForm, premiereDate: e.target.value})} required />
                                         
-                                        <label className="formLabel" style={{ color: '#FFD700', marginTop: '10px' }}>Ticket Price (USD)</label>
-                                        <input type="number" min="0" step="0.50" className="formInput" value={filmForm.ticketPrice || '5.00'} onChange={e => setFilmForm({...filmForm, ticketPrice: e.target.value})} style={{ background: '#000', color: '#FFF' }} required />
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
+                                            <label className="formLabel" style={{ color: '#FFD700', margin: 0 }}>Ticket Price (USD)</label>
+                                            <span style={{ fontSize: '12px', cursor: 'help', color: '#00FFFF' }} title="Set your ticket price in USD. Guyanese viewers will pay the equivalent in GYD ($200 GYD = 1 USD).">❔ Currency Info</span>
+                                        </div>
+                                        <input type="number" min="0" step="0.50" className="formInput" value={filmForm.ticketPrice || '5.00'} onChange={e => setFilmForm({...filmForm, ticketPrice: e.target.value})} style={{ background: '#000', color: '#FFF', marginTop: '6px' }} required />
 
                                         <p style={{ margin: '10px 0 0 0', fontSize: '11px', color: '#AAA' }}>*Turn your release into an event! Sell virtual tickets to your Live Premiere Watch Party. You keep the lion's share of your ticket sales (subject to standard 15% platform fee).</p>
                                     </div>

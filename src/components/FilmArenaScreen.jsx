@@ -1215,10 +1215,17 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
                 <p className="heading" style={{ margin: 0, color: '#FFD700' }}>The Film Arena</p>
                 <button className="topButton" onClick={() => { setSelectedMovie(null); setActiveScreen('Home'); }}>Back to Home</button>
             </div>
+            
+            {/* Sleek, Uncluttered Arena Tab Guide */}
+            <p style={{ color: '#888', fontSize: '12px', margin: '-10px 0 20px 0', lineHeight: '1.4' }}>
+                🎟️ <strong>In Cinemas:</strong> Schedule live ticketed watch parties and free screenings. 
+                &nbsp;•&nbsp; 🍅 <strong>Public Arena:</strong> Vote in face-offs and watch free VOD titles. 
+                &nbsp;•&nbsp; 💬 <strong>Forums:</strong> Debate and review with fans.
+            </p>
 
             {/* NEW GLASSMORPHIC ACTION BAR (Host Watch Party Advert & Admin Queue) */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '12px 20px', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-                <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
                     {currentUser && homeScreenLayout?.showHostWatchParty !== false && (
                         <button 
                             onClick={() => {
@@ -1236,6 +1243,11 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
                     {isAdmin && (
                         <button onClick={() => setShowAdminQueue(!showAdminQueue)} style={{ background: showAdminQueue ? '#DC3545' : 'rgba(255,140,0,0.1)', color: showAdminQueue ? '#FFF' : '#FF8C00', border: '1px solid #FF8C00', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s' }}>
                             📥 Admin Queue {pendingSuggestions.length > 0 ? `(${pendingSuggestions.length})` : ''}
+                        </button>
+                    )}
+                    {isAdmin && (
+                        <button onClick={() => setShowPollManager(!showPollManager)} style={{ background: showPollManager ? '#DC3545' : 'rgba(0,255,255,0.1)', color: showPollManager ? '#FFF' : '#00FFFF', border: '1px solid #00FFFF', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s' }}>
+                            🔥 Deploy Face-Off Matchup
                         </button>
                     )}
                 </div>
@@ -1550,6 +1562,11 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
 
                             {activeTab === 'arena' && (
                                 <div style={{ animation: 'fadeIn 0.3s ease' }}>
+                                    {/* Uncluttered Public Arena Instructions */}
+                                    <div style={{ background: 'rgba(0, 255, 255, 0.03)', borderLeft: '3px solid #00FFFF', padding: '12px 16px', borderRadius: '0 8px 8px 0', fontSize: '12px', color: '#CCC', marginBottom: '20px', lineHeight: '1.5' }}>
+                                        🍅 Welcome to the Public Arena! Suggest and watch free VOD streams, rate your favorite titles, and publish reviews as an everyday audience member—or build your community reputation to become a certified NVA Film Critic. <strong style={{ color: '#00FFFF' }}>Local Filmmakers:</strong> Submit original productions to the <strong>Showcases</strong> category to gather direct financial donations!
+                                    </div>
+
                                     {/* DYNAMIC UPLOAD/SUGGEST BUTTON */}
                                     {currentUser && (
                                         <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: '15px' }}>
@@ -1628,20 +1645,59 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
                                                             <p style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '15px', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 10px 0', textAlign: 'center' }}>🔥 Weekly Arena Face-Off 🔥</p>
                                                             <p style={{ color: '#FFF', fontSize: '14px', textAlign: 'center', marginBottom: '20px' }}>{pollConfig.question}</p>
                                                             
-                                                            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                                                                <button 
-                                                                    onClick={() => handlePollVote('A')} 
-                                                                    disabled={currentUser && pollConfig.votedUsers && !!pollConfig.votedUsers[currentUser.uid]}
-                                                                    style={{ flex: 1, minWidth: '130px', padding: '12px', backgroundColor: '#1A1A1A', color: '#FFF', border: '1px solid #444', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
-                                                                    🎬 {pollConfig.movieATitle}
-                                                                </button>
-                                                                <button 
-                                                                    onClick={() => handlePollVote('B')} 
-                                                                    disabled={currentUser && pollConfig.votedUsers && !!pollConfig.votedUsers[currentUser.uid]}
-                                                                    style={{ flex: 1, minWidth: '130px', padding: '12px', backgroundColor: '#1A1A1A', color: '#FFF', border: '1px solid #444', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
-                                                                    🎬 {pollConfig.movieBTitle}
-                                                                </button>
-                                                            </div>
+                                                            {(() => {
+                                                                const hasVoted = currentUser && pollConfig.votedUsers && !!pollConfig.votedUsers[currentUser.uid];
+                                                                const userVote = hasVoted ? pollConfig.votedUsers[currentUser.uid] : null;
+
+                                                                if (hasVoted) {
+                                                                    const totalVotes = (pollConfig.votesA || 0) + (pollConfig.votesB || 0);
+                                                                    const pctA = totalVotes > 0 ? Math.round(((pollConfig.votesA || 0) / totalVotes) * 100) : 0;
+                                                                    const pctB = totalVotes > 0 ? Math.round(((pollConfig.votesB || 0) / totalVotes) * 100) : 0;
+
+                                                                    return (
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', width: '100%' }}>
+                                                                            {/* Option A bar */}
+                                                                            <div>
+                                                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', color: '#FFF', marginBottom: '4px' }}>
+                                                                                    <span>🎬 {pollConfig.movieATitle} {userVote === 'A' && <strong style={{ color: '#00FFFF' }}>(Your Vote ✓)</strong>}</span>
+                                                                                    <span style={{ color: '#FFD700' }}>{pctA}% ({(pollConfig.votesA || 0).toLocaleString()} votes)</span>
+                                                                                </div>
+                                                                                <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                                                                                    <div style={{ width: `${pctA}%`, height: '100%', backgroundColor: userVote === 'A' ? '#00FFFF' : 'rgba(255, 215, 0, 0.4)', borderRadius: '10px', transition: 'width 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}></div>
+                                                                                </div>
+                                                                            </div>
+                                                                            {/* Option B bar */}
+                                                                            <div>
+                                                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold', color: '#FFF', marginBottom: '4px' }}>
+                                                                                    <span>🎬 {pollConfig.movieBTitle} {userVote === 'B' && <strong style={{ color: '#00FFFF' }}>(Your Vote ✓)</strong>}</span>
+                                                                                    <span style={{ color: '#FFD700' }}>{pctB}% ({(pollConfig.votesB || 0).toLocaleString()} votes)</span>
+                                                                                </div>
+                                                                                <div style={{ width: '100%', height: '8px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden' }}>
+                                                                                    <div style={{ width: `${pctB}%`, height: '100%', backgroundColor: userVote === 'B' ? '#00FFFF' : 'rgba(255, 215, 0, 0.4)', borderRadius: '10px', transition: 'width 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}></div>
+                                                                                </div>
+                                                                            </div>
+                                                                            <p style={{ textAlign: 'center', fontSize: '11px', color: '#888', margin: '5px 0 0 0', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Votes Cast: {totalVotes.toLocaleString()}</p>
+                                                                        </div>
+                                                                    );
+                                                                }
+
+                                                                return (
+                                                                    <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                                                        <button 
+                                                                            onClick={() => handlePollVote('A')} 
+                                                                            style={{ flex: 1, minWidth: '130px', padding: '12px', backgroundColor: '#1A1A1A', color: '#FFF', border: '1px solid #444', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                                                                        >
+                                                                            🎬 {pollConfig.movieATitle}
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => handlePollVote('B')} 
+                                                                            style={{ flex: 1, minWidth: '130px', padding: '12px', backgroundColor: '#1A1A1A', color: '#FFF', border: '1px solid #444', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                                                                        >
+                                                                            🎬 {pollConfig.movieBTitle}
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     )}
 
@@ -2297,7 +2353,6 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
                             {movies.filter(m => watchlistIds.has(m.id)).sort((a, b) => ((a.genre || "Drama") > (b.genre || "Drama") ? 1 : -1)).map((movie) => (
                                 <div key={movie.id} className="contentCard" onClick={() => {
                                     if (movie.type === 'premiere') {
-                                        // THE FIX: Routes cleanly to the Multiplex Lobby
                                         sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
                                         sessionStorage.removeItem('nva_target_premiere_event_id');
                                         setActiveScreen('Discover');
@@ -2324,6 +2379,68 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
                     ) : (
                         <p style={{ color: '#888', fontSize: '14px' }}>Your Watchlist is empty. Add movies using the "➕ Watchlist" button on any film.</p>
                     )}
+                </div>
+            )}
+
+            {/* ====== MATCHUP DEPLOYER MODAL (ADMIN ONLY) ====== */}
+            {showPollManager && isAdmin && (
+                <div className="confirmationModalOverlay" style={{ zIndex: 4000 }}>
+                    <div className="confirmationModalContent" style={{ textAlign: 'left', maxWidth: '440px', background: '#0a0a0a', border: '1px solid #00FFFF' }}>
+                        <p className="confirmationModalTitle" style={{ color: '#00FFFF', margin: '0 0 10px 0' }}>🔥 Deploy Face-Off Matchup</p>
+                        
+                        <div style={{ background: 'rgba(0, 255, 255, 0.05)', padding: '12px', borderRadius: '8px', border: '1px dashed rgba(0, 255, 255, 0.2)', marginBottom: '15px' }}>
+                            <p style={{ margin: 0, fontSize: '11px', color: '#FFF', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚡ Auto-Pick Algorithmic Engine</p>
+                            <p style={{ margin: '4px 0 12px 0', fontSize: '11px', color: '#AAA' }}>Dynamically matches the top-rated films sharing the exact same category and genre.</p>
+                            
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                                <select value={pollMatchFilter} onChange={e => setPollMatchFilter(e.target.value)} className="formInput" style={{ margin: 0, flex: 1, padding: '6px' }}>
+                                    <option value="movie">Movies</option>
+                                    <option value="tv">TV Series</option>
+                                    <option value="anime">Anime</option>
+                                    <option value="custom">Indie Showcase</option>
+                                </select>
+                                <select value={pollGenreFilter} onChange={e => setPollGenreFilter(e.target.value)} className="formInput" style={{ margin: 0, flex: 1, padding: '6px' }}>
+                                    <option value="all">Any Genre</option>
+                                    {["Action", "Comedy", "Drama", "Horror", "Sci-Fi", "Documentary"].map(g => (
+                                        <option key={g} value={g}>{g}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <button type="button" onClick={handleAutoPickPoll} style={{ width: '100%', background: '#00FFFF', color: '#000', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: '900', cursor: 'pointer', fontSize: '12px' }}>
+                                🎲 RUN SAME-GENRE AUTO-PICK
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleDeployCustomPoll} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            <div className="formGroup">
+                                <label className="formLabel">Matchup Question / Title:</label>
+                                <input type="text" className="formInput" value={editQuestion} onChange={e => setEditQuestion(e.target.value)} required />
+                            </div>
+                            <div className="formGroup">
+                                <label className="formLabel">Movie/Series A (Title):</label>
+                                <input type="text" className="formInput" value={editMovieA} onChange={e => setEditMovieA(e.target.value)} placeholder="e.g. Inception" required />
+                            </div>
+                            <div className="formGroup">
+                                <label className="formLabel">Movie/Series B (Title):</label>
+                                <input type="text" className="formInput" value={editMovieB} onChange={e => setEditMovieB(e.target.value)} placeholder="e.g. Interstellar" required />
+                            </div>
+
+                            <button className="button" type="submit" style={{ backgroundColor: '#00FFFF', color: '#000', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                🚀 Deploy Matchup Live
+                            </button>
+                            {pollConfig?.isActive && (
+                                <button type="button" onClick={() => handleTogglePollActive(false)} style={{ background: 'rgba(220,53,69,0.15)', color: '#DC3545', border: '1px solid #DC3545', padding: '12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
+                                    🔒 Deactivate Current Matchup
+                                </button>
+                            )}
+                        </form>
+
+                        <div className="confirmationModalButtons" style={{ marginTop: '15px' }}>
+                            <button className="confirmationButton cancel" onClick={() => setShowPollManager(false)}>
+                                Close
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

@@ -502,6 +502,7 @@ exports.approvePledge = onCall(async (request) => {
             teamSnapshot.forEach(memberDoc => {
                 const updates = {
                     giftsReceived: FieldValue.increment(1),
+                    competitionGifts: FieldValue.increment(1),
                     [giftFieldPath]: FieldValue.increment(1),
                     receivedGifts: FieldValue.arrayUnion({
                         id: pledgeId,
@@ -520,6 +521,7 @@ exports.approvePledge = onCall(async (request) => {
         } else {
             const updates = {
                 giftsReceived: FieldValue.increment(1),
+                competitionGifts: FieldValue.increment(1),
                 supportedTokenExpiry: twentyFourHoursFromNow.toISOString(),
                 [giftFieldPath]: FieldValue.increment(1),
                 receivedGifts: FieldValue.arrayUnion({
@@ -7097,16 +7099,23 @@ exports.dailySystemMaintenance = onSchedule("0 3 * * *", async (event) => {
     const today = new Date();
     const isMonday = today.getDay() === 1;
 
-    // 1. Reset Daily/Weekly Stats
+    // 1. Reset Daily/Weekly/Bi-Weekly Stats
     try {
         const snapshot = await creatorsRef.get();
         if (!snapshot.empty) {
             const batch = db.batch();
+            
+            // Runs on the 1st and 15th of the month at $0 extra cost
+            const isBiWeeklyResetDay = today.getDate() === 1 || today.getDate() === 15;
+            
             snapshot.forEach(doc => {
                 const updates = { dailyViews: 0, dailyLikes: 0 };
                 if (isMonday) {
                     updates.weeklyViews = 0;
                     updates.weeklyLikes = 0;
+                }
+                if (isBiWeeklyResetDay) {
+                    updates.competitionGifts = 0;
                 }
                 batch.update(doc.ref, updates);
             });
@@ -7832,6 +7841,7 @@ exports.sendGiftWithEarnings = onCall({ enforceAppCheck: false }, async (request
                 const giftFieldPath = `giftInventory.${giftName}`;
                 const updates = {
                     giftsReceived: FieldValue.increment(1),
+                    competitionGifts: FieldValue.increment(1),
                     [giftFieldPath]: FieldValue.increment(1),
                     receivedGifts: FieldValue.arrayUnion({
                         id: `earnings_gift_${Date.now()}`,
@@ -8966,5 +8976,7 @@ exports.scheduledPreShowWarmup = onSchedule("every 15 minutes", async (event) =>
     }
     return null;
 });
+
+
 
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---
