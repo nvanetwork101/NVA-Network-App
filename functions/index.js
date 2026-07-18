@@ -7657,6 +7657,7 @@ exports.getR2UploadUrl = onCall({
     Bucket: bucketName,
     Key: filePath,
     ContentType: contentType || "image/jpeg",
+    CacheControl: "s-maxage=604800", // THE FIX: Forces Cloudflare Edge to keep the file HOT for 7 days
   });
 
   try {
@@ -8874,6 +8875,96 @@ exports.deleteNotification = onCall(async (request) => {
         logger.error(`Error deleting notification: ${error.message}`);
         throw new HttpsError("internal", "Failed to delete notification.");
     }
+});
+
+// =====================================================================
+// ============ R2 CDN: WARM UP & DELETE ENGINES =======================
+// =====================================================================
+
+exports.deleteR2File = onCall({ secrets: ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"] }, async (request) => {
+    if (!request.auth || !request.auth.token.admin) throw new HttpsError("permission-denied", "Admin only.");
+    const { filePath } = request.data;
+    if (!filePath) throw new HttpsError("invalid-argument", "Missing filePath.");
+
+    const s3Client = new S3Client({
+        endpoint: "https://fbe1faad8ca929a47c3cce338399f497.r2.cloudflarestorage.com",
+        credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY },
+        region: "auto",
+    });
+
+    try {
+        await s3Client.send(new DeleteObjectCommand({ Bucket: "nva-storage", Key: filePath }));
+        return { success: true, message: "File deleted from R2 successfully." };
+    } catch (error) {
+        throw new HttpsError("internal", error.message);
+    }
+});
+
+exports.warmUpR2File = onCall(async (request) => {
+    if (!request.auth || !request.auth.token.admin) throw new HttpsError("permission-denied", "Admin only.");
+    const { publicUrl } = request.data;
+    if (!publicUrl) throw new HttpsError("invalid-argument", "Missing publicUrl.");
+
+    try {
+        // AGGRESSIVE EDGE WARMING: Pulls the first 100MB of the file 3x to force Cloudflare cache
+        for (let i = 0; i < 3; i++) {
+            await fetch(publicUrl, { 
+                headers: { 'Range': 'bytes=0-104857600', 'Cache-Control': 'no-cache' } 
+            });
+            await new Promise(resolve => setTimeout(resolve, 1000)); // 1 sec delay between pings
+        }
+        return { success: true, message: "File successfully warmed at Cloudflare Edge." };
+    } catch (error) {
+        throw new HttpsError("internal", "Failed to ping CDN.");
+    }
+});
+
+// =====================================================================
+// === AUTOMATED DOUBLE-WARMUP SCHEDULER (Runs 1 hour before air) =====
+// =====================================================================
+
+exports.scheduledPreShowWarmup = onSchedule("every 15 minutes", async (event) => {
+    const db = admin.firestore();
+    const now = new Date();
+    const oneHourFromNow = new Date(now.getTime() + (60 * 60 * 1000));
+
+    try {
+        // Query only upcoming events scheduled to broadcast within the hour
+        const upcomingSnap = await db.collection("events")
+            .where("status", "==", "upcoming")
+            .where("scheduledStartTime", ">=", admin.firestore.Timestamp.fromDate(now))
+            .where("scheduledStartTime", "<=", admin.firestore.Timestamp.fromDate(oneHourFromNow))
+            .get();
+
+        if (upcomingSnap.empty) return null;
+
+        for (const doc of upcomingSnap.docs) {
+            const eventData = doc.data();
+            const slotNum = eventData.cinemaSlot || 1; // Pull assigned slot index automatically
+            const publicUrl = `https://media.nvanetworkapp.com/live-slots/slot-${slotNum}.mp4`;
+
+            logger.info(`🔥 Automated Pre-Show Warmup initiated for event: "${eventData.eventTitle}" (Slot ${slotNum})`);
+
+            // RUN 1
+            for (let i = 0; i < 3; i++) {
+                await fetch(publicUrl, { headers: { 'Range': 'bytes=0-104857600', 'Cache-Control': 'no-cache' } }).catch(()=>{});
+                await new Promise(res => setTimeout(res, 500));
+            }
+
+            // WAIT 10 SECONDS
+            await new Promise(res => setTimeout(res, 10000));
+
+            // RUN 2 (The Double-Lock Warmup)
+            logger.info(`🔥 Running second pass pre-show warmup for Slot ${slotNum}`);
+            for (let i = 0; i < 3; i++) {
+                await fetch(publicUrl, { headers: { 'Range': 'bytes=0-104857600', 'Cache-Control': 'no-cache' } }).catch(()=>{});
+                await new Promise(res => setTimeout(res, 500));
+            }
+        }
+    } catch (error) {
+        logger.error("Automated pre-show scheduler failed:", error);
+    }
+    return null;
 });
 
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---

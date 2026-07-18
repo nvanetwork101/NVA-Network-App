@@ -219,7 +219,8 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
                     ...dataToCreate,
                     status: "upcoming",
                     ticketsSold: 0,
-                    totalRevenue: 0
+                    totalRevenue: 0,
+                    isPromotedToBillboard: false // THE FIX: Explicitly disables auto-promotion on save
                 };
                 const newEventRef = await addDoc(collection(db, "events"), finalData);
                 await updateDoc(newEventRef, { eventId: newEventRef.id });
@@ -282,7 +283,8 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
     const handleMovieUpload = async () => {
         if (!uploadState.movieFile) return showMessage("Please select a movie file first!");
         if (!uploadState.targetEventId) return showMessage("Please select a target event from the dropdown!");
-        uploadManager.startUpload(uploadState.movieFile, uploadState.targetEventId, MEDIA_SERVER_URL, showMessage);
+        if (!uploadState.targetSlotNum) return showMessage("Please select a target slot from the dropdown!");
+        uploadManager.startUpload(uploadState.movieFile, uploadState.targetEventId, uploadState.targetSlotNum, MEDIA_SERVER_URL, showMessage);
     };
 
     const formatDate = (timestamp) => {
@@ -346,7 +348,7 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
                 /* Media Query: Scale to Desktop Grid */
                 @media (min-width: 992px) {
                     .uploader-grid-system {
-                        grid-template-columns: 240px 1fr 220px;
+                        grid-template-columns: 180px 180px 1fr 220px;
                         align-items: center;
                         gap: 16px;
                     }
@@ -398,30 +400,101 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
             </div>
 
             <div className="dashboardSection" style={{ border: '1px solid #007BFF', background: '#111' }}>
-                <p className="dashboardSectionTitle" style={{ color: '#007BFF' }}>Cinema Live-Slot Uploader</p>
-                <p className="paragraph" style={{ fontSize: '12px', marginBottom: '10px' }}>Upload a movie to the isolated slot. This overwrites the previous movie to save R2 space. <strong style={{color: '#DC3545'}}>Background Upload Mode active. You can safely change tabs without losing your progress!</strong></p>
-                <div className="uploader-grid-system">
+                <p className="dashboardSectionTitle" style={{ color: '#007BFF' }}>Cinema Live-Slot Engine (5 Slots)</p>
+                <p className="paragraph" style={{ fontSize: '12px', marginBottom: '10px' }}>Upload a movie to one of the 5 isolated slots. Use the controls below to ping Cloudflare Edge Servers or delete heavy files from R2 to save space. <strong style={{color: '#DC3545'}}>Background Upload Mode active!</strong></p>
+                
+                <div className="uploader-grid-system" style={{ marginBottom: '20px' }}>
                     <select 
                         value={uploadState.targetEventId}
                         onChange={(e) => uploadManager.setTargetEventId(e.target.value)} 
                         className="uploader-select-item"
                         style={{ background: '#222', color: '#FFF', padding: '12px 8px', borderRadius: '4px', border: '1px solid #333', fontSize: '13px' }}
                     >
-                        <option value="">Select Target Event...</option>
+                        <option value="">Select Target Event for Upload...</option>
                         {events.map(ev => (
                             <option key={ev.id} value={ev.id}>{ev.eventTitle}</option>
                         ))}
                     </select>
+                    <select 
+                        value={uploadState.targetSlotNum}
+                        onChange={(e) => uploadManager.setTargetSlotNum(e.target.value)} 
+                        className="uploader-select-item"
+                        style={{ background: '#222', color: '#FFF', padding: '12px 8px', borderRadius: '4px', border: '1px solid #333', fontSize: '13px' }}
+                    >
+                        <option value="1">Upload to Slot 1</option>
+                        <option value="2">Upload to Slot 2</option>
+                        <option value="3">Upload to Slot 3</option>
+                        <option value="4">Upload to Slot 4</option>
+                        <option value="5">Upload to Slot 5</option>
+                    </select>
                     <input type="file" accept="video/mp4" onChange={(e) => uploadManager.setMovieFile(e.target.files[0])} className="paragraph uploader-file-item" style={{ background: '#222', padding: '9px 5px', borderRadius: '4px' }} />
                     <button className="button uploader-button-item" style={{ backgroundColor: uploadState.isUploadingMovie ? '#555' : '#007BFF', minWidth: '220px', height: '44px' }} onClick={handleMovieUpload} disabled={uploadState.isUploadingMovie}>
-                        {uploadState.isUploadingMovie ? uploadState.statusMessage || `Processing...` : 'Upload to Live Slot'}
+                        {uploadState.isUploadingMovie ? uploadState.statusMessage || `Processing...` : 'Upload to Target Event'}
                     </button>
                 </div>
                 {uploadState.isUploadingMovie && (
-                    <div style={{ width: '100%', height: '4px', background: '#333', marginTop: '10px', borderRadius: '2px', overflow: 'hidden' }}>
+                    <div style={{ width: '100%', height: '4px', background: '#333', marginTop: '10px', borderRadius: '2px', overflow: 'hidden', marginBottom: '20px' }}>
                         <div style={{ width: `${uploadState.uploadProgress}%`, height: '100%', background: '#007BFF', transition: 'width 0.2s' }}></div>
                     </div>
                 )}
+
+                {/* THE 5-SLOT MANAGEMENT UI */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
+                    {[1, 2, 3, 4, 5].map(slotNum => {
+                        // FIND THE ASSIGNED EVENT FOR THIS SLOT
+                        const assignedEvent = events.find(ev => ev.cinemaSlot === slotNum.toString() || ev.cinemaSlot === slotNum);
+                        
+                        return (
+                            <div key={slotNum} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#1A1A1A', padding: '12px 16px', borderRadius: '8px', border: '1px solid #333', flexWrap: 'wrap', gap: '10px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+                                    <span style={{ color: '#FFD700', fontWeight: '900', fontSize: '16px' }}>SLOT {slotNum}</span>
+                                    {assignedEvent ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                                            <span style={{ color: '#00FF00', fontWeight: 'bold', fontSize: '13px' }}>✅ READY:</span>
+                                            <span style={{ color: '#FFF', fontWeight: 'bold', fontSize: '13px' }}>{assignedEvent.eventTitle}</span>
+                                            <span style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '12px', background: 'rgba(255,215,0,0.1)', padding: '2px 8px', borderRadius: '4px' }}>
+                                                💰 Gross: ${(assignedEvent.totalRevenue || 0).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <span style={{ color: '#888', fontSize: '12px' }}>Awaiting Assignment / Empty</span>
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                    <button 
+                                        onClick={async () => {
+                                            showMessage(`Warming up Slot ${slotNum}...`);
+                                            try {
+                                                const warmFunc = httpsCallable(functions, 'warmUpR2File');
+                                                await warmFunc({ publicUrl: `https://media.nvanetworkapp.com/live-slots/slot-${slotNum}.mp4` });
+                                                showMessage(`🔥 Slot ${slotNum} Warmed Up!`);
+                                            } catch (e) { showMessage("Warm up failed."); }
+                                        }}
+                                        className="adminActionButton" 
+                                        style={{ backgroundColor: '#FF8C00', color: '#FFF', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                                    >
+                                        🔥 Warm Up
+                                    </button>
+                                    <button 
+                                        onClick={async () => {
+                                            if(!window.confirm(`Permanently delete the file in Slot ${slotNum} from R2 Storage?`)) return;
+                                            showMessage(`Deleting Slot ${slotNum}...`);
+                                            try {
+                                                const delFunc = httpsCallable(functions, 'deleteR2File');
+                                                await delFunc({ filePath: `live-slots/slot-${slotNum}.mp4` });
+                                                showMessage(`🗑️ Slot ${slotNum} Cleared!`);
+                                            } catch (e) { showMessage("Delete failed."); }
+                                        }}
+                                        className="adminActionButton" 
+                                        style={{ backgroundColor: '#DC3545', color: '#FFF', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                                    >
+                                        🗑️ Delete File
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
             
             <div className="dashboardSection">
@@ -483,6 +556,24 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
 
                                 {/* Action Buttons Panel (Touch Target Compliant) */}
                                 <div className="flex gap-2 justify-end flex-wrap" style={{ borderTop: '1px dashed #222', paddingTop: '10px', width: '100%' }}>
+                                    {/* THE FIX: Manual Billboard Promotion Toggle */}
+                                    <button 
+                                        onClick={async () => {
+                                            const nextStatus = !event.isPromotedToBillboard;
+                                            await updateDoc(doc(db, "events", event.id), { isPromotedToBillboard: nextStatus });
+                                            if (nextStatus) {
+                                                await updateDoc(doc(db, "settings", "liveEvent"), { eventId: event.id, status: event.status });
+                                            } else {
+                                                await updateDoc(doc(db, "settings", "liveEvent"), { eventId: null, status: 'no_event_scheduled' });
+                                            }
+                                            showMessage(nextStatus ? "Pushed to Billboard!" : "Removed from Billboard.");
+                                        }} 
+                                        className="adminActionButton" 
+                                        style={{backgroundColor: event.isPromotedToBillboard ? '#E91E63' : '#333', color: '#FFF', minHeight: '36px', padding: '0 12px'}} 
+                                        title="Toggle Billboard Promotion"
+                                    >
+                                        📺 Billboard
+                                    </button>
                                     <button onClick={() => handleTogglePin(event)} className="adminActionButton" style={{backgroundColor: event.isPinned ? '#FFD700' : '#333', color: event.isPinned ? '#000' : '#FFF', minHeight: '36px', minWidth: '36px'}} title="Pin to Cinemas">📌</button>
                                     <button onClick={() => handleToggleFreeTag(event)} className="adminActionButton" style={{backgroundColor: event.isNowShowingFree ? '#00FF00' : '#333', color: event.isNowShowingFree ? '#000' : '#FFF', minHeight: '36px', minWidth: '36px'}} title="Enable Global Free Entry">🔓</button>
                                     <button onClick={() => handleShowEditForm(event)} className="adminActionButton" style={{minHeight: '36px', padding: '0 12px'}}>Edit</button>

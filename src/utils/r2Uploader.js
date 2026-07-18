@@ -3,10 +3,10 @@ import axios from 'axios';
 // Pointed directly to your Tokyo Oracle Instance
 const API_BASE = "http://158.179.184.80:5000"; 
 
-export const uploadMovieToR2 = async (file, onProgress) => {
+export const uploadMovieToR2 = async (file, slotNum, onProgress) => {
   try {
-    // 1. Get the temporary "Authorized Key" from your server
-    const { data } = await axios.get(`${API_BASE}/api/get-upload-url`);
+    // 1. Get the temporary "Authorized Key" from your server mapped to the Slot
+    const { data } = await axios.get(`${API_BASE}/api/get-upload-url?slot=${slotNum}`);
     const { uploadUrl } = data;
 
     // 2. Upload the file DIRECTLY to Cloudflare R2
