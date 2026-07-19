@@ -220,7 +220,8 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
                     status: "upcoming",
                     ticketsSold: 0,
                     totalRevenue: 0,
-                    isPromotedToBillboard: false // THE FIX: Explicitly disables auto-promotion on save
+                    isPromotedToBillboard: false,
+                    isWarmedUp: false // Flags that the stream has not yet been pre-warmed for showtime
                 };
                 const newEventRef = await addDoc(collection(db, "events"), finalData);
                 await updateDoc(newEventRef, { eventId: newEventRef.id });

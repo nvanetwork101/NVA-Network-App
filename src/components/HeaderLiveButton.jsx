@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { db } from '../firebase'; 
 
 function HeaderLiveButton({ setActiveScreen, isLive: appIsLive, countdownText: appCountdownText, showMessage }) {
@@ -8,40 +8,42 @@ function HeaderLiveButton({ setActiveScreen, isLive: appIsLive, countdownText: a
     const [eventIsLive, setEventIsLive] = useState(false);
 
     useEffect(() => {
-        const q = query(collection(db, "events"), where("status", "in", ["upcoming", "live"]));
-        const unsub = onSnapshot(q, (snap) => {
-            const now = Date.now();
-            let validEvents = [];
+        let masterUnsubscribe = () => {};
+
+        const billboardUnsubscribe = onSnapshot(doc(db, "settings", "liveEvent"), (docSnap) => {
+            masterUnsubscribe(); // Clean up previous master listener
             
-            snap.docs.forEach(docSnap => {
-                const data = docSnap.data();
-                if (!data) return;
-
-                if (data.status === 'live') {
-                    validEvents.push({ id: docSnap.id, ...data, extractedTimeMs: 0, isLiveNow: true });
-                    return;
-                }
-
-                if (!data.scheduledStartTime) return;
-                const sTime = data.scheduledStartTime;
-                const startTimeMs = sTime.toMillis ? sTime.toMillis() : (sTime.seconds ? sTime.seconds * 1000 : new Date(sTime).getTime());
-                const validTime = isNaN(startTimeMs) ? 0 : startTimeMs;
-                const threeDaysMs = 72 * 60 * 60 * 1000;
+            if (docSnap.exists() && docSnap.data().status !== 'no_event_scheduled' && docSnap.data().eventId) {
+                const billboardData = docSnap.data();
                 
-                if (validTime > 0 && validTime > now - (4 * 60 * 60 * 1000) && (validTime - now) <= threeDaysMs) {
-                    validEvents.push({ id: docSnap.id, ...data, extractedTimeMs: validTime, isLiveNow: false });
-                }
-            });
+                // Second listener: strictly check the master events collection to instantly react to deletions or edits
+                masterUnsubscribe = onSnapshot(doc(db, "events", billboardData.eventId), (masterDoc) => {
+                    if (masterDoc.exists()) {
+                        const data = masterDoc.data();
+                        const sTime = data.scheduledStartTime;
+                        const startTimeMs = sTime?.toMillis ? sTime.toMillis() : (sTime?.seconds ? sTime.seconds * 1000 : new Date(sTime).getTime());
+                        const validTime = isNaN(startTimeMs) ? 0 : startTimeMs;
 
-            validEvents.sort((a, b) => {
-                if (a.isLiveNow && !b.isLiveNow) return -1;
-                if (!a.isLiveNow && b.isLiveNow) return 1;
-                return a.extractedTimeMs - b.extractedTimeMs;
-            });
-
-            setUpcomingEvent(validEvents.length > 0 ? validEvents[0] : null);
+                        setUpcomingEvent({ 
+                            id: masterDoc.id, 
+                            ...data, 
+                            extractedTimeMs: validTime, 
+                            isLiveNow: data.status === 'live' 
+                        });
+                    } else {
+                        // Event was deleted from master library, instantly hide the header timer
+                        setUpcomingEvent(null);
+                    }
+                });
+            } else {
+                setUpcomingEvent(null);
+            }
         });
-        return () => unsub();
+
+        return () => {
+            billboardUnsubscribe();
+            masterUnsubscribe();
+        };
     }, []);
 
     useEffect(() => {

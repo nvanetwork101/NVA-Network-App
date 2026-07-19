@@ -1305,6 +1305,16 @@ function DiscoverScreen({
                                         <p style={{ color: '#FFD700', fontSize: '32px', margin: 0, fontWeight: '900', fontVariantNumeric: 'tabular-nums' }}>{localCountdown}</p>
                                     </div>
 
+                                    {/* Unified Share Button for upcoming live premiere */}
+                                    <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center' }}>
+                                        <ShareButton 
+                                            title={masterEventDetails.eventTitle} 
+                                            text={`Join me for the upcoming live premiere of "${masterEventDetails.eventTitle}" in ${masterEventDetails.room || 'Room 1'}!`} 
+                                            url={`/content/${masterEventDetails.id}`} 
+                                            showMessage={showMessage} 
+                                        />
+                                    </div>
+
                                     {masterEventDetails.isTicketed && (
                                         <div style={{ marginTop: '25px', paddingTop: '20px', borderTop: '1px dashed #333' }}>
                                             {creatorProfile?.purchasedTickets?.[masterEventDetails.id] ? (

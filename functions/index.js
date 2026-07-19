@@ -4553,15 +4553,17 @@ async function runPromoteNextEvent() {
         .limit(1);
     let promotionSnapshot = await liveQuery.get();
 
-    // Priority 2: If no live event, find the SOONEST upcoming and published event.
+    // Priority 2: If no live event, find the SOONEST upcoming, published, and promoted event.
     if (promotionSnapshot.empty) {
         const upcomingQuery = db.collection("events")
             .where("status", "==", "upcoming")
             .where("isPublished", "==", true)
+            .where("isPromotedToBillboard", "==", true) // THE FIX: Gates automatic billboard promotion until explicitly turned ON
             .where("scheduledStartTime", ">", now)
             .orderBy("scheduledStartTime", "asc")
             .limit(1);
-        promotionSnapshot = await upcomingQuery.get();
+        upcomingQuerySnapshot = await upcomingQuery.get();
+        promotionSnapshot = upcomingQuerySnapshot;
     }
     
     const liveEventDoc = await liveEventRef.get();
@@ -4615,10 +4617,80 @@ async function runPromoteNextEvent() {
     }
 }
 
+// --- SHOWTIME PRE-WARMING SERVICE ---
+const https = require("https");
+const url = require("url");
+
+async function warmUpEventStream(liveStreamUrl) {
+  const fetchUrl = (targetUrl) => {
+    return new Promise((resolve, reject) => {
+      https.get(targetUrl, (res) => {
+        let data = "";
+        res.on("data", (chunk) => { data += chunk; });
+        res.on("end", () => resolve(data));
+      }).on("error", (err) => reject(err));
+    });
+  };
+
+  const warmSegment = (segmentUrl) => {
+    return new Promise((resolve) => {
+      https.get(segmentUrl, (res) => {
+        res.on("data", () => {});
+        res.on("end", () => resolve(true));
+      }).on("error", () => resolve(false));
+    });
+  };
+
+  try {
+    if (!liveStreamUrl || !liveStreamUrl.endsWith(".m3u8")) return;
+    const m3u8Data = await fetchUrl(liveStreamUrl);
+    const lines = m3u8Data.split("\n");
+    const segments = lines.filter(line => line.trim() && !line.startsWith("#") && line.endsWith(".ts"));
+    
+    const baseUrl = liveStreamUrl.substring(0, liveStreamUrl.lastIndexOf("/") + 1);
+    const batchSize = 15;
+    
+    for (let i = 0; i < segments.length; i += batchSize) {
+      const batch = segments.slice(i, i + batchSize);
+      await Promise.all(batch.map(seg => {
+        const segmentUrl = url.resolve(baseUrl, seg.trim());
+        return warmSegment(segmentUrl);
+      }));
+    }
+    logger.info(`Showtime pre-warmer: Warmed ${segments.length} segments successfully.`);
+  } catch (error) {
+    logger.error("Showtime pre-warmer error:", error);
+  }
+}
+
+async function runWarmUpUpcomingEvents() {
+  const db = admin.firestore();
+  const now = admin.firestore.Timestamp.now();
+  const thirtyMinutesMs = 30 * 60 * 1000;
+  const thirtyMinutesFromNow = admin.firestore.Timestamp.fromMillis(now.toMillis() + thirtyMinutesMs);
+
+  const upcomingQuery = db.collection("events")
+    .where("status", "==", "upcoming")
+    .where("scheduledStartTime", ">=", now)
+    .where("scheduledStartTime", "<=", thirtyMinutesFromNow);
+
+  const snapshot = await upcomingQuery.get();
+  for (const docSnap of snapshot.docs) {
+    const eventData = docSnap.data();
+    if (eventData.isWarmedUp === true) continue; // Skip already warmed streams
+    if (eventData.liveStreamUrl) {
+      logger.info(`Showtime pre-warmer: Triggering cache warm-up for event '${eventData.eventTitle}'...`);
+      await warmUpEventStream(eventData.liveStreamUrl);
+      await docSnap.ref.update({ isWarmedUp: true });
+    }
+  }
+}
+
 // The scheduled function now simply calls our reusable logic.
 exports.promoteNextEvent = onSchedule("every 5 minutes", async (event) => {
     logger.info("Running scheduled job: promoteNextEvent.");
     try {
+        await runWarmUpUpcomingEvents(); // Warm up any upcoming stream segments starting in the next 30 minutes
         await runPromoteNextEvent();
     } catch (error) {
         logger.error("Error in promoteNextEvent scheduled job:", { error });
