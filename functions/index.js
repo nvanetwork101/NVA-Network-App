@@ -6346,24 +6346,31 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
         debugMessage = `<!-- NVA DEBUG: A database error occurred: ${error.message} -->`;
     }
 
-    const html = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8"><title>${ogTitle}</title>${debugMessage}
+    const ogTags = `
+        <title>${ogTitle}</title>${debugMessage}
         <meta property="og:title" content="${ogTitle}" />
         <meta property="og:description" content="${ogDescription}" />
         <meta property="og:image" content="${ogImage}" />
         <meta property="og:url" content="${finalUrl}" />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
-        <script>window.location.href = "${finalUrl}";</script>
-      </head>
-      <body><p>${ogDescription}</p></body>
-      </html>`;
+    `;
 
-    response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
-    response.status(200).send(html);
+    try {
+        // Fetch the compiled React index.html from hosting
+        const appRes = await fetch('https://nvanetworkapp.com/index.html');
+        let html = await appRes.text();
+        
+        // Inject the dynamic OG tags into the <head>
+        html = html.replace('<head>', '<head>' + ogTags);
+
+        response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+        response.status(200).send(html);
+    } catch (e) {
+        // Fallback for bots if fetch fails
+        response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
+        response.status(200).send(`<!DOCTYPE html><html><head>${ogTags}</head><body></body></html>`);
+    }
 });
 // Callable function for a user to submit their enrollment application.
 exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (request) => {
