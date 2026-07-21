@@ -421,15 +421,16 @@ function App() {
                         const urlParams = new URLSearchParams(window.location.search);
                         if (urlParams.get('action') === 'comment') setOpenCommentsOnLoad(true);
                         
-                        if (itemData.status === 'completed' && !itemData.embedUrl) {
-                          setDeepLinkedReplayId(id); 
-                          setActiveScreen('Discover');
-                        } else if (itemData.status === 'live' || itemData.status === 'upcoming') {
+                        const isUpcomingOrLive = itemData.status === 'live' || itemData.status === 'upcoming' || itemData.type === 'premiere' || (itemData.isTicketed && itemData.status !== 'completed');
+                        if (isUpcomingOrLive) {
                           // Securely reroute active live events to the multiplex live room instead of VOD
                           sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
                           sessionStorage.setItem('nva_target_premiere_event_id', id);
                           window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' }));
                           window.dispatchEvent(new CustomEvent('setPremiereActiveEvent', { detail: { eventId: id } }));
+                          setActiveScreen('Discover');
+                        } else if (itemData.status === 'completed' && !itemData.embedUrl) {
+                          setDeepLinkedReplayId(id); 
                           setActiveScreen('Discover');
                         } else {
                           handleVideoPress(itemData.embedUrl || itemData.mainUrl || itemData.liveStreamUrl, itemData); 

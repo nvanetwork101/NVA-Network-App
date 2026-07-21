@@ -190,12 +190,12 @@ function DiscoverScreen({
         if (creatorProfile?.role === 'super_admin' || creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority') return true;
         if (creatorProfile?.premiumExpiresAt?.toDate() > new Date()) return true;
 
-        // RULE 1.5: "Now Showing: Free" Bypass. Grants instant access to logged-in users regardless of ticket price.
-        if (event.isNowShowingFree) return !!currentUser;
+        // RULE 1.5: "Now Showing: Free" Bypass. Grants instant access to guests and logged-in users alike.
+        if (event.isNowShowingFree) return true;
 
-        // Rule 2: For a FREE event, requirement is to be logged in.
+        // Rule 2: For a FREE event, direct access is granted to everyone.
         if (!event.isTicketed) {
-            return !!currentUser;
+            return true;
         }
 
         // Rule 3: For a TICKETED event, you must have a specific ticket.
@@ -1081,7 +1081,7 @@ function DiscoverScreen({
                                 <p style={{ color: '#FFF', fontSize: '16px', margin: '0 0 20px 0' }}>{masterEventDetails.eventTitle}</p>
                                 <p style={{ color: '#888', fontSize: '14px', maxWidth: '400px', margin: '0 auto 20px auto' }}>This live event has ended. The replay will be available shortly in the Master Library.</p>
                             </div>
-                        ) : masterEventDetails.status === 'live' ? (
+                        ) : (masterEventDetails.status === 'live' && hasAccess()) ? (
                             <>
                                 <style>{`
                                     .live-layout-container {
@@ -1165,88 +1165,78 @@ function DiscoverScreen({
                                         ← Back
                                     </button>
                                     <div className="live-layout-video-section" style={{ position: 'relative' }}>
-                                        {hasAccess() ? (
-                                            <>
-                                                <div className="bg-black md:rounded-lg overflow-hidden live-video-wrapper" style={{ position: 'relative' }}>
-                                                    {(masterEventDetails.liveStreamUrl && (masterEventDetails.liveStreamUrl.includes('.m3u8') || masterEventDetails.liveStreamUrl.includes('live-slot'))) ? (
-                                                        <HlsPlayer 
-                                                            key={`hls-${masterEventDetails.id}-${masterEventDetails.status}`}
-                                                            src={masterEventDetails.liveStreamUrl} 
-                                                            startTime={masterEventDetails.actualStartTime || masterEventDetails.scheduledStartTime}
-                                                            isAdmin={isModUser && unlockPlayerControls}
-                                                        />
-                                                    ) : (
-                                                        <StableIframePlayer 
-                                                            eventId={masterEventDetails.id} 
-                                                            streamUrl={masterEventDetails.liveStreamUrl || ''} 
-                                                            schedTime={masterEventDetails.actualStartTime || masterEventDetails.scheduledStartTime}
-                                                            isModUser={isModUser} 
-                                                            isUnlocked={unlockPlayerControls}
-                                                        />
-                                                    )}
-                                                </div>
-                                                <div style={{ 
-                                                    position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                                                    padding: '8px 12px', marginTop: '5px', borderRadius: '10px',
-                                                    background: 'rgba(26, 26, 26, 0.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-                                                    border: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
-                                                    gap: '10px', flexWrap: 'wrap'
-                                                }}>
-                                                    {/* Title & Info Banner */}
-                                                    <div style={{ flex: 1, minWidth: '130px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                                                        <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', letterSpacing: '0.5px' }}>
-                                                            {masterEventDetails.eventTitle || 'Live Event'}
-                                                        </span>
-                                                        <span style={{ color: '#00FFFF', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                                                            📍 {masterEventDetails.room || 'The Arena'}
-                                                        </span>
-                                                    </div>
-                                                    
-                                                    {/* Metrics & Actions Group */}
-                                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                                        
-                                                        {/* Viewers Pill */}
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(0,0,0,0.5)', padding: '4px 10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                                            <span style={{ fontSize: '13px' }}>👀</span>
-                                                            <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>{masterEventDetails.totalViewCount || 0}</span>
-                                                        </div>
-                                                        
-                                                        {/* Like Total & Floating Animation Pill */}
-                                                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(0,0,0,0.5)', padding: '4px 10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                                            <button 
-                                                                onClick={() => { triggerFloatingLike(); handleLike(); }} 
-                                                                disabled={isLiking || !currentUser} 
-                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
-                                                            >
-                                                                <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: hasLiked ? '#00FFFF' : '#888', filter: hasLiked ? 'drop-shadow(0 0 5px rgba(0,255,255,0.5))' : 'none', transition: 'all 0.2s ease' }}>
-                                                                    <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" />
-                                                                </svg>
-                                                            </button>
-                                                            <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>{masterEventDetails.likeCount || 0}</span>
-                                                            
-                                                            {/* Floating Elements Map */}
-                                                            {floatingLikes.map(like => (
-                                                                <div key={like.id} style={{ position: 'absolute', bottom: '30px', left: '0px', fontSize: '20px', animation: 'floatUpLike 2s ease-out forwards', pointerEvents: 'none', zIndex: 50 }}>
-                                                                    {Math.random() > 0.5 ? '❤️' : '👍'}
-                                                                </div>
-                                                            ))}
-                                                        </div>
-
-                                                        {/* Share Button (Shrunk) */}
-                                                        <div style={{ transform: 'scale(0.85)', transformOrigin: 'center' }}>
-                                                            <ShareButton title={masterEventDetails.eventTitle} text={`Watch "${masterEventDetails.eventTitle}" LIVE in ${masterEventDetails.room || 'the Arena'}!`} url={`/content/${masterEventDetails.id}`} showMessage={showMessage} />
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="box-office-container" style={{ textAlign: 'center', padding: '30px 15px', backgroundColor: '#0A0A0A', borderRadius: '16px', border: '1px solid #FFD700', maxWidth: '600px', margin: '0 auto' }}>
-                                                <span style={{ fontSize: '48px' }}>🎟️</span>
-                                                <h3 style={{ color: '#FFD700', fontSize: '24px', fontWeight: '900', textTransform: 'uppercase', margin: '0 0 10px 0' }}>Ticket Required</h3>
-                                                <p style={{ color: '#FFF', fontSize: '22px', margin: '10px 0' }}>{masterEventDetails.eventTitle}</p>
-                                                <button onClick={() => setShowGiftModal(true)} style={{ width: '100%', maxWidth: '350px', height: '50px', backgroundColor: 'rgba(255, 215, 0, 0.15)', color: '#FFD700', border: '1px solid #FFD700', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' }}>PURCHASE TICKET (${(masterEventDetails.ticketPrice || 0).toFixed(2)})</button>
+                                        <div className="bg-black md:rounded-lg overflow-hidden live-video-wrapper" style={{ position: 'relative' }}>
+                                            {(masterEventDetails.liveStreamUrl && (masterEventDetails.liveStreamUrl.includes('.m3u8') || masterEventDetails.liveStreamUrl.includes('live-slot'))) ? (
+                                                <HlsPlayer 
+                                                    key={`hls-${masterEventDetails.id}-${masterEventDetails.status}`}
+                                                    src={masterEventDetails.liveStreamUrl} 
+                                                    startTime={masterEventDetails.actualStartTime || masterEventDetails.scheduledStartTime}
+                                                    eventId={masterEventDetails.id}
+                                                    isAdmin={isModUser && unlockPlayerControls}
+                                                />
+                                            ) : (
+                                                <StableIframePlayer 
+                                                    eventId={masterEventDetails.id} 
+                                                    streamUrl={masterEventDetails.liveStreamUrl || ''} 
+                                                    schedTime={masterEventDetails.actualStartTime || masterEventDetails.scheduledStartTime}
+                                                    isModUser={isModUser} 
+                                                    isUnlocked={unlockPlayerControls}
+                                                />
+                                            )}
+                                        </div>
+                                        <div style={{ 
+                                            position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                            padding: '8px 12px', marginTop: '5px', borderRadius: '10px',
+                                            background: 'rgba(26, 26, 26, 0.45)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                                            border: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+                                            gap: '10px', flexWrap: 'wrap'
+                                        }}>
+                                            {/* Title & Info Banner */}
+                                            <div style={{ flex: 1, minWidth: '130px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                                <span style={{ color: '#FFF', fontSize: '14px', fontWeight: '900', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', letterSpacing: '0.5px' }}>
+                                                    {masterEventDetails.eventTitle || 'Live Event'}
+                                                </span>
+                                                <span style={{ color: '#00FFFF', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                                                    📍 {masterEventDetails.room || 'The Arena'}
+                                                </span>
                                             </div>
-                                        )}
+                                            
+                                            {/* Metrics & Actions Group */}
+                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                
+                                                {/* Viewers Pill */}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(0,0,0,0.5)', padding: '4px 10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <span style={{ fontSize: '13px' }}>👀</span>
+                                                    <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>{masterEventDetails.totalViewCount || 0}</span>
+                                                </div>
+                                                
+                                                {/* Like Total & Floating Animation Pill */}
+                                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(0,0,0,0.5)', padding: '4px 10px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <button 
+                                                        onClick={() => { triggerFloatingLike(); handleLike(); }} 
+                                                        disabled={isLiking || !currentUser} 
+                                                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                                                    >
+                                                        <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: hasLiked ? '#00FFFF' : '#888', filter: hasLiked ? 'drop-shadow(0 0 5px rgba(0,255,255,0.5))' : 'none', transition: 'all 0.2s ease' }}>
+                                                            <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" />
+                                                        </svg>
+                                                    </button>
+                                                    <span style={{ color: '#FFF', fontSize: '12px', fontWeight: 'bold' }}>{masterEventDetails.likeCount || 0}</span>
+                                                    
+                                                    {/* Floating Elements Map */}
+                                                    {floatingLikes.map(like => (
+                                                        <div key={like.id} style={{ position: 'absolute', bottom: '30px', left: '0px', fontSize: '20px', animation: 'floatUpLike 2s ease-out forwards', pointerEvents: 'none', zIndex: 50 }}>
+                                                            {Math.random() > 0.5 ? '❤️' : '👍'}
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                {/* Share Button (Shrunk) */}
+                                                <div style={{ transform: 'scale(0.85)', transformOrigin: 'center' }}>
+                                                    <ShareButton title={masterEventDetails.eventTitle} text={`Watch "${masterEventDetails.eventTitle}" LIVE in ${masterEventDetails.room || 'the Arena'}!`} url={`/content/${masterEventDetails.id}`} showMessage={showMessage} />
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div className="live-layout-chat-section">
                                     {/* THE FIX: Permanent Admin Header with Moderation Toggles */}

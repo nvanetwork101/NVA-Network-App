@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import Hls from 'hls.js';
+import { doc, updateDoc, Timestamp } from "firebase/firestore";
+import { db } from '../firebase.js';
 
-const HlsPlayer = ({ src, startTime, isTicketed, isAdmin }) => {
+const HlsPlayer = ({ src, startTime, isTicketed, isAdmin, eventId }) => {
     const videoRef = useRef(null);
     const [hasJoined, setHasJoined] = useState(false);
     const [hasEnded, setHasEnded] = useState(false);
+    const pauseTimeRef = useRef(null);
 
     // Converts Timestamp objects to numeric primitives to bypass reference re-renders
     const startTimeMillis = useMemo(() => {
@@ -20,9 +23,11 @@ const HlsPlayer = ({ src, startTime, isTicketed, isAdmin }) => {
 
         let hls;
         
+        // Subtract standard physical transcoding and distribution delay (20s)
+        const latencyBuffer = 20;
         const now = Date.now();
-        const offsetSeconds = Math.max(0, (now - startTimeMillis) / 1000);
-        console.log(`🎬 [DEBUG] Target Sync Time: ${offsetSeconds.toFixed(2)}s`);
+        const offsetSeconds = Math.max(0, ((now - startTimeMillis) / 1000) - latencyBuffer);
+        console.log(`🎬 [DEBUG] Target Sync Time with Latency Buffer: ${offsetSeconds.toFixed(2)}s`);
 
         // Edge case handlers to prevent finished videos from warping back to 0:00 on unmount/rejoin
         const handleMetadata = () => {
@@ -38,7 +43,7 @@ const HlsPlayer = ({ src, startTime, isTicketed, isAdmin }) => {
 
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible' && !hasEnded) {
-                const freshOffset = Math.max(0, (Date.now() - startTimeMillis) / 1000);
+                const freshOffset = Math.max(0, ((Date.now() - startTimeMillis) / 1000) - latencyBuffer);
                 if (video && Math.abs(video.currentTime - freshOffset) > 2) {
                     video.currentTime = freshOffset;
                     video.play().catch(() => {});
@@ -121,6 +126,44 @@ const HlsPlayer = ({ src, startTime, isTicketed, isAdmin }) => {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, [src, startTimeMillis]);
+
+    // --- ADMIN TIMELESS PAUSE/PLAY GLOBAL SYNCHRONIZER ---
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video || !isAdmin || !eventId) return;
+
+        const handlePlay = async () => {
+            if (pauseTimeRef.current) {
+                const pauseDurationMs = Date.now() - pauseTimeRef.current;
+                pauseTimeRef.current = null;
+                
+                if (pauseDurationMs > 1000) { // filter micro-stutter triggers
+                    try {
+                        const eventRef = doc(db, "events", eventId);
+                        const newStartTimeMillis = startTimeMillis + pauseDurationMs;
+                        await updateDoc(eventRef, {
+                            actualStartTime: Timestamp.fromMillis(newStartTimeMillis)
+                        });
+                        console.log("🎬 [ADMIN] Sync playhead shifted forward globally by", (pauseDurationMs / 1000).toFixed(2), "seconds.");
+                    } catch (e) {
+                        console.error("Error updating stream playhead: ", e);
+                    }
+                }
+            }
+        };
+
+        const handlePause = () => {
+            pauseTimeRef.current = Date.now();
+        };
+
+        video.addEventListener('play', handlePlay);
+        video.addEventListener('pause', handlePause);
+
+        return () => {
+            video.removeEventListener('play', handlePlay);
+            video.removeEventListener('pause', handlePause);
+        };
+    }, [isAdmin, eventId, startTimeMillis]);
 
     const handleJoinTheater = () => {
         if (videoRef.current) {
