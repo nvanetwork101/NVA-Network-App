@@ -162,9 +162,6 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
                 thumbnailUrl: finalThumbnailUrl,
                 room: eventData.room || 'Room 1', 
 
-                // Aligning explicit billboard tracking structure
-                isPromotedToBillboard: eventData.isPromotedToBillboard || false,
-
                 scheduledStartTime: Timestamp.fromDate(new Date(eventData.scheduledStartTime)),
                 scheduledEndTime: Timestamp.fromDate(new Date(eventData.scheduledEndTime)),
             };
@@ -231,23 +228,6 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
                 )}
 
                 <div className="formGroup"><label className="formLabel">Trailer URL (Optional - Adds a Watch Trailer button):</label><input type="url" name="trailerUrl" className="formInput" value={eventData.trailerUrl || ''} onChange={handleInputChange} placeholder="e.g., YouTube, Vimeo trailer link" /></div>
-
-                {/* --- NVA BILLBOARD PROMOTION CONTROL --- */}
-                <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '15px', background: '#0A0A0A', padding: '16px', borderRadius: '12px', border: eventData.isPromotedToBillboard ? '2px solid #00FF00' : '1px solid #333', marginTop: '20px', transition: 'all 0.3s'}}>
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <p className="formLabel" style={{marginBottom: '4px', color: '#00FF00', fontSize: '14px', fontWeight: 'bold'}}>📺 Publish To Billboard</p>
-                            <p className="smallText" style={{color: '#888', margin: 0, fontSize: '12px'}}>Push this directly to the Home Screen Header Countdown.</p>
-                        </div>
-                        <label className="flex items-center cursor-pointer">
-                            <div className="relative">
-                                <input type="checkbox" name="isPromotedToBillboard" className="sr-only" checked={eventData.isPromotedToBillboard || false} onChange={handleInputChange} />
-                                <div className={`block w-14 h-8 rounded-full transition-colors ${eventData.isPromotedToBillboard ? 'bg-[#00FF00]' : 'bg-gray-700'}`}></div>
-                                <div className={`dot absolute left-1 top-1 bg-black w-6 h-6 rounded-full transition-transform ${eventData.isPromotedToBillboard ? 'transform translate-x-6' : ''}`}></div>
-                            </div>
-                        </label>
-                    </div>
-                </div>
 
                 {/* --- NVA TICKET SALES CONTROL --- */}
                 <div className="adminDashboardItem" style={{flexDirection: 'column', alignItems: 'stretch', gap: '15px', background: '#0A0A0A', padding: '16px', borderRadius: '12px', border: eventData.isTicketed ? '2px solid #FFD700' : '1px solid #333', marginTop: '15px', transition: 'all 0.3s'}}>

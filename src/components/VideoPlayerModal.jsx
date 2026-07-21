@@ -303,39 +303,15 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
 
     const displayViewCount = itemType === 'event' ? liveContentItem?.totalViewCount : liveContentItem?.viewCount;
 
-    // NVA EVENT LIFECYCLE CLOCK
-    const [hasEnded, setHasEnded] = useState(false);
-    useEffect(() => {
-        if (itemType === 'event' && liveContentItem?.scheduledEndTime) {
-            const checkEnd = () => {
-                const endTimestamp = liveContentItem.scheduledEndTime.toDate ? liveContentItem.scheduledEndTime.toDate() : new Date(liveContentItem.scheduledEndTime);
-                if (new Date() >= endTimestamp) setHasEnded(true);
-            };
-            checkEnd(); // Run immediately on mount/update
-            const interval = setInterval(checkEnd, 5000); // Check every 5 seconds silently
-            return () => clearInterval(interval);
-        }
-    }, [liveContentItem, itemType]);
-
     // NVA TICKETING SYSTEM: Local Client Check (0 Database Reads)
     const isAdminOrCreator = viewerProfile?.role === 'admin' || viewerProfile?.role === 'authority' || currentUser?.uid === liveContentItem?.creatorId;
     const hasTicket = !!viewerProfile?.purchasedTickets?.[liveContentItem?.id];
     const isLocked = itemType === 'event' && liveContentItem?.isTicketed && !hasTicket && !isAdminOrCreator;
     const now = new Date();
     const eventTime = liveContentItem?.scheduledStartTime?.toDate ? liveContentItem.scheduledStartTime.toDate() : new Date();
-    const isLive = eventTime <= now && !hasEnded;
+    const isLive = eventTime <= now && liveContentItem?.status !== 'completed';
 
     const memoizedPlayer = useMemo(() => {
-        if (itemType === 'event' && hasEnded) {
-            return (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-[#0A0A0A] p-6 text-center shadow-inner relative" style={{ aspectRatio: '16 / 9', border: '1px solid #333', borderRadius: '8px' }}>
-                    <span style={{ fontSize: '48px', marginBottom: '10px' }}>🎬</span>
-                    <h3 style={{ color: '#FFD700', fontSize: '20px', fontWeight: '900', textTransform: 'uppercase', margin: '0 0 8px 0' }}>Broadcast Concluded</h3>
-                    <p style={{ color: '#888', fontSize: '13px', maxWidth: '380px', margin: 0 }}>This scheduled cinema screening has concluded. Keep an eye on the multiplex lobby for upcoming showtimes!</p>
-                </div>
-            );
-        }
-
         if (isLocked) {
             return (
                 <div className="w-full h-full flex flex-col items-center justify-center bg-[#0A0A0A] p-6 text-center shadow-inner relative" style={{ aspectRatio: '16 / 9', backgroundImage: `linear-gradient(rgba(10,10,10,0.85), rgba(10,10,10,0.98)), url(${liveContentItem?.thumbnailUrl || 'https://placehold.co/1280x720/111/333?text=NVA+Box+Office'})`, backgroundSize: 'cover', backgroundPosition: 'center', border: '1px solid #FFD700', borderRadius: '8px' }}>
@@ -359,9 +335,11 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
             );
         }
 
+        const secureUrl = embedUrl ? `${embedUrl}${embedUrl.includes('?') ? '&' : '?'}controls=${isAdminOrCreator ? '1' : '0'}&disablekb=${isAdminOrCreator ? '0' : '1'}` : embedUrl;
+
         return (
             <iframe
-                src={embedUrl}
+                src={secureUrl}
                 className="w-full h-full border-none"
                 style={{
                     width: '100%',
@@ -373,7 +351,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                 title="Embedded Video Content"
             />
         );
-    }, [embedUrl, isVertical, isLocked, liveContentItem?.thumbnailUrl, liveContentItem?.ticketPrice, liveContentItem?.id, isLive, hasEnded, itemType]);
+    }, [embedUrl, isVertical, isLocked, liveContentItem?.thumbnailUrl, liveContentItem?.ticketPrice, liveContentItem?.id, isLive, itemType, isAdminOrCreator]);
 
     return (
         <div className="videoModalOverlay flex justify-center items-center" style={{ backdropFilter: 'blur(10px)', backgroundColor: 'rgba(0,0,0,0.8)' }}>

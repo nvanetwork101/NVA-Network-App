@@ -1074,7 +1074,14 @@ function DiscoverScreen({
                             </button>
                         )}
                         
-                        {masterEventDetails.status === 'live' ? (
+                        {masterEventDetails.status === 'completed' ? (
+                            <div className="box-office-container" style={{ textAlign: 'center', padding: '50px 20px', backgroundColor: '#0A0A0A', borderRadius: '16px', maxWidth: '700px', margin: '0 auto', border: '1px solid #333' }}>
+                                <span style={{ fontSize: '48px', marginBottom: '10px', display: 'block' }}>🎬</span>
+                                <h3 style={{ color: '#FFD700', fontSize: '24px', fontWeight: '900', textTransform: 'uppercase', margin: '0 0 10px 0' }}>Broadcast Concluded</h3>
+                                <p style={{ color: '#FFF', fontSize: '16px', margin: '0 0 20px 0' }}>{masterEventDetails.eventTitle}</p>
+                                <p style={{ color: '#888', fontSize: '14px', maxWidth: '400px', margin: '0 auto 20px auto' }}>This live event has ended. The replay will be available shortly in the Master Library.</p>
+                            </div>
+                        ) : masterEventDetails.status === 'live' ? (
                             <>
                                 <style>{`
                                     .live-layout-container {
@@ -1163,6 +1170,7 @@ function DiscoverScreen({
                                                 <div className="bg-black md:rounded-lg overflow-hidden live-video-wrapper" style={{ position: 'relative' }}>
                                                     {(masterEventDetails.liveStreamUrl && (masterEventDetails.liveStreamUrl.includes('.m3u8') || masterEventDetails.liveStreamUrl.includes('live-slot'))) ? (
                                                         <HlsPlayer 
+                                                            key={`hls-${masterEventDetails.id}-${masterEventDetails.status}`}
                                                             src={masterEventDetails.liveStreamUrl} 
                                                             startTime={masterEventDetails.actualStartTime || masterEventDetails.scheduledStartTime}
                                                             isAdmin={isModUser && unlockPlayerControls}

@@ -36,8 +36,19 @@ const HlsPlayer = ({ src, startTime, isTicketed, isAdmin }) => {
             setHasEnded(true);
         };
 
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible' && !hasEnded) {
+                const freshOffset = Math.max(0, (Date.now() - startTimeMillis) / 1000);
+                if (video && Math.abs(video.currentTime - freshOffset) > 2) {
+                    video.currentTime = freshOffset;
+                    video.play().catch(() => {});
+                }
+            }
+        };
+
         video.addEventListener('loadedmetadata', handleMetadata);
         video.addEventListener('ended', handleEnded);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         if (Hls.isSupported()) {
             hls = new Hls({
@@ -107,6 +118,7 @@ const HlsPlayer = ({ src, startTime, isTicketed, isAdmin }) => {
             if (hls) hls.destroy();
             video.removeEventListener('loadedmetadata', handleMetadata);
             video.removeEventListener('ended', handleEnded);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, [src, startTimeMillis]);
 

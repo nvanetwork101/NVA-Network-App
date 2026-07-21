@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from '../firebase'; 
 
-function HeaderLiveButton({ setActiveScreen, isLive: appIsLive, countdownText: appCountdownText, showMessage }) {
+function HeaderLiveButton({ setActiveScreen, showMessage }) {
     const [upcomingEvent, setUpcomingEvent] = useState(null);
     const [eventTimeLeft, setEventTimeLeft] = useState('');
     const [eventIsLive, setEventIsLive] = useState(false);
@@ -87,10 +87,11 @@ function HeaderLiveButton({ setActiveScreen, isLive: appIsLive, countdownText: a
         return () => clearInterval(interval);
     }, [upcomingEvent, showMessage]);
 
-    const activeCountdown = upcomingEvent ? eventTimeLeft : appCountdownText;
-    const activeIsLive = upcomingEvent ? eventIsLive : appIsLive;
+    // ABSOLUTE AUTHORITY: If there is no event on the Billboard, render absolutely nothing.
+    if (!upcomingEvent || !eventTimeLeft) return null; 
 
-    if (!activeCountdown) return null; 
+    const activeCountdown = eventTimeLeft;
+    const activeIsLive = eventIsLive;
 
     return (
         <div 

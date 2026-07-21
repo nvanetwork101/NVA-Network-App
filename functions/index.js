@@ -6248,9 +6248,9 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                 ogImage = data.customThumbnailUrl || data.thumbnailUrl || ogImage;
                 debugMessage = `<!-- NVA DEBUG: Rendered VOD content_item: ${id} -->`;
             } else {
-                // If not found, check if it's a replay from the events collection.
+                // If not found, check if it's from the events collection (upcoming, live, or replay).
                 docSnap = await db.doc(`events/${id}`).get();
-                if (docSnap.exists && docSnap.data().status === 'completed') {
+                if (docSnap.exists) {
                     const data = docSnap.data();
                     ogTitle = data.eventTitle;
                     ogDescription = data.eventDescription;
