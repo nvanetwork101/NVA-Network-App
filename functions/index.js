@@ -6256,6 +6256,16 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
                     ogDescription = data.eventDescription;
                     ogImage = data.thumbnailUrl || ogImage; // Use the event's specific thumbnail
                     debugMessage = `<!-- NVA DEBUG: Rendered event replay: ${id} -->`;
+                } else {
+                    // Fallback to check if it's from the movies collection
+                    docSnap = await db.doc(`movies/${id}`).get();
+                    if (docSnap.exists) {
+                        const data = docSnap.data();
+                        ogTitle = data.title;
+                        ogDescription = data.synopsis;
+                        ogImage = data.posterUrl || ogImage;
+                        debugMessage = `<!-- NVA DEBUG: Rendered movie: ${id} -->`;
+                    }
                 }
             }
         } else if (screen === 'opportunity' && id) {
@@ -6361,8 +6371,31 @@ exports.generateSharePreviewV2 = onRequest({ cors: true }, async (request, respo
         const appRes = await fetch('https://nvanetworkapp.com/index.html');
         let html = await appRes.text();
         
-        // Inject the dynamic OG tags into the <head>
-        html = html.replace('<head>', '<head>' + ogTags);
+        // Dynamic In-Place Swapping of existing metadata inside the template
+        html = html.replace(/<title>.*?<\/title>/gi, `<title>${ogTitle}</title>`);
+        html = html.replace(/<meta[^>]*name=["']description["'][^>]*>/gi, `<meta name="description" content="${ogDescription}" />`);
+        html = html.replace(/<meta[^>]*property=["']og:title["'][^>]*>/gi, `<meta property="og:title" content="${ogTitle}" />`);
+        html = html.replace(/<meta[^>]*property=["']og:description["'][^>]*>/gi, `<meta property="og:description" content="${ogDescription}" />`);
+        html = html.replace(/<meta[^>]*property=["']og:image["'][^>]*>/gi, `<meta property="og:image" content="${ogImage}" />`);
+        html = html.replace(/<meta[^>]*property=["']og:url["'][^>]*>/gi, `<meta property="og:url" content="${finalUrl}" />`);
+
+        // Check for missing tags and inject right before </head> if they were not found in the original template
+        const missingTags = [];
+        if (!html.includes('og:title')) {
+            missingTags.push(`<meta property="og:title" content="${ogTitle}" />`);
+        }
+        if (!html.includes('og:description')) {
+            missingTags.push(`<meta property="og:description" content="${ogDescription}" />`);
+        }
+        if (!html.includes('og:image')) {
+            missingTags.push(`<meta property="og:image" content="${ogImage}" />`);
+        }
+        if (!html.includes('og:url')) {
+            missingTags.push(`<meta property="og:url" content="${finalUrl}" />`);
+        }
+        if (missingTags.length > 0) {
+            html = html.replace(/<\/head>/i, missingTags.join('\n') + '\n</head>');
+        }
 
         response.set('Cache-Control', 'public, max-age=300, s-maxage=600');
         response.status(200).send(html);

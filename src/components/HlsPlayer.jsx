@@ -19,70 +19,34 @@ const HlsPlayer = ({ src, startTime, isTicketed, isAdmin, eventId }) => {
 
     useEffect(() => {
         const video = videoRef.current;
-        if (!video || !src || !startTimeMillis) return;
+        if (!video || !src) return;
 
         let hls;
-        
-        // Subtract standard physical transcoding and distribution delay (20s)
-        const latencyBuffer = 20;
-        const now = Date.now();
-        const offsetSeconds = Math.max(0, ((now - startTimeMillis) / 1000) - latencyBuffer);
-        console.log(`🎬 [DEBUG] Target Sync Time with Latency Buffer: ${offsetSeconds.toFixed(2)}s`);
-
-        // Edge case handlers to prevent finished videos from warping back to 0:00 on unmount/rejoin
-        const handleMetadata = () => {
-            if (video.duration && offsetSeconds >= video.duration) {
-                console.log("🎬 [DEBUG] Sync limit hit. Broadcast concluded.");
-                setHasEnded(true);
-            }
-        };
 
         const handleEnded = () => {
             setHasEnded(true);
         };
 
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible' && !hasEnded) {
-                const freshOffset = Math.max(0, ((Date.now() - startTimeMillis) / 1000) - latencyBuffer);
-                if (video && Math.abs(video.currentTime - freshOffset) > 2) {
-                    video.currentTime = freshOffset;
-                    video.play().catch(() => {});
-                }
-            }
-        };
-
-        video.addEventListener('loadedmetadata', handleMetadata);
         video.addEventListener('ended', handleEnded);
-        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         if (Hls.isSupported()) {
             hls = new Hls({
                 debug: false, 
-                startPosition: offsetSeconds > 0 ? offsetSeconds : -1, 
                 enableWorker: true,
-                lowLatencyMode: false,
-                maxBufferLength: 120, // MASSIVE buffer to survive R2 cold-starts
-                maxMaxBufferLength: 120,
-                backBufferLength: 30,
-                manifestLoadingMaxRetry: 15,
-                manifestLoadingRetryDelay: 1000,
-                levelLoadingMaxRetry: 15,
-                fragLoadingMaxRetry: 15,
-                fragLoadingRetryDelay: 1000,
-                capLevelToPlayerSize: true // Saves bandwidth, stops unnecessary buffering
+                lowLatencyMode: true,
+                maxBufferLength: 30,
+                maxMaxBufferLength: 60,
+                backBufferLength: 15,
+                manifestLoadingMaxRetry: 10,
+                manifestLoadingRetryDelay: 500,
+                liveSyncPosition: 0, // Force instant sync to active live segment edge
+                capLevelToPlayerSize: true
             });
             
             hls.loadSource(src);
             hls.attachMedia(video);
             
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                // Secondary check for playlist duration metadata directly from level
-                hls.on(Hls.Events.LEVEL_LOADED, (event, data) => {
-                    const dur = data.details.totalduration;
-                    if (dur && offsetSeconds >= dur) {
-                        setHasEnded(true);
-                    }
-                });
                 video.play().catch(() => console.warn("Autoplay blocked"));
             });
             
@@ -100,32 +64,20 @@ const HlsPlayer = ({ src, startTime, isTicketed, isAdmin, eventId }) => {
                             break;
                     }
                 } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && data.details === 'bufferStalledError') {
-                    // Force the playhead over tiny encoding gaps that cause stalling
                     if (video) video.currentTime += 0.1;
                 }
             });
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            // Safari Native Fallback
+            // Safari Native Live HLS Fallback
             video.src = src;
-            video.addEventListener('loadedmetadata', () => {
-                if (offsetSeconds > 0) {
-                    if (video.duration && offsetSeconds >= video.duration) {
-                        setHasEnded(true);
-                    } else {
-                        video.currentTime = offsetSeconds;
-                    }
-                }
-                video.play().catch(() => {});
-            });
+            video.play().catch(() => {});
         }
 
         return () => {
             if (hls) hls.destroy();
-            video.removeEventListener('loadedmetadata', handleMetadata);
             video.removeEventListener('ended', handleEnded);
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [src, startTimeMillis]);
+    }, [src]);
 
     // --- ADMIN TIMELESS PAUSE/PLAY GLOBAL SYNCHRONIZER ---
     useEffect(() => {
