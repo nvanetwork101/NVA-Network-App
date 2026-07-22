@@ -668,19 +668,51 @@ const UserProfileScreen = ({
         .pinned-card { border: 2px solid #FFD700 !important; box-shadow: 0 0 20px rgba(255, 215, 0, 0.2); }
         .pinned-card::before { content: 'PINNED'; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: #FFD700; color: #000; font-size: 8px; font-weight: 900; padding: 2px 10px; border-radius: 100px; z-index: 10; }
 
-        /* ===== STUDIO GALLERY (PINTEREST MASONRY) ===== */
-        .studio-gallery-grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 100px; gap: 12px; margin-top: 15px; }
+        /* ===== STUDIO GALLERY (OVERLAPPING COLLAGE MODEL - iOS WEBKIT OPTIMIZED) ===== */
+        .studio-gallery-collage { 
+            position: relative; 
+            width: 100%; 
+            max-width: 440px; 
+            margin: 20px auto 0 auto; 
+            aspect-ratio: 1 / 1; 
+            background: rgba(0,0,0,0.15);
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.04);
+            padding: 15px;
+            box-sizing: border-box;
+        }
         .lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); backdrop-filter: blur(10px); z-index: 9999; display: flex; align-items: center; justify-content: center; cursor: zoom-out; padding: 20px; }
         .lightbox-image { max-width: 100%; max-height: 100vh; object-fit: contain; border-radius: 8px; box-shadow: 0 10px 50px rgba(0,0,0,0.8); }
-        .gallery-slot { background: rgba(0,0,0,0.5); border-radius: 16px; overflow: hidden; position: relative; border: 1px solid rgba(255,255,255,0.05); }
-        .gallery-slot img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.5s ease; }
-        .gallery-slot:hover img { transform: scale(1.05); }
-        .slot-0 { grid-column: span 2; grid-row: span 3; } 
-        .slot-1 { grid-column: span 2; grid-row: span 1; } 
-        .slot-2 { grid-column: span 1; grid-row: span 2; } 
-        .slot-3 { grid-column: span 1; grid-row: span 2; } 
-        .slot-4 { grid-column: span 4; grid-row: span 1; } 
-        @media (max-width: 768px) { .studio-gallery-grid { grid-auto-rows: 70px; gap: 8px; } }
+        .gallery-slot { 
+            position: absolute; 
+            background: #0D0D0D; 
+            border: 4px solid #FFFFFF; 
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5); 
+            cursor: pointer; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); 
+            -webkit-transform: translate3d(0,0,0); 
+            transform: translate3d(0,0,0); 
+            box-sizing: border-box;
+        }
+        .gallery-slot:hover { 
+            transform: scale(1.05) translateY(-2px); 
+            z-index: 15 !important; 
+            box-shadow: 0 12px 30px rgba(255,215,0,0.3);
+            border-color: #FFD700;
+        }
+        .gallery-slot img { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+        }
+        .slot-0 { width: 38%; height: 38%; top: 4%; left: 31%; z-index: 1; }
+        .slot-1 { width: 36%; height: 36%; top: 24%; left: 4%; z-index: 3; }
+        .slot-2 { width: 36%; height: 36%; top: 24%; left: 60%; z-index: 2; }
+        .slot-3 { width: 34%; height: 34%; top: 58%; left: 14%; z-index: 4; }
+        .slot-4 { width: 34%; height: 34%; top: 58%; left: 52%; z-index: 1; }
 
         /* ====== GIFT MODAL INTERFACE ====== */
         .gift-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; z-index: 1200; padding: 16px; }
@@ -1268,13 +1300,25 @@ const UserProfileScreen = ({
                                 Share Gallery
                             </button>
                         </div>
-                        <div className="studio-gallery-grid">
+                        <div className="studio-gallery-collage">
                             {[0, 1, 2, 3, 4].map((index) => {
                                 const imgUrl = profile.studioGallery[index];
-                                if (!imgUrl) return <div key={index} className={`gallery-slot slot-${index}`} style={{ background: 'rgba(255,255,255,0.02)', border: 'none' }} />; 
                                 return (
-                                    <div key={index} className={`gallery-slot slot-${index}`} onClick={() => setSelectedExhibitionImage(imgUrl)} style={{ cursor: 'zoom-in' }}>
-                                        <img src={imgUrl} alt={`Exhibition ${index}`} />
+                                    <div 
+                                        key={index} 
+                                        className={`gallery-slot slot-${index}`} 
+                                        onClick={() => imgUrl && setSelectedExhibitionImage(imgUrl)} 
+                                        style={{ cursor: imgUrl ? 'zoom-in' : 'default' }}
+                                    >
+                                        {imgUrl ? (
+                                            <div style={{ width: '100%', height: '100%', overflow: 'hidden', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <img src={imgUrl} alt={`Exhibition ${index}`} />
+                                            </div>
+                                        ) : (
+                                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.01)' }}>
+                                                <span style={{ color: '#222', fontSize: '18px' }}>🎨</span>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}

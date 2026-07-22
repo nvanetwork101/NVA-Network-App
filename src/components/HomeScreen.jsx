@@ -438,8 +438,8 @@ import CompetitionHomeScreenBanner from './CompetitionHomeScreenBanner';
                 {!currentUser ? (
                     <button className="sectionHeaderButton" onClick={() => setActiveScreen('SignUp')}>Join NVA Network</button>
                 ) : (
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        {rawLayout?.showMusicCharts !== false && (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', opacity: isLayoutLoading ? 0 : 1, transition: 'opacity 0.3s ease', pointerEvents: isLayoutLoading ? 'none' : 'auto' }}>
+                        {rawLayout && rawLayout.showMusicCharts !== false && (
                             <button 
                                 className="btn-glass music-charts-btn" 
                                 style={{ position: 'relative' }}
