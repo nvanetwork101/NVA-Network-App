@@ -97,11 +97,30 @@ const GalleryImageAdjustModal = ({ isUploading, imageFile, onSave, onCancel, asp
     const handleMouseUp = () => setIsDragging(false);
 
     const handleSaveClick = () => {
-        if (canvasRef.current) {
-            canvasRef.current.toBlob((blob) => {
-                if (blob) onSave(blob);
-            }, 'image/jpeg', 0.9);
-        }
+        if (!imgElement) return;
+
+        // THE FIX: Create a high-resolution off-screen canvas for export (1080p instead of 300p)
+        const EXPORT_WIDTH = 1080;
+        const EXPORT_HEIGHT = EXPORT_WIDTH / aspectRatio;
+        const scaleMultiplier = EXPORT_WIDTH / CANVAS_WIDTH;
+
+        const offscreenCanvas = document.createElement('canvas');
+        offscreenCanvas.width = EXPORT_WIDTH;
+        offscreenCanvas.height = EXPORT_HEIGHT;
+        const ctx = offscreenCanvas.getContext('2d');
+
+        // Draw the exact crop coordinates scaled up to 1080p
+        ctx.drawImage(
+            imgElement,
+            position.x * scaleMultiplier,
+            position.y * scaleMultiplier,
+            imgElement.width * scale * scaleMultiplier,
+            imgElement.height * scale * scaleMultiplier
+        );
+
+        offscreenCanvas.toBlob((blob) => {
+            if (blob) onSave(blob);
+        }, 'image/jpeg', 0.95); // Bumped compression quality to 95%
     };
 
     return (
