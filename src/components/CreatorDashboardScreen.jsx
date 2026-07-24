@@ -1915,24 +1915,24 @@ const CreatorDashboardScreen = ({
                             </div>
 
                             {/* Details Form */}
-                            <div style={{ flex: 1, minWidth: '200px', display: 'flex', flexDirection: 'column', gap: '10px', justifyContent: 'center' }}>
-                                <div>
-                                    <label style={{ fontSize: '10px', color: '#AAA', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>Price Tag (GYD)</label>
+                            <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', gap: '16px', justifyContent: 'center' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    <label style={{ display: 'block', fontSize: '11px', color: '#AAA', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>Price Tag (GYD)</label>
                                     <input 
                                         type="number" 
-                                        className="cs-input" 
-                                        style={{ fontSize: '16px', fontWeight: 'bold', color: '#00FFFF', background: 'rgba(0,255,255,0.05)', border: '1px solid rgba(0,255,255,0.2)' }}
+                                        className="formInput" 
+                                        style={{ margin: 0, width: '100%', fontSize: '15px', fontWeight: 'bold', color: '#00FFFF', background: 'rgba(0, 255, 255, 0.02)', border: '1px solid rgba(0, 255, 255, 0.15)', padding: '12px 16px', borderRadius: '10px' }}
                                         placeholder="e.g. 15000" 
                                         value={heroForm.price} 
                                         onChange={e => setHeroForm({...heroForm, price: e.target.value})} 
                                     />
                                 </div>
-                                <div>
-                                    <label style={{ fontSize: '10px', color: '#AAA', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>WhatsApp Contact #</label>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                    <label style={{ display: 'block', fontSize: '11px', color: '#AAA', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px' }}>WhatsApp Contact #</label>
                                     <input 
                                         type="text" 
-                                        className="cs-input" 
-                                        style={{ fontSize: '14px', color: '#FFF', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }} 
+                                        className="formInput" 
+                                        style={{ margin: 0, width: '100%', fontSize: '14px', color: '#FFF', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '12px 16px', borderRadius: '10px' }} 
                                         placeholder="e.g. 592-555-5555" 
                                         value={heroForm.whatsapp} 
                                         onChange={e => setHeroForm({...heroForm, whatsapp: e.target.value})} 
@@ -1945,9 +1945,9 @@ const CreatorDashboardScreen = ({
                                         background: `linear-gradient(90deg, ${roleColor}33, rgba(255,255,255,0.05))`, 
                                         color: '#FFF', 
                                         border: `1px solid ${roleColor}88`, 
-                                        padding: '10px', 
+                                        padding: '12px', 
                                         fontWeight: '900', 
-                                        borderRadius: '8px', 
+                                        borderRadius: '10px', 
                                         cursor: 'pointer', 
                                         marginTop: '5px',
                                         backdropFilter: 'blur(5px)',
