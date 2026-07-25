@@ -139,12 +139,15 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                             <h2 style={{ margin: '0 0 5px 0', fontSize: '32px', color: '#FFF', fontWeight: '900', lineHeight: 1.2 }}>{numberOne.title}</h2>
                             <p style={{ margin: 0, color: '#AAA', fontSize: '18px' }}>{numberOne.creatorName}</p>
                             
-                            <div style={{ display: 'flex', gap: '20px', marginTop: '20px', borderTop: '1px solid #333', paddingTop: '15px' }}>
+                            <div style={{ display: 'flex', gap: '20px', marginTop: '20px', borderTop: '1px solid #333', paddingTop: '15px', flexWrap: 'wrap' }}>
                                 <div style={{ color: '#FFF', fontSize: '12px' }}><span style={{ color: '#888' }}>PEAK:</span> {numberOne.peakPosition}</div>
                                 <div style={{ color: '#FFF', fontSize: '12px' }}><span style={{ color: '#888' }}>WKS ON CHART:</span> {numberOne.weeksOnChart}</div>
                                 <div style={{ color: '#FFF', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     <span style={{ color: '#888' }}>TREND:</span> 
                                     <span style={{ color: numberOne.trendColor, fontWeight: 'bold' }}>{numberOne.trend}</span>
+                                </div>
+                                <div style={{ color: '#00FFFF', fontSize: '12px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '4px', textShadow: '0 0 10px rgba(0,255,255,0.4)', borderLeft: '1px solid #333', paddingLeft: '20px' }}>
+                                    📀 UNITS: {numberOne.unitsSold || 0}
                                 </div>
                             </div>
                         </div>
@@ -203,9 +206,11 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                             </p>
                             
                             {/* Desktop Stats (Hidden on very small screens for clean UI) */}
-                            <div style={{ display: 'flex', gap: '15px', fontSize: '11px', color: '#666', fontWeight: 'bold' }}>
+                            <div style={{ display: 'flex', gap: '15px', fontSize: '11px', color: '#666', fontWeight: 'bold', flexWrap: 'wrap', alignItems: 'center' }}>
                                 <span>PEAK: {track.peakPosition}</span>
                                 <span>WKS: {track.weeksOnChart}</span>
+                                <span style={{ color: '#444' }}>•</span>
+                                <span style={{ color: '#00FFFF', textShadow: '0 0 5px rgba(0,255,255,0.3)', fontWeight: '900', letterSpacing: '0.5px' }}>📀 UNITS: {track.unitsSold || 0}</span>
                                 <span style={{ color: '#444' }}>•</span>
                                 <span>{track.viewCount || 0} STREAMS</span>
                             </div>

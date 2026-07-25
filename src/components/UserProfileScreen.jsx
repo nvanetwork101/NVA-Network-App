@@ -244,28 +244,42 @@ const UserProfileScreen = ({
     
     // --- LIGHTBOX STATE ---
     const [selectedExhibitionImage, setSelectedExhibitionImage] = useState(null);
+    const [showEarningsConfirm, setShowEarningsConfirm] = useState(false);
 
-    // --- LIGHTBOX HARDWARE BACK-BUTTON TRAP ---
+    // --- LIGHTBOX HARDWARE BACK-BUTTON TRAP (GLOBAL ROUTER SHIELD) ---
     useEffect(() => {
-        if (selectedExhibitionImage) {
-            // Push a temporary state to the browser history
-            window.history.pushState({ lightboxOpen: true }, '');
-            
-            const handleBackPress = (e) => {
-                e.preventDefault();
-                setSelectedExhibitionImage(null); // Just close the image, don't leave the profile
-            };
-            
-            window.addEventListener('popstate', handleBackPress);
-            return () => {
-                window.removeEventListener('popstate', handleBackPress);
-                // Clean up the dummy history state if closed via the "X" button
-                if (window.history.state?.lightboxOpen) {
-                    window.history.back();
-                }
-            };
-        }
+        if (!selectedExhibitionImage) return;
+
+        window.__nvaModalOpen = true;
+        window.history.pushState({ modal: 'gallery' }, '');
+
+        const handlePopState = () => {
+            setSelectedExhibitionImage(null);
+            setTimeout(() => {
+                window.__nvaModalOpen = false;
+            }, 100);
+        };
+
+        window.addEventListener('popstate', handlePopState);
+
+        return () => {
+            window.removeEventListener('popstate', handlePopState);
+            if (window.history.state && window.history.state.modal === 'gallery') {
+                window.history.back();
+            }
+            setTimeout(() => {
+                window.__nvaModalOpen = false;
+            }, 100);
+        };
     }, [selectedExhibitionImage]);
+
+    const closeLightbox = (e) => {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        setSelectedExhibitionImage(null);
+    };
 
     useEffect(() => {
         if (shouldOpenGiftModalOnLoad) {
@@ -1432,21 +1446,21 @@ const UserProfileScreen = ({
             </div>
             {showPfpModal && profile && <ProfilePictureModal imageUrl={profile.profilePictureUrl || 'https://placehold.co/400x400/555/FFF?text=No+Image'} onClose={() => setShowPfpModal(false)} />}
 
-            {/* LIGHTBOX MODAL (Full Screen & Anti-Ghost Click) */}
+            {/* LIGHTBOX MODAL (Full Viewport Screen & Anti-Ghost Click Isolation) */}
             {selectedExhibitionImage && (
                 <div 
-                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); setSelectedExhibitionImage(null); }}
-                    style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(15px)', WebkitBackdropFilter: 'blur(15px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', margin: 0, padding: 0 }}
+                    onClick={closeLightbox}
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.96)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', margin: 0, padding: '16px', boxSizing: 'border-box' }}
                 >
                     <img 
                         src={selectedExhibitionImage} 
                         alt="Zoomed Exhibition" 
                         onClick={(e) => e.stopPropagation()} 
-                        style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                        style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', borderRadius: '8px', boxShadow: '0 20px 50px rgba(0,0,0,0.9)' }} 
                     />
                     <button 
-                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setSelectedExhibitionImage(null); }} 
-                        style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#FFF', fontSize: '20px', width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}
+                        onClick={closeLightbox} 
+                        style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', color: '#FFF', fontSize: '20px', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.6)', zIndex: 100000 }}
                     >
                         ✕
                     </button>

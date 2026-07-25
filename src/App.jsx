@@ -1104,7 +1104,7 @@ useEffect(() => {
         isProgrammaticPopRef.current = false;
         return;
       }
-      if (showVideoModal) {
+      if (showVideoModal || window.__nvaModalOpen) {
         return;
       }
 
