@@ -245,6 +245,28 @@ const UserProfileScreen = ({
     // --- LIGHTBOX STATE ---
     const [selectedExhibitionImage, setSelectedExhibitionImage] = useState(null);
 
+    // --- LIGHTBOX HARDWARE BACK-BUTTON TRAP ---
+    useEffect(() => {
+        if (selectedExhibitionImage) {
+            // Push a temporary state to the browser history
+            window.history.pushState({ lightboxOpen: true }, '');
+            
+            const handleBackPress = (e) => {
+                e.preventDefault();
+                setSelectedExhibitionImage(null); // Just close the image, don't leave the profile
+            };
+            
+            window.addEventListener('popstate', handleBackPress);
+            return () => {
+                window.removeEventListener('popstate', handleBackPress);
+                // Clean up the dummy history state if closed via the "X" button
+                if (window.history.state?.lightboxOpen) {
+                    window.history.back();
+                }
+            };
+        }
+    }, [selectedExhibitionImage]);
+
     useEffect(() => {
         if (shouldOpenGiftModalOnLoad) {
             setIsGiftModalOpen(true);
@@ -1410,11 +1432,24 @@ const UserProfileScreen = ({
             </div>
             {showPfpModal && profile && <ProfilePictureModal imageUrl={profile.profilePictureUrl || 'https://placehold.co/400x400/555/FFF?text=No+Image'} onClose={() => setShowPfpModal(false)} />}
 
-            {/* LIGHTBOX MODAL */}
+            {/* LIGHTBOX MODAL (Full Screen & Anti-Ghost Click) */}
             {selectedExhibitionImage && (
-                <div className="lightbox-overlay" onClick={() => setSelectedExhibitionImage(null)}>
-                    <img src={selectedExhibitionImage} alt="Zoomed Exhibition" className="lightbox-image" onClick={(e) => e.stopPropagation()} />
-                    <button onClick={() => setSelectedExhibitionImage(null)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#FFF', fontSize: '24px', width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                <div 
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); setSelectedExhibitionImage(null); }}
+                    style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(15px)', WebkitBackdropFilter: 'blur(15px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', margin: 0, padding: 0 }}
+                >
+                    <img 
+                        src={selectedExhibitionImage} 
+                        alt="Zoomed Exhibition" 
+                        onClick={(e) => e.stopPropagation()} 
+                        style={{ width: '100%', height: '100%', objectFit: 'contain' }} 
+                    />
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setSelectedExhibitionImage(null); }} 
+                        style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#FFF', fontSize: '20px', width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}
+                    >
+                        ✕
+                    </button>
                 </div>
             )}
 
