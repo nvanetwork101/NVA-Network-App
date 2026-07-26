@@ -47,6 +47,10 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                     if (previousRank > rank) { trend = '▲'; trendColor = '#00FF00'; }
                     else if (previousRank < rank) { trend = '▼'; trendColor = '#FF0000'; }
 
+                    // Units Sold calculation ($475 GYD = 1 Unit)
+                    const contentEarnings = (data.donationsSum || data.donationsTotal || 0) + (data.ticketSalesTotal || data.ticketEarnings || 0);
+                    const unitsSold = typeof data.unitsSold === 'number' ? data.unitsSold : Math.floor(contentEarnings / 475);
+
                     return {
                         id: doc.id,
                         ...data,
@@ -54,7 +58,8 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                         weeksOnChart,
                         peakPosition,
                         trend,
-                        trendColor
+                        trendColor,
+                        unitsSold
                     };
                 });
 
@@ -146,8 +151,21 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                                     <span style={{ color: '#888' }}>TREND:</span> 
                                     <span style={{ color: numberOne.trendColor, fontWeight: 'bold' }}>{numberOne.trend}</span>
                                 </div>
-                                <div style={{ color: '#00FFFF', fontSize: '12px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '4px', textShadow: '0 0 10px rgba(0,255,255,0.4)', borderLeft: '1px solid #333', paddingLeft: '20px' }}>
-                                    📀 UNITS: {numberOne.unitsSold || 0}
+                                <div style={{ color: '#00FFFF', fontSize: '12px', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '6px', textShadow: '0 0 10px rgba(0,255,255,0.4)', borderLeft: '1px solid #333', paddingLeft: '20px' }}>
+                                    <svg viewBox="0 0 24 24" width="16" height="16" style={{ filter: 'drop-shadow(0 0 4px #FFD700)', flexShrink: 0 }}>
+                                        <circle cx="12" cy="12" r="10" fill="url(#heroGoldGrad)" stroke="#FFE55C" strokeWidth="1"/>
+                                        <circle cx="12" cy="12" r="7" fill="none" stroke="#B8860B" strokeWidth="0.8" strokeDasharray="1.5 1.5"/>
+                                        <circle cx="12" cy="12" r="3.5" fill="#111" stroke="#FFD700" strokeWidth="0.8"/>
+                                        <circle cx="12" cy="12" r="1" fill="#FFD700"/>
+                                        <defs>
+                                            <radialGradient id="heroGoldGrad" cx="30%" cy="30%" r="70%">
+                                                <stop offset="0%" stopColor="#FFE57F"/>
+                                                <stop offset="50%" stopColor="#FFD700"/>
+                                                <stop offset="100%" stopColor="#B8860B"/>
+                                            </radialGradient>
+                                        </defs>
+                                    </svg>
+                                    UNITS: {(numberOne.unitsSold || 0).toLocaleString()}
                                 </div>
                             </div>
                         </div>
@@ -210,7 +228,22 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                                 <span>PEAK: {track.peakPosition}</span>
                                 <span>WKS: {track.weeksOnChart}</span>
                                 <span style={{ color: '#444' }}>•</span>
-                                <span style={{ color: '#00FFFF', textShadow: '0 0 5px rgba(0,255,255,0.3)', fontWeight: '900', letterSpacing: '0.5px' }}>📀 UNITS: {track.unitsSold || 0}</span>
+                                <span style={{ color: '#00FFFF', textShadow: '0 0 5px rgba(0,255,255,0.3)', fontWeight: '900', letterSpacing: '0.5px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <svg viewBox="0 0 24 24" width="13" height="13" style={{ filter: 'drop-shadow(0 0 3px #FFD700)', flexShrink: 0 }}>
+                                        <circle cx="12" cy="12" r="10" fill="url(#listGoldGrad)" stroke="#FFE55C" strokeWidth="1"/>
+                                        <circle cx="12" cy="12" r="7" fill="none" stroke="#B8860B" strokeWidth="0.8" strokeDasharray="1.5 1.5"/>
+                                        <circle cx="12" cy="12" r="3.5" fill="#111" stroke="#FFD700" strokeWidth="0.8"/>
+                                        <circle cx="12" cy="12" r="1" fill="#FFD700"/>
+                                        <defs>
+                                            <radialGradient id="listGoldGrad" cx="30%" cy="30%" r="70%">
+                                                <stop offset="0%" stopColor="#FFE57F"/>
+                                                <stop offset="50%" stopColor="#FFD700"/>
+                                                <stop offset="100%" stopColor="#B8860B"/>
+                                            </radialGradient>
+                                        </defs>
+                                    </svg>
+                                    UNITS: {(track.unitsSold || 0).toLocaleString()}
+                                </span>
                                 <span style={{ color: '#444' }}>•</span>
                                 <span>{track.viewCount || 0} STREAMS</span>
                             </div>
