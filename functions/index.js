@@ -511,11 +511,16 @@ exports.approvePledge = onCall(async (request) => {
                     })
                 };
                 
-                if (pledgeData.isFilmmakerDonation) {
-                    updates["boxOfficeLedger.filmDonations"] = FieldValue.increment(splitEarnings);
+                // THE FIX: Incorporate Musician Box Office & Permanent Lifetime Units
+                if (pledgeData.isFilmmakerDonation || pledgeData.isMusicDonation) {
+                    const ledgerField = pledgeData.isMusicDonation ? "boxOfficeLedger.musicDonations" : "boxOfficeLedger.filmDonations";
+                    updates[ledgerField] = FieldValue.increment(splitEarnings);
                 } else {
                     updates.totalEarnings = FieldValue.increment(splitEarnings);
                 }
+                
+                // Track permanent earnings for Global Units Math
+                updates.lifetimeUnitEarnings = FieldValue.increment(splitEarnings);
                 transaction.update(memberDoc.ref, updates);
             });
         } else {
@@ -531,12 +536,31 @@ exports.approvePledge = onCall(async (request) => {
                 })
             };
 
-            if (pledgeData.isFilmmakerDonation) {
-                updates["boxOfficeLedger.filmDonations"] = FieldValue.increment(netAmount);
+            // THE FIX: Incorporate Musician Box Office & Permanent Lifetime Units
+            if (pledgeData.isFilmmakerDonation || pledgeData.isMusicDonation) {
+                const ledgerField = pledgeData.isMusicDonation ? "boxOfficeLedger.musicDonations" : "boxOfficeLedger.filmDonations";
+                updates[ledgerField] = FieldValue.increment(netAmount);
             } else {
                 updates.totalEarnings = FieldValue.increment(netAmount);
             }
+            
+            // Track permanent earnings for Global Units Math
+            updates.lifetimeUnitEarnings = FieldValue.increment(netAmount);
             transaction.update(recipientRef, updates);
+
+            // THE FIX: Update Units Sold on the specific piece of content (Showcase Donations)
+            if (pledgeData.targetContentId) {
+                const contentRef = db.collection("artifacts").doc("production-app-id").collection("public").doc("data").collection("content_items").doc(pledgeData.targetContentId);
+                const contentDoc = await transaction.get(contentRef);
+                if (contentDoc.exists) {
+                    const cData = contentDoc.data();
+                    const newTotal = (cData.donationsTotal || 0) + netAmount;
+                    transaction.update(contentRef, {
+                        donationsTotal: FieldValue.increment(netAmount),
+                        unitsSold: Math.floor(newTotal / 475) // Enforce $475 = 1 Unit rule
+                    });
+                }
+            }
         }
 
         if (pledgeData.competitionId && pledgeData.entryId) {
@@ -634,11 +658,26 @@ exports.approvePledge = onCall(async (request) => {
                 if (movieData.creatorId) {
                     const filmmakerRef = db.collection("creators").doc(movieData.creatorId);
                     const filmmakerNet = Math.round((ticketPrice * 0.85) * 100) / 100;
+                    
+                    // THE FIX: Route Ticket Sales properly between Filmmakers and Musicians
+                    const isMusic = movieData.type === 'musicVideoPremiere';
+                    const ledgerField = isMusic ? "musicTicketSales" : "ticketSales";
+                    
                     transaction.set(filmmakerRef, {
                         boxOfficeLedger: {
-                            ticketSales: FieldValue.increment(filmmakerNet)
-                        }
+                            [ledgerField]: FieldValue.increment(filmmakerNet)
+                        },
+                        lifetimeUnitEarnings: FieldValue.increment(filmmakerNet) // Permanent Global Units Tracker
                     }, { merge: true });
+
+                    // THE FIX: Calculate and stamp accurate Units Sold on the Content Document
+                    const currentContentEarnings = (movieData.ticketSalesTotal || 0) + (movieData.donationsTotal || 0);
+                    const newContentEarnings = currentContentEarnings + filmmakerNet;
+                    
+                    transaction.update(movieDoc.ref, {
+                        ticketSalesTotal: FieldValue.increment(filmmakerNet),
+                        unitsSold: Math.floor(newContentEarnings / 475) // Enforce $475 = 1 Unit rule
+                    });
                 }
             }
         }
@@ -7327,83 +7366,70 @@ exports.dailySystemMaintenance = onSchedule("0 3 * * *", async (event) => {
     return null;
 });
 
-// --- SECURE MONETIZATION SNAPSHOT & NOTIFICATION ENGINE ---
-exports.onMonetizationStatusChange = onDocumentUpdated("artifacts/{appId}/public/data/content_items/{contentId}", async (event) => {
-    const before = event.data.before.data();
-    const after = event.data.after.data();
-
-    // 1. Guard: Only run if status physically changed
-    if (before.monetizationStatus === after.monetizationStatus) return null;
+// --- SECURE MONETIZATION & SHOWCASE ENFORCER (1-ITEM LIMIT) ---
+exports.enforceSingleShowcaseItem = onDocumentWritten("artifacts/{appId}/public/data/content_items/{contentId}", async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return null; // Ignore Deletions
 
     const db = admin.firestore();
     const creatorId = after.creatorId;
     if (!creatorId) return null;
 
-    let notification = null;
+    // Detect if the item just became Free Showcase Active OR Monetized
+    const becameActive = after.isActive === true && (!event.data.before.exists || event.data.before.data().isActive !== true);
+    const becameMonetized = after.monetizationStatus === 'approved' && (!event.data.before.exists || event.data.before.data().monetizationStatus !== 'approved');
 
-    // 2. Logic: Handle Approved State (Securely dispatch notification)
-    if (after.monetizationStatus === 'approved') {
+    if (becameActive || becameMonetized) {
+        const contentRef = db.collection(`artifacts/${event.params.appId}/public/data/content_items`);
         
-        // === THE 1-MONETIZED-VIDEO-LIMIT FIX ===
-        try {
-            const contentRef = db.collection(`artifacts/${event.params.appId}/public/data/content_items`);
-            
-            // Find any OTHER monetized videos by this creator and strip the monetization badge
-            const otherMonetizedSnap = await contentRef
-                .where("creatorId", "==", creatorId)
-                .where("monetizationStatus", "==", "approved")
-                .get();
-            
-            if (!otherMonetizedSnap.empty) {
-                const batch = db.batch();
-                otherMonetizedSnap.forEach(docSnap => {
-                    if (docSnap.id !== event.params.contentId) {
-                        // Strip monetization from old content, but DO NOT touch their Showcase/isFeatured status!
-                        batch.update(docSnap.ref, { monetizationStatus: 'none', isMonetizationRequest: false });
-                    }
-                });
-                await batch.commit();
+        // Find ALL other items by this creator
+        const snapshot = await contentRef.where("creatorId", "==", creatorId).get();
+        
+        const batch = db.batch();
+        let updatesMade = false;
+
+        snapshot.forEach(docSnap => {
+            if (docSnap.id !== event.params.contentId) {
+                const data = docSnap.data();
+                let updates = {};
+
+                // Strip Active Status from old Free items
+                if (becameActive && data.isActive === true) {
+                    updates.isActive = false;
+                }
+                
+                // Strip Monetization Status from old Paid items
+                if (becameMonetized && data.monetizationStatus === 'approved') {
+                    updates.monetizationStatus = 'none';
+                    updates.isMonetizationRequest = false;
+                }
+
+                if (Object.keys(updates).length > 0) {
+                    batch.update(docSnap.ref, updates);
+                    updatesMade = true;
+                }
             }
-            
-            // We DO NOT auto-publish or alter isFeatured. The user has full control over their showcase!
-        } catch (err) {
-            logger.error(`Monetization cleanup failed for ${creatorId}:`, err);
+        });
+
+        if (updatesMade) {
+            await batch.commit();
         }
 
-        notification = {
-            userId: creatorId,
-            title: "Video Approved & Live! 🎬",
-            body: `Your video "${after.title}" has been approved for monetization and is now live!`,
-            link: "/CreatorDashboard",
-            deliveryType: ["inbox", "push"],
-            notificationType: "MONETIZATION_APPROVED",
-            timestamp: FieldValue.serverTimestamp() // SYNCED TO YOUR IMPORTS
-        };
-    } 
-    // 3. Logic: Handle Rejected State
-    else if (after.monetizationStatus === 'rejected') {
-        notification = {
-            userId: creatorId,
-            title: "Monetization Update",
-            body: `Your monetization request for "${after.title}" was not approved. The video remains private.`,
-            link: "/CreatorDashboard",
-            deliveryType: ["inbox"],
-            notificationType: "MONETIZATION_REJECTED",
-            timestamp: FieldValue.serverTimestamp() // SYNCED TO YOUR IMPORTS
-        };
-    }
-
-    // 4. Execution: Write Notification and Increment Badge securely from Backend
-    if (notification) {
-        const batch = db.batch();
-        const notifRef = db.collection("notifications").doc();
-        const userRef = db.collection("creators").doc(creatorId);
-
-        batch.set(notifRef, { ...notification, isRead: false, status: "pending" });
-        batch.update(userRef, { unreadNotificationCount: FieldValue.increment(1) });
-        
-        await batch.commit();
-        logger.info(`[Secure Monetization] Processed ${after.monetizationStatus} for ${creatorId}`);
+        // Dispatch Approval Notification
+        if (becameMonetized) {
+            await db.collection("notifications").add({
+                userId: creatorId,
+                title: "Video Approved & Live! 🎬",
+                body: `Your video "${after.title}" has been approved for monetization and is now live! Older showcase items have been archived.`,
+                link: "/CreatorDashboard",
+                deliveryType: ["inbox", "push"],
+                notificationType: "MONETIZATION_APPROVED",
+                isRead: false,
+                status: "pending",
+                timestamp: FieldValue.serverTimestamp()
+            });
+            await db.collection("creators").doc(creatorId).update({ unreadNotificationCount: FieldValue.increment(1) });
+        }
     }
     return null;
 });
@@ -8138,24 +8164,61 @@ exports.deletePayoutRecord = onCall({ enforceAppCheck: false }, async (request) 
 exports.getSystemFinancialReport = onCall({ enforceAppCheck: false }, async (request) => {
     if (!request.auth?.token?.admin) throw new HttpsError("permission-denied", "Admin only.");
 
-    const { startDate, endDate } = request.data;
+    const { startDate, endDate, targetUserId } = request.data;
     const db = admin.firestore();
+    const FEE_PERCENT = typeof PLATFORM_FEE_PERCENTAGE !== 'undefined' ? PLATFORM_FEE_PERCENTAGE : 0.15;
     
     // Friendly mapping for your itemized sections
     const SECTION_MAP = {
         'giftToken': 'Gifts & Donations',
         'competitionEntry': 'Casting Tournaments',
         'roastTokens': 'Roast Room Passes',
-        'eventTicket': 'Box Office Tickets'
+        'eventTicket': 'Box Office Tickets',
+        'musicVideoPremiere': 'Music Video Premieres', // THE FIX: Integrated Musician Category
+        'showcaseDonation': 'Showcase Donations'
     };
 
     try {
-        const q = db.collection("paymentPledges")
+        let q = db.collection("paymentPledges")
             .where("status", "==", "approved")
             .where("createdAt", ">=", startDate)
             .where("createdAt", "<=", endDate);
 
+        // THE FIX: Switch to targeted user query if requested
+        if (targetUserId) {
+            q = q.where("targetUserId", "==", targetUserId);
+        }
+
         const snapshot = await q.get();
+
+        // SCENARIO A: ITEMIZED INDIVIDUAL CREATOR REPORT
+        if (targetUserId) {
+            const itemizedList = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const gross = data.amount || 0;
+                const fee = Math.round((gross * FEE_PERCENT) * 100) / 100;
+                
+                itemizedList.push({
+                    id: doc.id,
+                    date: data.createdAt,
+                    type: SECTION_MAP[data.paymentType] || data.paymentType || 'Miscellaneous',
+                    buyerName: data.userName || (data.isAnonymous ? 'Anonymous' : 'Unknown User'),
+                    creatorName: data.targetActorName || 'Unknown Creator',
+                    title: data.campaignTitle || data.giftName || data.eventTitle || 'N/A',
+                    gross: gross,
+                    platformFee: fee,
+                    netPayout: gross - fee
+                });
+            });
+            // Returns sorted list (Newest first)
+            return { 
+                isItemized: true, 
+                data: itemizedList.sort((a, b) => new Date(b.date) - new Date(a.date)) 
+            };
+        }
+
+        // SCENARIO B: GLOBAL SYSTEM AGGREGATE REPORT
         const report = {
             grandTotalGross: 0,
             grandTotalRevenue: 0, // 15%
@@ -8167,7 +8230,7 @@ exports.getSystemFinancialReport = onCall({ enforceAppCheck: false }, async (req
         snapshot.forEach(doc => {
             const data = doc.data();
             const gross = data.amount || 0;
-            const revenue = Math.round((gross * PLATFORM_FEE_PERCENTAGE) * 100) / 100;
+            const revenue = Math.round((gross * FEE_PERCENT) * 100) / 100;
             const liability = gross - revenue;
             const type = data.paymentType || 'other';
             const sectionName = SECTION_MAP[type] || 'Miscellaneous';
@@ -8197,7 +8260,7 @@ exports.getSystemFinancialReport = onCall({ enforceAppCheck: false }, async (req
             report.grandTotalLiabilities += liability;
         });
 
-        return report;
+        return { isItemized: false, data: report };
     } catch (error) {
         throw new HttpsError("internal", error.message);
     }

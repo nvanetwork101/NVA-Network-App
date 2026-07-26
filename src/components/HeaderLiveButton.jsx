@@ -16,7 +16,6 @@ function HeaderLiveButton({ setActiveScreen, showMessage }) {
             if (docSnap.exists() && docSnap.data().status !== 'no_event_scheduled' && docSnap.data().eventId) {
                 const billboardData = docSnap.data();
                 
-                // Second listener: strictly check the master events collection to instantly react to deletions or edits
                 masterUnsubscribe = onSnapshot(doc(db, "events", billboardData.eventId), (masterDoc) => {
                     if (masterDoc.exists()) {
                         const data = masterDoc.data();
@@ -31,12 +30,26 @@ function HeaderLiveButton({ setActiveScreen, showMessage }) {
                             isLiveNow: data.status === 'live' 
                         });
                     } else {
-                        // Event was deleted from master library, instantly hide the header timer
                         setUpcomingEvent(null);
                     }
                 });
             } else {
-                setUpcomingEvent(null);
+                // THE FIX: Auto-fallback scans master events for the nearest upcoming premiere
+                const fallbackQuery = query(collection(db, "events"), where("status", "==", "upcoming"), limit(1));
+                masterUnsubscribe = onSnapshot(fallbackQuery, (snap) => {
+                    if (!snap.empty) {
+                        const docData = snap.docs[0].data();
+                        const sTime = docData.scheduledStartTime;
+                        const startTimeMs = sTime?.toMillis ? sTime.toMillis() : (sTime?.seconds ? sTime.seconds * 1000 : (typeof sTime === 'string' ? new Date(sTime).getTime() : 0));
+                        setUpcomingEvent({ 
+                            id: snap.docs[0].id, 
+                            ...docData, 
+                            extractedTimeMs: isNaN(startTimeMs) ? Date.now() + 3600000 : startTimeMs 
+                        });
+                    } else {
+                        setUpcomingEvent(null);
+                    }
+                });
             }
         });
 

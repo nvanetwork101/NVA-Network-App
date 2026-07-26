@@ -63,14 +63,15 @@ const AdminPayoutRequestScreen = ({ requests, showMessage, setShowConfirmationMo
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: '20px', padding: '10px' }}>
             {requests.map(req => {
                 const systemIdPreview = `NVA-REC-${req.id.slice(0, 8).toUpperCase()}`;
-                const isSweep = req.type === 'boxOfficeSweep';
+                const isSweep = req.type === 'boxOfficeSweep' || req.type === 'musicSweep';
+                const isMusicSweep = req.type === 'musicSweep';
 
                 return (
-                    <div key={req.id} style={{ background: '#111', border: isSweep ? '1px solid #00FFFF' : '1px solid #333', borderRadius: '12px', overflow: 'hidden' }}>
+                    <div key={req.id} style={{ background: '#111', border: isSweep ? (isMusicSweep ? '1px solid #32CD32' : '1px solid #00FFFF') : '1px solid #333', borderRadius: '12px', overflow: 'hidden' }}>
                         {/* Header: System Info - High Contrast */}
                         <div style={{ background: '#222', padding: '10px 15px', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #333' }}>
-                            <span style={{ color: isSweep ? '#00FFFF' : '#FFD700', fontSize: '11px', fontWeight: '900' }}>
-                                {isSweep ? '🎟️ INTERNAL LEDGER SWEEP' : `SYSTEM ID: ${systemIdPreview}`}
+                            <span style={{ color: isSweep ? (isMusicSweep ? '#32CD32' : '#00FFFF') : '#FFD700', fontSize: '11px', fontWeight: '900' }}>
+                                {isSweep ? (isMusicSweep ? '🎵 INTERNAL MUSIC SWEEP' : '🎟️ INTERNAL FILM SWEEP') : `SYSTEM ID: ${systemIdPreview}`}
                             </span>
                             <span style={{ color: '#FFF', fontSize: '11px', fontWeight: '700' }}>
                                 {req.requestedAt?.toDate ? new Date(req.requestedAt.toDate()).toLocaleString() : 'N/A'}

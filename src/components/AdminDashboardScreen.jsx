@@ -1,7 +1,7 @@
 // src/components/AdminDashboardScreen.jsx
 
 import React, { useState, useEffect } from 'react';
-import { db, functions, storage, ref, uploadBytes, getDownloadURL, httpsCallable, collection, onSnapshot, query, where, orderBy, doc, deleteDoc, updateDoc, setDoc, getDocs, getDoc, increment } from '../firebase';
+import { db, functions, storage, ref, uploadBytes, getDownloadURL, httpsCallable, collection, onSnapshot, query, where, orderBy, doc, deleteDoc, updateDoc, setDoc, getDocs, getDoc, increment, addDoc } from '../firebase';
 
 // --- Sub-Screens ---
 import AdminPayoutRequestScreen from './AdminPayoutRequestScreen';
@@ -61,6 +61,12 @@ const AdminDashboardScreen = ({
     const [monetizationQueue, setMonetizationQueue] = useState([]); 
     const [pendingPayouts, setPendingPayouts] = useState([]); 
     const [pendingAuctions, setPendingAuctions] = useState([]); 
+    const [pendingFilmsQueue, setPendingFilmsQueue] = useState([]); // THE FIX: Music Premieres & Films 
+    
+    // --- DECLINE MODAL STATES ---
+    const [declineModalItem, setDeclineModalItem] = useState(null);
+    const [declineReasonInput, setDeclineReasonInput] = useState('');
+    const [isDeclining, setIsDeclining] = useState(false); 
 
     // --- SYSTEM FINANCE HUB STATES ---
     const [systemReportData, setSystemReportData] = useState(null);
@@ -202,9 +208,9 @@ const AdminDashboardScreen = ({
         setIsGeneratingSystemReport(true);
         showMessage("Compiling system ledger...");
         try {
-            // Ingest all transactions for the designated timeframe
             const txQuery = query(
-                collection(db, "transactions"),
+                collection(db, "paymentPledges"),
+                where("status", "==", "approved"),
                 where("createdAt", ">=", financeStartDate),
                 where("createdAt", "<=", financeEndDate + 'T23:59:59Z')
             );
@@ -212,17 +218,20 @@ const AdminDashboardScreen = ({
             const parsedTransactions = txSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             setTransactionsList(parsedTransactions);
 
-            // Ingest all manual expenses recorded for the designated timeframe
-            const expQuery = query(
-                collection(db, "expenses"),
-                where("createdAt", ">=", financeStartDate),
-                where("createdAt", "<=", financeEndDate + 'T23:59:59Z')
-            );
-            const expSnap = await getDocs(expQuery);
-            const parsedExpenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setExpensesList(parsedExpenses);
+            let parsedExpenses = [];
+            try {
+                const expQuery = query(
+                    collection(db, "expenses"),
+                    where("createdAt", ">=", financeStartDate),
+                    where("createdAt", "<=", financeEndDate + 'T23:59:59Z')
+                );
+                const expSnap = await getDocs(expQuery);
+                parsedExpenses = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                setExpensesList(parsedExpenses);
+            } catch (expErr) {
+                console.warn("Expenses read skipped/blocked:", expErr.message);
+            }
 
-            // Math loop
             let sectionalData = {
                 centerstage: { count: 0, gross: 0, revenue: 0, staffCuts: 0 },
                 competitions: { count: 0, gross: 0, revenue: 0, staffCuts: 0 },
@@ -230,6 +239,7 @@ const AdminDashboardScreen = ({
                 film_club: { count: 0, gross: 0, revenue: 0, staffCuts: 0 },
                 box_office: { count: 0, gross: 0, revenue: 0, staffCuts: 0 },
                 roast_arena: { count: 0, gross: 0, revenue: 0, staffCuts: 0 },
+                music_premieres: { count: 0, gross: 0, revenue: 0, staffCuts: 0 },
                 explore_hub: { count: 0, gross: 0, revenue: 0, staffCuts: 0 }
             };
 
@@ -238,13 +248,20 @@ const AdminDashboardScreen = ({
             let staffCutsSum = 0;
 
             parsedTransactions.forEach(tx => {
-                const src = tx.source || 'explore_hub';
+                let src = 'explore_hub';
+                if (tx.paymentType === 'eventTicket') src = 'box_office';
+                else if (tx.paymentType === 'roastTokens') src = 'roast_arena';
+                else if (tx.paymentType === 'competitionEntry') src = 'competitions';
+                else if (tx.paymentType === 'musicVideoPremiere') src = 'music_premieres';
+                else if (tx.paymentType === 'giftToken' && tx.targetEventTitle) src = 'film_arena';
+                else if (tx.paymentType === 'giftToken' && tx.competitionId) src = 'centerstage';
+
                 if (!sectionalData[src]) {
                     sectionalData[src] = { count: 0, gross: 0, revenue: 0, staffCuts: 0 };
                 }
 
                 const grossVal = tx.amount || 0;
-                const netFee = grossVal * 0.15; // Platform cut
+                const netFee = grossVal * 0.15;
 
                 sectionalData[src].count += 1;
                 sectionalData[src].gross += grossVal;
@@ -253,7 +270,6 @@ const AdminDashboardScreen = ({
                 grossSum += grossVal;
                 revenueSum += netFee;
 
-                // Process active staff cuts from matrix
                 Object.entries(draftCommissions).forEach(([uid, setup]) => {
                     const commissionPercent = Number(setup[src] || 0) / 100;
                     const commissionValue = grossVal * commissionPercent;
@@ -428,6 +444,10 @@ const AdminDashboardScreen = ({
         // NEW: Bid Wars Approval Queue
         safeSubscribe(query(collection(db, "auctions"), where('status', '==', 'pending')), 
             (s) => setPendingAuctions(s.docs.map(d=>({id:d.id,...d.data()}))), 'pendingAuctions');
+
+        // NEW: Music Video & Film Premieres Queue
+        safeSubscribe(query(collection(db, "movieSuggestions"), where('status', '==', 'pending')), 
+            (s) => setPendingFilmsQueue(s.docs.map(d=>({id:d.id,...d.data()}))), 'pendingFilmsQueue');
 
         // Admin Only Data
         if (creatorProfile.role === 'admin' || creatorProfile.role === 'authority' || creatorProfile.role === 'super_admin') {
@@ -785,7 +805,7 @@ const AdminDashboardScreen = ({
     if (loading) return <div className="screenContainer" style={{ textAlign: 'center' }}><p className="heading">Loading Admin Data...</p></div>;
     
     // FIXED: Master count now includes Pledges, Opportunities, Monetization, Reports, and Appeals
-    const pendingOverviewCount = pendingPledges.length + pendingOpportunities.length + monetizationQueue.length + pendingReportsCount + pendingAppealsCount;
+    const pendingOverviewCount = pendingPledges.length + pendingOpportunities.length + monetizationQueue.length + pendingFilmsQueue.length + pendingReportsCount + pendingAppealsCount;
     
     return (
         <>
@@ -1124,6 +1144,7 @@ const AdminDashboardScreen = ({
                                             <th style={{ padding: '12px' }}>FILM CLUB</th>
                                             <th style={{ padding: '12px' }}>BOX OFFICE</th>
                                             <th style={{ padding: '12px' }}>ROAST ARENA</th>
+                                            <th style={{ padding: '12px' }}>MUSIC PREMIERES</th>
                                             <th style={{ padding: '12px' }}>EXPLORE HUB</th>
                                         </tr>
                                     </thead>
@@ -1134,7 +1155,7 @@ const AdminDashboardScreen = ({
                                                     <span style={{ color: '#FFF', fontWeight: 'bold', display: 'block' }}>{staff.creatorName}</span>
                                                     <span style={{ color: '#888', fontSize: '10px', textTransform: 'uppercase' }}>{staff.role}</span>
                                                 </td>
-                                                {['centerstage', 'competitions', 'film_arena', 'film_club', 'box_office', 'roast_arena', 'explore_hub'].map(col => (
+                                                {['centerstage', 'competitions', 'film_arena', 'film_club', 'box_office', 'roast_arena', 'music_premieres', 'explore_hub'].map(col => (
                                                     <td key={col} style={{ padding: '10px 6px' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center' }}>
                                                             <input 
@@ -1155,7 +1176,7 @@ const AdminDashboardScreen = ({
                                         {/* TOTAL COMMISSION VALIDATION HEADER TRACKER */}
                                         <tr style={{ background: '#161616', fontWeight: 'bold' }}>
                                             <td style={{ padding: '12px', color: '#FFF' }}>Sum Assigned (%):</td>
-                                            {['centerstage', 'competitions', 'film_arena', 'film_club', 'box_office', 'roast_arena', 'explore_hub'].map(col => {
+                                            {['centerstage', 'competitions', 'film_arena', 'film_club', 'box_office', 'roast_arena', 'music_premieres', 'explore_hub'].map(col => {
                                                 const total = getColumnTotal(col);
                                                 const isInvalid = total > 15;
                                                 return (
@@ -2000,6 +2021,98 @@ const AdminDashboardScreen = ({
                             )}
                         </section>
 
+                        {/* ====== MUSIC VIDEO & FILM PREMIERE REVIEW QUEUE ====== */}
+                        <section className="dashboardSection" style={{ border: '2px solid #32CD32', background: 'rgba(50, 205, 50, 0.02)', marginBottom: '24px' }}>
+                            <p className="dashboardSectionTitle" style={{ color: '#32CD32', margin: 0 }}>🎵 Live Music Premieres & Film Review Queue ({pendingFilmsQueue.length})</p>
+                            <p style={{ color: '#AAA', fontSize: '12px', margin: '8px 0 16px 0' }}>Review musician submissions, check virtual rooms, inspect posters, and approve live dates.</p>
+                            
+                            {pendingFilmsQueue.length > 0 ? (
+                                <div className="dashboardContentList">
+                                    {pendingFilmsQueue.map(item => (
+                                        <div key={item.id} className="adminDashboardItem" style={{ flexDirection: 'column', alignItems: 'stretch', background: '#111', padding: '16px', border: '1px solid #333', borderRadius: '12px', marginBottom: '12px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
+                                                <div style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
+                                                    <div style={{ width: '90px', aspectRatio: '1/1', background: '#000', borderRadius: '8px', overflow: 'hidden', border: '1px solid #32CD32', flexShrink: 0 }}>
+                                                        <img src={item.songPosterUrl || item.posterUrl || 'https://placehold.co/100'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Poster" />
+                                                    </div>
+                                                    <div>
+                                                        <p style={{ margin: 0, fontWeight: '900', fontSize: '18px', color: '#FFF' }}>{item.title}</p>
+                                                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#32CD32', fontWeight: 'bold' }}>
+                                                            Artist: {item.suggestedByName || 'Musician'} <span style={{ color: '#666', fontFamily: 'monospace' }}>(UID: {item.suggestedBy})</span>
+                                                        </p>
+                                                        <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#AAA' }}>Genre: {item.genre} | Room: <strong style={{ color: '#FFF' }}>{item.room || 'Room 1'}</strong></p>
+                                                        {item.premiereDate && <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#FFD700' }}>📅 Scheduled: {new Date(item.premiereDate).toLocaleString()}</p>}
+                                                        {item.isTicketed && <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#00FFFF', fontWeight: 'bold' }}>🎟️ Ticket Price: {item.ticketPrice} GYD</p>}
+                                                    </div>
+                                                </div>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    {item.videoUrl && (
+                                                        <button className="adminActionButton" style={{ background: '#222', border: '1px solid #444', color: '#FFF' }} onClick={() => window.open(item.videoUrl, '_blank')}>
+                                                            👁️ Preview Link
+                                                        </button>
+                                                    )}
+                                                    <button 
+                                                        type="button" 
+                                                        className="adminActionButton reject" 
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            setDeclineModalItem(item);
+                                                            setDeclineReasonInput('');
+                                                        }}
+                                                    >
+                                                        Decline
+                                                    </button>
+                                                    <button className="adminActionButton approve" style={{ background: '#32CD32', color: '#000', border: 'none', fontWeight: '900' }} onClick={async () => {
+                                                        try {
+                                                            // 1. Move to Live Movies/Events Collection
+                                                            await addDoc(collection(db, "movies"), {
+                                                                title: item.title,
+                                                                genre: item.genre,
+                                                                credits: item.credits || '',
+                                                                videoUrl: item.videoUrl || '',
+                                                                posterUrl: item.songPosterUrl || item.posterUrl || '',
+                                                                type: item.type || 'musicVideoPremiere',
+                                                                isTicketed: item.isTicketed || false,
+                                                                ticketPrice: item.ticketPrice || '0',
+                                                                premiereDate: item.premiereDate || null,
+                                                                room: item.room || 'Room 1',
+                                                                creatorId: item.suggestedBy,
+                                                                creatorName: item.suggestedByName,
+                                                                createdAt: new Date().toISOString()
+                                                            });
+
+                                                            // 2. Remove from Suggestions Queue
+                                                            await deleteDoc(doc(db, "movieSuggestions", item.id));
+
+                                                            // 3. Dispatch Live Approval Notification
+                                                            await addDoc(collection(db, "notifications"), {
+                                                                userId: item.suggestedBy,
+                                                                title: "Music Premiere Approved! 🎵",
+                                                                body: `Your music video "${item.title}" has been approved for Live Premiere in ${item.room || 'Room 1'}!`,
+                                                                link: "/CreatorDashboard",
+                                                                deliveryType: ["inbox", "push"],
+                                                                notificationType: "PREMIERE_APPROVED",
+                                                                isRead: false,
+                                                                status: "pending",
+                                                                timestamp: new Date()
+                                                            });
+                                                            await updateDoc(doc(db, "creators", item.suggestedBy), { unreadNotificationCount: increment(1) });
+
+                                                            showMessage("🎉 Premiere Approved & Live Event Created!");
+                                                        } catch (err) { showMessage("Approval error: " + err.message); }
+                                                    }}>Approve Premiere</button>
+                                                </div>
+                                            </div>
+                                            {item.credits && <p style={{ margin: '12px 0 0 0', fontSize: '11px', color: '#888', borderTop: '1px solid #222', paddingTop: '8px' }}>Credits: {item.credits}</p>}
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p style={{ color: '#888', fontSize: '13px' }}>No music video premieres pending review.</p>
+                            )}
+                        </section>
+
                         {/* PENDING PLEDGES */}
                         {/* THE FIX: Expand role check to include super_admin so the review queue renders properly */}
                         {(creatorProfile.role === 'admin' || creatorProfile.role === 'super_admin') && (
@@ -2361,6 +2474,65 @@ const AdminDashboardScreen = ({
                                 <p style={{ color: '#666', fontSize: '12px', fontStyle: 'italic' }}>No approved earnings recorded for this month.</p>
                             )}
 
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* IN-APP PREMIERE DECLINE MODAL (FORCED HIGH Z-INDEX) */}
+            {declineModalItem && (
+                <div 
+                    onClick={() => setDeclineModalItem(null)}
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', zIndex: 999999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', boxSizing: 'border-box' }}
+                >
+                    <div className="modal-content" style={{ maxWidth: '440px', border: '1px solid #DC3545', background: '#0a0a0a' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <p className="modal-title" style={{ color: '#DC3545', fontSize: '18px', fontWeight: '900' }}>Decline Premiere Submission</p>
+                            <button className="modal-close-button" onClick={() => setDeclineModalItem(null)}>&times;</button>
+                        </div>
+                        <div className="modal-body" style={{ padding: '20px' }}>
+                            <p style={{ color: '#FFF', fontSize: '14px', fontWeight: 'bold', margin: '0 0 8px 0' }}>
+                                Declining: "{declineModalItem.title}"
+                            </p>
+                            <p style={{ color: '#AAA', fontSize: '12px', margin: '0 0 15px 0', lineHeight: '1.4' }}>
+                                Please specify why this submission is being declined. This reason will be sent directly to the creator's inbox notification.
+                            </p>
+                            <textarea 
+                                className="cs-input" 
+                                style={{ minHeight: '90px', margin: '0 0 20px 0', width: '100%', padding: '10px', boxSizing: 'border-box' }}
+                                placeholder="e.g. Audio quality issue, poster missing, or schedule conflict..."
+                                value={declineReasonInput}
+                                onChange={(e) => setDeclineReasonInput(e.target.value)}
+                            />
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <button className="adminActionButton" style={{ flex: 1, background: '#222', color: '#FFF', border: '1px solid #444' }} onClick={() => setDeclineModalItem(null)}>Cancel</button>
+                                <button className="adminActionButton reject" style={{ flex: 1.5, margin: 0 }} disabled={!declineReasonInput.trim() || isDeclining} onClick={async () => {
+                                    setIsDeclining(true);
+                                    try {
+                                        await deleteDoc(doc(db, "movieSuggestions", declineModalItem.id));
+                                        await addDoc(collection(db, "notifications"), {
+                                            userId: declineModalItem.suggestedBy,
+                                            title: "Premiere Submission Declined",
+                                            body: `Your submission "${declineModalItem.title}" was declined. Reason: ${declineReasonInput}`,
+                                            link: "/CreatorDashboard",
+                                            deliveryType: ["inbox"],
+                                            notificationType: "PREMIERE_DECLINED",
+                                            isRead: false,
+                                            status: "pending",
+                                            timestamp: new Date()
+                                        });
+                                        await updateDoc(doc(db, "creators", declineModalItem.suggestedBy), { unreadNotificationCount: increment(1) });
+                                        showMessage("Submission declined & notification sent.");
+                                        setDeclineModalItem(null);
+                                    } catch (err) {
+                                        showMessage("Error declining: " + err.message);
+                                    } finally {
+                                        setIsDeclining(false);
+                                    }
+                                }}>
+                                    {isDeclining ? 'Processing...' : 'Confirm Decline'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

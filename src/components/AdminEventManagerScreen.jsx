@@ -526,9 +526,10 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
                                 <div className="card-meta-line">
                                     <div className="mobile-label" style={{ fontSize: '11px', color: '#666', fontWeight: '900', textTransform: 'uppercase' }}>Event Title</div>
                                     <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', textAlign: 'right' }}>
+                                        {event.type === 'musicVideoPremiere' && <span style={{backgroundColor: '#32CD32', color: '#000', fontSize: '9px', fontWeight: '900', padding: '2px 6px', borderRadius: '3px'}} title="Music Premiere">🎵 MUSIC</span>}
                                         {event.isPinned && <span style={{color: '#FFD700'}} title="Pinned to Cinemas">📌</span>}
                                         {event.isNowShowingFree && <span style={{backgroundColor: '#00FF00', color: '#000', fontSize: '9px', padding: '2px 4px', borderRadius: '3px'}} title="Global Free Entry">🔓 FREE</span>}
-                                        <span>{event.eventTitle}</span>
+                                        <span>{event.eventTitle || event.title}</span>
                                     </div>
                                 </div>
 

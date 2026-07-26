@@ -8,9 +8,15 @@ service cloud.firestore {
 
     // --- SECURE, ZERO-COST SYSTEM HIERARCHY HELPERS (Exempt from 10-Get limit) ---
     function isAuthenticated() { return request.auth != null; }
-    function isSuperAdmin() { return isAuthenticated() && request.auth.token.super_admin == true; }
-    function isAdmin() { return isAuthenticated() && (request.auth.token.admin == true || isSuperAdmin()); }
-    function isModerator() { return isAuthenticated() && (request.auth.token.authority == true || request.auth.token.moderator == true || isAdmin()); }
+    function isSuperAdmin() { 
+      return isAuthenticated() && (request.auth.token.super_admin == true || get(/databases/$(database)/documents/creators/$(request.auth.uid)).data.get('role', 'user') == 'super_admin'); 
+    }
+    function isAdmin() { 
+      return isAuthenticated() && (request.auth.token.admin == true || isSuperAdmin() || get(/databases/$(database)/documents/creators/$(request.auth.uid)).data.get('role', 'user') == 'admin'); 
+    }
+    function isModerator() { 
+      return isAuthenticated() && (request.auth.token.authority == true || request.auth.token.moderator == true || isAdmin() || get(/databases/$(database)/documents/creators/$(request.auth.uid)).data.get('role', 'user') == 'authority'); 
+    }
 
     match /eventComments/{commentId} {
       allow read: if true;
@@ -42,7 +48,7 @@ service cloud.firestore {
             'followingCount', 'blockedUsers', 'blockedBy', 'studioGallery',
             'currentChallengeLink', 'currentChallengeThumbnail', 'teamTag',
             'competitionStatus', 'isEliminated', 'isContestant',
-            'isLive', 'liveRoomType', 'latestNotification', 'heroProduct', 'arenaTokens'
+            'isLive', 'liveRoomType', 'latestNotification', 'heroProduct', 'arenaTokens', 'payoutLockUntil'
           ]) &&
           (
             (request.resource.data.get('role', 'user') == resource.data.get('role', 'user')) ||
@@ -284,7 +290,7 @@ service cloud.firestore {
     match /movieSuggestions/{suggestionId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && request.resource.data.suggestedBy == request.auth.uid;
-      allow update, delete: if isAuthenticated() && (isAdmin() || isModerator());
+      allow update, delete: if isAuthenticated() && (isAdmin() || isModerator() || resource.data.suggestedBy == request.auth.uid);
     }
 
     match /promotedStatuses/{statusId} {

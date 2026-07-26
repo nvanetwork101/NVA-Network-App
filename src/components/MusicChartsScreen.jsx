@@ -6,12 +6,43 @@ import { db } from '../firebase';
 
 function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, showMessage }) {
     const [tracks, setTracks] = useState([]);
+    const [premieres, setPremieres] = useState([]); // THE FIX: Music Video Premieres State
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         const fetchMusicCharts = async () => {
             try {
-                // Queries the live library strictly for "Music" categorized content
+                // 1. Query Upcoming & Active Live Music Premieres (Self-Healing Sync)
+                const premieresQuery = query(
+                    collection(db, 'movies'),
+                    where('type', '==', 'musicVideoPremiere'),
+                    limit(10)
+                );
+                const premieresSnap = await getDocs(premieresQuery);
+                const fetchedPremieres = await Promise.all(premieresSnap.docs.map(async (docSnap) => {
+                    const data = docSnap.data();
+                    const itemId = docSnap.id;
+                    
+                    // Self-healing check: ensure event doc exists so comments never fail
+                    try {
+                        const eventRef = doc(db, "events", itemId);
+                        const eventDoc = await getDoc(eventRef);
+                        if (!eventDoc.exists()) {
+                            await setDoc(eventRef, {
+                                eventTitle: data.title || 'Music Premiere',
+                                scheduledStartTime: data.premiereDate ? new Date(data.premiereDate) : new Date(),
+                                status: 'upcoming',
+                                room: data.room || 'Room 1',
+                                creatorId: data.creatorId
+                            });
+                        }
+                    } catch (e) {}
+
+                    return { id: itemId, ...data };
+                }));
+                setPremieres(fetchedPremieres);
+
+                // 2. Queries the live library strictly for "Music" categorized content
                 const collectionRef = collection(db, 'artifacts/production-app-id/public/data/content_items');
                 const q = query(
                     collectionRef,
@@ -107,6 +138,102 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                 <p style={{ margin: '10px 0 0', color: '#888', fontSize: '14px', letterSpacing: '2px', textTransform: 'uppercase' }}>
                     The most streamed music on the network
                 </p>
+            </div>
+
+            {/* ====== THE STUDIO PREMIERE STAGE (DISTINCT GREEN TRAY) ====== */}
+            {premieres.length > 0 && (
+                <div style={{ maxWidth: '800px', margin: '25px auto 10px', padding: '0 20px' }}>
+                    <div style={{ background: 'rgba(50, 205, 50, 0.03)', border: '1px solid #32CD32', borderRadius: '20px', padding: '20px', boxShadow: '0 0 30px rgba(50, 205, 50, 0.1)' }}>
+                        <p style={{ color: '#32CD32', fontSize: '14px', fontWeight: '900', letterSpacing: '3px', textTransform: 'uppercase', margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            🎵 THE STUDIO: UPCOMING LIVE PREMIERES
+                        </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                        {premieres.map((prem) => {
+                            const isLive = prem.premiereDate && new Date() >= new Date(prem.premiereDate);
+                            const shareUrl = `${window.location.origin}/content/${prem.id}`;
+
+                            return (
+                                <div 
+                                    key={prem.id}
+                                    style={{ 
+                                        position: 'relative',
+                                        background: 'linear-gradient(135deg, rgba(10,30,15,0.95) 0%, rgba(5,15,5,0.98) 100%)',
+                                        border: '1px solid #32CD32',
+                                        borderRadius: '16px',
+                                        padding: '16px',
+                                        boxShadow: '0 10px 30px rgba(50, 205, 50, 0.15)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '20px',
+                                        flexWrap: 'wrap'
+                                    }}
+                                >
+                                    {/* Song Poster */}
+                                    <div style={{ width: '100px', height: '100px', borderRadius: '12px', overflow: 'hidden', border: '2px solid #32CD32', flexShrink: 0, position: 'relative' }}>
+                                        <img src={prem.posterUrl || prem.songPosterUrl || 'https://placehold.co/100'} alt={prem.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    </div>
+
+                                    {/* Main Info */}
+                                    <div style={{ flex: 1, minWidth: '220px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                            <span style={{ background: isLive ? '#DC3545' : '#32CD32', color: '#000', fontSize: '9px', fontWeight: '900', padding: '2px 8px', borderRadius: '100px', textTransform: 'uppercase' }}>
+                                                {isLive ? '🔴 LIVE NOW' : `🔒 ${prem.isTicketed ? `${prem.ticketPrice} GYD` : 'FREE NOW'}`}
+                                            </span>
+                                            <span style={{ color: '#AAA', fontSize: '11px', fontWeight: 'bold' }}>{prem.room || 'Room 1'}</span>
+                                        </div>
+
+                                        <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#FFF' }}>{prem.title}</h3>
+                                        <p style={{ margin: '2px 0 8px 0', fontSize: '13px', color: '#32CD32', fontWeight: 'bold' }}>{prem.creatorName || prem.suggestedByName || 'Musician'}</p>
+
+                                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', fontSize: '11px', color: '#888' }}>
+                                            <span>📅 {prem.premiereDate ? new Date(prem.premiereDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Scheduled'}</span>
+                                            <span>•</span>
+                                            <span style={{ color: '#00FFFF', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                                📀 {prem.unitsSold || Math.floor(((prem.ticketSalesTotal || 0) + (prem.donationsTotal || 0)) / 475)} Units Sold
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Buttons: Comments & Share */}
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px' }}>
+                                        <button 
+                                            onClick={() => {
+                                                window.dispatchEvent(new CustomEvent('openCommentsModal', {
+                                                    detail: { item: prem, itemType: 'event' }
+                                                }));
+                                            }}
+                                            style={{ background: '#1A1A1A', border: '1px solid #333', color: '#FFF', padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        >
+                                            💬 Comments
+                                        </button>
+
+                                        <button 
+                                            onClick={async () => {
+                                                if (navigator.share) {
+                                                    navigator.share({ title: prem.title, text: `Watch the Live Music Premiere of ${prem.title} on NVA Network!`, url: shareUrl }).catch(() => {});
+                                                } else {
+                                                    await navigator.clipboard.writeText(shareUrl);
+                                                    showMessage("Premiere link copied!");
+                                                }
+                                            }}
+                                            style={{ background: '#32CD32', color: '#000', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                        >
+                                            🔗 Share Premiere
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        )}
+
+            {/* ====== DISTINCT CHART START DIVIDER ====== */}
+            <div style={{ maxWidth: '800px', margin: '30px auto 15px', textAlign: 'center', borderTop: '1px solid #333', paddingTop: '20px' }}>
+                <span style={{ background: '#050505', color: '#FFD700', padding: '6px 20px', borderRadius: '20px', border: '1px solid #FFD700', fontSize: '12px', fontWeight: '900', letterSpacing: '3px', textTransform: 'uppercase', boxShadow: '0 0 15px rgba(255,215,0,0.2)' }}>
+                    🏆 OFFICIAL NVA HOT 50 CHART 🏆
+                </span>
             </div>
 
             {/* HERO: The Number 1 Spot */}
