@@ -153,9 +153,10 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
     // Resolve exact database comment path based on VOD/Event Type
     const collectionPath = useMemo(() => {
         if (!liveContentItem?.id) return null;
-        return itemType === 'event'
-            ? `events/${liveContentItem.id}/comments`
-            : `artifacts/production-app-id/public/data/content_items/${liveContentItem.id}/comments`;
+        const targetId = liveContentItem.originalContentId || liveContentItem.id;
+        return itemType === 'event' || liveContentItem.originalContentId
+            ? `events/${targetId}/comments`
+            : `artifacts/production-app-id/public/data/content_items/${targetId}/comments`;
     }, [liveContentItem, itemType]);
 
     // Real-time listener with Pagination (Limit 10)
@@ -177,8 +178,8 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
         try {
             const postCommentFunction = httpsCallable(functions, 'postComment');
             await postCommentFunction({
-                itemId: liveContentItem.id,
-                itemType: itemType,
+                itemId: liveContentItem.originalContentId || liveContentItem.id,
+                itemType: liveContentItem.originalContentId ? 'event' : itemType,
                 text: newCommentText.trim(),
                 replyTo: replyingTo || null
             });
@@ -196,8 +197,8 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
         try {
             const delCommentFunction = httpsCallable(functions, 'deleteComment');
             await delCommentFunction({
-                itemId: liveContentItem.id,
-                itemType: itemType,
+                itemId: liveContentItem.originalContentId || liveContentItem.id,
+                itemType: liveContentItem.originalContentId ? 'event' : itemType,
                 commentId: commentId
             });
         } catch (error) {
@@ -211,8 +212,8 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
         try {
             const likeCommentFunction = httpsCallable(functions, 'likeComment');
             await likeCommentFunction({
-                itemId: liveContentItem.id,
-                itemType: itemType,
+                itemId: liveContentItem.originalContentId || liveContentItem.id,
+                itemType: liveContentItem.originalContentId ? 'event' : itemType,
                 commentId: commentId
             });
         } catch (error) {

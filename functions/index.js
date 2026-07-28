@@ -1132,8 +1132,8 @@ exports.recalibrateAllCounts = onCall(async (request) => {
         ...contentData,
         creatorId: uid,
         createdAt: new Date().toISOString(),
-        viewCount: 0,
-        likeCount: 0,
+        viewCount: contentData.viewCount || 0,
+        likeCount: contentData.likeCount || 0,
         isFeatured: false, // Reverted: Must be manually featured by the creator
         isActive: contentData.isActive !== undefined ? contentData.isActive : true,
     };

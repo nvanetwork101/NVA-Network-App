@@ -72,7 +72,19 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
                 if (id) window.dispatchEvent(new CustomEvent('navigateToOpportunity', { detail: { id: id } }));
                 break;
             case 'content':
-                if (id) window.dispatchEvent(new CustomEvent('navigateToContent', { detail: { id: id, openComments: true } }));
+                if (id) window.dispatchEvent(new CustomEvent('navigateToContent', { detail: { id: id, openComments: true, type: notification.type || notification.notificationType } }));
+                break;
+            case 'premiere':
+                if (id) {
+                    sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
+                    sessionStorage.setItem('nva_target_premiere_event_id', id);
+                    window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' }));
+                    window.dispatchEvent(new CustomEvent('setPremiereActiveEvent', { detail: { eventId: id } }));
+                    setActiveScreen('Discover');
+                } else {
+                    sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
+                    setActiveScreen('Discover');
+                }
                 break;
             case 'competition':
                 setActiveScreen('CompetitionScreen');
