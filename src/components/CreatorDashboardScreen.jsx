@@ -3198,7 +3198,18 @@ const CreatorDashboardScreen = ({
                                             await Promise.all(deactivatePromises);
                                         }
 
-                                        // 1. Save to Content Library with FULL METRIC RETENTION (Views, Likes, Revenue, Units & Comment Link)
+                                        // 1. Fetch live metrics from events doc before publishing to prevent metric wipe
+                                        let liveEvtData = {};
+                                        try {
+                                            const liveEvtSnap = await getDoc(doc(db, "events", publishTargetItem.id));
+                                            if (liveEvtSnap.exists()) liveEvtData = liveEvtSnap.data();
+                                        } catch (e) {}
+
+                                        const realViews = liveEvtData.totalViewCount || liveEvtData.viewCount || publishTargetItem.viewCount || publishTargetItem.totalViewCount || 0;
+                                        const realLikes = liveEvtData.likeCount || publishTargetItem.likeCount || 0;
+                                        const realTix = liveEvtData.ticketSalesTotal || publishTargetItem.ticketSalesTotal || 0;
+                                        const realDons = liveEvtData.donationsTotal || publishTargetItem.donationsTotal || 0;
+
                                         const libraryItem = {
                                             title: publishTargetItem.title || 'Untitled',
                                             creatorId: safeCreatorId,
@@ -3212,11 +3223,11 @@ const CreatorDashboardScreen = ({
                                             contentType: cType,
                                             isActive: publishOption === 'showcase', 
                                             monetizationStatus: publishOption === 'monetize' ? 'pending' : 'none',
-                                            viewCount: publishTargetItem.viewCount || publishTargetItem.totalViewCount || 0,
-                                            likeCount: publishTargetItem.likeCount || 0,
-                                            ticketSalesTotal: publishTargetItem.ticketSalesTotal || 0,
-                                            donationsTotal: publishTargetItem.donationsTotal || 0,
-                                            unitsSold: publishTargetItem.unitsSold || Math.floor(((publishTargetItem.ticketSalesTotal || 0) + (publishTargetItem.donationsTotal || 0)) / 475),
+                                            viewCount: realViews,
+                                            likeCount: realLikes,
+                                            ticketSalesTotal: realTix,
+                                            donationsTotal: realDons,
+                                            unitsSold: Math.floor((realTix + realDons) / 475),
                                             originalContentId: publishTargetItem.id, // Preserves live comments & history
                                             createdAt: new Date()
                                         };

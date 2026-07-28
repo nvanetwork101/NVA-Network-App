@@ -787,9 +787,20 @@ useEffect(() => {
                 if (type === 'VIDEO_APPROVED') {
                     setActiveScreen('CreatorDashboard'); 
                     showMessage("🎉 Your video is now LIVE & Monetized!");
+                    return;
                 }
 
-                handleVideoPress(contentData.embedUrl || contentData.mainUrl || contentData.liveStreamUrl, contentData);
+                // FIX: Detect live premieres and route directly to the Premieres Waiting Room
+                const isPremiereOrLive = contentData.status === 'live' || contentData.status === 'upcoming' || contentData.type === 'musicVideoPremiere' || contentData.type === 'premiere' || contentData.room;
+                if (isPremiereOrLive) {
+                    sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
+                    sessionStorage.setItem('nva_target_premiere_event_id', contentData.id);
+                    window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' }));
+                    window.dispatchEvent(new CustomEvent('setPremiereActiveEvent', { detail: { eventId: contentData.id } }));
+                    setActiveScreen('Discover');
+                } else {
+                    handleVideoPress(contentData.embedUrl || contentData.mainUrl || contentData.liveStreamUrl, contentData);
+                }
             } else {
                 showMessage("Content no longer available.");
             }
