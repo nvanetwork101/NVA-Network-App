@@ -52,7 +52,7 @@ const DynamicThumbnail = ({ item, onClick }) => {
     );
 };
 
-// --- NVA AUTHORITATIVE SYNC PLAYER (CLEAN NATIVE CONTROLS) ---
+// --- NVA AUTHORITATIVE SYNC PLAYER (SHIELDED) ---
 const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUser, isUnlocked }) => {
     const urlRef = useRef('');
     const lastEventIdRef = useRef(null);
@@ -77,15 +77,16 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
         if (isFacebook) {
             const encodedFbUrl = encodeURIComponent(streamUrl);
             const timeParam = elapsedSeconds > 0 ? `&t=${elapsedSeconds}` : '';
-            url = `https://www.facebook.com/plugins/video.php?href=${encodedFbUrl}&show_text=false&autoplay=true&mute=1${timeParam}`;
+            url = `https://www.facebook.com/plugins/video.php?href=${encodedFbUrl}&show_text=false&autoplay=true&mute=0${timeParam}`;
         } else {
             const extracted = extractVideoInfo(streamUrl);
             const embedUrl = extracted ? extracted.embedUrl : streamUrl;
             if (embedUrl) {
                 const separator = embedUrl.includes('?') ? '&' : '?';
-                // FIX: Removed JS shielding. Forced controls=1 so users can tap native unmute safely across all devices.
+                const controls = isModUser ? '1' : '0';
+                const disablekb = isModUser ? '0' : '1';
                 const startParam = elapsedSeconds > 0 ? `&start=${elapsedSeconds}` : '';
-                url = `${embedUrl}${separator}autoplay=1&mute=1&controls=1&disablekb=0&modestbranding=1&rel=0&loop=0&enablejsapi=1${startParam}`;
+                url = `${embedUrl}${separator}autoplay=1&mute=0&controls=${controls}&disablekb=${disablekb}&modestbranding=1&rel=0&loop=0&enablejsapi=1${startParam}`;
             }
         }
         urlRef.current = url;
@@ -94,13 +95,19 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
 
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#000' }}>
+            {/* Overlay blocks clicks and locks controls until unlocked by Admin */}
+            {!isUnlocked && (
+                <div 
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, cursor: 'default' }} 
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} 
+                />
+            )}
             <iframe
                 key={`nva-sync-player-${eventId}`} 
                 src={urlRef.current}
                 className="w-full h-full border-0"
-                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                allow="autoplay; encrypted-media; picture-in-picture"
                 allowFullScreen
-                x-webkit-airplay="allow"
                 title="Live Premiere"
                 style={{ width: '100%', height: '100%', pointerEvents: 'auto' }} 
             ></iframe>
