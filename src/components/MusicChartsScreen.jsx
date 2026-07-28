@@ -1,13 +1,19 @@
 // src/components/MusicChartsScreen.jsx
 
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, getDocs, limit } from "firebase/firestore";
+import { collection, query, where, orderBy, getDocs, limit, doc, getDoc, setDoc, deleteDoc, updateDoc } from "firebase/firestore";
 import { db } from '../firebase';
 
-function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, showMessage }) {
+function MusicChartsScreen({ setActiveScreen, currentUser, creatorProfile, handleVideoPress, showMessage }) {
     const [tracks, setTracks] = useState([]);
     const [premieres, setPremieres] = useState([]); // THE FIX: Music Video Premieres State
     const [loading, setLoading] = useState(true);
+    const [nowTime, setNowTime] = useState(Date.now());
+
+    useEffect(() => {
+        const timer = setInterval(() => setNowTime(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, []);
 
     useEffect(() => {
         const fetchMusicCharts = async () => {
@@ -30,17 +36,40 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                         if (!eventDoc.exists()) {
                             await setDoc(eventRef, {
                                 eventTitle: data.title || 'Music Premiere',
+                                eventDescription: data.credits || 'Live Music Video Premiere',
+                                liveStreamUrl: data.videoUrl || '',
+                                thumbnailUrl: data.posterUrl || data.songPosterUrl || '',
                                 scheduledStartTime: data.premiereDate ? new Date(data.premiereDate) : new Date(),
                                 status: 'upcoming',
                                 room: data.room || 'Room 1',
-                                creatorId: data.creatorId
+                                creatorId: data.creatorId || data.suggestedBy || '',
+                                creatorName: data.creatorName || data.suggestedByName || 'Musician',
+                                isTicketed: !!data.isTicketed,
+                                ticketPrice: Number(data.ticketPrice) || 0
                             });
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.error("Error healing event doc:", e);
+                    }
 
                     return { id: itemId, ...data };
                 }));
-                setPremieres(fetchedPremieres);
+                
+                // THE FIX: Automatically hide premieres post-duration & sort earliest scheduled date first
+                const nowMs = Date.now();
+                const activePremieres = fetchedPremieres
+                    .filter(p => {
+                        const pTime = p.premiereDate ? (p.premiereDate.toMillis ? p.premiereDate.toMillis() : new Date(p.premiereDate).getTime()) : 0;
+                        const durSecs = Number(p.durationTotalSec) || 0;
+                        const windowMs = durSecs > 0 ? (durSecs * 1000) : (15 * 60 * 1000);
+                        return pTime === 0 || nowMs < (pTime + windowMs);
+                    })
+                    .sort((a, b) => {
+                        const tA = a.premiereDate ? (a.premiereDate.toMillis ? a.premiereDate.toMillis() : new Date(a.premiereDate).getTime()) : 0;
+                        const tB = b.premiereDate ? (b.premiereDate.toMillis ? b.premiereDate.toMillis() : new Date(b.premiereDate).getTime()) : 0;
+                        return tA - tB; // Earliest premiere date first
+                    });
+                setPremieres(activePremieres);
 
                 // 2. Queries the live library strictly for "Music" categorized content
                 const collectionRef = collection(db, 'artifacts/production-app-id/public/data/content_items');
@@ -149,7 +178,8 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                         </p>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                         {premieres.map((prem) => {
-                            const isLive = prem.premiereDate && new Date() >= new Date(prem.premiereDate);
+                            const pTime = prem.premiereDate ? (prem.premiereDate.toMillis ? prem.premiereDate.toMillis() : new Date(prem.premiereDate).getTime()) : 0;
+                            const isLive = pTime > 0 && nowTime >= pTime;
                             const shareUrl = `${window.location.origin}/content/${prem.id}`;
 
                             return (
@@ -157,52 +187,97 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                                     key={prem.id}
                                     style={{ 
                                         position: 'relative',
-                                        background: 'linear-gradient(135deg, rgba(10,30,15,0.95) 0%, rgba(5,15,5,0.98) 100%)',
-                                        border: '1px solid #32CD32',
-                                        borderRadius: '16px',
-                                        padding: '16px',
-                                        boxShadow: '0 10px 30px rgba(50, 205, 50, 0.15)',
+                                        background: 'linear-gradient(135deg, rgba(8, 25, 12, 0.95) 0%, rgba(2, 10, 4, 0.98) 100%)',
+                                        border: '1px solid rgba(50, 205, 50, 0.4)',
+                                        borderRadius: '18px',
+                                        padding: '18px',
+                                        boxShadow: '0 12px 35px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255, 255, 255, 0.1), 0 0 20px rgba(50, 205, 50, 0.15)',
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: '20px',
-                                        flexWrap: 'wrap'
+                                        flexWrap: 'wrap',
+                                        backdropFilter: 'blur(12px)',
+                                        WebkitBackdropFilter: 'blur(12px)'
                                     }}
                                 >
-                                    {/* Song Poster */}
-                                    <div style={{ width: '100px', height: '100px', borderRadius: '12px', overflow: 'hidden', border: '2px solid #32CD32', flexShrink: 0, position: 'relative' }}>
-                                        <img src={prem.posterUrl || prem.songPosterUrl || 'https://placehold.co/100'} alt={prem.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    {/* Cinematic Poster Frame with Glass Accent */}
+                                    <div style={{ width: '110px', height: '110px', borderRadius: '14px', overflow: 'hidden', border: '2px solid #32CD32', flexShrink: 0, position: 'relative', boxShadow: '0 8px 20px rgba(0,0,0,0.6)' }}>
+                                        <img src={prem.posterUrl || prem.songPosterUrl || 'https://placehold.co/110'} alt={prem.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 60%)' }} />
                                     </div>
 
                                     {/* Main Info */}
                                     <div style={{ flex: 1, minWidth: '220px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                                            <span style={{ background: isLive ? '#DC3545' : '#32CD32', color: '#000', fontSize: '9px', fontWeight: '900', padding: '2px 8px', borderRadius: '100px', textTransform: 'uppercase' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                                            <span style={{ 
+                                                background: isLive ? 'linear-gradient(90deg, #DC3545, #FF4500)' : 'linear-gradient(90deg, #32CD32, #20B2AA)', 
+                                                color: isLive ? '#FFF' : '#000', 
+                                                fontSize: '9px', 
+                                                fontWeight: '900', 
+                                                padding: '3px 10px', 
+                                                borderRadius: '100px', 
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '1px',
+                                                boxShadow: isLive ? '0 0 12px rgba(220, 53, 69, 0.6)' : '0 0 10px rgba(50, 205, 50, 0.4)'
+                                            }}>
                                                 {isLive ? '🔴 LIVE NOW' : `🔒 ${prem.isTicketed ? `${prem.ticketPrice} GYD` : 'FREE NOW'}`}
                                             </span>
-                                            <span style={{ color: '#AAA', fontSize: '11px', fontWeight: 'bold' }}>{prem.room || 'Room 1'}</span>
+                                            <span style={{ color: '#00FFFF', fontSize: '11px', fontWeight: 'bold', background: 'rgba(0,255,255,0.08)', padding: '2px 8px', borderRadius: '6px', border: '1px solid rgba(0,255,255,0.2)' }}>
+                                                📍 {prem.room || 'Room 1'}
+                                            </span>
                                         </div>
 
-                                        <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: '#FFF' }}>{prem.title}</h3>
-                                        <p style={{ margin: '2px 0 8px 0', fontSize: '13px', color: '#32CD32', fontWeight: 'bold' }}>{prem.creatorName || prem.suggestedByName || 'Musician'}</p>
+                                        <h3 style={{ margin: 0, fontSize: '22px', fontWeight: '900', color: '#FFF', letterSpacing: '0.5px', textShadow: '0 2px 10px rgba(0,0,0,0.8)' }}>{prem.title}</h3>
+                                        <p style={{ margin: '3px 0 10px 0', fontSize: '13px', color: '#32CD32', fontWeight: '800', letterSpacing: '0.5px' }}>{prem.creatorName || prem.suggestedByName || 'Musician'}</p>
 
-                                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', fontSize: '11px', color: '#888' }}>
-                                            <span>📅 {prem.premiereDate ? new Date(prem.premiereDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Scheduled'}</span>
+                                        <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap', fontSize: '12px', color: '#888' }}>
+                                            {(() => {
+                                                const diff = pTime - nowTime;
+                                                let countdownStr = 'SCHEDULED';
+                                                if (pTime > 0) {
+                                                    if (diff <= 0) {
+                                                        countdownStr = '🔴 LIVE NOW';
+                                                    } else {
+                                                        const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                                        const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+                                                        const m = Math.floor((diff / (1000 * 60)) % 60);
+                                                        const s = Math.floor((diff / 1000) % 60);
+                                                        countdownStr = `⏳ ${d > 0 ? d + 'd ' : ''}${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+                                                    }
+                                                }
+                                                return (
+                                                    <span style={{ color: diff <= 0 && pTime > 0 ? '#DC3545' : '#FFD700', fontWeight: '900', fontVariantNumeric: 'tabular-nums', textShadow: '0 0 10px rgba(255,215,0,0.3)' }}>
+                                                        {countdownStr}
+                                                    </span>
+                                                );
+                                            })()}
                                             <span>•</span>
-                                            <span style={{ color: '#00FFFF', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                            <span style={{ color: '#00FFFF', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px', textShadow: '0 0 8px rgba(0,255,255,0.3)' }}>
                                                 📀 {prem.unitsSold || Math.floor(((prem.ticketSalesTotal || 0) + (prem.donationsTotal || 0)) / 475)} Units Sold
                                             </span>
                                         </div>
                                     </div>
 
-                                    {/* Action Buttons: Comments & Share */}
-                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px' }}>
+                                    {/* Action Buttons: Enter Waiting Room, Comments, Share & Staff Take Down */}
+                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', width: '100%', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '14px', flexWrap: 'wrap' }}>
+                                        <button 
+                                            onClick={() => {
+                                                sessionStorage.setItem('nva_target_premiere_event_id', prem.id);
+                                                sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
+                                                setActiveScreen('Discover');
+                                            }}
+                                            style={{ background: 'linear-gradient(90deg, #32CD32 0%, #20B2AA 100%)', color: '#000', border: 'none', padding: '10px 20px', borderRadius: '10px', fontSize: '12px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 0 15px rgba(50, 205, 50, 0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}
+                                        >
+                                            🍿 Enter Theater
+                                        </button>
+
                                         <button 
                                             onClick={() => {
                                                 window.dispatchEvent(new CustomEvent('openCommentsModal', {
                                                     detail: { item: prem, itemType: 'event' }
                                                 }));
                                             }}
-                                            style={{ background: '#1A1A1A', border: '1px solid #333', color: '#FFF', padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                            style={{ background: '#1A1A1A', border: '1px solid #333', color: '#FFF', padding: '10px 18px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                                         >
                                             💬 Comments
                                         </button>
@@ -216,10 +291,37 @@ function MusicChartsScreen({ setActiveScreen, currentUser, handleVideoPress, sho
                                                     showMessage("Premiere link copied!");
                                                 }
                                             }}
-                                            style={{ background: '#32CD32', color: '#000', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.2)', color: '#FFF', padding: '10px 18px', borderRadius: '10px', fontSize: '12px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                                         >
-                                            🔗 Share Premiere
+                                            🔗 Share
                                         </button>
+
+                                        {/* Staff Take Down Button */}
+                                        {['super_admin', 'admin', 'authority', 'moderator'].includes(creatorProfile?.role) && (
+                                            <button 
+                                                onClick={async () => {
+                                                    if (window.confirm(`TAKE DOWN PREMIERE?\nAre you sure you want to remove "${prem.title}" and place a 72-hour payout lock on the artist?`)) {
+                                                        try {
+                                                            await deleteDoc(doc(db, "movies", prem.id));
+                                                            try { await deleteDoc(doc(db, "events", prem.id)); } catch (e) {}
+                                                            
+                                                            const artistId = prem.creatorId || prem.suggestedBy;
+                                                            if (artistId) {
+                                                                const lockUntil = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+                                                                await updateDoc(doc(db, "creators", artistId), { payoutLockUntil: lockUntil });
+                                                            }
+                                                            setPremieres(prev => prev.filter(p => p.id !== prem.id));
+                                                            showMessage("Premiere taken down and 72-hour payout lock applied.");
+                                                        } catch (err) {
+                                                            showMessage("Failed to take down premiere: " + err.message);
+                                                        }
+                                                    }
+                                                }}
+                                                style={{ background: 'rgba(220, 53, 69, 0.2)', color: '#DC3545', border: '1px solid #DC3545', padding: '10px 18px', borderRadius: '10px', fontSize: '11px', fontWeight: '900', cursor: 'pointer', marginLeft: 'auto', textTransform: 'uppercase' }}
+                                            >
+                                                🚫 Staff Take Down
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             );

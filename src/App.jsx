@@ -315,8 +315,21 @@ function App() {
   }, []);
 
   const handleVideoPress = useCallback((url, item) => {
+    if (!item) return;
+    // THE FIX: Universal Metadata Normalizer for Live Streams, Films & Replays
+    const normalizedItem = {
+        ...item,
+        title: item.title || item.eventTitle || 'Untitled Production',
+        description: item.description || item.eventDescription || item.synopsis || item.credits || '',
+        synopsis: item.synopsis || item.eventDescription || '',
+        credits: item.credits || '',
+        genre: item.genre || item.contentType || 'General',
+        creatorName: item.creatorName || item.suggestedByName || item.postedByName || 'NVA Artist',
+        imageUrl: item.customThumbnailUrl || item.imageUrl || item.thumbnailUrl || item.posterUrl || '',
+        customThumbnailUrl: item.customThumbnailUrl || item.imageUrl || item.thumbnailUrl || item.posterUrl || ''
+    };
     setCurrentVideoUrl(url);
-    setCurrentContentItem(item);
+    setCurrentContentItem(normalizedItem);
     setShowVideoModal(true);
   }, []);
 

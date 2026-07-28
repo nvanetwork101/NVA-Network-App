@@ -236,11 +236,13 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
 
     const handleDeleteEvent = (event) => {
         setConfirmationTitle("Delete Event?");
-        setConfirmationMessage(`Are you sure you want to permanently delete the event: "${event.eventTitle}"? This cannot be undone.`);
+        setConfirmationMessage(`Are you sure you want to permanently delete the event: "${event.eventTitle || event.title}"? This cannot be undone.`);
         setOnConfirmationAction(() => async () => {
             try {
+                // Purge from both events and movies collections simultaneously to clear User Dashboard
                 await deleteDoc(doc(db, "events", event.id));
-                showMessage("Event deleted successfully.");
+                await deleteDoc(doc(db, "movies", event.id)).catch(() => {});
+                showMessage("Event deleted successfully from all systems.");
             } catch (error) {
                 showMessage(`Error: ${error.message}`);
             }
@@ -525,11 +527,18 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
                                 {/* Title Header */}
                                 <div className="card-meta-line">
                                     <div className="mobile-label" style={{ fontSize: '11px', color: '#666', fontWeight: '900', textTransform: 'uppercase' }}>Event Title</div>
-                                    <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', textAlign: 'right' }}>
-                                        {event.type === 'musicVideoPremiere' && <span style={{backgroundColor: '#32CD32', color: '#000', fontSize: '9px', fontWeight: '900', padding: '2px 6px', borderRadius: '3px'}} title="Music Premiere">🎵 MUSIC</span>}
-                                        {event.isPinned && <span style={{color: '#FFD700'}} title="Pinned to Cinemas">📌</span>}
-                                        {event.isNowShowingFree && <span style={{backgroundColor: '#00FF00', color: '#000', fontSize: '9px', padding: '2px 4px', borderRadius: '3px'}} title="Global Free Entry">🔓 FREE</span>}
-                                        <span>{event.eventTitle || event.title}</span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                        <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', justifyContent: 'flex-end' }}>
+                                            {event.type === 'musicVideoPremiere' && <span style={{backgroundColor: '#32CD32', color: '#000', fontSize: '9px', fontWeight: '900', padding: '2px 6px', borderRadius: '3px'}} title="Music Premiere">🎵 MUSIC</span>}
+                                            {event.isPinned && <span style={{color: '#FFD700'}} title="Pinned to Cinemas">📌</span>}
+                                            {event.isNowShowingFree && <span style={{backgroundColor: '#00FF00', color: '#000', fontSize: '9px', padding: '2px 4px', borderRadius: '3px'}} title="Global Free Entry">🔓 FREE</span>}
+                                            <span>{event.eventTitle || event.title}</span>
+                                        </div>
+                                        {(event.creatorName || event.suggestedByName || event.credits) && (
+                                            <span style={{ fontSize: '11px', color: '#32CD32', fontWeight: 'bold', marginTop: '2px' }}>
+                                                by {event.creatorName || event.suggestedByName || event.credits}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
 

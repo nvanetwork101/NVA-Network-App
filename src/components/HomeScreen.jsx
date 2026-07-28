@@ -29,6 +29,21 @@ import CompetitionHomeScreenBanner from './CompetitionHomeScreenBanner';
     const [blockList, setBlockList] = useState(new Set());
     const [realtimeContent, setRealtimeContent] = useState(new Map());
     const [newCastingCount, setNewCastingCount] = useState(0);
+    const [algoTrending, setAlgoTrending] = useState([]); // NEW: Algorithmic Trending State
+
+    // NEW: Real-time intelligent algorithmic trending listener (Cost: capped at max 10 reads)
+    useEffect(() => {
+        const q = query(
+            collection(db, "artifacts/production-app-id/public/data/content_items"), 
+            where("isActive", "==", true), 
+            orderBy("viewCount", "desc"), 
+            limit(10)
+        );
+        const unsub = onSnapshot(q, (snap) => {
+            setAlgoTrending(snap.docs.map(doc => ({ id: doc.id, type: 'internal', contentId: doc.id, ...doc.data() })));
+        });
+        return () => unsub();
+    }, []);
 
     useEffect(() => {
         const lastSeen = parseInt(localStorage.getItem('last_viewed_casting') || '0');
@@ -170,15 +185,27 @@ import CompetitionHomeScreenBanner from './CompetitionHomeScreenBanner';
             }
         }
 
-        // 2. Get manual items, filter out any that are already in the slots, and sort them.
-        const manualTrendingItems = rawLayout.trendingItems || [];
-        const uniqueManualItems = manualTrendingItems
-            .filter(item => !slotIds.has(item.contentId)) // The crucial change: filter the manual list
-            .sort((a, b) => (a.orderIndex || 999) - (b.orderIndex || 999));
+        // 2. INTELLIGENT TRENDING: Use algorithmic feed, filter out Admin slot duplicates
+        const uniqueAlgoItems = algoTrending.filter(item => !slotIds.has(item.contentId));
 
-        // 3. Combine the lists: The 6 ordered slots FIRST, then the sorted unique manual items.
-        const combinedTrending = [...slotItems, ...uniqueManualItems];
-        const enrichedTrending = enrich(combinedTrending); // No final sort is needed here
+        // 3. Combine the lists: Enriched Admin slots FIRST, then fully-loaded algorithmic items
+        const enrichedSlots = enrich(slotItems);
+        const combinedTrending = [...enrichedSlots, ...uniqueAlgoItems];
+        
+        // FLAWLESS DEDUPLICATION: Final shield against duplicate IDs and duplicate Creators
+        const seenIds = new Set();
+        const seenCreators = new Set();
+        const enrichedTrending = combinedTrending.filter(item => {
+            const idToCheck = item.id || item.contentId;
+            const creatorKey = item.creatorId || item.userId || item.creatorName;
+
+            if (seenIds.has(idToCheck)) return false;
+            if (creatorKey && seenCreators.has(creatorKey)) return false; // Enforces 1 item per creator
+
+            seenIds.add(idToCheck);
+            if (creatorKey) seenCreators.add(creatorKey);
+            return true;
+        });
 
         // --- Process "Featured" section as before ---
         const enrichedFeatured = enrich(rawLayout.featuredItems || []).sort((a, b) => (a.orderIndex || 99) - (b.orderIndex || 99));
@@ -193,7 +220,7 @@ import CompetitionHomeScreenBanner from './CompetitionHomeScreenBanner';
         setDisplayFeatured(finalLayout.featured.length > 3 ? [...finalLayout.featured, ...finalLayout.featured.slice(0, 3)] : finalLayout.featured);
         setIsLayoutLoading(false);
 
-    }, [rawLayout, rawAutomatedSlots, realtimeContent]);
+    }, [rawLayout, rawAutomatedSlots, realtimeContent, algoTrending]);
 
     useEffect(() => {
         const carousel = horizontalCarouselRef.current;

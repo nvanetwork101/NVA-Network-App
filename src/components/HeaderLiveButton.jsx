@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, collection, query, where, limit, orderBy } from "firebase/firestore";
 import { db } from '../firebase'; 
 
-function HeaderLiveButton({ setActiveScreen, showMessage }) {
+function HeaderLiveButton({ setActiveScreen, showMessage, isLive }) {
     const [upcomingEvent, setUpcomingEvent] = useState(null);
     const [eventTimeLeft, setEventTimeLeft] = useState('');
     const [eventIsLive, setEventIsLive] = useState(false);
@@ -34,18 +34,28 @@ function HeaderLiveButton({ setActiveScreen, showMessage }) {
                     }
                 });
             } else {
-                // THE FIX: Auto-fallback scans master events for the nearest upcoming premiere
-                const fallbackQuery = query(collection(db, "events"), where("status", "==", "upcoming"), limit(1));
+                // Priority scan for active live events first, then fall back to upcoming
+                const fallbackQuery = query(collection(db, "events"), where("status", "in", ["upcoming", "live"]), limit(10));
                 masterUnsubscribe = onSnapshot(fallbackQuery, (snap) => {
                     if (!snap.empty) {
-                        const docData = snap.docs[0].data();
-                        const sTime = docData.scheduledStartTime;
-                        const startTimeMs = sTime?.toMillis ? sTime.toMillis() : (sTime?.seconds ? sTime.seconds * 1000 : (typeof sTime === 'string' ? new Date(sTime).getTime() : 0));
-                        setUpcomingEvent({ 
-                            id: snap.docs[0].id, 
-                            ...docData, 
-                            extractedTimeMs: isNaN(startTimeMs) ? Date.now() + 3600000 : startTimeMs 
+                        const allEvents = snap.docs.map(d => {
+                            const data = d.data();
+                            const sTime = data.scheduledStartTime;
+                            const startTimeMs = sTime?.toMillis ? sTime.toMillis() : (sTime?.seconds ? sTime.seconds * 1000 : (typeof sTime === 'string' ? new Date(sTime).getTime() : 0));
+                            return {
+                                id: d.id,
+                                ...data,
+                                extractedTimeMs: isNaN(startTimeMs) ? Date.now() + 3600000 : startTimeMs,
+                                isLiveNow: data.status === 'live'
+                            };
                         });
+                        const liveActive = allEvents.find(e => e.status === 'live');
+                        if (liveActive) {
+                            setUpcomingEvent(liveActive);
+                        } else {
+                            allEvents.sort((a, b) => a.extractedTimeMs - b.extractedTimeMs);
+                            setUpcomingEvent(allEvents[0] || null);
+                        }
                     } else {
                         setUpcomingEvent(null);
                     }
@@ -96,15 +106,16 @@ function HeaderLiveButton({ setActiveScreen, showMessage }) {
         };
 
         updateTimer(); 
-        const interval = setInterval(updateTimer, 60000); 
+        const interval = setInterval(updateTimer, 1000); // Ticks every second
         return () => clearInterval(interval);
-    }, [upcomingEvent, showMessage]);
+    }, [upcomingEvent, showMessage, isLive]);
 
-    // ABSOLUTE AUTHORITY: If there is no event on the Billboard, render absolutely nothing.
-    if (!upcomingEvent || !eventTimeLeft) return null; 
+    const activeCountdown = isLive ? 'LIVE NOW!' : eventTimeLeft;
+    const activeIsLive = isLive || eventIsLive || upcomingEvent?.status === 'live' || upcomingEvent?.isLiveNow;
 
-    const activeCountdown = eventTimeLeft;
-    const activeIsLive = eventIsLive;
+    // ABSOLUTE AUTHORITY: Render ONLY when a live premiere is actively in progress or global isLive is true
+    if (!activeIsLive) return null; 
+    if (!isLive && (!upcomingEvent || !eventTimeLeft)) return null;
 
     return (
         <div 

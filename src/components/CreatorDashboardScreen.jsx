@@ -342,7 +342,7 @@ const CreatorDashboardScreen = ({
     const [showStudioModal, setShowStudioModal] = useState(false);
     const [isSubmittingMusic, setIsSubmittingMusic] = useState(false);
     const [isUploadingSongPoster, setIsUploadingSongPoster] = useState(false);
-    const [musicForm, setMusicForm] = useState({ title: '', genre: 'Afrobeats', credits: '', videoUrl: '', songPosterUrl: '', isTicketed: false, ticketPrice: '500', premiereDate: '', room: 'Room 1', termsAccepted: false });
+    const [musicForm, setMusicForm] = useState({ title: '', genre: 'Afrobeats', credits: '', videoUrl: '', songPosterUrl: '', isTicketed: false, ticketPrice: '500', premiereDate: '', durationMinutes: '3', durationSeconds: '30', room: 'Room 1', termsAccepted: false });
 
     // --- POST-PREMIERE PUBLISHING MODAL STATES ---
     const [showPublishModal, setShowPublishModal] = useState(false);
@@ -2182,10 +2182,10 @@ const CreatorDashboardScreen = ({
                         <div style={{ marginTop: '20px', borderTop: '1px solid rgba(255,215,0,0.2)', paddingTop: '15px' }}>
                             
                             {/* SECTION A: PENDING APPROVAL */}
-                            {myPendingFilms.length > 0 && (
+                            {myPendingFilms.filter(f => f.type !== 'musicVideoPremiere').length > 0 && (
                                 <div style={{ marginBottom: '20px' }}>
                                     <p style={{ color: '#FFD700', fontSize: '11px', fontWeight: 'bold', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>⌛ Awaiting Admin Approval</p>
-                                    {myPendingFilms.map(film => (
+                                    {myPendingFilms.filter(f => f.type !== 'musicVideoPremiere').map(film => (
                                         <div key={film.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,215,0,0.03)', padding: '10px 15px', borderRadius: '8px', marginBottom: '8px', border: '1px dashed rgba(255,215,0,0.2)' }}>
                                             <div>
                                                 <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '13px' }}>{film.title}</p>
@@ -2197,75 +2197,73 @@ const CreatorDashboardScreen = ({
                                 </div>
                             )}
 
-                            {/* SECTION B: LIVE ARENA FILMS */}
+                           {/* SECTION B: LIVE ARENA FILMS */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                                 <p style={{ color: '#FFF', fontSize: '11px', fontWeight: 'bold', margin: 0, textTransform: 'uppercase', letterSpacing: '1px' }}>🎬 My Live Arena Films</p>
-                                <p style={{ color: '#888', fontSize: '10px', margin: 0 }}>Studio Capacity: {myArenaFilms.length} / 20</p>
+                                <p style={{ color: '#888', fontSize: '10px', margin: 0 }}>Studio Capacity: {myArenaFilms.filter(f => f.type !== 'musicVideoPremiere').length} / 20</p>
                             </div>
 
-                            {myArenaFilms.length > 0 ? (
-                                myArenaFilms.map(film => (
-                                    <div key={film.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0a0a', padding: '10px 15px', borderRadius: '8px', marginBottom: '8px', border: '1px solid #333' }}>
-                                        <div>
-                                            <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>{film.title}</p>
-                                            <p style={{ margin: '2px 0 0 0', color: '#AAA', fontSize: '11px' }}>
-                                                {film.type === 'premiere' ? '🎟️ Live Premiere (Ticketed)' : film.type === 'donation' ? '🎁 Public Film Arena (Donations)' : '🎬 Free Public Showcase'}
-                                            </p>
-                                        </div>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            {/* THE FIX: Render Publish button if premiere is finished */}
-                                            {(film.type === 'premiere' || film.type === 'musicVideoPremiere') && film.premiereDate && new Date() > new Date(film.premiereDate) && (
+                            {myArenaFilms.filter(f => f.type !== 'musicVideoPremiere').length > 0 ? (
+                                myArenaFilms.filter(f => f.type !== 'musicVideoPremiere').map(film => {
+                                    const pTime = film.premiereDate ? (film.premiereDate.toMillis ? film.premiereDate.toMillis() : new Date(film.premiereDate).getTime()) : 0;
+                                    const isFiveHoursPost = pTime > 0 && (Date.now() > (pTime + (5 * 60 * 60 * 1000)));
+                                    const canPublish = film.type === 'premiere' && (film.status === 'completed' || isFiveHoursPost);
+
+                                    return (
+                                        <div key={film.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0a0a', padding: '10px 15px', borderRadius: '8px', marginBottom: '8px', border: '1px solid #333' }}>
+                                            <div>
+                                                <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>{film.title}</p>
+                                                <p style={{ margin: '2px 0 0 0', color: '#AAA', fontSize: '11px' }}>
+                                                    {film.type === 'premiere' ? '🎟️ Live Premiere (Ticketed)' : film.type === 'donation' ? '🎁 Public Film Arena (Donations)' : '🎬 Free Public Showcase'}
+                                                </p>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                {canPublish && (
+                                                    <button 
+                                                        onClick={() => { setPublishTargetItem(film); setShowPublishModal(true); }}
+                                                        style={{ background: '#FFD700', color: '#000', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: '900', cursor: 'pointer' }}
+                                                    >
+                                                        🚀 Publish
+                                                    </button>
+                                                )}
                                                 <button 
                                                     onClick={() => {
-                                                        setPublishTargetItem(film);
-                                                        setShowPublishModal(true);
+                                                        setEditingFilmId(film.id);
+                                                        setOriginalFilmType(film.type);
+                                                        setFilmForm({ title: film.title, genre: film.genre || 'Drama', synopsis: film.synopsis, credits: film.credits || '', videoUrl: film.videoUrl || '', trailerUrl: film.trailerUrl || '', posterUrl: film.posterUrl, type: film.type, premiereDate: film.premiereDate || '', room: film.room || 'Room 1' });
+                                                        setShowFilmOfficeModal(true);
                                                     }}
-                                                    style={{ background: '#FFD700', color: '#000', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: '900', cursor: 'pointer' }}
+                                                    style={{ background: '#222', color: '#FFF', border: '1px solid #444', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
                                                 >
-                                                    🚀 Publish
+                                                    Edit
                                                 </button>
-                                            )}
-                                            <button 
-                                                onClick={() => {
-                                                    setEditingFilmId(film.id);
-                                                    setOriginalFilmType(film.type);
-                                                    setFilmForm({ title: film.title, genre: film.genre || 'Drama', synopsis: film.synopsis, credits: film.credits || '', videoUrl: film.videoUrl || '', trailerUrl: film.trailerUrl || '', posterUrl: film.posterUrl, type: film.type, premiereDate: film.premiereDate || '', room: film.room || 'Room 1' });
-                                                    setShowFilmOfficeModal(true);
-                                                }}
-                                                style={{ background: '#222', color: '#FFF', border: '1px solid #444', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-                                            >
-                                                Edit
-                                            </button>
-                                            <button 
-                                                onClick={() => {
-                                                    setConfirmationTitle("Take Down Film?");
-                                                    setConfirmationMessage(`Are you sure you want to permanently remove "${film.title}" from the Live Arena?`);
-                                                    setOnConfirmationAction(() => async () => {
-                                                        try {
-                                                            // THE FIX: If it's a premiere, stamp the user profile before deletion
-                                                            if (film.type === 'premiere' && film.premiereDate) {
-                                                                const premiereTime = new Date(film.premiereDate).getTime();
-                                                                const lockUntil = new Date(premiereTime + (72 * 60 * 60 * 1000));
-                                                                // Only stamp if the 72-hour window hasn't passed yet
-                                                                if (Date.now() < lockUntil.getTime()) {
-                                                                    await updateDoc(doc(db, "creators", currentUser.uid), {
-                                                                        payoutLockUntil: lockUntil.toISOString()
-                                                                    });
+                                                <button 
+                                                    onClick={() => {
+                                                        setConfirmationTitle("Take Down Film?");
+                                                        setConfirmationMessage(`Are you sure you want to permanently remove "${film.title}" from the Live Arena?`);
+                                                        setOnConfirmationAction(() => async () => {
+                                                            try {
+                                                                if (film.type === 'premiere' && film.premiereDate) {
+                                                                    const premiereTime = new Date(film.premiereDate).getTime();
+                                                                    const lockUntil = new Date(premiereTime + (72 * 60 * 60 * 1000));
+                                                                    if (Date.now() < lockUntil.getTime()) {
+                                                                        await updateDoc(doc(db, "creators", currentUser.uid), { payoutLockUntil: lockUntil.toISOString() });
+                                                                    }
                                                                 }
-                                                            }
-                                                            await deleteDoc(doc(db, "movies", film.id));
-                                                            showMessage("Film taken down. Box Office remains locked for audit period.");
-                                                        } catch (err) { showMessage("Failed to take down film: " + err.message); }
-                                                    });
-                                                    setShowConfirmationModal(true);
-                                                }} 
-                                                style={{ background: 'rgba(220,53,69,0.15)', color: '#DC3545', border: '1px solid #DC3545', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-                                            >
-                                                Take Down
-                                            </button>
+                                                                await deleteDoc(doc(db, "movies", film.id));
+                                                                showMessage("Film taken down. Box Office remains locked for audit period.");
+                                                            } catch (err) { showMessage("Failed to take down film: " + err.message); }
+                                                        });
+                                                        setShowConfirmationModal(true);
+                                                    }} 
+                                                    style={{ background: 'rgba(220,53,69,0.15)', color: '#DC3545', border: '1px solid #DC3545', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                                                >
+                                                    Take Down
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                ))
+                                    );
+                                })
                             ) : (
                                 <div style={{ textAlign: 'center', padding: '20px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid #222' }}>
                                     <p style={{ color: '#555', fontSize: '12px', margin: 0 }}>You have no live films in the Arena. Use the button above to submit your first production!</p>
@@ -2275,17 +2273,115 @@ const CreatorDashboardScreen = ({
                     </div>
                 )}
 
-                {/* FILM CLUB RENEWAL (Rendered neatly inside its own card below the grid if active) */}
+                {/* FILM CLUB RENEWAL */}
                 {creatorProfile?.isFilmClub && !creatorProfile?.badges?.includes("Gold Club") && (globalConfig?.filmClubOpen || globalConfig?.allowRenewals) && (
                     <div className="wallet-card" style={{ background: 'rgba(0, 255, 255, 0.02)', border: '1px solid rgba(0, 255, 255, 0.2)', padding: '15px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
                         <p style={{ fontSize: '11px', color: '#00FFFF', fontWeight: 'bold', margin: 0, letterSpacing: '0.05em' }}>FILM CLUB SUBSCRIPTION</p>
-                        <button 
-                            className="button" 
-                            onClick={() => setActiveScreen('EnrollmentPayment')} 
-                            style={{ margin: 0, padding: '5px 12px', fontSize: '11px', backgroundColor: 'transparent', border: '1px solid #00FFFF', color: '#00FFFF' }}
-                        >
-                            Renew Membership
-                        </button>
+                        <button className="button" onClick={() => setActiveScreen('EnrollmentPayment')} style={{ margin: 0, padding: '5px 12px', fontSize: '11px', backgroundColor: 'transparent', border: '1px solid #00FFFF', color: '#00FFFF' }}>Renew Membership</button>
+                    </div>
+                )}
+
+                {/* ====== THE STUDIO: MUSICIAN EXCLUSIVE HUB ====== */}
+                {(creatorProfile?.creatorField?.toLowerCase().trim() === 'musician' || creatorProfile?.role === 'admin' || creatorProfile?.role === 'super_admin') && (
+                    <div className="glass-panel" style={{ background: 'linear-gradient(180deg, rgba(10,30,15,0.9) 0%, rgba(5,15,5,0.95) 100%)', border: '1px solid rgba(50, 205, 50, 0.4)', marginBottom: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.05)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                            <div>
+                                <p style={{ margin: 0, color: '#32CD32', fontSize: '18px', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>🎵 The Studio</p>
+                                <p style={{ margin: '4px 0 0 0', color: '#AAA', fontSize: '12px' }}>Dedicated Music Premiere Hub. Schedule live video premieres and track ticket sales.</p>
+                            </div>
+                            <button className="modern-button" style={{ background: '#32CD32', color: '#000', border: 'none', padding: '10px 20px', fontWeight: '900', borderRadius: '8px', cursor: 'pointer', boxShadow: '0 0 15px rgba(50, 205, 50, 0.4)' }} onClick={() => { setEditingFilmId(null); setMusicForm({ title: '', genre: 'Afrobeats', credits: '', videoUrl: '', songPosterUrl: '', isTicketed: false, ticketPrice: '500', premiereDate: '', room: 'Room 1', termsAccepted: false }); setShowStudioModal(true); }}>
+                                + PREMIERE MUSIC VIDEO
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px', marginBottom: '20px' }}>
+                            <div style={{ background: 'rgba(50, 205, 50, 0.05)', border: '1px solid rgba(50, 205, 50, 0.2)', padding: '15px', borderRadius: '12px' }}>
+                                <p style={{ color: '#32CD32', fontSize: '11px', fontWeight: '900', margin: '0 0 5px 0' }}>MUSIC BOX OFFICE: TICKET SALES</p>
+                                <p style={{ color: '#FFF', fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{(creatorProfile?.boxOfficeLedger?.musicTicketSales || 0).toLocaleString()} <span style={{fontSize:'12px', color:'#888'}}>GYD</span></p>
+                            </div>
+                            <div style={{ background: 'rgba(0, 255, 255, 0.05)', border: '1px solid rgba(0, 255, 255, 0.2)', padding: '15px', borderRadius: '12px' }}>
+                                <p style={{ color: '#00FFFF', fontSize: '11px', fontWeight: '900', margin: '0 0 5px 0' }}>MUSIC VIDEO UNITS SOLD</p>
+                                <p style={{ color: '#FFF', fontSize: '24px', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>📀 {Math.floor(((creatorProfile?.boxOfficeLedger?.musicTicketSales || 0) + (creatorProfile?.boxOfficeLedger?.musicDonations || 0)) / 475)}</p>
+                            </div>
+                        </div>
+
+                        {(() => {
+                            const musicTix = creatorProfile?.boxOfficeLedger?.musicTicketSales || 0;
+                            const musicDon = creatorProfile?.boxOfficeLedger?.musicDonations || 0;
+                            const totalMusic = musicTix + musicDon;
+                            if (totalMusic === 0) return null;
+                            return (
+                                <button disabled={hasActiveOrUpcomingPremiere || hasPendingSweep} onClick={() => {
+                                        setConfirmationTitle("Claim Music Studio Earnings?");
+                                        setConfirmationMessage("Your Ticket Sales & Units Sold will be swept to your main Earnings balance within 3 business days. Proceed?");
+                                        setOnConfirmationAction(() => async () => {
+                                            try {
+                                                const activeSong = myArenaFilms.find(f => f.type === 'musicVideoPremiere')?.title || 'Music Video Premiere';
+                                                const details = [];
+                                                if (musicTix > 0) details.push(`🎵 TICKET SALES: GYD $${musicTix.toLocaleString()}`);
+                                                if (musicDon > 0) details.push(`📀 UNITS REVENUE: GYD $${musicDon.toLocaleString()}`);
+                                                const fullBreakdown = `[${activeSong}] — ${details.join(' | ')}`;
+                                                await addDoc(collection(db, "payoutRequests"), { type: 'musicSweep', userId: currentUser.uid, creatorName: creatorProfile.creatorName, campaignTitle: fullBreakdown, amount: totalMusic, status: 'pending', timestamp: new Date() });
+                                                showMessage("Transfer request sent to Admins!");
+                                            } catch(e) { showMessage("Failed to submit request: " + e.message); }
+                                        });
+                                        setShowConfirmationModal(true);
+                                    }}
+                                    style={{ width: '100%', marginBottom: '20px', padding: '12px', borderRadius: '8px', fontWeight: '900', textTransform: 'uppercase', border: 'none', cursor: (hasActiveOrUpcomingPremiere || hasPendingSweep) ? 'not-allowed' : 'pointer', background: (hasActiveOrUpcomingPremiere || hasPendingSweep) ? '#333' : 'linear-gradient(90deg, #32CD32 0%, #22C55E 100%)', color: (hasActiveOrUpcomingPremiere || hasPendingSweep) ? '#888' : '#000', boxShadow: (hasActiveOrUpcomingPremiere || hasPendingSweep) ? 'none' : '0 0 15px rgba(50, 205, 50, 0.4)' }}
+                                >
+                                    {hasActiveOrUpcomingPremiere ? "🔒 Locked: Live Premiere In Progress" : (hasPendingSweep ? "⏳ Request Pending Admin Approval" : "🏦 Claim Music Studio Earnings")}
+                                </button>
+                            );
+                        })()}
+
+                        <div style={{ borderTop: '1px solid rgba(50, 205, 50, 0.2)', paddingTop: '15px' }}>
+                            {myPendingFilms.filter(f => f.type === 'musicVideoPremiere').map(film => (
+                                <div key={film.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,215,0,0.03)', padding: '10px 15px', borderRadius: '8px', marginBottom: '8px', border: '1px dashed rgba(255,215,0,0.2)' }}>
+                                    <div>
+                                        <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '13px' }}>{film.title}</p>
+                                        <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '10px' }}>Status: Awaiting Admin Approval</p>
+                                    </div>
+                                    <span style={{ fontSize: '10px', color: '#FFD700', fontWeight: 'bold' }}>PENDING</span>
+                                </div>
+                            ))}
+
+                            {myArenaFilms.filter(f => f.type === 'musicVideoPremiere').map(film => {
+                                const pTime = film.premiereDate ? (film.premiereDate.toMillis ? film.premiereDate.toMillis() : new Date(film.premiereDate).getTime()) : 0;
+                                const isFifteenMinsPost = pTime > 0 && (Date.now() > (pTime + (15 * 60 * 1000)));
+                                const canPublish = film.status === 'completed' || isFifteenMinsPost;
+
+                                return (
+                                    <div key={film.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0a0a', padding: '10px 15px', borderRadius: '8px', marginBottom: '8px', border: '1px solid #333' }}>
+                                        <div>
+                                            <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>{film.title}</p>
+                                            <p style={{ margin: '2px 0 0 0', color: '#AAA', fontSize: '11px' }}>🎵 Live Music Premiere</p>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            {canPublish && (
+                                                <button onClick={() => { setPublishTargetItem(film); setShowPublishModal(true); }} style={{ background: '#FFD700', color: '#000', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: '900', cursor: 'pointer' }}>🚀 Publish / Keep</button>
+                                            )}
+                                            <button onClick={() => { setEditingFilmId(film.id); setOriginalFilmType(film.type); setMusicForm({ title: film.title, genre: film.genre || 'Afrobeats', credits: film.credits || '', videoUrl: film.videoUrl || '', songPosterUrl: film.posterUrl || film.songPosterUrl || '', isTicketed: film.isTicketed || false, ticketPrice: film.ticketPrice || '500', premiereDate: film.premiereDate || '', durationMinutes: film.durationMinutes || '3', durationSeconds: film.durationSeconds || '30', room: film.room || 'Room 1', termsAccepted: true }); setShowStudioModal(true); }} style={{ background: '#222', color: '#FFF', border: '1px solid #444', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>Edit</button>
+                                            <button onClick={() => {
+                                                setConfirmationTitle("Take Down Premiere?");
+                                                setConfirmationMessage(`Are you sure you want to permanently remove "${film.title}"?`);
+                                                setOnConfirmationAction(() => async () => {
+                                                    try {
+                                                        if (film.premiereDate) {
+                                                            const premiereTime = new Date(film.premiereDate).getTime();
+                                                            const lockUntil = new Date(premiereTime + (72 * 60 * 60 * 1000));
+                                                            if (Date.now() < lockUntil.getTime()) await updateDoc(doc(db, "creators", currentUser.uid), { payoutLockUntil: lockUntil.toISOString() });
+                                                        }
+                                                        await deleteDoc(doc(db, "movies", film.id));
+                                                        showMessage("Premiere taken down.");
+                                                    } catch (err) { showMessage("Failed to take down: " + err.message); }
+                                                });
+                                                setShowConfirmationModal(true);
+                                            }} style={{ background: 'rgba(220,53,69,0.15)', color: '#DC3545', border: '1px solid #DC3545', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>Take Down</button>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                 )}
 
@@ -2730,156 +2826,7 @@ const CreatorDashboardScreen = ({
                     </div>
                 </div>
             )}
-
-            {/* ====== THE STUDIO: MUSICIAN EXCLUSIVE HUB ====== */}
-            {(creatorProfile?.creatorField?.toLowerCase().trim() === 'musician' || creatorProfile?.role === 'admin' || creatorProfile?.role === 'super_admin') && (
-                <div className="glass-panel" style={{ background: 'linear-gradient(180deg, rgba(10,30,15,0.9) 0%, rgba(5,15,5,0.95) 100%)', border: '1px solid rgba(50, 205, 50, 0.4)', marginBottom: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.8), inset 0 1px 1px rgba(255,255,255,0.05)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                        <div>
-                            <p style={{ margin: 0, color: '#32CD32', fontSize: '18px', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                🎵 The Studio
-                            </p>
-                            <p style={{ margin: '4px 0 0 0', color: '#AAA', fontSize: '12px' }}>Dedicated Music Premiere Hub. Schedule live video premieres and track ticket sales.</p>
-                        </div>
-                        <button className="modern-button" style={{ background: '#32CD32', color: '#000', border: 'none', padding: '10px 20px', fontWeight: '900', borderRadius: '8px', cursor: 'pointer', boxShadow: '0 0 15px rgba(50, 205, 50, 0.4)' }} onClick={() => setShowStudioModal(true)}>
-                            + PREMIERE MUSIC VIDEO
-                        </button>
-                    </div>
-
-                    {/* Box Office Stats for Musicians */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginTop: '15px', marginBottom: '20px' }}>
-                        <div style={{ background: 'rgba(50, 205, 50, 0.05)', border: '1px solid rgba(50, 205, 50, 0.2)', padding: '15px', borderRadius: '12px' }}>
-                            <p style={{ color: '#32CD32', fontSize: '11px', fontWeight: '900', margin: '0 0 5px 0' }}>MUSIC BOX OFFICE: TICKET SALES</p>
-                            <p style={{ color: '#FFF', fontSize: '24px', fontWeight: 'bold', margin: 0 }}>{(creatorProfile?.boxOfficeLedger?.musicTicketSales || 0).toLocaleString()} <span style={{fontSize:'12px', color:'#888'}}>GYD</span></p>
-                        </div>
-                        <div style={{ background: 'rgba(0, 255, 255, 0.05)', border: '1px solid rgba(0, 255, 255, 0.2)', padding: '15px', borderRadius: '12px' }}>
-                            <p style={{ color: '#00FFFF', fontSize: '11px', fontWeight: '900', margin: '0 0 5px 0' }}>MUSIC VIDEO UNITS SOLD</p>
-                            <p style={{ color: '#FFF', fontSize: '24px', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                📀 {Math.floor(((creatorProfile?.boxOfficeLedger?.musicTicketSales || 0) + (creatorProfile?.boxOfficeLedger?.musicDonations || 0)) / 475)}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* MUSICIAN CLAIM EARNINGS BUTTON */}
-                    {(() => {
-                        const musicTix = creatorProfile?.boxOfficeLedger?.musicTicketSales || 0;
-                        const musicDon = creatorProfile?.boxOfficeLedger?.musicDonations || 0;
-                        const totalMusic = musicTix + musicDon;
-                        
-                        if (totalMusic === 0) return null;
-
-                        return (
-                            <button 
-                                disabled={hasActiveOrUpcomingPremiere || hasPendingSweep}
-                                onClick={() => {
-                                    setConfirmationTitle("Claim Music Studio Earnings?");
-                                    setConfirmationMessage("Your Ticket Sales & Units Sold will be swept to your main Earnings balance within 3 business days. Proceed?");
-                                    setOnConfirmationAction(() => async () => {
-                                        try {
-                                            const activeSong = myArenaFilms.find(f => f.type === 'musicVideoPremiere')?.title || 'Music Video Premiere';
-                                            const details = [];
-                                            if (musicTix > 0) details.push(`🎵 TICKET SALES: GYD $${musicTix.toLocaleString()}`);
-                                            if (musicDon > 0) details.push(`📀 UNITS REVENUE: GYD $${musicDon.toLocaleString()}`);
-                                            
-                                            const fullBreakdown = `[${activeSong}] — ${details.join(' | ')}`;
-
-                                            await addDoc(collection(db, "payoutRequests"), {
-                                                type: 'musicSweep',
-                                                userId: currentUser.uid,
-                                                creatorName: creatorProfile.creatorName,
-                                                campaignTitle: fullBreakdown,
-                                                amount: totalMusic,
-                                                status: 'pending',
-                                                timestamp: new Date()
-                                            });
-                                            showMessage("Transfer request sent to Admins!");
-                                        } catch(e) { showMessage("Failed to submit request: " + e.message); }
-                                    });
-                                    setShowConfirmationModal(true);
-                                }}
-                                style={{ 
-                                    width: '100%', marginBottom: '20px', padding: '12px', borderRadius: '8px', fontWeight: '900', textTransform: 'uppercase', border: 'none', cursor: (hasActiveOrUpcomingPremiere || hasPendingSweep) ? 'not-allowed' : 'pointer',
-                                    background: (hasActiveOrUpcomingPremiere || hasPendingSweep) ? '#333' : 'linear-gradient(90deg, #32CD32 0%, #22C55E 100%)',
-                                    color: (hasActiveOrUpcomingPremiere || hasPendingSweep) ? '#888' : '#000',
-                                    boxShadow: (hasActiveOrUpcomingPremiere || hasPendingSweep) ? 'none' : '0 0 15px rgba(50, 205, 50, 0.4)' 
-                                }}
-                            >
-                                {hasActiveOrUpcomingPremiere ? "🔒 Locked: Live Premiere In Progress" : (hasPendingSweep ? "⏳ Request Pending Admin Approval" : "🏦 Claim Music Studio Earnings")}
-                            </button>
-                        );
-                    })()}
-
-                    {/* MUSIC PREMIERE TRACKING LISTS */}
-                    <div style={{ borderTop: '1px solid rgba(50, 205, 50, 0.2)', paddingTop: '15px' }}>
-                        {myPendingFilms.filter(f => f.type === 'musicVideoPremiere').map(film => (
-                            <div key={film.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,215,0,0.03)', padding: '10px 15px', borderRadius: '8px', marginBottom: '8px', border: '1px dashed rgba(255,215,0,0.2)' }}>
-                                <div>
-                                    <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '13px' }}>{film.title}</p>
-                                    <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '10px' }}>Status: Awaiting Admin Approval</p>
-                                </div>
-                                <span style={{ fontSize: '10px', color: '#FFD700', fontWeight: 'bold' }}>PENDING</span>
-                            </div>
-                        ))}
-
-                        {myArenaFilms.filter(f => f.type === 'musicVideoPremiere').map(film => (
-                            <div key={film.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0a0a', padding: '10px 15px', borderRadius: '8px', marginBottom: '8px', border: '1px solid #333' }}>
-                                <div>
-                                    <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>{film.title}</p>
-                                    <p style={{ margin: '2px 0 0 0', color: '#AAA', fontSize: '11px' }}>🎵 Live Music Premiere</p>
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    {film.premiereDate && new Date() > new Date(film.premiereDate) && (
-                                        <button 
-                                            onClick={() => { setPublishTargetItem(film); setShowPublishModal(true); }}
-                                            style={{ background: '#FFD700', color: '#000', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: '900', cursor: 'pointer' }}
-                                        >
-                                            🚀 Publish / Keep
-                                        </button>
-                                    )}
-                                    <button 
-                                        onClick={() => {
-                                            setEditingFilmId(film.id);
-                                            setOriginalFilmType(film.type);
-                                            setMusicForm({ title: film.title, genre: film.genre || 'Afrobeats', credits: film.credits || '', videoUrl: film.videoUrl || '', songPosterUrl: film.posterUrl || film.songPosterUrl || '', isTicketed: film.isTicketed || false, ticketPrice: film.ticketPrice || '500', premiereDate: film.premiereDate || '', room: film.room || 'Room 1', termsAccepted: true });
-                                            setShowStudioModal(true);
-                                        }}
-                                        style={{ background: '#222', color: '#FFF', border: '1px solid #444', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-                                    >
-                                        Edit
-                                    </button>
-                                    <button 
-                                        onClick={() => {
-                                            setConfirmationTitle("Take Down Premiere?");
-                                            setConfirmationMessage(`Are you sure you want to permanently remove "${film.title}"?`);
-                                            setOnConfirmationAction(() => async () => {
-                                                try {
-                                                    if (film.premiereDate) {
-                                                        const premiereTime = new Date(film.premiereDate).getTime();
-                                                        const lockUntil = new Date(premiereTime + (72 * 60 * 60 * 1000));
-                                                        if (Date.now() < lockUntil.getTime()) {
-                                                            await updateDoc(doc(db, "creators", currentUser.uid), {
-                                                                payoutLockUntil: lockUntil.toISOString()
-                                                            });
-                                                        }
-                                                    }
-                                                    await deleteDoc(doc(db, "movies", film.id));
-                                                    showMessage("Premiere taken down.");
-                                                } catch (err) { showMessage("Failed to take down: " + err.message); }
-                                            });
-                                            setShowConfirmationModal(true);
-                                        }} 
-                                        style={{ background: 'rgba(220,53,69,0.15)', color: '#DC3545', border: '1px solid #DC3545', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-                                    >
-                                        Take Down
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* ====== THE STUDIO MUSIC PREMIERE SUBMISSION MODAL ====== */}
+            
             {showStudioModal && (
                 <div className="modal-backdrop" onClick={() => setShowStudioModal(false)}>
                     <div className="modal-content" style={{ maxWidth: '600px', border: '1px solid #32CD32', background: '#0a0a0a' }} onClick={e => e.stopPropagation()}>
@@ -2893,10 +2840,36 @@ const CreatorDashboardScreen = ({
                                 if (!musicForm.songPosterUrl) return showMessage("A Song Poster is required.");
                                 if (!musicForm.premiereDate) return showMessage("Please select a Premiere Date & Time.");
 
-                                // Rule 1: 72-Hour (3 Days) Advance Requirement (Bypassed for Super Admins)
+                                const isStaffBypass = creatorProfile?.role === 'super_admin' || creatorProfile?.role === 'admin';
+
+                                // Rule 0A: Musician Active/Pending Premiere Cap
+                                const hasExistingMusicPremiere = myArenaFilms.some(f => f.type === 'musicVideoPremiere') || myPendingFilms.some(f => f.type === 'musicVideoPremiere');
+                                if (!isStaffBypass && !editingFilmId && hasExistingMusicPremiere) {
+                                    return showMessage("❌ You already have an active or pending Music Premiere. You must conclude your current premiere before submitting another.");
+                                }
+
+                                // Rule 0B: Explicit 72-Hour Post-Premiere Cooldown (Allows Box Office Ledger Clearance)
+                                const seventyTwoHoursMs = 72 * 60 * 60 * 1000;
+                                const nowMs = Date.now();
+                                const profileLockTime = creatorProfile?.payoutLockUntil ? (creatorProfile.payoutLockUntil.toDate ? creatorProfile.payoutLockUntil.toDate().getTime() : new Date(creatorProfile.payoutLockUntil).getTime()) : 0;
+
+                                const lastPremiereTime = myArenaFilms.reduce((latest, f) => {
+                                    if (f.type !== 'musicVideoPremiere' || !f.premiereDate) return latest;
+                                    const pTime = f.premiereDate.toMillis ? f.premiereDate.toMillis() : new Date(f.premiereDate).getTime();
+                                    return Math.max(latest, pTime);
+                                }, 0);
+
+                                const cooldownUntil = Math.max(profileLockTime, lastPremiereTime > 0 ? (lastPremiereTime + seventyTwoHoursMs) : 0);
+
+                                if (!isStaffBypass && !editingFilmId && nowMs < cooldownUntil) {
+                                    const hoursLeft = Math.ceil((cooldownUntil - nowMs) / (1000 * 60 * 60));
+                                    return showMessage(`⏳ 72-Hour Cooldown Active: You must wait ${hoursLeft} more hour(s) for your Box Office ledger to clear before submitting a new premiere.`);
+                                }
+
+                                // Rule 1: 72-Hour (3 Days) Advance Requirement (Bypassed for Super Admins & Admins)
                                 const reqTime = new Date(musicForm.premiereDate).getTime();
                                 const minAdvanceTime = Date.now() + (72 * 60 * 60 * 1000);
-                                if (creatorProfile.role !== 'super_admin' && reqTime < minAdvanceTime) {
+                                if (!isStaffBypass && reqTime < minAdvanceTime) {
                                     return showMessage("❌ Live Music Video Premieres must be scheduled at least 72 hours (3 days) in advance.");
                                 }
 
@@ -2914,32 +2887,52 @@ const CreatorDashboardScreen = ({
                                         }
                                     }
 
-                                    // Submit to Admin Queue under "musicVideoPremiere"
-                                    await addDoc(collection(db, "movieSuggestions"), {
-                                        title: musicForm.title,
-                                        genre: musicForm.genre,
-                                        credits: musicForm.credits,
-                                        videoUrl: musicForm.videoUrl,
-                                        posterUrl: musicForm.songPosterUrl,
-                                        songPosterUrl: musicForm.songPosterUrl,
-                                        type: 'musicVideoPremiere',
-                                        paymentType: 'musicVideoPremiere',
-                                        isTicketed: musicForm.isTicketed,
-                                        ticketPrice: musicForm.isTicketed ? musicForm.ticketPrice : '0.00',
-                                        premiereDate: musicForm.premiereDate,
-                                        room: musicForm.room,
-                                        creatorId: currentUser.uid,
-                                        suggestedBy: currentUser.uid,
-                                        suggestedByName: creatorProfile.creatorName,
-                                        status: "pending",
-                                        timestamp: new Date().toISOString()
-                                    });
+                                    if (editingFilmId) {
+                                        // Directly update approved live movie document
+                                        await updateDoc(doc(db, "movies", editingFilmId), {
+                                            title: musicForm.title || 'Untitled Music Premiere',
+                                            genre: musicForm.genre || 'Afrobeats',
+                                            credits: musicForm.credits || '',
+                                            posterUrl: musicForm.songPosterUrl || '',
+                                            songPosterUrl: musicForm.songPosterUrl || ''
+                                        });
+                                        showMessage("💾 Premiere changes saved successfully!");
+                                    } else {
+                                        // Submit new premiere to Admin Queue
+                                        const mins = Number(musicForm.durationMinutes) || 3;
+                                        const secs = Number(musicForm.durationSeconds) || 0;
+                                        const totalSecs = (mins * 60) + secs;
 
-                                    showMessage("🎉 Music Video Premiere submitted to Admin Queue!");
+                                        await addDoc(collection(db, "movieSuggestions"), {
+                                            title: musicForm.title || 'Untitled Music Premiere',
+                                            genre: musicForm.genre || 'Afrobeats',
+                                            credits: musicForm.credits || '',
+                                            videoUrl: musicForm.videoUrl || '',
+                                            posterUrl: musicForm.songPosterUrl || '',
+                                            songPosterUrl: musicForm.songPosterUrl || '',
+                                            type: 'musicVideoPremiere',
+                                            paymentType: 'musicVideoPremiere',
+                                            isTicketed: !!musicForm.isTicketed,
+                                            ticketPrice: musicForm.isTicketed ? (musicForm.ticketPrice || '500') : '0.00',
+                                            premiereDate: musicForm.premiereDate || '',
+                                            durationMinutes: mins,
+                                            durationSeconds: secs,
+                                            durationTotalSec: totalSecs,
+                                            room: musicForm.room || 'Room 1',
+                                            creatorId: currentUser?.uid || '',
+                                            suggestedBy: currentUser?.uid || '',
+                                            suggestedByName: creatorProfile?.creatorName || currentUser?.displayName || 'Musician',
+                                            status: "pending",
+                                            timestamp: new Date().toISOString()
+                                        });
+                                        showMessage("🎉 Music Video Premiere submitted to Admin Queue!");
+                                    }
+
                                     setShowStudioModal(false);
-                                    setMusicForm({ title: '', genre: 'Afrobeats', credits: '', videoUrl: '', songPosterUrl: '', isTicketed: false, ticketPrice: '3.00', premiereDate: '', room: 'Room 1', termsAccepted: false });
+                                    setEditingFilmId(null);
+                                    setMusicForm({ title: '', genre: 'Afrobeats', credits: '', videoUrl: '', songPosterUrl: '', isTicketed: false, ticketPrice: '500', premiereDate: '', room: 'Room 1', termsAccepted: false });
                                 } catch (error) {
-                                    showMessage(`Submission failed: ${error.message}`);
+                                    showMessage(`Process failed: ${error.message}`);
                                 } finally {
                                     setIsSubmittingMusic(false);
                                 }
@@ -2958,24 +2951,49 @@ const CreatorDashboardScreen = ({
                                     <label className="formLabel">Artist, Producer & Director Credits</label>
                                     <input type="text" className="formInput" placeholder="e.g. Performed by Ninja, Produced by Beats Studio" value={musicForm.credits} onChange={e => setMusicForm({...musicForm, credits: e.target.value})} required />
                                 </div>
+
                                 <div className="formGroup">
-                                    <label className="formLabel">Video Link (YouTube / Vimeo / Direct)</label>
-                                    <input type="url" className="formInput" placeholder="https://..." value={musicForm.videoUrl} onChange={(e) => {
-                                        const url = e.target.value;
-                                        setMusicForm(prev => ({ ...prev, videoUrl: url }));
-                                        if (url) {
-                                            const info = extractVideoInfo(url);
-                                            if (info && info.thumbnailUrl && info.platform !== 'generic') {
-                                                setMusicForm(prev => ({ ...prev, songPosterUrl: info.thumbnailUrl }));
-                                                showMessage("Thumbnail automatically pulled from song link!");
+                                    <label className="formLabel" style={{ color: '#32CD32' }}>Exact Video Length / Duration (For Auto-Cut Broadcast)</label>
+                                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                        <div style={{ flex: 1 }}>
+                                            <span style={{ fontSize: '11px', color: '#888' }}>Minutes</span>
+                                            <input type="number" min="0" max="60" className="formInput" value={musicForm.durationMinutes || ''} onChange={e => setMusicForm({...musicForm, durationMinutes: e.target.value})} required />
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <span style={{ fontSize: '11px', color: '#888' }}>Seconds</span>
+                                            <input type="number" min="0" max="59" className="formInput" value={musicForm.durationSeconds || ''} onChange={e => setMusicForm({...musicForm, durationSeconds: e.target.value})} required />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="formGroup">
+                                    <label className="formLabel">
+                                        Video Link (YouTube / Vimeo / Direct) {!!editingFilmId && <span style={{color: '#FFD700'}}>(🔒 Locked Post-Approval)</span>}
+                                    </label>
+                                    <input 
+                                        type="url" 
+                                        className="formInput" 
+                                        placeholder="https://..." 
+                                        value={musicForm.videoUrl} 
+                                        disabled={!!editingFilmId}
+                                        style={!!editingFilmId ? { backgroundColor: '#222', color: '#888', cursor: 'not-allowed', borderColor: '#444' } : {}}
+                                        onChange={(e) => {
+                                            const url = e.target.value;
+                                            setMusicForm(prev => ({ ...prev, videoUrl: url }));
+                                            if (url) {
+                                                const info = extractVideoInfo(url);
+                                                if (info && info.thumbnailUrl && info.platform !== 'generic') {
+                                                    setMusicForm(prev => ({ ...prev, songPosterUrl: info.thumbnailUrl }));
+                                                    showMessage("Thumbnail automatically pulled from song link!");
+                                                }
                                             }
-                                        }
-                                    }} required />
+                                        }} 
+                                        required 
+                                    />
                                 </div>
 
                                 <div className="formGroup">
-                                    <label className="formLabel">Song Poster Artwork <span style={{color:'#DC3545'}}>*</span></label>
-                                    <p style={{fontSize: '11px', color: '#888', margin: '0 0 8px 0'}}>Must upload a custom artwork poster if video link thumbnail fails.</p>
+                                    <label className="formLabel">Song Poster Artwork <span style={{color:'#DC3545'}}>*</span> <span style={{color: '#32CD32'}}>(✏️ Custom Upload Always Allowed)</span></label>
+                                    <p style={{fontSize: '11px', color: '#888', margin: '0 0 8px 0'}}>Must upload a custom artwork poster if video link thumbnail fails or when updating poster artwork.</p>
                                     <label className="modern-button" style={{ margin: 0, padding: '8px 16px', backgroundColor: '#32CD32', color: '#000', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', border: 'none', fontWeight: 'bold' }}>
                                         <span>{isUploadingSongPoster ? "Uploading..." : "🎨 Upload Song Poster"}</span>
                                         <input type="file" accept="image/*" onChange={async (e) => {
@@ -3004,30 +3022,104 @@ const CreatorDashboardScreen = ({
                                     </div>
                                 )}
 
-                                <div className="formGroup" style={{ background: 'rgba(50,205,50,0.05)', padding: '15px', borderRadius: '12px', border: '1px dashed rgba(50,205,50,0.3)' }}>
-                                    <label className="formLabel" style={{ color: '#32CD32', margin: 0 }}>Select Virtual Premiere Room</label>
-                                    <select className="formInput" value={musicForm.room || 'Room 1'} onChange={e => setMusicForm({...musicForm, room: e.target.value})} style={{ background: '#000', color: '#FFF', marginTop: '6px' }}>
+                                <div className="formGroup" style={{ background: 'rgba(50,205,50,0.05)', padding: '15px', borderRadius: '12px', border: '1px dashed rgba(50,205,50,0.3)', opacity: !!editingFilmId ? 0.75 : 1 }}>
+                                    <label className="formLabel" style={{ color: '#32CD32', margin: 0 }}>
+                                        Select Virtual Premiere Room {!!editingFilmId && <span style={{color: '#FFD700'}}>(🔒 Locked Post-Approval)</span>}
+                                    </label>
+                                    <select 
+                                        className="formInput" 
+                                        value={musicForm.room || 'Room 1'} 
+                                        disabled={!!editingFilmId}
+                                        onChange={e => setMusicForm({...musicForm, room: e.target.value})} 
+                                        style={{ background: !!editingFilmId ? '#222' : '#000', color: !!editingFilmId ? '#888' : '#FFF', marginTop: '6px', cursor: !!editingFilmId ? 'not-allowed' : 'pointer' }}
+                                    >
                                         {["Room 1", "Room 2", "Room 3", "Room 4", "Room 5"].map(r => <option key={r} value={r}>{r}</option>)}
                                     </select>
                                     
-                                    <label className="formLabel" style={{ color: '#32CD32', marginTop: '12px' }}>Schedule Premiere Date & Time (Must be at least 72h advance)</label>
-                                    <input type="datetime-local" className="formInput" style={{ background: '#000', color: '#FFF' }} value={musicForm.premiereDate} onClick={(e) => e.target.showPicker && e.target.showPicker()} onChange={e => setMusicForm({...musicForm, premiereDate: e.target.value})} required />
+                                    <label className="formLabel" style={{ color: '#32CD32', marginTop: '12px' }}>
+                                        Schedule Premiere Date & Time {!!editingFilmId && <span style={{color: '#FFD700'}}>(🔒 Locked Post-Approval)</span>}
+                                    </label>
+                                    <input 
+                                        type="datetime-local" 
+                                        className="formInput" 
+                                        disabled={!!editingFilmId}
+                                        style={{ background: !!editingFilmId ? '#222' : '#000', color: !!editingFilmId ? '#888' : '#FFF', cursor: !!editingFilmId ? 'not-allowed' : 'pointer' }} 
+                                        value={musicForm.premiereDate} 
+                                        onClick={(e) => !editingFilmId && e.target.showPicker && e.target.showPicker()} 
+                                        onChange={e => setMusicForm({...musicForm, premiereDate: e.target.value})} 
+                                        required 
+                                    />
                                     
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '15px' }}>
-                                        <input type="checkbox" id="musicTicketToggle" checked={musicForm.isTicketed} onChange={e => setMusicForm({...musicForm, isTicketed: e.target.checked})} style={{ cursor: 'pointer', accentColor: '#32CD32' }} />
-                                        <label htmlFor="musicTicketToggle" style={{ color: '#FFF', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>Make this a Ticketed Live Event</label>
+                                        <input 
+                                            type="checkbox" 
+                                            id="musicTicketToggle" 
+                                            disabled={!!editingFilmId}
+                                            checked={musicForm.isTicketed} 
+                                            onChange={e => setMusicForm({...musicForm, isTicketed: e.target.checked})} 
+                                            style={{ cursor: !!editingFilmId ? 'not-allowed' : 'pointer', accentColor: '#32CD32' }} 
+                                        />
+                                        <label htmlFor="musicTicketToggle" style={{ color: !!editingFilmId ? '#888' : '#FFF', fontSize: '13px', fontWeight: 'bold', cursor: !!editingFilmId ? 'not-allowed' : 'pointer' }}>
+                                            Make this a Ticketed Live Event {!!editingFilmId && '(🔒 Locked)'}
+                                        </label>
                                     </div>
 
                                     {musicForm.isTicketed && (
                                         <div style={{ marginTop: '10px' }}>
-                                            <label className="formLabel" style={{ color: '#32CD32' }}>Ticket Price (GYD)</label>
-                                            <input type="number" min="500" step="100" className="formInput" value={musicForm.ticketPrice} onChange={e => setMusicForm({...musicForm, ticketPrice: e.target.value})} style={{ background: '#000', color: '#FFF' }} required />
+                                            <label className="formLabel" style={{ color: '#32CD32' }}>
+                                                Ticket Price (GYD) {!!editingFilmId && <span style={{color: '#FFD700'}}>(🔒 Locked Post-Approval)</span>}
+                                            </label>
+                                            <input 
+                                                type="number" 
+                                                min="500" 
+                                                step="100" 
+                                                className="formInput" 
+                                                disabled={!!editingFilmId}
+                                                value={musicForm.ticketPrice} 
+                                                onChange={e => setMusicForm({...musicForm, ticketPrice: e.target.value})} 
+                                                style={{ background: !!editingFilmId ? '#222' : '#000', color: !!editingFilmId ? '#888' : '#FFF', cursor: !!editingFilmId ? 'not-allowed' : 'pointer' }} 
+                                                required 
+                                            />
                                         </div>
                                     )}
                                 </div>
 
-                                <button className="modern-button" type="submit" disabled={isSubmittingMusic || isUploadingSongPoster} style={{ background: '#32CD32', color: '#000', border: 'none', padding: '15px', fontWeight: '900', fontSize: '16px', borderRadius: '8px', marginTop: '10px', cursor: 'pointer' }}>
-                                    {isSubmittingMusic ? 'Submitting Premiere...' : 'Submit Music Premiere'}
+                                {/* 15-Minute Post-Premiere Notice */}
+                                <div style={{ background: 'rgba(255, 215, 0, 0.05)', border: '1px solid rgba(255, 215, 0, 0.2)', padding: '10px 12px', borderRadius: '8px', fontSize: '11px', color: '#AAA', lineHeight: '1.4' }}>
+                                    ℹ️ <strong>Post-Premiere Publishing Notice:</strong> Your 🚀 <strong>Publish</strong> button will automatically unlock <strong>15 minutes</strong> after your live premiere start time for publishing to global showcase and monetization.
+                                </div>
+
+                                {/* Mandatory Legal Copyright Disclaimer & Checkbox */}
+                                <div style={{ background: 'rgba(220, 53, 69, 0.05)', border: '1px dashed rgba(220, 53, 69, 0.3)', padding: '12px', borderRadius: '8px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                                    <input 
+                                        type="checkbox" 
+                                        id="musicCopyrightTerms" 
+                                        checked={musicForm.termsAccepted} 
+                                        onChange={e => setMusicForm({...musicForm, termsAccepted: e.target.checked})} 
+                                        style={{ marginTop: '3px', cursor: 'pointer', accentColor: '#32CD32' }} 
+                                    />
+                                    <label htmlFor="musicCopyrightTerms" style={{ color: '#DDD', fontSize: '11px', lineHeight: '1.4', cursor: 'pointer' }}>
+                                        I solemnly declare and certify that I am the sole owner or authorized license holder of all audio, lyrics, visuals, and copyrights in this work. I agree that NVA Network is a platform host and bears zero liability for any copyright claims or legal action taken against this content. I accept full legal responsibility.
+                                    </label>
+                                </div>
+
+                                <button 
+                                    className="modern-button" 
+                                    type="submit" 
+                                    disabled={isSubmittingMusic || isUploadingSongPoster || (!editingFilmId && !musicForm.termsAccepted)} 
+                                    style={{ 
+                                        background: (!editingFilmId && !musicForm.termsAccepted) ? '#333' : (!!editingFilmId ? '#FFD700' : '#32CD32'), 
+                                        color: (!editingFilmId && !musicForm.termsAccepted) ? '#777' : '#000', 
+                                        border: 'none', 
+                                        padding: '15px', 
+                                        fontWeight: '900', 
+                                        fontSize: '16px', 
+                                        borderRadius: '8px', 
+                                        marginTop: '5px', 
+                                        cursor: (!editingFilmId && !musicForm.termsAccepted) ? 'not-allowed' : 'pointer' 
+                                    }}
+                                >
+                                    {isSubmittingMusic ? 'Processing...' : (!!editingFilmId ? '💾 Save Changes' : 'Submit Music Premiere')}
                                 </button>
                             </form>
                         </div>
@@ -3067,6 +3159,14 @@ const CreatorDashboardScreen = ({
                                     <p style={{ margin: '0 0 4px 0', color: '#00FFFF', fontWeight: '900', fontSize: '14px' }}>Option B: Submit for Monetization</p>
                                     <p style={{ margin: 0, color: '#AAA', fontSize: '11px' }}>Submit to Admin Queue for monetization approval (replaces previously monetized item once approved).</p>
                                 </div>
+
+                                <div 
+                                    onClick={() => setPublishOption('library')}
+                                    style={{ padding: '14px', borderRadius: '12px', border: publishOption === 'library' ? '2px solid #32CD32' : '1px solid #333', background: publishOption === 'library' ? 'rgba(50, 205, 50, 0.1)' : '#111', cursor: 'pointer' }}
+                                >
+                                    <p style={{ margin: '0 0 4px 0', color: '#32CD32', fontWeight: '900', fontSize: '14px' }}>Option C: Keep in Private Library Only</p>
+                                    <p style={{ margin: 0, color: '#AAA', fontSize: '11px' }}>Save privately in your content library without publishing to the public showcase or requesting monetization.</p>
+                                </div>
                             </div>
 
                             <div style={{ background: 'rgba(255,215,0,0.05)', border: '1px dashed rgba(255,215,0,0.3)', padding: '12px', borderRadius: '8px', display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '20px' }}>
@@ -3076,71 +3176,68 @@ const CreatorDashboardScreen = ({
                                 </label>
                             </div>
 
-                            <div style={{ display: 'flex', gap: '10px' }}>
-                                <button className="modern-button" onClick={async () => {
-                                    try {
-                                        const libraryItem = {
-                                            title: publishTargetItem.title,
-                                            creatorId: currentUser.uid,
-                                            creatorName: creatorProfile.creatorName,
-                                            mainUrl: publishTargetItem.videoUrl || publishTargetItem.mainUrl || '',
-                                            imageUrl: publishTargetItem.posterUrl || publishTargetItem.imageUrl || publishTargetItem.songPosterUrl || '',
-                                            contentType: publishTargetItem.type === 'musicVideoPremiere' ? 'Music' : 'Film',
-                                            isActive: false, // Hidden from public showcase
-                                            monetizationStatus: 'none',
-                                            createdAt: new Date()
-                                        };
-                                        await addDoc(collection(db, `artifacts/production-app-id/public/data/content_items`), libraryItem);
-                                        await deleteDoc(doc(db, "movies", publishTargetItem.id));
-                                        showMessage("Saved securely to Content Library.");
-                                        setShowPublishModal(false);
-                                    } catch (e) { showMessage("Error: " + e.message); }
-                                }} style={{ flex: 1, background: '#222', color: '#FFF', border: '1px solid #444' }}>Keep in Library</button>
-                                
-                                <button className="modern-button" disabled={!publishTermsChecked || isPublishing} onClick={async () => {
+                            <button 
+                                className="modern-button" 
+                                disabled={!publishOption || !publishTermsChecked || isPublishing} 
+                                onClick={async () => {
                                     setIsPublishing(true);
                                     try {
-                                        // 1. Move to Content Library First
+                                        const cType = publishTargetItem.type === 'musicVideoPremiere' ? 'Music Video' : 'Film & Video';
+                                        const safeCreatorName = creatorProfile?.creatorName || currentUser?.displayName || publishTargetItem?.creatorName || publishTargetItem?.suggestedByName || 'NVA Artist';
+                                        const safeCreatorId = currentUser?.uid || publishTargetItem?.creatorId || publishTargetItem?.suggestedBy || '';
+                                        const safeThumbnail = publishTargetItem.posterUrl || publishTargetItem.songPosterUrl || publishTargetItem.customThumbnailUrl || publishTargetItem.imageUrl || '';
+                                        const safeDescription = publishTargetItem.description || publishTargetItem.synopsis || publishTargetItem.credits || publishTargetItem.eventDescription || '';
+                                        
+                                        // 0. Eliminate Race Condition: Instantly deactivate old showcase items client-side
+                                        if (publishOption === 'showcase') {
+                                            const oldItemsQ = query(collection(db, `artifacts/production-app-id/public/data/content_items`), where("creatorId", "==", safeCreatorId), where("isActive", "==", true));
+                                            const oldItemsSnap = await getDocs(oldItemsQ);
+                                            const deactivatePromises = oldItemsSnap.docs.map(d => updateDoc(d.ref, { isActive: false }));
+                                            await Promise.all(deactivatePromises);
+                                        }
+
+                                        // 1. Save to Content Library with FULL METRIC RETENTION (Views, Likes, Revenue, Units & Comment Link)
                                         const libraryItem = {
-                                            title: publishTargetItem.title,
-                                            creatorId: currentUser.uid,
-                                            creatorName: creatorProfile.creatorName,
+                                            title: publishTargetItem.title || 'Untitled',
+                                            creatorId: safeCreatorId,
+                                            creatorName: safeCreatorName,
+                                            creatorProfilePictureUrl: creatorProfile?.profilePictureUrl || publishTargetItem?.creatorProfilePictureUrl || '',
+                                            creatorRole: creatorProfile?.creatorField || publishTargetItem?.creatorRole || 'Musician',
+                                            description: safeDescription,
                                             mainUrl: publishTargetItem.videoUrl || publishTargetItem.mainUrl || '',
-                                            imageUrl: publishTargetItem.posterUrl || publishTargetItem.imageUrl || publishTargetItem.songPosterUrl || '',
-                                            contentType: publishTargetItem.type === 'musicVideoPremiere' ? 'Music' : 'Film',
+                                            customThumbnailUrl: safeThumbnail,
+                                            imageUrl: safeThumbnail,
+                                            contentType: cType,
                                             isActive: publishOption === 'showcase', 
-                                            monetizationStatus: 'none',
+                                            monetizationStatus: publishOption === 'monetize' ? 'pending' : 'none',
+                                            viewCount: publishTargetItem.viewCount || publishTargetItem.totalViewCount || 0,
+                                            likeCount: publishTargetItem.likeCount || 0,
+                                            ticketSalesTotal: publishTargetItem.ticketSalesTotal || 0,
+                                            donationsTotal: publishTargetItem.donationsTotal || 0,
+                                            unitsSold: publishTargetItem.unitsSold || Math.floor(((publishTargetItem.ticketSalesTotal || 0) + (publishTargetItem.donationsTotal || 0)) / 475),
+                                            originalContentId: publishTargetItem.id, // Preserves live comments & history
                                             createdAt: new Date()
                                         };
                                         const newDocRef = await addDoc(collection(db, `artifacts/production-app-id/public/data/content_items`), libraryItem);
                                         
-                                        // 2. Handle Action
+                                        // 2. Handle Selected Option Workflow
                                         if (publishOption === 'showcase') {
-                                            await updateDoc(doc(db, "creators", currentUser.uid), {
+                                            await updateDoc(doc(db, "creators", safeCreatorId), {
                                                 featuredVideoLink: {
-                                                    title: publishTargetItem.title,
+                                                    title: publishTargetItem.title || 'Untitled',
                                                     embedUrl: publishTargetItem.videoUrl || publishTargetItem.mainUrl || '',
-                                                    customThumbnailUrl: publishTargetItem.posterUrl || publishTargetItem.imageUrl || publishTargetItem.songPosterUrl || '',
+                                                    customThumbnailUrl: safeThumbnail,
                                                     liveFeedContentId: newDocRef.id
                                                 }
                                             });
                                             showMessage("🎉 Published to Showcase & Library!");
-                                        } else {
-                                            await addDoc(collection(db, "movieSuggestions"), {
-                                                title: publishTargetItem.title,
-                                                videoUrl: publishTargetItem.videoUrl || publishTargetItem.mainUrl || '',
-                                                posterUrl: publishTargetItem.posterUrl || publishTargetItem.imageUrl || publishTargetItem.songPosterUrl || '',
-                                                suggestedBy: currentUser.uid,
-                                                suggestedByName: creatorProfile.creatorName,
-                                                type: 'monetizationRequest',
-                                                targetContentId: newDocRef.id, // Link to the newly moved library item
-                                                status: 'pending',
-                                                timestamp: new Date().toISOString()
-                                            });
+                                        } else if (publishOption === 'monetize') {
                                             showMessage("Saved to Library & Submitted for Monetization!");
+                                        } else if (publishOption === 'library') {
+                                            showMessage("Saved securely to Private Content Library.");
                                         }
                                         
-                                        // 3. Remove from Live Premiere Card
+                                        // 3. Remove live premiere document from /movies
                                         await deleteDoc(doc(db, "movies", publishTargetItem.id));
                                         setShowPublishModal(false);
                                     } catch (err) {
@@ -3148,10 +3245,23 @@ const CreatorDashboardScreen = ({
                                     } finally {
                                         setIsPublishing(false);
                                     }
-                                }} style={{ flex: 1.5, background: publishTermsChecked ? '#FFD700' : '#444', color: '#000', border: 'none', fontWeight: '900', textTransform: 'uppercase' }}>
-                                    {isPublishing ? 'Processing...' : 'Confirm Publish'}
-                                </button>
-                            </div>
+                                }} 
+                                style={{ 
+                                    width: '100%', 
+                                    background: (!publishOption || !publishTermsChecked) ? '#333' : '#FFD700', 
+                                    color: (!publishOption || !publishTermsChecked) ? '#777' : '#000', 
+                                    border: 'none', 
+                                    padding: '14px',
+                                    fontWeight: '900', 
+                                    fontSize: '14px',
+                                    borderRadius: '10px',
+                                    cursor: (!publishOption || !publishTermsChecked) ? 'not-allowed' : 'pointer',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '1px'
+                                }}
+                            >
+                                {isPublishing ? 'Processing...' : 'Confirm Selection'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -3186,8 +3296,18 @@ const CreatorDashboardScreen = ({
                                     <textarea className="formTextarea" value={filmForm.synopsis} onChange={e => setFilmForm({...filmForm, synopsis: e.target.value})} required />
                                 </div>
                                 <div className="formGroup">
-                                    <label className="formLabel">Video URL (Optional)</label>
-                                    <input type="url" className="formInput" placeholder="https://..." value={filmForm.videoUrl} onChange={handleVideoUrlChange} />
+                                    <label className="formLabel">
+                                        Video URL (Optional) {!!editingFilmId && <span style={{color: '#FFD700'}}>(🔒 Locked Post-Approval)</span>}
+                                    </label>
+                                    <input 
+                                        type="url" 
+                                        className="formInput" 
+                                        placeholder="https://..." 
+                                        value={filmForm.videoUrl} 
+                                        disabled={!!editingFilmId}
+                                        style={!!editingFilmId ? { backgroundColor: '#222', color: '#888', cursor: 'not-allowed', borderColor: '#444' } : {}}
+                                        onChange={handleVideoUrlChange} 
+                                    />
                                 </div>
 
                                 <div className="formGroup">
@@ -3196,7 +3316,7 @@ const CreatorDashboardScreen = ({
                                 </div>
                                 
                                 <div className="formGroup">
-                                    <label className="formLabel">Movie Poster <span style={{color:'#DC3545'}}>*</span></label>
+                                    <label className="formLabel">Movie Poster <span style={{color:'#DC3545'}}>*</span> <span style={{color: '#00FFFF'}}>(✏️ Custom Upload Always Allowed)</span></label>
                                     <p style={{fontSize: '11px', color: '#888', margin: '0 0 8px 0'}}>If your video URL doesn't auto-pull a thumbnail, you MUST upload a poster to submit.</p>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                         <label className="modern-button" style={{ margin: 0, padding: '8px 16px', backgroundColor: '#3A3A3A', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', border: 'none' }}>
@@ -3233,8 +3353,8 @@ const CreatorDashboardScreen = ({
 
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                                     <div 
-                                        onClick={() => setFilmForm({...filmForm, type: 'free', premiereDate: ''})}
-                                        style={{ gridColumn: 'span 2', padding: '12px', borderRadius: '12px', border: filmForm.type === 'free' ? '2px solid #FFF' : '1px solid #333', background: filmForm.type === 'free' ? 'rgba(255, 255, 255, 0.1)' : '#111', cursor: 'pointer', transition: '0.2s' }}
+                                        onClick={() => !editingFilmId && setFilmForm({...filmForm, type: 'free', premiereDate: ''})}
+                                        style={{ gridColumn: 'span 2', padding: '12px', borderRadius: '12px', border: filmForm.type === 'free' ? '2px solid #FFF' : '1px solid #333', background: filmForm.type === 'free' ? 'rgba(255, 255, 255, 0.1)' : '#111', cursor: !!editingFilmId ? 'not-allowed' : 'pointer', transition: '0.2s', opacity: !!editingFilmId ? 0.6 : 1 }}
                                     >
                                         <p style={{ margin: '0 0 4px 0', color: '#FFF', fontWeight: '900', fontSize: '13px' }}>🎬 Free Public Showcase</p>
                                         <p style={{ margin: 0, color: '#AAA', fontSize: '11px' }}>Publish safely to the Arena as a standard, unmonetized film.</p>
@@ -3242,8 +3362,8 @@ const CreatorDashboardScreen = ({
                                     
                                     {creatorProfile?.enableDonationSubmissions && (
                                         <div 
-                                            onClick={() => setFilmForm({...filmForm, type: 'donation', premiereDate: ''})}
-                                            style={{ padding: '12px', borderRadius: '12px', border: filmForm.type === 'donation' ? '2px solid #00FFFF' : '1px solid #333', background: filmForm.type === 'donation' ? 'rgba(0, 255, 255, 0.1)' : '#111', cursor: 'pointer', transition: '0.2s' }}
+                                            onClick={() => !editingFilmId && setFilmForm({...filmForm, type: 'donation', premiereDate: ''})}
+                                            style={{ padding: '12px', borderRadius: '12px', border: filmForm.type === 'donation' ? '2px solid #00FFFF' : '1px solid #333', background: filmForm.type === 'donation' ? 'rgba(0, 255, 255, 0.1)' : '#111', cursor: !!editingFilmId ? 'not-allowed' : 'pointer', transition: '0.2s', opacity: !!editingFilmId ? 0.6 : 1 }}
                                         >
                                             <p style={{ margin: '0 0 4px 0', color: '#00FFFF', fontWeight: '900', fontSize: '13px' }}>🎁 Public Film Arena</p>
                                             <p style={{ margin: 0, color: '#AAA', fontSize: '11px' }}>Receive viewer donations.</p>
@@ -3251,8 +3371,8 @@ const CreatorDashboardScreen = ({
                                     )}
                                     {creatorProfile?.enablePremiereSubmissions && (
                                         <div 
-                                            onClick={() => setFilmForm({...filmForm, type: 'premiere'})}
-                                            style={{ padding: '12px', borderRadius: '12px', border: filmForm.type === 'premiere' ? '2px solid #FFD700' : '1px solid #333', background: filmForm.type === 'premiere' ? 'rgba(255, 215, 0, 0.1)' : '#111', cursor: 'pointer', transition: '0.2s' }}
+                                            onClick={() => !editingFilmId && setFilmForm({...filmForm, type: 'premiere'})}
+                                            style={{ padding: '12px', borderRadius: '12px', border: filmForm.type === 'premiere' ? '2px solid #FFD700' : '1px solid #333', background: filmForm.type === 'premiere' ? 'rgba(255, 215, 0, 0.1)' : '#111', cursor: !!editingFilmId ? 'not-allowed' : 'pointer', transition: '0.2s', opacity: !!editingFilmId ? 0.6 : 1 }}
                                         >
                                             <p style={{ margin: '0 0 4px 0', color: '#FFD700', fontWeight: '900', fontSize: '13px' }}>🎟️ Live Watch Party</p>
                                             <p style={{ margin: 0, color: '#AAA', fontSize: '11px' }}>Host ticketed live events.</p>
@@ -3261,17 +3381,36 @@ const CreatorDashboardScreen = ({
                                 </div>
 
                                 {filmForm.type === 'premiere' && (
-                                    <div className="formGroup" style={{ marginTop: '10px', background: 'rgba(255,215,0,0.05)', padding: '15px', borderRadius: '8px', border: '1px dashed rgba(255,215,0,0.3)' }}>
+                                    <div className="formGroup" style={{ marginTop: '10px', background: 'rgba(255,215,0,0.05)', padding: '15px', borderRadius: '8px', border: '1px dashed rgba(255,215,0,0.3)', opacity: !!editingFilmId ? 0.75 : 1 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                            <label className="formLabel" style={{ color: '#FFD700', margin: 0 }}>Select Virtual Room</label>
+                                            <label className="formLabel" style={{ color: '#FFD700', margin: 0 }}>
+                                                Select Virtual Room {!!editingFilmId && <span style={{color: '#FFD700'}}>(🔒 Locked Post-Approval)</span>}
+                                            </label>
                                             <span style={{ fontSize: '12px', cursor: 'help', color: '#00FFFF' }} title="Virtual Rooms book out in 3-hour locks. You cannot book a room that has a screening within 3 hours of your time.">❔ Room Rules</span>
                                         </div>
-                                        <select className="formInput" value={filmForm.room || 'Room 1'} onChange={e => setFilmForm({...filmForm, room: e.target.value})} style={{ background: '#000', color: '#FFF', marginTop: '6px' }}>
+                                        <select 
+                                            className="formInput" 
+                                            value={filmForm.room || 'Room 1'} 
+                                            disabled={!!editingFilmId}
+                                            onChange={e => setFilmForm({...filmForm, room: e.target.value})} 
+                                            style={{ background: !!editingFilmId ? '#222' : '#000', color: !!editingFilmId ? '#888' : '#FFF', marginTop: '6px', cursor: !!editingFilmId ? 'not-allowed' : 'pointer' }}
+                                        >
                                             {(creatorProfile?.role?.toLowerCase() === 'admin' ? ["Room 1", "Room 2", "Room 3", "Room 4", "Room 5", "Free Screening Room"] : ["Room 1", "Room 2", "Room 3", "Room 4", "Room 5"]).map(r => <option key={r} value={r}>{r}</option>)}
                                         </select>
                                         
-                                        <label className="formLabel" style={{ color: '#FFD700', marginTop: '10px' }}>Schedule Premiere Date & Time (Tap icon to open Calendar)</label>
-                                        <input type="datetime-local" className="formInput" style={{ background: '#000', color: '#FFF' }} value={filmForm.premiereDate} onClick={(e) => e.target.showPicker && e.target.showPicker()} onChange={e => setFilmForm({...filmForm, premiereDate: e.target.value})} required />
+                                        <label className="formLabel" style={{ color: '#FFD700', marginTop: '10px' }}>
+                                            Schedule Premiere Date & Time {!!editingFilmId && <span style={{color: '#FFD700'}}>(🔒 Locked Post-Approval)</span>}
+                                        </label>
+                                        <input 
+                                            type="datetime-local" 
+                                            className="formInput" 
+                                            disabled={!!editingFilmId}
+                                            style={{ background: !!editingFilmId ? '#222' : '#000', color: !!editingFilmId ? '#888' : '#FFF', cursor: !!editingFilmId ? 'not-allowed' : 'pointer' }} 
+                                            value={filmForm.premiereDate} 
+                                            onClick={(e) => !editingFilmId && e.target.showPicker && e.target.showPicker()} 
+                                            onChange={e => setFilmForm({...filmForm, premiereDate: e.target.value})} 
+                                            required 
+                                        />
                                         
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
                                             <label className="formLabel" style={{ color: '#FFD700', margin: 0 }}>Ticket Price (USD)</label>

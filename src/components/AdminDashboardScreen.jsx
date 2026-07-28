@@ -2038,7 +2038,7 @@ const AdminDashboardScreen = ({
                                                     <div>
                                                         <p style={{ margin: 0, fontWeight: '900', fontSize: '18px', color: '#FFF' }}>{item.title}</p>
                                                         <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#32CD32', fontWeight: 'bold' }}>
-                                                            Artist: {item.suggestedByName || 'Musician'} <span style={{ color: '#666', fontFamily: 'monospace' }}>(UID: {item.suggestedBy})</span>
+                                                            Artist: {item.suggestedByName || item.creatorName || 'NVA Artist'} <span style={{ color: '#666', fontFamily: 'monospace' }}>(UID: {item.suggestedBy})</span>
                                                         </p>
                                                         <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#AAA' }}>Genre: {item.genre} | Room: <strong style={{ color: '#FFF' }}>{item.room || 'Room 1'}</strong></p>
                                                         {item.premiereDate && <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#FFD700' }}>📅 Scheduled: {new Date(item.premiereDate).toLocaleString()}</p>}
@@ -2065,10 +2065,13 @@ const AdminDashboardScreen = ({
                                                     </button>
                                                     <button className="adminActionButton approve" style={{ background: '#32CD32', color: '#000', border: 'none', fontWeight: '900' }} onClick={async () => {
                                                         try {
-                                                            // 1. Move to Live Movies/Events Collection
-                                                            await addDoc(collection(db, "movies"), {
-                                                                title: item.title,
-                                                                genre: item.genre,
+                                                            const startDate = item.premiereDate ? new Date(item.premiereDate) : new Date();
+                                                            const endDate = new Date(startDate.getTime() + (15 * 60 * 1000)); // 15-Minute Live Window
+
+                                                            // 1. Move to Live Movies Collection
+                                                            const movieRef = await addDoc(collection(db, "movies"), {
+                                                                title: item.title || 'Music Premiere',
+                                                                genre: item.genre || 'Music',
                                                                 credits: item.credits || '',
                                                                 videoUrl: item.videoUrl || '',
                                                                 posterUrl: item.songPosterUrl || item.posterUrl || '',
@@ -2076,10 +2079,30 @@ const AdminDashboardScreen = ({
                                                                 isTicketed: item.isTicketed || false,
                                                                 ticketPrice: item.ticketPrice || '0',
                                                                 premiereDate: item.premiereDate || null,
+                                                                scheduledStartTime: startDate,
+                                                                scheduledEndTime: endDate,
+                                                                status: 'upcoming',
                                                                 room: item.room || 'Room 1',
-                                                                creatorId: item.suggestedBy,
-                                                                creatorName: item.suggestedByName,
+                                                                creatorId: item.suggestedBy || '',
+                                                                creatorName: item.suggestedByName || item.creatorName || 'NVA Artist',
                                                                 createdAt: new Date().toISOString()
+                                                            });
+
+                                                            // 2. Create Mirrored Event Doc with 15-Minute Scheduled End Time
+                                                            await setDoc(doc(db, "events", movieRef.id), {
+                                                                eventTitle: item.title || 'Music Premiere',
+                                                                eventDescription: item.credits || 'Live Music Video Premiere',
+                                                                liveStreamUrl: item.videoUrl || '',
+                                                                thumbnailUrl: item.songPosterUrl || item.posterUrl || '',
+                                                                scheduledStartTime: startDate,
+                                                                scheduledEndTime: endDate,
+                                                                status: 'upcoming',
+                                                                room: item.room || 'Room 1',
+                                                                creatorId: item.suggestedBy || '',
+                                                                creatorName: item.suggestedByName || item.creatorName || 'NVA Artist',
+                                                                isTicketed: !!item.isTicketed,
+                                                                ticketPrice: Number(item.ticketPrice) || 0,
+                                                                type: 'musicVideoPremiere'
                                                             });
 
                                                             // 2. Remove from Suggestions Queue
@@ -2494,13 +2517,34 @@ const AdminDashboardScreen = ({
                             <p style={{ color: '#FFF', fontSize: '14px', fontWeight: 'bold', margin: '0 0 8px 0' }}>
                                 Declining: "{declineModalItem.title}"
                             </p>
-                            <p style={{ color: '#AAA', fontSize: '12px', margin: '0 0 15px 0', lineHeight: '1.4' }}>
-                                Please specify why this submission is being declined. This reason will be sent directly to the creator's inbox notification.
+                            <p style={{ color: '#AAA', fontSize: '12px', margin: '0 0 10px 0', lineHeight: '1.4' }}>
+                                Please specify why this submission is being declined. Tap a quick reason below or type custom details:
                             </p>
+
+                            {/* Quick Presets Bar */}
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                                {[
+                                    "🎨 Missing or Low Quality Artwork Poster",
+                                    "🔊 Audio/Video Quality below standard",
+                                    "📅 Virtual Room Schedule Conflict",
+                                    "🔗 Invalid or Private Video Link",
+                                    "🔒 Copyright/License Proof Required"
+                                ].map((reason) => (
+                                    <button
+                                        key={reason}
+                                        type="button"
+                                        onClick={() => setDeclineReasonInput(reason)}
+                                        style={{ background: declineReasonInput === reason ? 'rgba(220, 53, 69, 0.3)' : 'rgba(255,255,255,0.05)', color: declineReasonInput === reason ? '#FFD700' : '#CCC', border: declineReasonInput === reason ? '1px solid #FFD700' : '1px solid #333', borderRadius: '12px', padding: '4px 10px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.15s ease' }}
+                                    >
+                                        {reason}
+                                    </button>
+                                ))}
+                            </div>
+
                             <textarea 
                                 className="cs-input" 
-                                style={{ minHeight: '90px', margin: '0 0 20px 0', width: '100%', padding: '10px', boxSizing: 'border-box' }}
-                                placeholder="e.g. Audio quality issue, poster missing, or schedule conflict..."
+                                style={{ minHeight: '80px', margin: '0 0 20px 0', width: '100%', padding: '10px', boxSizing: 'border-box' }}
+                                placeholder="Selected reason or custom explanation will appear here..."
                                 value={declineReasonInput}
                                 onChange={(e) => setDeclineReasonInput(e.target.value)}
                             />

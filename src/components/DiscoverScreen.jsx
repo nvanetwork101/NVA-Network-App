@@ -52,10 +52,42 @@ const DynamicThumbnail = ({ item, onClick }) => {
     );
 };
 
-// --- NVA AUTHORITATIVE SYNC PLAYER (SHIELDED) ---
+// --- NVA AUTHORITATIVE SYNC PLAYER (SHIELDED WITH CLICK-TO-SLIDE VOLUME CONTROL) ---
 const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUser, isUnlocked }) => {
     const urlRef = useRef('');
     const lastEventIdRef = useRef(null);
+    const iframeRef = useRef(null);
+    const [showControls, setShowControls] = useState(false);
+    const [volume, setVolume] = useState(100);
+    const [isMuted, setIsMuted] = useState(false);
+    const hideTimerRef = useRef(null);
+
+    const handleScreenClick = () => {
+        setShowControls(true);
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = setTimeout(() => setShowControls(false), 3500);
+    };
+
+    const updateVolume = (val) => {
+        setVolume(val);
+        if (iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [val] }), '*');
+            if (val > 0 && isMuted) {
+                setIsMuted(false);
+                iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
+            }
+        }
+    };
+
+    const toggleMute = (e) => {
+        e.stopPropagation();
+        const nextMute = !isMuted;
+        setIsMuted(nextMute);
+        if (iframeRef.current?.contentWindow) {
+            const cmd = nextMute ? 'mute' : 'unMute';
+            iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: cmd, args: [] }), '*');
+        }
+    };
 
     // URL is hard-locked into a ref on the very first render. It will NEVER recalculate or restart.
     if (lastEventIdRef.current !== eventId) {
@@ -86,8 +118,7 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
                 const controls = isModUser ? '1' : '0';
                 const disablekb = isModUser ? '0' : '1';
                 const startParam = elapsedSeconds > 0 ? `&start=${elapsedSeconds}` : '';
-                /* THE FIX: Added &loop=0 and rel=0 to prevent the video from restarting/suggesting others when finished */
-url = `${embedUrl}${separator}autoplay=1&mute=0&controls=${controls}&disablekb=${disablekb}&modestbranding=1&rel=0&loop=0&enablejsapi=1${startParam}`;
+                url = `${embedUrl}${separator}autoplay=1&mute=0&controls=${controls}&disablekb=${disablekb}&modestbranding=1&rel=0&loop=0&enablejsapi=1${startParam}`;
             }
         }
         urlRef.current = url;
@@ -95,23 +126,52 @@ url = `${embedUrl}${separator}autoplay=1&mute=0&controls=${controls}&disablekb=$
     }
 
     return (
-            <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#000' }}>
-                {/* THE FIX: Overlay now blocks clicks until specifically unlocked */}
-                {!isUnlocked && (
-                    <div 
-                        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, cursor: 'default' }} 
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} 
-                    />
-                )}
-                <iframe
+        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#000' }} onClick={handleScreenClick}>
+            {/* Shield layer: Blocks seek clicks, passes click to reveal volume controls */}
+            {!isUnlocked && (
+                <div 
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, cursor: 'pointer' }} 
+                    onClick={handleScreenClick} 
+                />
+            )}
+            <iframe
+                ref={iframeRef}
                 key={`nva-sync-player-${eventId}`} 
                 src={urlRef.current}
                 className="w-full h-full border-0"
-                allow="autoplay; encrypted-media; picture-in-picture"
+                allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
                 allowFullScreen
+                x-webkit-airplay="allow"
                 title="Live Premiere"
                 style={{ width: '100%', height: '100%', pointerEvents: 'auto' }} 
             ></iframe>
+
+            {/* Pop-up Interactive Volume Slider Bar (Appears on Click, Auto-Hides after 3.5s) */}
+            {!isUnlocked && showControls && (
+                <div 
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ position: 'absolute', bottom: '20px', right: '20px', zIndex: 30, display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', padding: '8px 16px', borderRadius: '30px', border: '1px solid #FFD700', boxShadow: '0 0 20px rgba(0,0,0,0.8)' }}
+                >
+                    <button 
+                        type="button"
+                        onClick={toggleMute} 
+                        style={{ background: 'none', border: 'none', color: '#FFD700', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', fontSize: '16px' }}
+                    >
+                        {isMuted || volume === 0 ? '🔇' : '🔊'}
+                    </button>
+                    <input 
+                        type="range" 
+                        min="0" 
+                        max="100" 
+                        value={isMuted ? 0 : volume} 
+                        onChange={(e) => updateVolume(Number(e.target.value))}
+                        style={{ width: '80px', accentColor: '#FFD700', cursor: 'pointer' }} 
+                    />
+                    <span style={{ fontSize: '10px', color: '#FFF', fontWeight: 'bold', fontFamily: 'monospace', minWidth: '28px' }}>
+                        {isMuted ? '0%' : `${volume}%`}
+                    </span>
+                </div>
+            )}
         </div>
     );
 }, (prev, next) => prev.eventId === next.eventId && prev.isModUser === next.isModUser && prev.isUnlocked === next.isUnlocked);
@@ -294,6 +354,12 @@ function DiscoverScreen({
                     fallbackUnsub = onSnapshot(doc(db, "movies", selectedEventId), (movieSnap) => {
                         if (movieSnap.exists()) {
                             const movieData = movieSnap.data();
+                            const pTime = movieData.premiereDate ? (movieData.premiereDate.toMillis ? movieData.premiereDate.toMillis() : new Date(movieData.premiereDate).getTime()) : 0;
+                            const customSecs = Number(movieData.durationTotalSec) || 0;
+                            const musicWindowMs = customSecs > 0 ? (customSecs * 1000) : (15 * 60 * 1000);
+                            const isMusicPost = movieData.type === 'musicVideoPremiere' && pTime > 0 && (Date.now() > pTime + musicWindowMs);
+                            const isFilmPost = movieData.type === 'premiere' && pTime > 0 && (Date.now() > pTime + (5 * 60 * 60 * 1000));
+                            const derivedStatus = (isMusicPost || isFilmPost || movieData.status === 'completed') ? 'completed' : (movieData.status || 'upcoming');
                             setMasterEventDetails({ 
                                 id: movieSnap.id, 
                                 eventTitle: movieData.title,
@@ -302,10 +368,10 @@ function DiscoverScreen({
                                 thumbnailUrl: movieData.posterUrl,
                                 ticketPrice: movieData.ticketPrice,
                                 scheduledStartTime: movieData.premiereDate,
-                                isTicketed: movieData.type === 'premiere',
+                                isTicketed: movieData.type === 'premiere' || (movieData.type === 'musicVideoPremiere' && movieData.isTicketed),
                                 room: movieData.room,
                                 creatorName: movieData.suggestedByName || "Director",
-                                status: movieData.type === 'premiere' ? 'upcoming' : 'completed', // THE FIX: Force injects status to prevent falling into dead layout
+                                status: derivedStatus,
                                 ...movieData 
                             });
                         } else {
@@ -614,8 +680,11 @@ function DiscoverScreen({
                         }
                     }
                 }
+
+                // THE FIX: 5-Hour Multiplex Auto-Hide. Card automatically drops from lobby 5 hours after start time.
+                if (pTime > 0 && now > pTime + (5 * 60 * 60 * 1000)) continue;
                 
-                // Map event fields to match movie layout expectation
+                // Map event fields to match movie layout expectation (includes all live premieres)
                 validPremieres.push({ 
                     id: docSnap.id, 
                     title: data.eventTitle,
@@ -775,6 +844,29 @@ function DiscoverScreen({
         window.addEventListener('switchDiscoverTab', handleSwitch);
         return () => window.removeEventListener('switchDiscoverTab', handleSwitch);
     }, []);
+
+    // Authoritative Lifecycle Auto-Conclude (Triggers React State to Swap Screen Instantly)
+    useEffect(() => {
+        if (!masterEventDetails || masterEventDetails.status === 'completed') return;
+
+        const evtTime = masterEventDetails.scheduledStartTime?.toMillis ? masterEventDetails.scheduledStartTime.toMillis() : (masterEventDetails.scheduledStartTime ? new Date(masterEventDetails.scheduledStartTime).getTime() : 0);
+        if (evtTime > 0) {
+            let expireWindow = 5 * 60 * 60 * 1000; // 5 hours for Film
+            if (masterEventDetails.type === 'musicVideoPremiere') {
+                const customSecs = Number(masterEventDetails.durationTotalSec) || 0;
+                expireWindow = customSecs > 0 ? (customSecs * 1000) : (15 * 60 * 1000);
+            }
+            const timeRemaining = (evtTime + expireWindow) - Date.now();
+            if (timeRemaining <= 0) {
+                setMasterEventDetails(prev => prev ? ({ ...prev, status: 'completed' }) : null);
+            } else {
+                const timer = setTimeout(() => {
+                    setMasterEventDetails(prev => prev ? ({ ...prev, status: 'completed' }) : null);
+                }, timeRemaining);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, [masterEventDetails?.id, masterEventDetails?.scheduledStartTime, masterEventDetails?.durationTotalSec, masterEventDetails?.status]);
 
     return (
         <div className="screenContainer" ref={showcaseTopRef} style={{ 
@@ -940,16 +1032,26 @@ function DiscoverScreen({
                         </div>
                     </div>
 
-                    {/* THE FIX: Combined Content Genre Search Pipeline with ZERO-COST AFFINITY ALGORITHM */}
+                    {/* THE FIX: Combined Content Genre Search Pipeline with 1-ITEM PER CREATOR ENFORCEMENT & ZERO-COST AFFINITY ALGORITHM */}
                     {(() => {
                         const search = showcaseSearch.toLowerCase();
                         const term = showcaseFilter.toLowerCase();
                         
-                        // 1. Run the standard filters
+                        // 1. Enforce 1 item per creator (keeps newest active item) + standard filters
+                        const seenCreators = new Set();
                         const filtered = showcaseItems.filter(item => {
                             const matchesSearch = search === '' || (item.title || '').toLowerCase().includes(search) || (item.creatorName || '').toLowerCase().includes(search);
                             const matchesDropdown = showcaseFilter === 'All' || (item.category || item.contentType || '').toLowerCase().includes(term) || (item.creatorRole || '').toLowerCase().includes(term) || (Array.isArray(item.tags) ? item.tags.some(t => (t || '').toLowerCase().includes(term)) : false);
-                            return matchesSearch && matchesDropdown;
+                            const isMatch = matchesSearch && matchesDropdown;
+
+                            if (!isMatch) return false;
+
+                            const creatorKey = item.creatorId || item.userId || item.creatorName;
+                            if (creatorKey) {
+                                if (seenCreators.has(creatorKey)) return false; // Drops older duplicate items for this creator
+                                seenCreators.add(creatorKey);
+                            }
+                            return true;
                         });
 
                         // 2. Retrieve local affinity scores for $0 AI
@@ -1119,8 +1221,8 @@ function DiscoverScreen({
                                         border: 1px solid #1A1A1A;
                                     }
 
-                                    /* TABLET & DESKTOP SHIFT: Snaps chat to the right side automatically */
-                                    @media (min-width: 850px) {
+                                    /* DESKTOP POINTER SHIFT ONLY: Snaps chat to right on desktop/mouse screens */
+                                    @media (min-width: 850px) and (hover: hover) and (pointer: fine) {
                                         .live-layout-container {
                                             flex-direction: row;
                                             max-width: 1300px; 
@@ -1294,7 +1396,9 @@ function DiscoverScreen({
                                     
                                     <div style={{ marginTop: '20px', textAlign: 'center' }}>
                                         <p className="heading" style={{ color: '#FFD700', fontSize: '24px', margin: '0 0 5px 0' }}>{masterEventDetails.eventTitle}</p>
-                                        <p style={{ color: '#00FFFF', fontSize: '12px', fontWeight: 'bold', margin: '0 0 15px 0', textTransform: 'uppercase' }}>A Film by: {masterEventDetails.creatorName || masterEventDetails.credits || 'NVA Creator'}</p>
+                                        <p style={{ color: '#00FFFF', fontSize: '12px', fontWeight: 'bold', margin: '0 0 15px 0', textTransform: 'uppercase' }}>
+                                            {masterEventDetails.type === 'musicVideoPremiere' ? 'ARTIST:' : 'A FILM BY:'} {masterEventDetails.creatorName || masterEventDetails.credits || 'NVA Creator'}
+                                        </p>
                                         <p className="paragraph" style={{ color: '#AAA', fontSize: '13px', maxWidth: '500px', margin: '0 auto 20px auto', lineHeight: '1.6' }}>{masterEventDetails.eventDescription}</p>
                                     </div>
                                     

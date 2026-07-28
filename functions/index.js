@@ -7366,73 +7366,78 @@ exports.dailySystemMaintenance = onSchedule("0 3 * * *", async (event) => {
     return null;
 });
 
-// --- SECURE MONETIZATION & SHOWCASE ENFORCER (1-ITEM LIMIT) ---
-exports.enforceSingleShowcaseItem = onDocumentWritten("artifacts/{appId}/public/data/content_items/{contentId}", async (event) => {
-    const after = event.data.after.exists ? event.data.after.data() : null;
-    if (!after) return null; // Ignore Deletions
+// --- SECURE MONETIZATION & SHOWCASE ENFORCER (v1 BACKWARDS COMPATIBLE) ---
+exports.enforceSingleShowcaseItem = functions.firestore
+    .document("artifacts/{appId}/public/data/content_items/{contentId}")
+    .onWrite(async (change, context) => {
+        const after = change.after.exists ? change.after.data() : null;
+        if (!after) return null; // Ignore Deletions
 
-    const db = admin.firestore();
-    const creatorId = after.creatorId;
-    if (!creatorId) return null;
+        const db = admin.firestore();
+        const creatorId = after.creatorId;
+        if (!creatorId) return null;
 
-    // Detect if the item just became Free Showcase Active OR Monetized
-    const becameActive = after.isActive === true && (!event.data.before.exists || event.data.before.data().isActive !== true);
-    const becameMonetized = after.monetizationStatus === 'approved' && (!event.data.before.exists || event.data.before.data().monetizationStatus !== 'approved');
+        const beforeData = change.before.exists ? change.before.data() : {};
+        const becameActive = after.isActive === true && beforeData.isActive !== true;
+        const becameMonetized = after.monetizationStatus === 'approved' && beforeData.monetizationStatus !== 'approved';
 
-    if (becameActive || becameMonetized) {
-        const contentRef = db.collection(`artifacts/${event.params.appId}/public/data/content_items`);
-        
-        // Find ALL other items by this creator
-        const snapshot = await contentRef.where("creatorId", "==", creatorId).get();
-        
-        const batch = db.batch();
-        let updatesMade = false;
+        if (becameActive || becameMonetized) {
+            const contentRef = db.collection(`artifacts/${context.params.appId}/public/data/content_items`);
+            const snapshot = await contentRef.where("creatorId", "==", creatorId).get();
+            
+            const batch = db.batch();
+            let updatesMade = false;
 
-        snapshot.forEach(docSnap => {
-            if (docSnap.id !== event.params.contentId) {
-                const data = docSnap.data();
-                let updates = {};
+            snapshot.forEach(docSnap => {
+                if (docSnap.id !== context.params.contentId) {
+                    const data = docSnap.data();
+                    let updates = {};
 
-                // Strip Active Status from old Free items
-                if (becameActive && data.isActive === true) {
-                    updates.isActive = false;
+                    if (becameActive && data.isActive === true) {
+                        updates.isActive = false;
+                    }
+                    if (becameMonetized && data.monetizationStatus === 'approved') {
+                        updates.monetizationStatus = 'none';
+                        updates.isMonetizationRequest = false;
+                    }
+
+                    if (Object.keys(updates).length > 0) {
+                        batch.update(docSnap.ref, updates);
+                        updatesMade = true;
+                    }
                 }
-                
-                // Strip Monetization Status from old Paid items
-                if (becameMonetized && data.monetizationStatus === 'approved') {
-                    updates.monetizationStatus = 'none';
-                    updates.isMonetizationRequest = false;
-                }
-
-                if (Object.keys(updates).length > 0) {
-                    batch.update(docSnap.ref, updates);
-                    updatesMade = true;
-                }
-            }
-        });
-
-        if (updatesMade) {
-            await batch.commit();
-        }
-
-        // Dispatch Approval Notification
-        if (becameMonetized) {
-            await db.collection("notifications").add({
-                userId: creatorId,
-                title: "Video Approved & Live! 🎬",
-                body: `Your video "${after.title}" has been approved for monetization and is now live! Older showcase items have been archived.`,
-                link: "/CreatorDashboard",
-                deliveryType: ["inbox", "push"],
-                notificationType: "MONETIZATION_APPROVED",
-                isRead: false,
-                status: "pending",
-                timestamp: FieldValue.serverTimestamp()
             });
-            await db.collection("creators").doc(creatorId).update({ unreadNotificationCount: FieldValue.increment(1) });
+
+            if (updatesMade) {
+                await batch.commit();
+            }
+
+            if (becameMonetized) {
+                await db.collection("creators").doc(creatorId).update({
+                    featuredVideoLink: {
+                        title: after.title || 'Untitled',
+                        embedUrl: after.embedUrl || after.mainUrl || '',
+                        customThumbnailUrl: after.customThumbnailUrl || after.imageUrl || '',
+                        liveFeedContentId: context.params.contentId
+                    },
+                    unreadNotificationCount: admin.firestore.FieldValue.increment(1)
+                });
+
+                await db.collection("notifications").add({
+                    userId: creatorId,
+                    title: "Video Approved & Live! 🎬",
+                    body: `Your video "${after.title}" has been approved for monetization and is now live! Older showcase items have been archived.`,
+                    link: "/CreatorDashboard",
+                    deliveryType: ["inbox", "push"],
+                    notificationType: "MONETIZATION_APPROVED",
+                    isRead: false,
+                    status: "pending",
+                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
         }
-    }
-    return null;
-});
+        return null;
+    });
 
 // =====================================================================
 // ================== ROAST ROOM TOKEN ECONOMY =========================
