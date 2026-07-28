@@ -2098,6 +2098,7 @@ const AdminDashboardScreen = ({
                                                                 room: item.room || 'Room 1',
                                                                 creatorId: item.suggestedBy || '',
                                                                 creatorName: item.suggestedByName || item.creatorName || 'NVA Artist',
+                                                                durationTotalSec: customSecs, // FIX: Passes uploaded video duration for Publish timer
                                                                 createdAt: new Date().toISOString()
                                                             });
 
@@ -2127,7 +2128,7 @@ const AdminDashboardScreen = ({
                                                                 userId: item.suggestedBy,
                                                                 title: "Music Premiere Approved! 🎵",
                                                                 body: `Your music video "${item.title}" has been approved for Live Premiere in ${item.room || 'Room 1'}!`,
-                                                                link: "/CreatorDashboard",
+                                                                link: `/premiere/${movieRef.id}`, // FIX: Opens the Multiplex Waiting Room / Shielded Live Stream
                                                                 deliveryType: ["inbox", "push"],
                                                                 notificationType: "PREMIERE_APPROVED",
                                                                 isRead: false,

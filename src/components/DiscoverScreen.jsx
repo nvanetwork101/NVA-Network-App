@@ -426,7 +426,11 @@ function DiscoverScreen({
         const eventsRef = collection(db, "events");
         const q = query(eventsRef, where("status", "==", "completed"), orderBy("scheduledEndTime", "desc"));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            setPastEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            // FIX: Excludes music video premieres so they NEVER drop into VOD Replays
+            const filmsOnly = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(evt => evt.type !== 'musicVideoPremiere');
+            setPastEvents(filmsOnly);
         }, (error) => {
             console.error("Error fetching past events: ", error);
             showMessage("Failed to load past events.");
