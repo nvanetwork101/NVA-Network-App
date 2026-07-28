@@ -1265,31 +1265,40 @@ exports.deleteContentItem = onCall(async (request) => {
         }
         
         const creatorRef = db.collection("creators").doc(contentData.creatorId);
-
         const creatorDoc = await creatorRef.get();
-        const updates = { pinnedContent: admin.firestore.FieldValue.arrayRemove(contentId) };
         
-        // Wipe from Showcase if this was the featured video
-        if (creatorDoc.data()?.featuredVideoLink?.liveFeedContentId === contentId) {
-            updates.featuredVideoLink = admin.firestore.FieldValue.delete();
+        if (creatorDoc.exists) {
+            const updates = { pinnedContent: admin.firestore.FieldValue.arrayRemove(contentId) };
+            
+            // Safely wipe from Showcase if this was the featured video
+            if (creatorDoc.data().featuredVideoLink?.liveFeedContentId === contentId) {
+                updates.featuredVideoLink = admin.firestore.FieldValue.delete();
+            }
+            await creatorRef.update(updates);
+            
+            const followersSnapshot = await creatorRef.collection("followers").get();
+            if (!followersSnapshot.empty) {
+                const batch = db.batch();
+                followersSnapshot.forEach(followerDoc => {
+                    const feedItemRef = db.collection("creators").doc(followerDoc.id).collection("feed").doc(contentId);
+                    batch.delete(feedItemRef);
+                });
+                await batch.commit();
+                logger.info(`Removed '${contentId}' from ${followersSnapshot.size} follower feeds.`);
+            }
         }
 
-        await creatorRef.update(updates);
-        
-        const followersSnapshot = await creatorRef.collection("followers").get();
-        if (!followersSnapshot.empty) {
+        // Secure Cascade Fix: Inline batch delete to prevent ReferenceError crashes
+        const deleteSubcollection = async (collectionRef) => {
+            const snap = await collectionRef.limit(400).get();
+            if (snap.size === 0) return;
             const batch = db.batch();
-            followersSnapshot.forEach(followerDoc => {
-                const feedItemRef = db.collection("creators").doc(followerDoc.id).collection("feed").doc(contentId);
-                batch.delete(feedItemRef);
-            });
+            snap.docs.forEach(doc => batch.delete(doc.ref));
             await batch.commit();
-            logger.info(`Removed '${contentId}' from ${followersSnapshot.size} follower feeds.`);
-        }
+        };
 
-        // Secure Cascade Fix: Erase all nested comments and likes subcollections to prevent zombie db drift [1]
-        await deleteCollection(db, contentRef.collection("comments"), 400);
-        await deleteCollection(db, contentRef.collection("likes"), 400);
+        await deleteSubcollection(contentRef.collection("comments"));
+        await deleteSubcollection(contentRef.collection("likes"));
 
         await contentRef.delete();
         logger.info(`User '${uid}' successfully deleted content item '${contentId}'.`);

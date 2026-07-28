@@ -52,42 +52,10 @@ const DynamicThumbnail = ({ item, onClick }) => {
     );
 };
 
-// --- NVA AUTHORITATIVE SYNC PLAYER (SHIELDED WITH CLICK-TO-SLIDE VOLUME CONTROL) ---
+// --- NVA AUTHORITATIVE SYNC PLAYER (CLEAN NATIVE CONTROLS) ---
 const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUser, isUnlocked }) => {
     const urlRef = useRef('');
     const lastEventIdRef = useRef(null);
-    const iframeRef = useRef(null);
-    const [showControls, setShowControls] = useState(false);
-    const [volume, setVolume] = useState(100);
-    const [isMuted, setIsMuted] = useState(false);
-    const hideTimerRef = useRef(null);
-
-    const handleScreenClick = () => {
-        setShowControls(true);
-        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-        hideTimerRef.current = setTimeout(() => setShowControls(false), 3500);
-    };
-
-    const updateVolume = (val) => {
-        setVolume(val);
-        if (iframeRef.current?.contentWindow) {
-            iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [val] }), '*');
-            if (val > 0 && isMuted) {
-                setIsMuted(false);
-                iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
-            }
-        }
-    };
-
-    const toggleMute = (e) => {
-        e.stopPropagation();
-        const nextMute = !isMuted;
-        setIsMuted(nextMute);
-        if (iframeRef.current?.contentWindow) {
-            const cmd = nextMute ? 'mute' : 'unMute';
-            iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: cmd, args: [] }), '*');
-        }
-    };
 
     // URL is hard-locked into a ref on the very first render. It will NEVER recalculate or restart.
     if (lastEventIdRef.current !== eventId) {
@@ -109,16 +77,15 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
         if (isFacebook) {
             const encodedFbUrl = encodeURIComponent(streamUrl);
             const timeParam = elapsedSeconds > 0 ? `&t=${elapsedSeconds}` : '';
-            url = `https://www.facebook.com/plugins/video.php?href=${encodedFbUrl}&show_text=false&autoplay=true&mute=0${timeParam}`;
+            url = `https://www.facebook.com/plugins/video.php?href=${encodedFbUrl}&show_text=false&autoplay=true&mute=1${timeParam}`;
         } else {
             const extracted = extractVideoInfo(streamUrl);
             const embedUrl = extracted ? extracted.embedUrl : streamUrl;
             if (embedUrl) {
                 const separator = embedUrl.includes('?') ? '&' : '?';
-                const controls = isModUser ? '1' : '0';
-                const disablekb = isModUser ? '0' : '1';
+                // FIX: Removed JS shielding. Forced controls=1 so users can tap native unmute safely across all devices.
                 const startParam = elapsedSeconds > 0 ? `&start=${elapsedSeconds}` : '';
-                url = `${embedUrl}${separator}autoplay=1&mute=0&controls=${controls}&disablekb=${disablekb}&modestbranding=1&rel=0&loop=0&enablejsapi=1${startParam}`;
+                url = `${embedUrl}${separator}autoplay=1&mute=1&controls=1&disablekb=0&modestbranding=1&rel=0&loop=0&enablejsapi=1${startParam}`;
             }
         }
         urlRef.current = url;
@@ -126,16 +93,8 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
     }
 
     return (
-        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#000' }} onClick={handleScreenClick}>
-            {/* Shield layer: Blocks seek clicks, passes click to reveal volume controls */}
-            {!isUnlocked && (
-                <div 
-                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, cursor: 'pointer' }} 
-                    onClick={handleScreenClick} 
-                />
-            )}
+        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#000' }}>
             <iframe
-                ref={iframeRef}
                 key={`nva-sync-player-${eventId}`} 
                 src={urlRef.current}
                 className="w-full h-full border-0"
@@ -145,33 +104,6 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
                 title="Live Premiere"
                 style={{ width: '100%', height: '100%', pointerEvents: 'auto' }} 
             ></iframe>
-
-            {/* Pop-up Interactive Volume Slider Bar (Appears on Click, Auto-Hides after 3.5s) */}
-            {!isUnlocked && showControls && (
-                <div 
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ position: 'absolute', bottom: '20px', right: '20px', zIndex: 30, display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', padding: '8px 16px', borderRadius: '30px', border: '1px solid #FFD700', boxShadow: '0 0 20px rgba(0,0,0,0.8)' }}
-                >
-                    <button 
-                        type="button"
-                        onClick={toggleMute} 
-                        style={{ background: 'none', border: 'none', color: '#FFD700', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', fontSize: '16px' }}
-                    >
-                        {isMuted || volume === 0 ? '🔇' : '🔊'}
-                    </button>
-                    <input 
-                        type="range" 
-                        min="0" 
-                        max="100" 
-                        value={isMuted ? 0 : volume} 
-                        onChange={(e) => updateVolume(Number(e.target.value))}
-                        style={{ width: '80px', accentColor: '#FFD700', cursor: 'pointer' }} 
-                    />
-                    <span style={{ fontSize: '10px', color: '#FFF', fontWeight: 'bold', fontFamily: 'monospace', minWidth: '28px' }}>
-                        {isMuted ? '0%' : `${volume}%`}
-                    </span>
-                </div>
-            )}
         </div>
     );
 }, (prev, next) => prev.eventId === next.eventId && prev.isModUser === next.isModUser && prev.isUnlocked === next.isUnlocked);

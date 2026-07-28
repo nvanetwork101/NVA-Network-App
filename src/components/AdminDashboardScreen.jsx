@@ -657,6 +657,17 @@ const AdminDashboardScreen = ({
                     createdAt: new Date().toISOString()
                 });
 
+                const creatorRef = doc(db, "creators", item.creatorId);
+                await updateDoc(creatorRef, {
+                    featuredVideoLink: {
+                        liveFeedContentId: item.id,
+                        title: item.title || '',
+                        customThumbnailUrl: item.customThumbnailUrl || item.imageUrl || '',
+                        embedUrl: item.embedUrl || item.mainUrl || '',
+                        mainUrl: item.mainUrl || ''
+                    }
+                });
+
                 // Server trigger onMonetizationStatusChange handles secure notification delivery automatically!
 
                 showMessage("Video Approved & Launched!");

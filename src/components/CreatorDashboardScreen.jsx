@@ -2347,8 +2347,10 @@ const CreatorDashboardScreen = ({
 
                             {myArenaFilms.filter(f => f.type === 'musicVideoPremiere').map(film => {
                                 const pTime = film.premiereDate ? (film.premiereDate.toMillis ? film.premiereDate.toMillis() : new Date(film.premiereDate).getTime()) : 0;
-                                const isFifteenMinsPost = pTime > 0 && (Date.now() > (pTime + (15 * 60 * 1000)));
-                                const canPublish = film.status === 'completed' || isFifteenMinsPost;
+                                const durSecs = Number(film.durationTotalSec) || 0;
+                                const windowMs = durSecs > 0 ? (durSecs * 1000) : (15 * 60 * 1000);
+                                const isDurationPost = pTime > 0 && (Date.now() > (pTime + windowMs));
+                                const canPublish = film.status === 'completed' || isDurationPost;
 
                                 return (
                                     <div key={film.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0a0a0a', padding: '10px 15px', borderRadius: '8px', marginBottom: '8px', border: '1px solid #333' }}>
@@ -3084,9 +3086,9 @@ const CreatorDashboardScreen = ({
                                     )}
                                 </div>
 
-                                {/* 15-Minute Post-Premiere Notice */}
+                                {/* Exact Duration Post-Premiere Notice */}
                                 <div style={{ background: 'rgba(255, 215, 0, 0.05)', border: '1px solid rgba(255, 215, 0, 0.2)', padding: '10px 12px', borderRadius: '8px', fontSize: '11px', color: '#AAA', lineHeight: '1.4' }}>
-                                    ℹ️ <strong>Post-Premiere Publishing Notice:</strong> Your 🚀 <strong>Publish</strong> button will automatically unlock <strong>15 minutes</strong> after your live premiere start time for publishing to global showcase and monetization.
+                                    ℹ️ <strong>Post-Premiere Publishing Notice:</strong> Your 🚀 <strong>Publish</strong> button will automatically unlock <strong>immediately after your video's exact duration</strong> for publishing to the global showcase and monetization.
                                 </div>
 
                                 {/* Mandatory Legal Copyright Disclaimer & Checkbox */}
@@ -3237,8 +3239,9 @@ const CreatorDashboardScreen = ({
                                             showMessage("Saved securely to Private Content Library.");
                                         }
                                         
-                                        // 3. Remove live premiere document from /movies
+                                        // 3. Remove live premiere document from BOTH /movies and /events to prevent Admin clutter
                                         await deleteDoc(doc(db, "movies", publishTargetItem.id));
+                                        await deleteDoc(doc(db, "events", publishTargetItem.id));
                                         setShowPublishModal(false);
                                     } catch (err) {
                                         showMessage("Publishing failed: " + err.message);
