@@ -347,7 +347,7 @@ function DiscoverScreen({
                     const isExpired = pTime > 0 && (Date.now() > pTime + windowMs);
                     const derivedStatus = (isExpired || evtData.status === 'completed') ? 'completed' : (evtData.status || 'upcoming');
 
-                    setMasterEventDetails({ id: eventSnap.id, status: derivedStatus, ...evtData });
+                    setMasterEventDetails(prev => ({ id: eventSnap.id, status: derivedStatus, ...evtData, totalViewCount: prev?.totalViewCount !== undefined ? prev.totalViewCount : (evtData.totalViewCount || 0) }));
                 } else {
                     fallbackUnsub = onSnapshot(doc(db, "movies", selectedEventId), (movieSnap) => {
                         if (movieSnap.exists()) {
@@ -358,7 +358,7 @@ function DiscoverScreen({
                             const isMusicPost = movieData.type === 'musicVideoPremiere' && pTime > 0 && (Date.now() > pTime + musicWindowMs);
                             const isFilmPost = movieData.type === 'premiere' && pTime > 0 && (Date.now() > pTime + (5 * 60 * 60 * 1000));
                             const derivedStatus = (isMusicPost || isFilmPost || movieData.status === 'completed') ? 'completed' : (movieData.status || 'upcoming');
-                            setMasterEventDetails({ 
+                            setMasterEventDetails(prev => ({ 
                                 id: movieSnap.id, 
                                 eventTitle: movieData.title,
                                 eventDescription: movieData.synopsis,
@@ -370,8 +370,9 @@ function DiscoverScreen({
                                 room: movieData.room,
                                 creatorName: movieData.suggestedByName || "Director",
                                 status: derivedStatus,
-                                ...movieData 
-                            });
+                                ...movieData,
+                                totalViewCount: prev?.totalViewCount !== undefined ? prev.totalViewCount : (movieData.totalViewCount || 0)
+                            }));
                         } else {
                             setMasterEventDetails(null);
                         }

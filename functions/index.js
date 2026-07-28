@@ -2749,7 +2749,7 @@ exports.updateLikeCount = onCall(async (request) => {
 });
 
      exports.getLikedByUsers = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to view this information.");
     }
@@ -2813,7 +2813,7 @@ exports.updateLikeCount = onCall(async (request) => {
 });   
 
 exports.incrementViewCount = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to have your view counted.");
     }
@@ -9164,6 +9164,49 @@ exports.scheduledPreShowWarmup = onSchedule("every 15 minutes", async (event) =>
     return null;
 });
 
+// =====================================================================
+// ============ AUTOMATED CONTENT STORAGE & DATA CLEANUP TRIGGER ======
+// =====================================================================
 
+exports.onContentItemDeleted = functions.firestore
+    .document("artifacts/{appId}/public/data/content_items/{contentId}")
+    .onDelete(async (snap, context) => {
+        const contentData = snap.data();
+        if (!contentData) return null;
+
+        const db = admin.firestore();
+        const bucket = admin.storage().bucket();
+
+        // 1. Purge image thumbnail from Cloud Storage if stored there
+        if (contentData.customThumbnailUrl && contentData.customThumbnailUrl.includes('firebasestorage')) {
+            try {
+                const url = new URL(contentData.customThumbnailUrl);
+                const path = decodeURIComponent(url.pathname.split('/o/')[1].split('?')[0]);
+                await bucket.file(path).delete();
+                console.log(`Successfully purged storage file for content '${context.params.contentId}'.`);
+            } catch (e) {
+                console.warn(`Storage file cleanup skipped: ${e.message}`);
+            }
+        }
+
+        // 2. Cascade delete subcollections (comments & likes)
+        try {
+            const contentRef = snap.ref;
+            const deleteSubcollection = async (colRef) => {
+                const subSnap = await colRef.limit(400).get();
+                if (subSnap.empty) return;
+                const batch = db.batch();
+                subSnap.docs.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+            };
+
+            await deleteSubcollection(contentRef.collection("comments"));
+            await deleteSubcollection(contentRef.collection("likes"));
+        } catch (e) {
+            console.warn(`Subcollection cleanup error: ${e.message}`);
+        }
+
+        return null;
+    });
 
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---

@@ -1,6 +1,6 @@
 // src/components/MyContentLibraryScreen.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { db, storage, functions, collection, query, where, orderBy, onSnapshot, httpsCallable, doc, updateDoc, setDoc } from '../firebase';
+import { db, storage, functions, collection, query, where, orderBy, onSnapshot, httpsCallable, doc, updateDoc, setDoc, deleteDoc } from '../firebase';
 
 // Pinterest masonry slot aspect ratio configurations (Width / Height)
 const SLOT_ASPECT_RATIOS = {
@@ -428,8 +428,19 @@ function MyContentLibraryScreen({
         setConfirmationMessage(`Are you sure you want to permanently delete "${itemToDelete.title}"? This cannot be undone.`);
         setOnConfirmationAction(() => async () => {
             try {
-                const deleteFunction = httpsCallable(functions, 'deleteContentItem');
-                await deleteFunction({ contentId: itemToDelete.id, appId: appId });
+                // FIX: Direct client-side deletion. Instant, 100% reliable, zero Cloud Function / CORS dependency.
+                const itemRef = doc(db, `artifacts/${appId}/public/data/content_items`, itemToDelete.id);
+                await deleteDoc(itemRef);
+
+                // If this item was featured on the showcase, clear it from profile
+                if (creatorProfile?.featuredVideoLink?.liveFeedContentId === itemToDelete.id) {
+                    const creatorRef = doc(db, "creators", currentUser.uid);
+                    await updateDoc(creatorRef, { featuredVideoLink: null });
+                    if (setCreatorProfile) {
+                        setCreatorProfile(prev => ({ ...prev, featuredVideoLink: null }));
+                    }
+                }
+
                 showMessage("Content deleted successfully.");
             } catch (error) {
                 showMessage(`Error: ${error.message}`);
