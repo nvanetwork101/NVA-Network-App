@@ -330,7 +330,24 @@ function DiscoverScreen({
         if (selectedEventId) {
             const unsubscribeEvents = onSnapshot(doc(db, "events", selectedEventId), (eventSnap) => {
                 if (eventSnap.exists()) {
-                    setMasterEventDetails({ id: eventSnap.id, ...eventSnap.data() });
+                    const evtData = eventSnap.data();
+                    const pTime = evtData.scheduledStartTime ? (evtData.scheduledStartTime.toMillis ? evtData.scheduledStartTime.toMillis() : new Date(evtData.scheduledStartTime).getTime()) : 0;
+                    const customSecs = Number(evtData.durationTotalSec) || 0;
+                    
+                    let windowMs = 5 * 60 * 60 * 1000;
+                    if (evtData.type === 'musicVideoPremiere') {
+                        if (evtData.scheduledEndTime && evtData.scheduledStartTime) {
+                            const endMs = evtData.scheduledEndTime.toMillis ? evtData.scheduledEndTime.toMillis() : new Date(evtData.scheduledEndTime).getTime();
+                            if (endMs > pTime) windowMs = endMs - pTime;
+                            else windowMs = customSecs > 0 ? (customSecs * 1000) : (15 * 60 * 1000);
+                        } else {
+                            windowMs = customSecs > 0 ? (customSecs * 1000) : (15 * 60 * 1000);
+                        }
+                    }
+                    const isExpired = pTime > 0 && (Date.now() > pTime + windowMs);
+                    const derivedStatus = (isExpired || evtData.status === 'completed') ? 'completed' : (evtData.status || 'upcoming');
+
+                    setMasterEventDetails({ id: eventSnap.id, status: derivedStatus, ...evtData });
                 } else {
                     fallbackUnsub = onSnapshot(doc(db, "movies", selectedEventId), (movieSnap) => {
                         if (movieSnap.exists()) {

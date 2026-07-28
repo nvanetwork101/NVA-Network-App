@@ -2076,10 +2076,12 @@ const AdminDashboardScreen = ({
                                                     </button>
                                                     <button className="adminActionButton approve" style={{ background: '#32CD32', color: '#000', border: 'none', fontWeight: '900' }} onClick={async () => {
                                                         try {
-                                                            const startDate = item.premiereDate ? new Date(item.premiereDate) : new Date();
-                                                            const endDate = new Date(startDate.getTime() + (15 * 60 * 1000)); // 15-Minute Live Window
+                                                        const startDate = item.premiereDate ? new Date(item.premiereDate) : new Date();
+                                                        const customSecs = Number(item.durationTotalSec) || ((Number(item.durationMinutes) || 0) * 60 + (Number(item.durationSeconds) || 0));
+                                                        const windowMs = customSecs > 0 ? (customSecs * 1000) : (15 * 60 * 1000);
+                                                        const endDate = new Date(startDate.getTime() + windowMs);
 
-                                                            // 1. Move to Live Movies Collection
+                                                        // 1. Move to Live Movies Collection
                                                             const movieRef = await addDoc(collection(db, "movies"), {
                                                                 title: item.title || 'Music Premiere',
                                                                 genre: item.genre || 'Music',
@@ -2113,7 +2115,8 @@ const AdminDashboardScreen = ({
                                                                 creatorName: item.suggestedByName || item.creatorName || 'NVA Artist',
                                                                 isTicketed: !!item.isTicketed,
                                                                 ticketPrice: Number(item.ticketPrice) || 0,
-                                                                type: 'musicVideoPremiere'
+                                                                type: 'musicVideoPremiere',
+                                                            durationTotalSec: customSecs
                                                             });
 
                                                             // 2. Remove from Suggestions Queue
