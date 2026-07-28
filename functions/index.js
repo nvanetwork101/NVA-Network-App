@@ -1244,12 +1244,12 @@ exports.deleteContentItem = onCall(async (request) => {
     try {
         const contentDoc = await contentRef.get();
         if (!contentDoc.exists) {
-            logger.warn(`User '${uid}' tried to delete non-existent content '${contentId}'.`);
+            console.log(`User '${uid}' tried to delete non-existent content '${contentId}'.`);
             return { success: true, message: "Content already deleted." };
         }
         const contentData = contentDoc.data();
 
-        if (contentData.creatorId !== uid && request.auth.token.admin !== true) {
+        if (contentData.creatorId !== uid && request.auth.token?.admin !== true) {
             throw new HttpsError("permission-denied", "You do not have permission to delete this content.");
         }
 
@@ -1258,9 +1258,9 @@ exports.deleteContentItem = onCall(async (request) => {
                 const url = new URL(contentData.customThumbnailUrl);
                 const path = decodeURIComponent(url.pathname.split('/o/')[1]);
                 await bucket.file(path).delete();
-                logger.info(`Deleted thumbnail for '${contentId}' from Storage.`);
+                console.log(`Deleted thumbnail for '${contentId}' from Storage.`);
             } catch (e) {
-                logger.warn(`Could not delete thumbnail for '${contentId}'.`, e.message);
+                console.warn(`Could not delete thumbnail for '${contentId}'.`, e.message);
             }
         }
         
@@ -1270,8 +1270,7 @@ exports.deleteContentItem = onCall(async (request) => {
         if (creatorDoc.exists) {
             const updates = { pinnedContent: admin.firestore.FieldValue.arrayRemove(contentId) };
             
-            // Safely wipe from Showcase if this was the featured video
-            if (creatorDoc.data().featuredVideoLink?.liveFeedContentId === contentId) {
+            if (creatorDoc.data()?.featuredVideoLink?.liveFeedContentId === contentId) {
                 updates.featuredVideoLink = admin.firestore.FieldValue.delete();
             }
             await creatorRef.update(updates);
@@ -1284,16 +1283,15 @@ exports.deleteContentItem = onCall(async (request) => {
                     batch.delete(feedItemRef);
                 });
                 await batch.commit();
-                logger.info(`Removed '${contentId}' from ${followersSnapshot.size} follower feeds.`);
+                console.log(`Removed '${contentId}' from ${followersSnapshot.size} follower feeds.`);
             }
         }
 
-        // Secure Cascade Fix: Inline batch delete to prevent ReferenceError crashes
-        const deleteSubcollection = async (collectionRef) => {
-            const snap = await collectionRef.limit(400).get();
+        const deleteSubcollection = async (colRef) => {
+            const snap = await colRef.limit(400).get();
             if (snap.size === 0) return;
             const batch = db.batch();
-            snap.docs.forEach(doc => batch.delete(doc.ref));
+            snap.docs.forEach(d => batch.delete(d.ref));
             await batch.commit();
         };
 
@@ -1301,13 +1299,13 @@ exports.deleteContentItem = onCall(async (request) => {
         await deleteSubcollection(contentRef.collection("likes"));
 
         await contentRef.delete();
-        logger.info(`User '${uid}' successfully deleted content item '${contentId}'.`);
+        console.log(`User '${uid}' successfully deleted content item '${contentId}'.`);
         
-        return { success: true, message: "Content and all associated data have been deleted." };
+        return { success: true, message: "Content deleted successfully." };
     } catch (error) {
-        logger.error(`Error deleting content '${contentId}' for user '${uid}'`, { error });
+        console.error(`Error deleting content '${contentId}' for user '${uid}'`, error);
         if (error instanceof HttpsError) throw error;
-        throw new HttpsError("internal", "An unexpected error occurred during deletion.");
+        throw new HttpsError("internal", error.message || "An unexpected error occurred during deletion.");
     }
 });
 

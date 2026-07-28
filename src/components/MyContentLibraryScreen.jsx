@@ -407,14 +407,20 @@ function MyContentLibraryScreen({
     };
 
     const handleRemoveFeatured = async () => {
-        if (!creatorProfile.featuredVideoLink) return;
+        if (!creatorProfile?.featuredVideoLink) return;
         setIsUpdatingFeature(creatorProfile.featuredVideoLink.liveFeedContentId);
         try {
-            const removeFeaturedFunction = httpsCallable(functions, 'removeFeaturedContent');
-            const result = await removeFeaturedFunction({ appId: appId });
-            showMessage(result.data.message);
-        } catch (error) { showMessage(`Error: ${error.message}`);
-        } finally { setIsUpdatingFeature(null); }
+            const creatorRef = doc(db, "creators", currentUser.uid);
+            await updateDoc(creatorRef, { featuredVideoLink: null });
+            if (setCreatorProfile) {
+                setCreatorProfile(prev => ({ ...prev, featuredVideoLink: null }));
+            }
+            showMessage("Removed from Showcase!");
+        } catch (error) { 
+            showMessage(`Error: ${error.message}`);
+        } finally { 
+            setIsUpdatingFeature(null); 
+        }
     };
 
     const handleDelete = (itemToDelete) => {
