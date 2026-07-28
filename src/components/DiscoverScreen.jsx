@@ -52,10 +52,21 @@ const DynamicThumbnail = ({ item, onClick }) => {
     );
 };
 
-// --- NVA AUTHORITATIVE SYNC PLAYER (SHIELDED) ---
+// --- NVA AUTHORITATIVE SYNC PLAYER (SHIELDED WITH TAP-TO-UNMUTE) ---
 const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUser, isUnlocked }) => {
     const urlRef = useRef('');
     const lastEventIdRef = useRef(null);
+    const iframeRef = useRef(null);
+    const [isMuted, setIsMuted] = useState(true);
+
+    const handleUnmute = (e) => {
+        e.stopPropagation();
+        setIsMuted(false);
+        if (iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
+            iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
+        }
+    };
 
     // URL is hard-locked into a ref on the very first render. It will NEVER recalculate or restart.
     if (lastEventIdRef.current !== eventId) {
@@ -77,7 +88,7 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
         if (isFacebook) {
             const encodedFbUrl = encodeURIComponent(streamUrl);
             const timeParam = elapsedSeconds > 0 ? `&t=${elapsedSeconds}` : '';
-            url = `https://www.facebook.com/plugins/video.php?href=${encodedFbUrl}&show_text=false&autoplay=true&mute=0${timeParam}`;
+            url = `https://www.facebook.com/plugins/video.php?href=${encodedFbUrl}&show_text=false&autoplay=true&mute=1${timeParam}`;
         } else {
             const extracted = extractVideoInfo(streamUrl);
             const embedUrl = extracted ? extracted.embedUrl : streamUrl;
@@ -86,7 +97,7 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
                 const controls = isModUser ? '1' : '0';
                 const disablekb = isModUser ? '0' : '1';
                 const startParam = elapsedSeconds > 0 ? `&start=${elapsedSeconds}` : '';
-                url = `${embedUrl}${separator}autoplay=1&mute=0&controls=${controls}&disablekb=${disablekb}&modestbranding=1&rel=0&loop=0&enablejsapi=1${startParam}`;
+                url = `${embedUrl}${separator}autoplay=1&mute=1&controls=${controls}&disablekb=${disablekb}&modestbranding=1&rel=0&loop=0&enablejsapi=1${startParam}`;
             }
         }
         urlRef.current = url;
@@ -95,14 +106,45 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
 
     return (
         <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#000' }}>
-            {/* Overlay blocks clicks and locks controls until unlocked by Admin */}
+            {/* Shield overlay: Blocks control access until unlocked by Admin */}
             {!isUnlocked && (
                 <div 
                     style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, cursor: 'default' }} 
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} 
                 />
             )}
+
+            {/* Tap To Unmute Button */}
+            {isMuted && (
+                <button
+                    type="button"
+                    onClick={handleUnmute}
+                    style={{
+                        position: 'absolute',
+                        top: '15px',
+                        right: '15px',
+                        zIndex: 20,
+                        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                        color: '#FFD700',
+                        border: '1px solid #FFD700',
+                        borderRadius: '20px',
+                        padding: '8px 16px',
+                        fontSize: '12px',
+                        fontWeight: '900',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 0 15px rgba(255, 215, 0, 0.3)',
+                        backdropFilter: 'blur(4px)'
+                    }}
+                >
+                    🔇 TAP TO UNMUTE
+                </button>
+            )}
+
             <iframe
+                ref={iframeRef}
                 key={`nva-sync-player-${eventId}`} 
                 src={urlRef.current}
                 className="w-full h-full border-0"
