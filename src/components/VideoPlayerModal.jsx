@@ -182,7 +182,8 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                 itemId: liveContentItem.originalContentId || liveContentItem.id,
                 itemType: liveContentItem.originalContentId ? 'event' : itemType,
                 text: newCommentText.trim(),
-                replyTo: replyingTo || null
+                replyTo: replyingTo || null,
+                subcollection: liveContentItem.originalContentId ? "chatMessages" : "comments"
             });
             setNewCommentText('');
             setReplyingTo(null);
@@ -200,7 +201,8 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
             await delCommentFunction({
                 itemId: liveContentItem.originalContentId || liveContentItem.id,
                 itemType: liveContentItem.originalContentId ? 'event' : itemType,
-                commentId: commentId
+                commentId: commentId,
+                subcollection: liveContentItem.originalContentId ? "chatMessages" : "comments"
             });
         } catch (error) {
             console.error(error);
@@ -215,7 +217,8 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
             await likeCommentFunction({
                 itemId: liveContentItem.originalContentId || liveContentItem.id,
                 itemType: liveContentItem.originalContentId ? 'event' : itemType,
-                commentId: commentId
+                commentId: commentId,
+                subcollection: liveContentItem.originalContentId ? "chatMessages" : "comments"
             });
         } catch (error) {
             console.error(error);

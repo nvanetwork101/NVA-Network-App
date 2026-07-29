@@ -2661,13 +2661,13 @@ exports.updateLikeCount = onCall(async (request) => {
 
                 transaction.set(likeRef, { likedAt: new Date().toISOString() });
                 transaction.update(itemRef, { 
-                    likeCount: FieldValue.increment(increment),
+                    likeCount: admin.firestore.FieldValue.increment(increment),
                     lastLikerProfileUrl: userProfileUrl || null
                 });
 
             } else {
                 transaction.delete(likeRef);
-                transaction.update(itemRef, { likeCount: FieldValue.increment(increment) });
+                transaction.update(itemRef, { likeCount: admin.firestore.FieldValue.increment(increment) });
             }
         });
 
@@ -2737,7 +2737,7 @@ exports.updateLikeCount = onCall(async (request) => {
 
         for (let i = 0; i < userIds.length; i += 10) {
             const batchIds = userIds.slice(i, i + 10);
-            const query = creatorRef.where(FieldPath.documentId(), 'in', batchIds).get();
+            const query = creatorRef.where(admin.firestore.FieldPath.documentId(), 'in', batchIds).get();
             userPromises.push(query);
         }
 
@@ -4791,12 +4791,13 @@ exports.triggerManualAutomation = onCall(async (request) => {
         userName: creatorData.creatorName || "NVA User",
         userProfilePicture: creatorData.profilePictureUrl || '',
         text: text.trim(),
-        createdAt: FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
         replyTo: replyTo || null,
         authorRole: authorRole
     };
 
-    const commentsRef = itemRef.collection("comments");
+    const collectionName = request.data.subcollection || "comments";
+    const commentsRef = itemRef.collection(collectionName);
     const notificationsRef = db.collection("notifications");
 
     // Helper function for creating notifications to keep code DRY
@@ -4887,7 +4888,8 @@ exports.likeComment = onCall(async (request) => {
         throw new HttpsError("invalid-argument", `Unsupported itemType: '${itemType}'.`);
     }
 
-    const commentRef = itemRef.collection("comments").doc(commentId);
+    const collectionName = request.data.subcollection || "comments";
+    const commentRef = itemRef.collection(collectionName).doc(commentId);
 
     try {
         await db.runTransaction(async (transaction) => {
