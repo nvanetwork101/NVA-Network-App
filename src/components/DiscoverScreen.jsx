@@ -402,8 +402,14 @@ function DiscoverScreen({
                 const diff = target - Date.now();
                 if (diff <= 0) {
                     setLocalCountdown('LIVE NOW!');
-                    // THE FIX: Instantly promotes state to live on the client the second timer hits zero
-                    setMasterEventDetails(prev => prev ? ({ ...prev, status: 'live' }) : null);
+                    // THE FIX: Instantly promotes state to live and triggers EVENT_LIVE broadcast notification
+                    setMasterEventDetails(prev => {
+                        if (prev && prev.status !== 'live') {
+                            httpsCallable(functions, 'triggerManualAutomation')().catch(() => {});
+                            return { ...prev, status: 'live' };
+                        }
+                        return prev;
+                    });
                 } else {
                     const d = Math.floor(diff / (1000 * 60 * 60 * 24));
                     const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
