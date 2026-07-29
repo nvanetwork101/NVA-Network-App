@@ -2251,6 +2251,7 @@ const CreatorDashboardScreen = ({
                                                                     }
                                                                 }
                                                                 await deleteDoc(doc(db, "movies", film.id));
+                                                                await deleteDoc(doc(db, "events", film.id));
                                                                 showMessage("Film taken down. Box Office remains locked for audit period.");
                                                             } catch (err) { showMessage("Failed to take down film: " + err.message); }
                                                         });
@@ -2374,6 +2375,7 @@ const CreatorDashboardScreen = ({
                                                             if (Date.now() < lockUntil.getTime()) await updateDoc(doc(db, "creators", currentUser.uid), { payoutLockUntil: lockUntil.toISOString() });
                                                         }
                                                         await deleteDoc(doc(db, "movies", film.id));
+                                                        await deleteDoc(doc(db, "events", film.id));
                                                         showMessage("Premiere taken down.");
                                                     } catch (err) { showMessage("Failed to take down: " + err.message); }
                                                 });

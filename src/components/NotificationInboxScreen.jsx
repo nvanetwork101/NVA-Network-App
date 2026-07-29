@@ -45,9 +45,12 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
         return () => unsubscribe();
     }, [currentUser]);
 
-    const handleClearRead = () => {
-        if (markAllAsRead) {
-            markAllAsRead();
+    const handleClearRead = async () => {
+        try {
+            const clearReadFunc = httpsCallable(functions, 'deleteReadNotifications');
+            await clearReadFunc();
+        } catch (error) {
+            console.error("Error clearing read notifications:", error);
         }
     };
 

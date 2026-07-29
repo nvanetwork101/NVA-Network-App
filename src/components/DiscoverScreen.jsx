@@ -345,7 +345,8 @@ function DiscoverScreen({
                         }
                     }
                     const isExpired = pTime > 0 && (Date.now() > pTime + windowMs);
-                    const derivedStatus = (isExpired || evtData.status === 'completed') ? 'completed' : (evtData.status || 'upcoming');
+                    const isNowLive = pTime > 0 && Date.now() >= pTime && !isExpired;
+                    const derivedStatus = (isExpired || evtData.status === 'completed') ? 'completed' : (isNowLive || evtData.status === 'live' ? 'live' : (evtData.status || 'upcoming'));
 
                     setMasterEventDetails(prev => ({ id: eventSnap.id, status: derivedStatus, ...evtData, totalViewCount: prev?.totalViewCount !== undefined ? prev.totalViewCount : (evtData.totalViewCount || 0) }));
                 } else {
@@ -357,7 +358,8 @@ function DiscoverScreen({
                             const musicWindowMs = customSecs > 0 ? (customSecs * 1000) : (15 * 60 * 1000);
                             const isMusicPost = movieData.type === 'musicVideoPremiere' && pTime > 0 && (Date.now() > pTime + musicWindowMs);
                             const isFilmPost = movieData.type === 'premiere' && pTime > 0 && (Date.now() > pTime + (5 * 60 * 60 * 1000));
-                            const derivedStatus = (isMusicPost || isFilmPost || movieData.status === 'completed') ? 'completed' : (movieData.status || 'upcoming');
+                            const isNowLive = pTime > 0 && Date.now() >= pTime && !isMusicPost && !isFilmPost;
+                            const derivedStatus = (isMusicPost || isFilmPost || movieData.status === 'completed') ? 'completed' : (isNowLive || movieData.status === 'live' ? 'live' : (movieData.status || 'upcoming'));
                             setMasterEventDetails(prev => ({ 
                                 id: movieSnap.id, 
                                 eventTitle: movieData.title,
@@ -398,8 +400,11 @@ function DiscoverScreen({
             const target = masterEventDetails.scheduledStartTime.toMillis ? masterEventDetails.scheduledStartTime.toMillis() : new Date(masterEventDetails.scheduledStartTime).getTime();
             const updateTimer = () => {
                 const diff = target - Date.now();
-                if (diff <= 0) setLocalCountdown('LIVE NOW!');
-                else {
+                if (diff <= 0) {
+                    setLocalCountdown('LIVE NOW!');
+                    // THE FIX: Instantly promotes state to live on the client the second timer hits zero
+                    setMasterEventDetails(prev => prev ? ({ ...prev, status: 'live' }) : null);
+                } else {
                     const d = Math.floor(diff / (1000 * 60 * 60 * 24));
                     const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
                     const m = Math.floor((diff / 1000 / 60) % 60);
@@ -1478,39 +1483,37 @@ function DiscoverScreen({
                                     const hasPassed = Date.now() > validTime;
                                     const hasTicket = creatorProfile?.purchasedTickets?.[movie.id];
                                     
-                                    // THE FIX: Remove TBA tag for Free movies and show Entry status instead
-                                    // THE FIX: Aggressive check for free status to ensure label updates instantly
-const isActuallyFree = movie.isNowShowingFree || movie.ticketPrice === 0 || movie.ticketPrice === '0' || !movie.isTicketed;
-const roomLabel = isActuallyFree ? "🔓 NOW SHOWING: FREE" : ((movie.ticketsSold || 0) > 0 ? (movie.room || 'Theater Room') : "📍 TBA (THEATER ROOM)");
+                                    const isActuallyFree = movie.isNowShowingFree || movie.ticketPrice === 0 || movie.ticketPrice === '0' || !movie.isTicketed;
+                                    const isLiveNow = movie.status === 'live' || (validTime > 0 && Date.now() >= validTime);
+                                    const roomLabel = isActuallyFree ? "🔓 NOW SHOWING: FREE" : ((movie.ticketsSold || 0) > 0 ? (movie.room || 'Theater Room') : "📍 TBA (THEATER ROOM)");
                                     const dateString = validTime > 0 ? new Date(validTime).toLocaleString() : 'TBA';
                                     
                                     return (
                                         <div key={movie.id} onClick={() => setSelectedEventId(movie.id)} style={{ 
                                             cursor: 'pointer', 
                                             background: '#0a0a0a', 
-                                            border: movie.isNowShowingFree ? '1px solid #00FFFF' : '1px solid #333', // THE FIX: Cyan highlight for free items
-                                            boxShadow: movie.isNowShowingFree ? '0 0 15px rgba(0, 255, 255, 0.1)' : 'none',
+                                            border: isActuallyFree ? '1px solid #00FFFF' : '1px solid #333',
+                                            boxShadow: isActuallyFree ? '0 0 15px rgba(0, 255, 255, 0.1)' : 'none',
                                             borderRadius: '12px', 
                                             overflow: 'hidden', 
                                             transition: 'transform 0.2s', 
-                                            // THE FIX: Do not greyscale if movie is Free or Live
-                                            filter: (hasPassed && !movie.isNowShowingFree && movie.status !== 'live') ? 'grayscale(100%)' : 'none' 
+                                            filter: (hasPassed && !isActuallyFree && !isLiveNow) ? 'grayscale(100%)' : 'none' 
                                         }} onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'} onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}>
                                             <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000' }}>
                                                 <img src={movie.posterUrl} alt={movie.title} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-                                                <div style={{ position: 'absolute', top: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.8)', borderBottomRightRadius: '8px', padding: '6px 12px', border: movie.isNowShowingFree ? '1px solid #00FFFF' : '1px solid #333', borderTop: 'none', borderLeft: 'none' }}>
+                                                <div style={{ position: 'absolute', top: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.8)', borderBottomRightRadius: '8px', padding: '6px 12px', border: isActuallyFree ? '1px solid #00FFFF' : '1px solid #333', borderTop: 'none', borderLeft: 'none' }}>
                                                     <p style={{ margin: 0, color: '#00FFFF', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase' }}>{isActuallyFree ? "" : "📍 "}{roomLabel}</p>
                                                 </div>
                                             </div>
                                             <div style={{ padding: '15px' }}>
                                                 <p style={{ color: '#FFF', fontWeight: 'bold', fontSize: '16px', margin: '0 0 5px 0' }}>{movie.title}</p>
-                                                {movie.status === 'live' ? (
+                                                {isLiveNow ? (
                                                     <p style={{ color: '#DC3545', fontWeight: '900', fontSize: '13px', margin: '0 0 10px 0', animation: 'pulse 1.5s infinite' }}>🔴 LIVE NOW</p>
                                                 ) : (
                                                     <p style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '12px', margin: '0 0 10px 0' }}>📅 {dateString}</p>
                                                 )}
                                                 
-                                                {(!hasPassed || movie.status === 'live') && (
+                                                {(!hasPassed || isLiveNow) && (
                                                 isActuallyFree ? (
                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
                                                             <div style={{ width: '100%', padding: '10px', background: 'rgba(0,255,0,0.1)', color: '#00FF00', border: '1px solid #00FF00', borderRadius: '8px', fontWeight: 'bold', textAlign: 'center', fontSize: '12px', letterSpacing: '0.5px' }}>

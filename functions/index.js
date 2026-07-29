@@ -6187,7 +6187,7 @@ exports.markAllNotificationsAsRead = onCall(async (request) => {
 
 // Utility function for users to delete their old, read notifications.
 exports.deleteReadNotifications = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in.");
     }
