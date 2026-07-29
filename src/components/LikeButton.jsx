@@ -12,7 +12,7 @@ function LikeButton({ contentItem, currentUser, showMessage, itemType }) {
 
     // CORRECTED: This now matches your application's actual App ID.
     const appId = "production-app-id"; 
-    const contentDocId = contentItem.originalContentId || contentItem.id;
+    const contentDocId = contentItem.id; // FIX: Prevents targeting deleted event documents for Likes
 
     useEffect(() => {
         if (!currentUser || !contentDocId) {

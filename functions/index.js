@@ -2664,7 +2664,7 @@ exports.removeFeaturedContent = onCall(async (request) => {
 });
 
 exports.updateLikeCount = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to like items.");
     }
@@ -2722,7 +2722,7 @@ exports.updateLikeCount = onCall(async (request) => {
         const contentOwnerId = itemData ? (itemData.creatorId || itemData.postedByUid) : null;
         if (isLiking && contentOwnerId && contentOwnerId !== uid) {
             const itemTitle = itemData ? (itemData.title || itemData.eventTitle || "your post") : "your post";
-            const link = itemType === 'content' ? `/content/${itemId}` : '/Discover';
+            const link = itemType === 'content' ? `/content/${itemId}` : `/premiere/${itemId}`;
 
             await db.collection("notifications").add({
                 userId: contentOwnerId,
@@ -4783,7 +4783,7 @@ exports.triggerManualAutomation = onCall(async (request) => {
 });  
 
        exports.postComment = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in to comment."); }
 
     const { itemId, itemType, text, replyTo } = request.data;
@@ -4819,8 +4819,14 @@ exports.triggerManualAutomation = onCall(async (request) => {
     }
 
     const itemDoc = await itemRef.get();
-    if (!itemDoc.exists) { throw new HttpsError("not-found", "The item you are trying to comment on does not exist."); }
-    const itemData = itemDoc.data();
+    let itemData = itemDoc.exists ? itemDoc.data() : null;
+    if (!itemDoc.exists) {
+        if (itemType === 'event') {
+            itemData = { title: "Archived Live Event", creatorId: "system" }; // Safely bypass orphaned comment threads
+        } else {
+            throw new HttpsError("not-found", "The item you are trying to comment on does not exist.");
+        }
+    }
     const itemTitle = itemData.title || itemData.eventTitle || "your post";
 
     let authorRole = 'user';
@@ -4857,12 +4863,15 @@ exports.triggerManualAutomation = onCall(async (request) => {
         const newCommentRef = commentsRef.doc();
         transaction.set(newCommentRef, newComment);
         transaction.update(creatorRef, { lastCommentTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-        transaction.update(itemRef, { commentCount: admin.firestore.FieldValue.increment(1) });
+        const parentDoc = await transaction.get(itemRef);
+        if (parentDoc.exists) {
+            transaction.update(itemRef, { commentCount: admin.firestore.FieldValue.increment(1) });
+        }
     });
 
     // Handle notifications AFTER the transaction
     const contentOwnerId = itemData.creatorId || itemData.postedByUid;
-    const link = itemType === 'content' ? `/content/${itemId}` : '/MyListings';
+    const link = itemType === 'content' ? `/content/${itemId}` : `/premiere/${itemId}`;
 
     // Notify content owner
     if (contentOwnerId && contentOwnerId !== uid) {
