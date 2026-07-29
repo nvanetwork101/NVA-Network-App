@@ -533,6 +533,24 @@ function DiscoverScreen({
         };
     }, [masterEventDetails?.id, masterEventDetails?.status, !!currentUser]); 
 
+    // THE FIX: Persistent Firestore View Tracking (Transfers to VOD upon publish)
+    const viewCountedLiveRef = useRef(false);
+    useEffect(() => {
+        if (!masterEventDetails?.id || masterEventDetails.status !== 'live' || !currentUser || viewCountedLiveRef.current || currentUser.uid === masterEventDetails.creatorId) return;
+        
+        const timer = setTimeout(async () => {
+            viewCountedLiveRef.current = true;
+            try {
+                const incrementViewFunction = httpsCallable(functions, 'incrementViewCount');
+                await incrementViewFunction({ itemId: masterEventDetails.id, itemType: 'event' });
+            } catch (err) {
+                console.error("Persistent view increment failed", err);
+            }
+        }, 10000); // Counts as a solid view after 10 seconds in the room
+        
+        return () => clearTimeout(timer);
+    }, [masterEventDetails?.id, masterEventDetails?.status, currentUser]);
+
     useEffect(() => {
         if (!masterEventDetails?.id || !currentUser?.uid) return;
 

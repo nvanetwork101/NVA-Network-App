@@ -1872,51 +1872,10 @@ exports.runSystemDiagnostics = onCall(async (request) => {
   return { diagnosticResults: results };
 });
 
-exports.deleteNotification = onCall(async (request) => {
-    const uid = request.auth.uid;
-    if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in."); }
-    const { notificationId } = request.data;
-    if (!notificationId) { throw new HttpsError("invalid-argument", "Missing 'notificationId'."); }
-    const db = admin.firestore();
-    const notificationRef = db.collection("notifications").doc(notificationId);
-    const userRef = db.collection("creators").doc(uid); // <-- Reference to the user's profile
-
-    try {
-        // Use a transaction to guarantee both actions succeed or fail together.
-        await db.runTransaction(async (transaction) => {
-            const notificationDoc = await transaction.get(notificationRef);
-            if (!notificationDoc.exists) {
-                // If the notification is already gone, do nothing.
-                return;
-            }
-
-            const notificationData = notificationDoc.data();
-            if (notificationData.userId !== uid) {
-                throw new HttpsError("permission-denied", "You do not have permission to delete this.");
-            }
-            
-            // --- THIS IS THE FIX ---
-            // If the notification being deleted was unread...
-            if (notificationData.isRead === false) {
-                // ...decrement the user's badge count.
-                transaction.update(userRef, { unreadNotificationCount: admin.firestore.FieldValue.increment(-1) });
-            }
-
-            // Always delete the notification itself.
-            transaction.delete(notificationRef);
-        });
-
-        return { success: true, message: "Notification deleted." };
-
-    } catch (error) {
-        logger.error(`Error deleting notification '${notificationId}'`, { error });
-        if (error instanceof HttpsError) { throw error; }
-        throw new HttpsError("unknown", "An error occurred.");
-    }
-});
+// (Duplicate deleteNotification export removed to prevent Node.js module collisions)
 
         exports.markNotificationAsRead = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to mark notifications as read.");
     }
@@ -4545,18 +4504,18 @@ async function runManageEventStatus() {
 
     const toStartSnapshot = await eventsToStartQuery.get();
     toStartSnapshot.forEach(doc => {
-        batch.update(doc.ref, { status: "live" });
-        liveTransitions++;
-        // Create a broadcast notification when an event goes live
-        const eventData = doc.data();
-        const broadcast = {
-            broadcastType: "EVENT_LIVE",
-            message: `The live event "${eventData.eventTitle}" is starting now!`,
-            link: "/Discover",
-            timestamp: new Date()
-        };
-        batch.set(db.collection("broadcast_notifications").doc(), broadcast);
-    });
+            batch.update(doc.ref, { status: "live" });
+            liveTransitions++;
+            // Create a broadcast notification when an event goes live
+            const eventData = doc.data();
+            const broadcast = {
+                broadcastType: "EVENT_LIVE",
+                message: `The live event "${eventData.eventTitle}" is starting now!`,
+                link: `/premiere/${doc.id}`,
+                timestamp: new Date()
+            };
+            batch.set(db.collection("broadcast_notifications").doc(), broadcast);
+        });
 
     // The logic for ending events remains the same, as it is not time-critical.
     const eventsToEndQuery = db.collection("events").where("status", "==", "live").where("scheduledEndTime", "<=", now);
@@ -4915,7 +4874,7 @@ exports.triggerManualAutomation = onCall(async (request) => {
 });
 
 exports.likeComment = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) { throw new HttpsError("unauthenticated", "You must be logged in to like a comment."); }
 
     const { itemId, itemType, commentId } = request.data;
@@ -4964,7 +4923,7 @@ exports.likeComment = onCall(async (request) => {
 });
 
 exports.deleteComment = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to delete comments.");
     }
@@ -5018,7 +4977,7 @@ exports.deleteComment = onCall(async (request) => {
 
 exports.postChatMessage = onCall(async (request) => {
     // 1. Authentication & User Data Validation
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to chat.");
     }
@@ -5098,7 +5057,7 @@ exports.postChatMessage = onCall(async (request) => {
 });
 
     exports.deleteChatMessage = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to delete messages.");
     }
@@ -5223,7 +5182,7 @@ exports.postChatMessage = onCall(async (request) => {
 });
 
         exports.likeLiveEvent = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to like an event.");
     }
@@ -5259,7 +5218,7 @@ exports.postChatMessage = onCall(async (request) => {
 });
 
 exports.incrementEventView = onCall(async (request) => {
-    const uid = request.auth.uid;
+    const uid = request.auth?.uid;
     if (!uid) {
         // Silently fail for non-authenticated users, as this is a passive metric.
         return { success: false, message: "User not authenticated." };

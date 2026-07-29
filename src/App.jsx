@@ -1262,10 +1262,14 @@ useEffect(() => {
       // Step 2: If there's no active toast, process the next item from the queue.
       if (!currentToast && toastQueue.length > 0) {
           const nextToast = toastQueue[0];
+          if (!nextToast) {
+              setToastQueue(prev => prev.slice(1));
+              return;
+          }
 
           // --- START: DEFINITIVE CHAT TOAST SUPPRESSION FIX ---
           // Check if the incoming notification is for a chat message.
-          const isChatMessage = nextToast.link && nextToast.link.startsWith('/chat');
+          const isChatMessage = nextToast?.link && nextToast.link.startsWith('/chat');
           
           // Check if the user is currently on a screen where the toast would be redundant.
           const isUserInChatContext = activeScreen === 'ChatList' || activeScreen === 'ChatMessageScreen';

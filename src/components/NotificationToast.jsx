@@ -6,6 +6,7 @@ const NotificationToast = ({ notification, onClose, setActiveScreen }) => {
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
+        if (!notification) return;
         setIsVisible(true);
         const timer = setTimeout(() => {
             setIsVisible(false);
@@ -16,11 +17,11 @@ const NotificationToast = ({ notification, onClose, setActiveScreen }) => {
 
     // FIX 2: Parse pathways identically to the main inbox to handle deep routing
     const handleToastClick = () => {
-        if (notification.link && setActiveScreen) {
+        if (notification?.link && setActiveScreen) {
             const path = notification.link;
             const parts = path.split('/').filter(Boolean);
             if (parts.length > 0) {
-                const screen = parts[0];
+                const screen = parts[0].toLowerCase();
                 const id = parts[1];
                 switch (screen) {
                     case 'user':
@@ -30,7 +31,7 @@ const NotificationToast = ({ notification, onClose, setActiveScreen }) => {
                         if (id) window.dispatchEvent(new CustomEvent('navigateToOpportunity', { detail: { id: id } }));
                         break;
                     case 'content':
-                        if (id) window.dispatchEvent(new CustomEvent('navigateToContent', { detail: { id: id, openComments: true, type: notification.type || notification.notificationType } }));
+                        if (id) window.dispatchEvent(new CustomEvent('navigateToContent', { detail: { id: id, openComments: true, type: notification?.type || notification?.notificationType } }));
                         break;
                     case 'premiere':
                         if (id) {
@@ -47,9 +48,15 @@ const NotificationToast = ({ notification, onClose, setActiveScreen }) => {
                     case 'competition':
                         setActiveScreen('CompetitionScreen');
                         break;
+                    case 'discover':
+                        if (notification?.notificationType === 'EVENT_LIVE' || notification?.broadcastType === 'EVENT_LIVE' || notification?.type === 'EVENT_LIVE') {
+                            sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
+                            window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' }));
+                        }
+                        setActiveScreen('Discover');
+                        break;
                     default:
-                        const screenName = screen.charAt(0).toUpperCase() + screen.slice(1);
-                        setActiveScreen(screenName);
+                        setActiveScreen('Home');
                         break;
                 }
             } else {
@@ -79,6 +86,8 @@ const NotificationToast = ({ notification, onClose, setActiveScreen }) => {
         transition: 'transform 0.5s ease-out, opacity 0.5s ease-out',
     };
 
+    if (!notification) return null; // SURGICAL FIX: Prevents crash during unmount
+
     const iconStyle = {
         color: '#FFD700',
         marginRight: '15px',
@@ -87,12 +96,13 @@ const NotificationToast = ({ notification, onClose, setActiveScreen }) => {
     };
 
     const renderMessage = () => {
+        if (!notification) return null;
         if (notification.broadcastType === 'DONATION') {
             return (
                 <span>
                     <strong style={{ color: '#FFD700' }}>{notification.userName}</strong>
                     {' just donated '}
-                    <strong style={{ color: '#FFD700' }}>${notification.amount.toFixed(2)}</strong>
+                    <strong style={{ color: '#FFD700' }}>${notification.amount?.toFixed(2)}</strong>
                     {' to "'}
                     <strong style={{ color: '#FFD700' }}>{notification.targetCampaignTitle}</strong>
                     {'".'}
@@ -106,7 +116,7 @@ const NotificationToast = ({ notification, onClose, setActiveScreen }) => {
         <div 
             style={{...toastStyle, cursor: 'pointer'}} 
             onClick={handleToastClick} // FIX 3: Use the new, smarter handler
-            title={notification.link ? "Click to view" : "Click to dismiss"} // Dynamic title
+            title={notification?.link ? "Click to view" : "Click to dismiss"} // Dynamic title
         >
             <div style={iconStyle}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

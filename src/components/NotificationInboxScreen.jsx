@@ -105,6 +105,10 @@ const NotificationInboxScreen = ({ currentUser, setActiveScreen, dismissNotifica
                 else setActiveScreen('CenterStage');
                 break;
             case 'discover':
+                if (notification.notificationType === 'EVENT_LIVE' || notification.broadcastType === 'EVENT_LIVE' || notification.type === 'EVENT_LIVE') {
+                    sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
+                    window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' }));
+                }
                 setActiveScreen('Discover');
                 break;
             default:
