@@ -21,7 +21,7 @@ const RoleBadge = ({ profile }) => {
             text: 'GOLD CLUB', 
             icon: '👑', 
             styles: { 
-                backgroundColor: '#D4AF37', // Metallic Gold
+                backgroundColor: '#D4AF37', 
                 color: '#000000', 
                 border: '1px solid #AA8A2E',
                 boxShadow: '0 0 10px rgba(212, 175, 55, 0.5)'
@@ -56,7 +56,6 @@ const RoleBadge = ({ profile }) => {
                                  profile.badges.includes('Class Member')
                              ));
 
-    // THE FIX: Only award the standard Film Club badge if they DO NOT have the Gold Club badge
     if (hasFilmClubBadge && !hasGoldClub) {
         badgesToShow.push({ key: 'filmclub', text: 'FILM CLUB', icon: '🍿', styles: { backgroundColor: '#4169E1', color: '#FFFFFF', border: 'none' }, iconColor: '#FFFFFF' });
     }
@@ -66,6 +65,7 @@ const RoleBadge = ({ profile }) => {
         const fieldColors = {
             'Comedian': { bg: '#FF4500', color: '#FFF' },
             'Craft': { bg: '#D2691E', color: '#FFF' },
+            'Craft & Services': { bg: '#D2691E', color: '#FFF' },
             'Health & Fitness': { bg: '#20B2AA', color: '#FFF' },
             'Designer': { bg: '#FF1493', color: '#FFF' },
             'Influencer': { bg: '#00BFFF', color: '#0A0A0A' },
@@ -75,19 +75,21 @@ const RoleBadge = ({ profile }) => {
             'Actor': { bg: '#DC143C', color: '#FFF' }
         };
         
-        const style = fieldColors[profile.creatorField] || { bg: '#555', color: '#FFF' };
+        const normalizedField = profile.creatorField === 'Craft' ? 'Craft & Services' : profile.creatorField;
+        const style = fieldColors[normalizedField] || { bg: '#555', color: '#FFF' };
         
         badgesToShow.push({
-            key: 'creatorField', text: profile.creatorField.toUpperCase(),
+            key: 'creatorField', 
+            text: normalizedField.toUpperCase(),
             styles: { backgroundColor: style.bg, color: style.color, border: 'none' }
         });
     }
 
     // --- PRIORITY 4: DEFAULT NORMAL USER ---
-    // If they have no creator field, no staff role, and no special club badges, they are a standard User.
     if (!profile.creatorField && profile.role === 'user' && !profile.isContestant && !profile.isFilmClub) {
         badgesToShow.push({
-            key: 'user', text: 'USER',
+            key: 'user', 
+            text: 'USER',
             styles: { backgroundColor: '#3A3A3A', color: '#FFFFFF', border: '1px solid #777' }
         });
     }
