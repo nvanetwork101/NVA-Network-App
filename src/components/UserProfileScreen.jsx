@@ -867,6 +867,11 @@ const UserProfileScreen = ({
                                 {profile.creatorName}
                             </span>
                             {renderPatronStripe(profile)}
+                            {profile.creatorSubField && (
+                                <span style={{ fontSize: '11px', color: '#00FFFF', fontWeight: 'bold', background: 'rgba(0,255,255,0.08)', border: '1px solid rgba(0,255,255,0.2)', padding: '2px 8px', borderRadius: '12px' }}>
+                                    • {profile.creatorSubField}
+                                </span>
+                            )}
                         </div>
                         {/* 🛡️ ADMIN AUDIT PORTAL */}
                         {creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority' || creatorProfile.role === 'super_admin') && profile.realName && (
@@ -890,6 +895,41 @@ const UserProfileScreen = ({
                         <p style={{ color: '#AAA', fontSize: '13px', maxWidth: '85%', margin: '0 auto 10px auto', lineHeight: '1.4' }}>
                             {profile.bio || "Welcome to my profile! Supporting the arts."}
                         </p>
+
+                        {/* ====== DUAL SPOTIFY & SOUNDCLOUD FEATURED PLAYERS ====== */}
+                        {profile.creatorField?.toLowerCase().trim() === 'musician' && (
+                            <div style={{ width: '100%', maxWidth: '440px', margin: '15px auto 10px auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {/* SPOTIFY PLAYER */}
+                                {profile.spotifyEmbedUrl && (() => {
+                                    const match = profile.spotifyEmbedUrl.match(/open\.spotify\.com\/(track|album|playlist|artist)\/([a-zA-Z0-9]+)/);
+                                    if (!match) return null;
+                                    const spotifyUrl = `https://open.spotify.com/embed/${match[1]}/${match[2]}?utm_source=generator&theme=0`;
+                                    return (
+                                        <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(29, 185, 84, 0.4)', boxShadow: '0 8px 25px rgba(0,0,0,0.6)', background: '#000' }}>
+                                            <div style={{ padding: '6px 12px', background: 'rgba(29, 185, 84, 0.1)', borderBottom: '1px solid rgba(29, 185, 84, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <span style={{ fontSize: '10px', color: '#1DB954', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px' }}>🎧 Spotify Player</span>
+                                                <span style={{ fontSize: '9px', color: '#888', fontWeight: 'bold' }}>SPOTIFY STREAM</span>
+                                            </div>
+                                            <iframe src={spotifyUrl} width="100%" height="152" frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" style={{ border: 'none', display: 'block' }} title="Spotify Track"></iframe>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* SOUNDCLOUD PLAYER */}
+                                {profile.soundcloudEmbedUrl && (() => {
+                                    const scUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(profile.soundcloudEmbedUrl)}&color=%2300ffff&auto_play=false&hide_related=true&show_comments=true&show_user=true&show_reposts=false&show_teaser=false`;
+                                    return (
+                                        <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255, 85, 0, 0.4)', boxShadow: '0 8px 25px rgba(0,0,0,0.6)', background: '#000' }}>
+                                            <div style={{ padding: '6px 12px', background: 'rgba(255, 85, 0, 0.1)', borderBottom: '1px solid rgba(255, 85, 0, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                <span style={{ fontSize: '10px', color: '#FF5500', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px' }}>☁️ SoundCloud Player</span>
+                                                <span style={{ fontSize: '9px', color: '#888', fontWeight: 'bold' }}>SOUNDCLOUD STREAM</span>
+                                            </div>
+                                            <iframe src={scUrl} width="100%" height="166" frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" style={{ border: 'none', display: 'block' }} title="SoundCloud Track"></iframe>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
                         
                         {/* --- ATELIER & WELLNESS CUSTOM CTAs --- */}
                         {profile.creatorField === 'Crafter / Designer' && (
@@ -1429,11 +1469,19 @@ const UserProfileScreen = ({
                             <span className="buttonText light">Back to Charts</span>
                         </button>
                     ) : previousScreen === 'Discover' ? (
-                        <button className="button button-contextual" onClick={() => setActiveScreen('Discover')}>
+                        <button className="button button-contextual" onClick={() => {
+                            sessionStorage.setItem('nva_target_discover_tab', 'Community');
+                            sessionStorage.setItem('nva_target_community_subtab', 'Discover Creators');
+                            setActiveScreen('Discover');
+                        }}>
                             <span className="buttonText light">Back to Discover</span>
                         </button>
                     ) : (
-                        <button className="button" onClick={() => setActiveScreen('DiscoverUsers')} style={{ backgroundColor: '#3A3A3A' }}>
+                        <button className="button" onClick={() => {
+                            sessionStorage.setItem('nva_target_discover_tab', 'Community');
+                            sessionStorage.setItem('nva_target_community_subtab', 'Discover Creators');
+                            setActiveScreen('Discover');
+                        }} style={{ backgroundColor: '#3A3A3A' }}>
                             <span className="buttonText light">Back to Search</span>
                         </button>
                     )}

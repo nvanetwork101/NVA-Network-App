@@ -4,12 +4,29 @@ import React, { useState } from 'react';
 import { db, collection, query, where, getDocs, limit, orderBy, startAfter } from '../firebase';
 import RoleBadge from './RoleBadge'; // <-- ADD THIS IMPORT
 
+const CREATOR_SUB_CATEGORIES = {
+    'Comedian': ['Stand-up', 'Skits', 'Host / MC'],
+    'Craft & Services': ['Salon & Aesthetics', 'Barber', 'Culinary & Catering', 'Event Decor', 'Gift Sets'],
+    'Health & Fitness': ['Trainer', 'Gym / Fitness Center', 'Nutritionist / Dietitian', 'Physiotherapy'],
+    'Designer': ['Fashion / Seamstress', 'Graphic Designer', 'Interior Designer'],
+    'Influencer': ['Content Creator', 'Brand Ambassador', 'Podcaster'],
+    'Poet': ['Spoken Word', 'Writer', 'Slam Poet'],
+    'Musician': ['Singer', 'DJ', 'Producer', 'Band / Live Music'],
+    'Filmmaker': ['Director', 'Videographer', 'Editor', 'Screenwriter'],
+    'Actor': ['Screen Actor', 'Stage Actor', 'Voice Actor']
+};
+
 const DiscoverUsersScreen = ({ showMessage, setActiveScreen, setSelectedUserId, currentUser, creatorProfile }) => {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [roleFilter, setRoleFilter] = useState('All');
-    const [searchResults, setSearchResults] = useState([]);
+    // THE FIX: SessionStorage integration for "MemoryZ"
+    const [searchTerm, setSearchTerm] = useState(() => sessionStorage.getItem('nva_search_term') || '');
+    const [roleFilter, setRoleFilter] = useState(() => sessionStorage.getItem('nva_role_filter') || 'All');
+    const [subRoleFilter, setSubRoleFilter] = useState(() => sessionStorage.getItem('nva_sub_role_filter') || 'All');
+    const [searchResults, setSearchResults] = useState(() => {
+        const saved = sessionStorage.getItem('nva_search_results');
+        return saved ? JSON.parse(saved) : [];
+    });
     const [isLoading, setIsLoading] = useState(false);
-    const [hasSearched, setHasSearched] = useState(false);
+    const [hasSearched, setHasSearched] = useState(() => sessionStorage.getItem('nva_has_searched') === 'true');
     
     // THE FIX: Pagination State
     const [lastUserDoc, setLastUserDoc] = useState(null);
@@ -63,18 +80,19 @@ const DiscoverUsersScreen = ({ showMessage, setActiveScreen, setSelectedUserId, 
                     
                     const nameInput = searchTerm.trim().toLowerCase();
                     const matchesName = nameInput === '' || (user.creatorName || '').toLowerCase().includes(nameInput);
-                    
+
                     const roleInput = roleFilter.toLowerCase();
-                    // THE FIX: Added 'creatorField' to the scanner. This matches your Dashboard's save logic.
                     const matchesRole = roleFilter === 'All' || [
-                        user.creatorField, // Matches Dashboard field
+                        user.creatorField === 'Craft' ? 'Craft & Services' : user.creatorField,
                         user.creatorRole, 
                         user.talent, 
                         user.talentRole, 
                         user.artisticRole
                     ].some(f => f && f.toLowerCase() === roleInput);
 
-                    return matchesName && matchesRole;
+                    const matchesSubRole = subRoleFilter === 'All' || (user.creatorSubField || '').toLowerCase() === subRoleFilter.toLowerCase();
+
+                    return matchesName && matchesRole && matchesSubRole;
                 });
 
             // 4. Enrich with Campaign Status
@@ -89,7 +107,15 @@ const DiscoverUsersScreen = ({ showMessage, setActiveScreen, setSelectedUserId, 
             
             // THE FIX: If enrichedResults is empty but querySnapshot had a full batch (40), 
             // it means we need to keep searching further down the database.
-            setSearchResults(prev => isLoadMore ? [...prev, ...enrichedResults] : enrichedResults);
+            const newResults = isLoadMore ? [...searchResults, ...enrichedResults] : enrichedResults;
+            setSearchResults(newResults);
+            
+            // SAVE STATE TO MEMORYZ
+            sessionStorage.setItem('nva_search_term', searchTerm);
+            sessionStorage.setItem('nva_role_filter', roleFilter);
+            sessionStorage.setItem('nva_sub_role_filter', subRoleFilter);
+            sessionStorage.setItem('nva_has_searched', 'true');
+            sessionStorage.setItem('nva_search_results', JSON.stringify(newResults));
             
             const lastDoc = querySnapshot.docs[querySnapshot.docs.length - 1] || null;
             setLastUserDoc(lastDoc);
@@ -128,20 +154,44 @@ const DiscoverUsersScreen = ({ showMessage, setActiveScreen, setSelectedUserId, 
                         <label htmlFor="userSearch" className="formLabel">Search by Name:</label>
                         <input type="text" id="userSearch" className="formInput" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Enter name..." />
                     </div>
-                    <div className="formGroup" style={{ flex: 1, minWidth: '150px' }}>
+                    <div className="formGroup" style={{ flex: 1, minWidth: '140px' }}>
                         <label htmlFor="roleFilter" className="formLabel">Filter by Role:</label>
                         <select 
                                 id="roleFilter" 
                                 className="formInput" 
                                 value={roleFilter} 
-                                onChange={(e) => setRoleFilter(e.target.value)}
+                                onChange={(e) => {
+                                    setRoleFilter(e.target.value);
+                                    setSubRoleFilter('All');
+                                }}
                                 style={{ backgroundColor: '#1A1A1A', color: '#FFF' }}
                             >
                                 <option value="All">All Roles</option>
-                                {['Actor', 'Comedian', 'Craft', 'Designer', 'Filmmaker', 'Health & Fitness', 'Influencer', 'Musician', 'Poet'].map(role => (
+                                {['Actor', 'Comedian', 'Craft & Services', 'Designer', 'Filmmaker', 'Health & Fitness', 'Influencer', 'Musician', 'Poet'].map(role => (
                                     <option key={role} value={role}>{role}</option>
                                 ))}
                             </select>
+                    </div>
+                    <div className="formGroup" style={{ flex: 1, minWidth: '150px' }}>
+                        <label htmlFor="subRoleFilter" className="formLabel">Specialization:</label>
+                        <select 
+                            id="subRoleFilter" 
+                            className="formInput" 
+                            value={subRoleFilter} 
+                            onChange={(e) => setSubRoleFilter(e.target.value)}
+                            style={{ backgroundColor: '#1A1A1A', color: '#FFF' }}
+                        >
+                            <option value="All">All Specializations</option>
+                            {roleFilter !== 'All' && CREATOR_SUB_CATEGORIES[roleFilter] ? (
+                                CREATOR_SUB_CATEGORIES[roleFilter].map(sub => (
+                                    <option key={sub} value={sub}>{sub}</option>
+                                ))
+                            ) : (
+                                Object.values(CREATOR_SUB_CATEGORIES).flat().map(sub => (
+                                    <option key={sub} value={sub}>{sub}</option>
+                                ))
+                            )}
+                        </select>
                     </div>
                 </div>
                 <button type="submit" className="button" disabled={isLoading} style={{ marginTop: '0' }}>
@@ -163,7 +213,12 @@ const DiscoverUsersScreen = ({ showMessage, setActiveScreen, setSelectedUserId, 
                                 <RoleBadge profile={user} />
                             </div>
                             <p className="user-search-role">
-                                Role: {user.creatorRole || user.talent || user.artisticRole || 'Creator'}
+                                Role: {user.creatorField || user.creatorRole || user.talent || user.artisticRole || 'Creator'}
+                                {user.creatorSubField && (
+                                    <span style={{ color: '#00FFFF', fontWeight: 'bold', marginLeft: '6px' }}>
+                                        • {user.creatorSubField}
+                                    </span>
+                                )}
                                 {user.hasActiveCampaign && <span className="user-search-campaign-badge" style={{ marginLeft: '10px' }}>Active Campaign</span>}
                             </p>
                         </div>

@@ -48,7 +48,7 @@ function LikeButton({ contentItem, currentUser, showMessage, itemType }) {
             unsubscribeLike();
             unsubscribeContent();
         };
-    }, [contentDocId, currentUser, appId, itemType]); // Add itemType to dependency array
+    }, [targetId, targetType, currentUser, appId]);
 
     const handleLike = async (e) => {
         e.stopPropagation(); // Prevent the click from bubbling up to the parent card

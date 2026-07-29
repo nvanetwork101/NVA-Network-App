@@ -18,6 +18,18 @@ import SuspensionModal from './SuspensionModal';
 import formatCurrency from '../utils/formatCurrency';
 import RoleBadge from './RoleBadge';
 
+const CREATOR_SUB_CATEGORIES = {
+    'Comedian': ['Stand-up', 'Skits', 'Host / MC'],
+    'Craft & Services': ['Salon & Aesthetics', 'Barber', 'Culinary & Catering', 'Event Decor', 'Gift Sets'],
+    'Health & Fitness': ['Trainer', 'Gym / Fitness Center', 'Nutritionist / Dietitian', 'Physiotherapy'],
+    'Designer': ['Fashion / Seamstress', 'Graphic Designer', 'Interior Designer'],
+    'Influencer': ['Content Creator', 'Brand Ambassador', 'Podcaster'],
+    'Poet': ['Spoken Word', 'Writer', 'Slam Poet'],
+    'Musician': ['Singer', 'DJ', 'Producer', 'Band / Live Music'],
+    'Filmmaker': ['Director', 'Videographer', 'Editor', 'Screenwriter'],
+    'Actor': ['Screen Actor', 'Stage Actor', 'Voice Actor']
+};
+
 const AdminDashboardScreen = ({
     showMessage,
     setActiveScreen,
@@ -2301,16 +2313,16 @@ const AdminDashboardScreen = ({
                                                             </div>
                                                             <p style={{ fontSize: '12px', color: '#AAA', margin: '4px 0' }}>{user.email}</p>
                                                             
-                                                            {/* DYNAMIC CREATOR FIELD BADGE DROP-DOWN */}
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '4px 0' }}>
+                                                            {/* DYNAMIC CREATOR FIELD & SUB-ROLE DROP-DOWNS */}
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '4px 0', flexWrap: 'wrap' }}>
                                                                 <span style={{ fontSize: '11px', color: '#666' }}>Badge Role:</span>
                                                                 <select 
-                                                                    value={user.creatorField || ''} 
-                                                                    onClick={(e) => e.stopPropagation()} // Prevents navigating to user profile when selecting field
+                                                                    value={user.creatorField === 'Craft' ? 'Craft & Services' : (user.creatorField || '')} 
+                                                                    onClick={(e) => e.stopPropagation()}
                                                                     onChange={async (e) => {
                                                                         showMessage(`Updating ${user.creatorName} to ${e.target.value}...`);
                                                                         try {
-                                                                            await updateDoc(doc(db, "creators", user.id), { creatorField: e.target.value || null });
+                                                                            await updateDoc(doc(db, "creators", user.id), { creatorField: e.target.value || null, creatorSubField: null });
                                                                             showMessage("Badge role updated!");
                                                                         } catch(err) {
                                                                             showMessage("Failed to update badge role.");
@@ -2320,7 +2332,7 @@ const AdminDashboardScreen = ({
                                                                 >
                                                                     <option value="">No Badge Role</option>
                                                                     <option value="Comedian">🎭 Comedian</option>
-                                                                    <option value="Craft">🎨 Craft</option>
+                                                                    <option value="Craft & Services">🎨 Craft & Services</option>
                                                                     <option value="Health & Fitness">💪 Health & Fitness</option>
                                                                     <option value="Designer">📐 Designer</option>
                                                                     <option value="Influencer">🌟 Influencer</option>
@@ -2329,6 +2341,28 @@ const AdminDashboardScreen = ({
                                                                     <option value="Filmmaker">🎬 Filmmaker</option>
                                                                     <option value="Actor">🎭 Actor</option>
                                                                 </select>
+
+                                                                {user.creatorField && CREATOR_SUB_CATEGORIES[user.creatorField === 'Craft' ? 'Craft & Services' : user.creatorField] && (
+                                                                    <select 
+                                                                        value={user.creatorSubField || ''} 
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        onChange={async (e) => {
+                                                                            showMessage(`Updating sub-role for ${user.creatorName}...`);
+                                                                            try {
+                                                                                await updateDoc(doc(db, "creators", user.id), { creatorSubField: e.target.value || null });
+                                                                                showMessage("Sub-role updated!");
+                                                                            } catch(err) {
+                                                                                showMessage("Failed to update sub-role.");
+                                                                            }
+                                                                        }}
+                                                                        style={{ background: '#1A1A1A', border: '1px solid #00FFFF', color: '#00FFFF', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
+                                                                    >
+                                                                        <option value="">No Specialization</option>
+                                                                        {CREATOR_SUB_CATEGORIES[user.creatorField === 'Craft' ? 'Craft & Services' : user.creatorField].map(sub => (
+                                                                            <option key={sub} value={sub}>{sub}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                )}
                                                             </div>
 
                                                             <p style={{ fontSize: '12px', color: primaryStatus.color, fontWeight: 'bold', margin: 0 }}>Status: {primaryStatus.text}</p>

@@ -892,12 +892,15 @@ useEffect(() => {
   useEffect(() => {
     const navigateHandler = (event) => {
         const { userId } = event.detail;
-        // This function will close ALL modals and then navigate.
+        // THE FIX: Lock both target tab and sub-tab before leaving Discover
+        if (activeScreen === 'Discover') {
+            sessionStorage.setItem('nva_target_discover_tab', 'Community');
+            sessionStorage.setItem('nva_target_community_subtab', 'Discover Creators');
+        }
         setShowVideoModal(false);
         setShowLikesModal(false); 
         setShowCommentsModal(false);
         setSelectedUserId(userId);
-        // THE FIX: Use our smart navigation function to preserve history
         handleNavigate('UserProfile');
     };
     window.addEventListener('navigateToUserProfile', navigateHandler);

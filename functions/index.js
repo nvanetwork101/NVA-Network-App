@@ -2666,13 +2666,13 @@ exports.updateLikeCount = onCall(async (request) => {
                 transaction.set(likeRef, { likedAt: new Date().toISOString() });
                 // THE FIX: Use set with merge:true to resurrect the ghost document shell so counts are preserved
                 transaction.set(itemRef, { 
-                    likeCount: admin.firestore.FieldValue.increment(increment),
+                    likeCount: FieldValue.increment(increment),
                     lastLikerProfileUrl: userProfileUrl || null
                 }, { merge: true });
 
             } else {
                 transaction.delete(likeRef);
-                transaction.set(itemRef, { likeCount: admin.firestore.FieldValue.increment(increment) }, { merge: true });
+                transaction.set(itemRef, { likeCount: FieldValue.increment(increment) }, { merge: true });
             }
         });
 
@@ -2742,7 +2742,7 @@ exports.updateLikeCount = onCall(async (request) => {
 
         for (let i = 0; i < userIds.length; i += 10) {
             const batchIds = userIds.slice(i, i + 10);
-            const query = creatorRef.where(admin.firestore.FieldPath.documentId(), 'in', batchIds).get();
+            const query = creatorRef.where(FieldPath.documentId(), 'in', batchIds).get();
             userPromises.push(query);
         }
 
@@ -2798,7 +2798,7 @@ exports.incrementViewCount = onCall(async (request) => {
 
     try {
         // THE FIX: Use set with merge:true to prevent crashing on ghost event documents
-        await itemRef.set({ [fieldToUpdate]: admin.firestore.FieldValue.increment(1) }, { merge: true });
+        await itemRef.set({ [fieldToUpdate]: FieldValue.increment(1) }, { merge: true });
         return { success: true, message: "View count incremented." };
     } catch (error) {
         logger.error(`Error incrementing view count for ${itemType} '${itemId}'`, { error });
@@ -4797,7 +4797,7 @@ exports.triggerManualAutomation = onCall(async (request) => {
         userName: creatorData.creatorName || "NVA User",
         userProfilePicture: creatorData.profilePictureUrl || '',
         text: text.trim(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
         replyTo: replyTo || null,
         authorRole: authorRole
     };
@@ -4822,10 +4822,10 @@ exports.triggerManualAutomation = onCall(async (request) => {
     await db.runTransaction(async (transaction) => {
         const newCommentRef = commentsRef.doc();
         transaction.set(newCommentRef, newComment);
-        transaction.update(creatorRef, { lastCommentTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+        transaction.update(creatorRef, { lastCommentTimestamp: FieldValue.serverTimestamp() });
         
         // THE FIX: Always resurrect the parent shell for ghost events to preserve comment counts globally
-        transaction.set(itemRef, { commentCount: admin.firestore.FieldValue.increment(1) }, { merge: true });
+        transaction.set(itemRef, { commentCount: FieldValue.increment(1) }, { merge: true });
     });
 
     // Handle notifications AFTER the transaction
@@ -5203,11 +5203,11 @@ exports.postChatMessage = onCall(async (request) => {
             if (likeDoc.exists) {
                 // User has already liked, so we will "unlike"
                 transaction.delete(likeRef);
-                transaction.update(eventRef, { likeCount: admin.firestore.FieldValue.increment(-1) });
+                transaction.update(eventRef, { likeCount: FieldValue.increment(-1) });
             } else {
                 // User has not liked yet
-                transaction.set(likeRef, { likedAt: admin.firestore.FieldValue.serverTimestamp() });
-                transaction.update(eventRef, { likeCount: admin.firestore.FieldValue.increment(1) });
+                transaction.set(likeRef, { likedAt: FieldValue.serverTimestamp() });
+                transaction.update(eventRef, { likeCount: FieldValue.increment(1) });
             }
         });
         return { success: true, message: "Like status updated." };

@@ -16,10 +16,22 @@ import RoastTokenVault from './RoastTokenVault';
 
 // --- Master Control Configuration ---
 // These fields can later be dynamically fetched from a Firebase 'adminSettings/masterControls' document.
-const MASTER_CREATOR_FIELDS = ['Comedian', 'Craft', 'Health & Fitness', 'Designer', 'Influencer', 'Poet', 'Musician', 'Filmmaker', 'Actor'];
+const MASTER_CREATOR_FIELDS = ['Comedian', 'Craft & Services', 'Health & Fitness', 'Designer', 'Influencer', 'Poet', 'Musician', 'Filmmaker', 'Actor'];
+
+const CREATOR_SUB_CATEGORIES = {
+    'Comedian': ['Stand-up', 'Skits', 'Host / MC'],
+    'Craft & Services': ['Salon & Aesthetics', 'Barber', 'Culinary & Catering', 'Event Decor', 'Gift Sets'],
+    'Health & Fitness': ['Trainer', 'Gym / Fitness Center', 'Nutritionist / Dietitian', 'Physiotherapy'],
+    'Designer': ['Fashion / Seamstress', 'Graphic Designer', 'Interior Designer'],
+    'Influencer': ['Content Creator', 'Brand Ambassador', 'Podcaster'],
+    'Poet': ['Spoken Word', 'Writer', 'Slam Poet'],
+    'Musician': ['Singer', 'DJ', 'Producer', 'Band / Live Music'],
+    'Filmmaker': ['Director', 'Videographer', 'Editor', 'Screenwriter'],
+    'Actor': ['Screen Actor', 'Stage Actor', 'Voice Actor']
+};
 
 const ROLE_COLORS = {
-    'Comedian': '#FF4500', 'Craft': '#D2691E', 'Health & Fitness': '#20B2AA',
+    'Comedian': '#FF4500', 'Craft': '#D2691E', 'Craft & Services': '#D2691E', 'Health & Fitness': '#20B2AA',
     'Designer': '#FF1493', 'Influencer': '#00BFFF', 'Poet': '#9370DB',
     'Musician': '#32CD32', 'Filmmaker': '#FFD700', 'Actor': '#DC143C',
     'Crafter / Designer': '#D2691E', 'Wellness Coach': '#20B2AA'
@@ -414,6 +426,8 @@ const CreatorDashboardScreen = ({
     }, [currentUser, creatorProfile?.creatorField, creatorProfile?.role]);
     const [editBio, setEditBio] = useState('');
     const [editCreatorField, setEditCreatorField] = useState('');
+    const [editCreatorSubField, setEditCreatorSubField] = useState('');
+    const [editMusicEmbedUrl, setEditMusicEmbedUrl] = useState('');
     const [editExistingWorkLink, setEditExistingWorkLink] = useState('');
     const [showImageAdjustModal, setShowImageAdjustModal] = useState(false);
     const [imageFileToAdjust, setImageFileToAdjust] = useState(null);
@@ -592,7 +606,9 @@ const CreatorDashboardScreen = ({
             setEditRealName(creatorProfile.realName || ''); // Syncs Legal Real Name
             setEditDateOfBirth(creatorProfile.dateOfBirth || ''); // Syncs Date of Birth
             setEditBio(creatorProfile.bio || '');
-            setEditCreatorField(creatorProfile.creatorField || '');
+            setEditCreatorField(creatorProfile.creatorField === 'Craft' ? 'Craft & Services' : (creatorProfile.creatorField || ''));
+            setEditCreatorSubField(creatorProfile.creatorSubField || '');
+            setEditMusicEmbedUrl(creatorProfile.musicEmbedUrl || '');
             setEditExistingWorkLink(creatorProfile.existingWorkLink || '');
             setHasAcceptedLegalTerms(false); // Reset checkbox state on re-entry
             
@@ -634,17 +650,25 @@ const CreatorDashboardScreen = ({
                 }
             }
 
-            await updateDoc(creatorRef, { 
+            const profileUpdatePayload = { 
                 creatorName: editCreatorName, 
                 realName: editRealName, // Saves private legal name
                 dateOfBirth: editDateOfBirth || null,
                 age: ageVal,
                 bio: editBio, 
                 creatorField: editCreatorField, 
-                role: newRole, 
+                creatorSubField: editCreatorSubField || null,
+                musicEmbedUrl: editMusicEmbedUrl || null,
                 existingWorkLink: editExistingWorkLink, 
                 updatedAt: new Date().toISOString() 
-            }); 
+            }; 
+
+            // THE FIX: Only send role if it actually changed to prevent Firestore permission blocks
+            if (creatorProfile.role !== newRole && !isStaff) {
+                profileUpdatePayload.role = newRole;
+            }
+
+            await updateDoc(creatorRef, profileUpdatePayload); 
             
             setCreatorProfile(prev => ({ 
                 ...prev, 
@@ -654,6 +678,7 @@ const CreatorDashboardScreen = ({
                 age: ageVal,
                 bio: editBio, 
                 creatorField: editCreatorField, 
+                creatorSubField: editCreatorSubField || null,
                 role: newRole, 
                 existingWorkLink: editExistingWorkLink 
             })); 
@@ -1409,10 +1434,45 @@ const CreatorDashboardScreen = ({
                                     </select>
                                     <p className="smallText" style={{marginTop: '5px', color: !!creatorProfile.creatorField ? '#00FFFF' : '#FFD700'}}>
                                         {!!creatorProfile.creatorField 
-                                            ? "🔒 This choice is final. Contact support to request a role change." 
-                                            : "⚠️ Choose carefully! Once saved, your creator role is permanent and cannot be changed."}
+                                            ? "🔒 Main role is locked. You can select or update your Specialization anytime below." 
+                                            : "⚠️ Choose carefully! Once saved, your main creator role is permanent."}
                                     </p>
                                 </div>
+
+                                {editCreatorField && CREATOR_SUB_CATEGORIES[editCreatorField] && (
+                                    <div className="formGroup">
+                                        <label htmlFor="editCreatorSubField" className="formLabel" style={{color: '#00FFFF'}}>Specialization / Sub-Category:</label>
+                                        <select 
+                                            id="editCreatorSubField" 
+                                            className="formInput" 
+                                            value={editCreatorSubField || ''} 
+                                            onChange={(e) => setEditCreatorSubField(e.target.value)}
+                                        >
+                                            <option value="">-- All Specializations --</option>
+                                            {CREATOR_SUB_CATEGORIES[editCreatorField].map(sub => (
+                                                <option key={sub} value={sub}>{sub}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {(editCreatorField?.toLowerCase().trim() === 'musician' || creatorProfile?.creatorField?.toLowerCase().trim() === 'musician') && (
+                                    <div className="formGroup" style={{ background: 'rgba(50, 205, 50, 0.05)', padding: '12px', borderRadius: '10px', border: '1px dashed rgba(50, 205, 50, 0.3)' }}>
+                                        <label htmlFor="editMusicEmbedUrl" className="formLabel" style={{color: '#32CD32', fontWeight: 'bold'}}>🎵 Spotify or SoundCloud Audio Link:</label>
+                                        <input 
+                                            type="url" 
+                                            id="editMusicEmbedUrl"
+                                            className="formInput" 
+                                            placeholder="e.g. https://open.spotify.com/track/... or https://soundcloud.com/..." 
+                                            value={editMusicEmbedUrl || ''} 
+                                            onChange={e => setEditMusicEmbedUrl(e.target.value)} 
+                                            style={{ background: '#000', color: '#FFF' }}
+                                        />
+                                        <p style={{ margin: '4px 0 0 0', fontSize: '11px', color: '#888' }}>
+                                            Paste your Spotify/SoundCloud track or album URL. It will automatically embed a player at the top of your public profile.
+                                        </p>
+                                    </div>
+                                )}
                                 <div className="formGroup"><label htmlFor="editExistingWork" className="formLabel">External Link (Optional):</label><input type="text" id="editExistingWork" className="formInput" value={editExistingWorkLink || ''} onChange={(e) => setEditExistingWorkLink(e.target.value)} placeholder="e.g., instagram.com/mywork" /></div>
                                 
                                 {editCreatorField && (!creatorProfile.realName || !creatorProfile.dateOfBirth) && (
@@ -1450,6 +1510,11 @@ const CreatorDashboardScreen = ({
                                             isFilmClub: isFilmClubUser,
                                             isContestant: isContestantUser
                                         }} />
+                                        {creatorProfile.creatorSubField && (
+                                            <span style={{ fontSize: '11px', color: '#00FFFF', fontWeight: 'bold', background: 'rgba(0,255,255,0.08)', border: '1px solid rgba(0,255,255,0.2)', padding: '2px 8px', borderRadius: '12px' }}>
+                                                • {creatorProfile.creatorSubField}
+                                            </span>
+                                        )}
                                     </div>
                                     {creatorProfile.realName && (
                                         <p style={{ fontSize: '11px', color: '#666', margin: '0 0 8px 0', fontStyle: 'italic' }} title="Strictly private legal name">
@@ -1457,6 +1522,42 @@ const CreatorDashboardScreen = ({
                                         </p>
                                     )}
                                     {renderGlobalPatronGifts(creatorProfile)}
+
+                                    {/* ====== DUAL SPOTIFY & SOUNDCLOUD FEATURED PLAYERS PREVIEW ====== */}
+                                    {creatorProfile.creatorField?.toLowerCase().trim() === 'musician' && (
+                                        <div style={{ width: '100%', maxWidth: '440px', margin: '15px auto 10px auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                            {/* SPOTIFY PLAYER */}
+                                            {creatorProfile.spotifyEmbedUrl && (() => {
+                                                const match = creatorProfile.spotifyEmbedUrl.match(/open\.spotify\.com\/(track|album|playlist|artist)\/([a-zA-Z0-9]+)/);
+                                                if (!match) return null;
+                                                const spotifyUrl = `https://open.spotify.com/embed/${match[1]}/${match[2]}?utm_source=generator&theme=0`;
+                                                return (
+                                                    <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(29, 185, 84, 0.4)', boxShadow: '0 8px 25px rgba(0,0,0,0.6)', background: '#000' }}>
+                                                        <div style={{ padding: '6px 12px', background: 'rgba(29, 185, 84, 0.1)', borderBottom: '1px solid rgba(29, 185, 84, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <span style={{ fontSize: '10px', color: '#1DB954', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px' }}>🎧 Spotify Player</span>
+                                                            <span style={{ fontSize: '9px', color: '#888', fontWeight: 'bold' }}>PREVIEW</span>
+                                                        </div>
+                                                        <iframe src={spotifyUrl} width="100%" height="152" frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" style={{ border: 'none', display: 'block' }} title="Spotify Track"></iframe>
+                                                    </div>
+                                                );
+                                            })()}
+
+                                            {/* SOUNDCLOUD PLAYER */}
+                                            {creatorProfile.soundcloudEmbedUrl && (() => {
+                                                const scUrl = `https://w.soundcloud.com/player/?url=${encodeURIComponent(creatorProfile.soundcloudEmbedUrl)}&color=%2300ffff&auto_play=false&hide_related=true&show_comments=true&show_user=true&show_reposts=false&show_teaser=false`;
+                                                return (
+                                                    <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(255, 85, 0, 0.4)', boxShadow: '0 8px 25px rgba(0,0,0,0.6)', background: '#000' }}>
+                                                        <div style={{ padding: '6px 12px', background: 'rgba(255, 85, 0, 0.1)', borderBottom: '1px solid rgba(255, 85, 0, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                                            <span style={{ fontSize: '10px', color: '#FF5500', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px' }}>☁️ SoundCloud Player</span>
+                                                            <span style={{ fontSize: '9px', color: '#888', fontWeight: 'bold' }}>PREVIEW</span>
+                                                        </div>
+                                                        <iframe src={scUrl} width="100%" height="166" frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy" style={{ border: 'none', display: 'block' }} title="SoundCloud Track"></iframe>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+                                    )}
+
                                     <p style={{ color: '#AAA', fontSize: '13px', maxWidth: '85%', margin: '0 auto 10px auto', lineHeight: '1.4' }}>
                                         {creatorProfile.bio || "No bio set. Click edit profile to add one."}
                                     </p>
@@ -2303,6 +2404,51 @@ const CreatorDashboardScreen = ({
                             <div style={{ background: 'rgba(0, 255, 255, 0.05)', border: '1px solid rgba(0, 255, 255, 0.2)', padding: '15px', borderRadius: '12px' }}>
                                 <p style={{ color: '#00FFFF', fontSize: '11px', fontWeight: '900', margin: '0 0 5px 0' }}>MUSIC VIDEO UNITS SOLD</p>
                                 <p style={{ color: '#FFF', fontSize: '24px', fontWeight: 'bold', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>📀 {Math.floor(((creatorProfile?.boxOfficeLedger?.musicTicketSales || 0) + (creatorProfile?.boxOfficeLedger?.musicDonations || 0)) / 475)}</p>
+                            </div>
+                        </div>
+
+                        {/* DUAL SPOTIFY & SOUNDCLOUD LINK INPUTS */}
+                        <div style={{ background: 'rgba(0,0,0,0.4)', padding: '14px', borderRadius: '10px', border: '1px solid rgba(50, 205, 50, 0.2)', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            <div>
+                                <label style={{ display: 'block', color: '#1DB954', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+                                    🎧 Spotify Track / Album Link
+                                </label>
+                                <input 
+                                    type="url" 
+                                    className="formInput" 
+                                    style={{ margin: 0, width: '100%', background: '#000', color: '#FFF', fontSize: '13px' }}
+                                    placeholder="e.g. https://open.spotify.com/track/..." 
+                                    value={creatorProfile.spotifyEmbedUrl || ''} 
+                                    onChange={async (e) => {
+                                        const newUrl = e.target.value;
+                                        setCreatorProfile(prev => ({ ...prev, spotifyEmbedUrl: newUrl }));
+                                        try {
+                                            await updateDoc(doc(db, "creators", currentUser.uid), { spotifyEmbedUrl: newUrl || null });
+                                            showMessage("Spotify player updated!");
+                                        } catch (err) { showMessage("Failed to update link."); }
+                                    }}
+                                />
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', color: '#FF5500', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>
+                                    ☁️ SoundCloud Track / Playlist Link
+                                </label>
+                                <input 
+                                    type="url" 
+                                    className="formInput" 
+                                    style={{ margin: 0, width: '100%', background: '#000', color: '#FFF', fontSize: '13px' }}
+                                    placeholder="e.g. https://soundcloud.com/artist/sets/playlist-name" 
+                                    value={creatorProfile.soundcloudEmbedUrl || ''} 
+                                    onChange={async (e) => {
+                                        const newUrl = e.target.value;
+                                        setCreatorProfile(prev => ({ ...prev, soundcloudEmbedUrl: newUrl }));
+                                        try {
+                                            await updateDoc(doc(db, "creators", currentUser.uid), { soundcloudEmbedUrl: newUrl || null });
+                                            showMessage("SoundCloud player updated!");
+                                        } catch (err) { showMessage("Failed to update link."); }
+                                    }}
+                                />
                             </div>
                         </div>
 

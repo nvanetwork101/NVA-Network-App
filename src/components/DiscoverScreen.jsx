@@ -750,7 +750,15 @@ function DiscoverScreen({
     const [showcaseSearch, setShowcaseSearch] = useState(''); // NEW: Search state for Showcase content
 
     // --- DISCOVERY STATE SYSTEM ---
-    const [communitySubTab, setCommunitySubTab] = useState('Feed'); // Controls the sub-tabs
+    // THE FIX: Sub-tab MemoryZ Router (Opens 'Discover Creators' directly when returning)
+    const [communitySubTab, setCommunitySubTab] = useState(() => {
+        const savedSub = sessionStorage.getItem('nva_target_community_subtab');
+        if (savedSub) {
+            sessionStorage.removeItem('nva_target_community_subtab');
+            return savedSub;
+        }
+        return 'Feed';
+    });
     const [leaderboard, setLeaderboard] = useState([]);
     const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
     
