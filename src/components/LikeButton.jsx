@@ -12,19 +12,21 @@ function LikeButton({ contentItem, currentUser, showMessage, itemType }) {
 
     // CORRECTED: This now matches your application's actual App ID.
     const appId = "production-app-id"; 
-    const contentDocId = contentItem.id; // FIX: Prevents targeting deleted event documents for Likes
+    // THE FIX: Smart routing intercepts 'originalContentId' to sync likes with ghost event folders
+    const targetId = contentItem.originalContentId || contentItem.id; 
+    const targetType = contentItem.originalContentId ? 'event' : itemType;
 
     useEffect(() => {
-        if (!currentUser || !contentDocId) {
+        if (!currentUser || !targetId) {
             setIsLoading(false);
             return;
         }
 
         let basePath;
-        if (itemType === 'event') {
-            basePath = `events/${contentDocId}`;
+        if (targetType === 'event') {
+            basePath = `events/${targetId}`;
         } else {
-            basePath = `artifacts/${appId}/public/data/content_items/${contentDocId}`;
+            basePath = `artifacts/${appId}/public/data/content_items/${targetId}`;
         }
 
         // Listener for the user's specific like on this item (now with dynamic path)
@@ -65,8 +67,8 @@ function LikeButton({ contentItem, currentUser, showMessage, itemType }) {
 
         try {
             const updateLikeFunction = httpsCallable(functions, 'updateLikeCount');
-            // Pass the dynamic itemId and itemType to the updated function.
-            await updateLikeFunction({ itemId: contentDocId, itemType: itemType, isLiking: newLikedState });
+            // THE FIX: Pass dynamic ghost routes
+            await updateLikeFunction({ itemId: targetId, itemType: targetType, isLiking: newLikedState });
         } catch (error) {
             showMessage("An error occurred. Please try again.");
             // Revert UI on failure

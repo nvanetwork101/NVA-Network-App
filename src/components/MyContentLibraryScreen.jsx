@@ -542,7 +542,9 @@ function MyContentLibraryScreen({
             <style>{modernStyles}</style>
             <div className="screenContainer" style={{ paddingBottom: '40px' }}>
                 <p className="heading">My Content Library</p>
-                <p className="subHeading" style={{ marginBottom: '24px' }}>Add to your portfolio and manage what's featured on your profile.</p>
+                <p className="subHeading" style={{ marginBottom: '24px', color: '#FFF' }}>
+                    <span style={{ color: '#FFD700' }}>💡:</span> You can store multiple videos in your library, users who follow you or visit your profile can see all your uploads, but only one can be featured Globally in Explore showcase at a time using <strong style={{ color: '#00FFFF' }}>Set as Featured</strong>.
+                </p>
                 
                 {/* GLASS-PANEL ADD CONTENT FORM */}
                 <div className="glass-panel">

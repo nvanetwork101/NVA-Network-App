@@ -9,9 +9,9 @@ const LikesModal = ({ contentItem, onClose }) => {
 
     useEffect(() => {
         const fetchLikers = async () => {
-            // Assume 'content' type if not specified, for VODs/events it must be 'event'
-            const itemType = contentItem.itemType || 'content'; 
-            const itemId = contentItem.id;
+            // THE FIX: Smart routing preserves access to ghost subcollections for VODs
+            const itemType = contentItem.originalContentId ? 'event' : (contentItem.itemType || 'content'); 
+            const itemId = contentItem.originalContentId || contentItem.id;
 
             if (!itemId) {
                 console.error("LikesModal: No content item ID provided.");

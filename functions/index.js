@@ -2647,10 +2647,14 @@ exports.updateLikeCount = onCall(async (request) => {
 
         await db.runTransaction(async (transaction) => {
             const itemDoc = await transaction.get(itemRef);
+            itemData = itemDoc.exists ? itemDoc.data() : null;
+
             if (!itemDoc.exists) {
-                throw new HttpsError("not-found", `The ${itemType} you are trying to like does not exist.`);
+                if (itemType !== 'event') {
+                    throw new HttpsError("not-found", `The ${itemType} you are trying to like does not exist.`);
+                }
+                itemData = { creatorId: "system", title: "Archived Live Event" };
             }
-            itemData = itemDoc.data();
 
             if (isLiking) {
                 // Get the user's profile to store their picture on the content item
@@ -2660,14 +2664,15 @@ exports.updateLikeCount = onCall(async (request) => {
                 likerName = userDoc.exists ? (userDoc.data().creatorName || "Someone") : "Someone";
 
                 transaction.set(likeRef, { likedAt: new Date().toISOString() });
-                transaction.update(itemRef, { 
+                // THE FIX: Use set with merge:true to resurrect the ghost document shell so counts are preserved
+                transaction.set(itemRef, { 
                     likeCount: admin.firestore.FieldValue.increment(increment),
                     lastLikerProfileUrl: userProfileUrl || null
-                });
+                }, { merge: true });
 
             } else {
                 transaction.delete(likeRef);
-                transaction.update(itemRef, { likeCount: admin.firestore.FieldValue.increment(increment) });
+                transaction.set(itemRef, { likeCount: admin.firestore.FieldValue.increment(increment) }, { merge: true });
             }
         });
 
@@ -2792,7 +2797,8 @@ exports.incrementViewCount = onCall(async (request) => {
     }
 
     try {
-        await itemRef.update({ [fieldToUpdate]: admin.firestore.FieldValue.increment(1) });
+        // THE FIX: Use set with merge:true to prevent crashing on ghost event documents
+        await itemRef.set({ [fieldToUpdate]: admin.firestore.FieldValue.increment(1) }, { merge: true });
         return { success: true, message: "View count incremented." };
     } catch (error) {
         logger.error(`Error incrementing view count for ${itemType} '${itemId}'`, { error });
@@ -4817,10 +4823,9 @@ exports.triggerManualAutomation = onCall(async (request) => {
         const newCommentRef = commentsRef.doc();
         transaction.set(newCommentRef, newComment);
         transaction.update(creatorRef, { lastCommentTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-        const parentDoc = await transaction.get(itemRef);
-        if (parentDoc.exists) {
-            transaction.update(itemRef, { commentCount: admin.firestore.FieldValue.increment(1) });
-        }
+        
+        // THE FIX: Always resurrect the parent shell for ghost events to preserve comment counts globally
+        transaction.set(itemRef, { commentCount: admin.firestore.FieldValue.increment(1) }, { merge: true });
     });
 
     // Handle notifications AFTER the transaction
