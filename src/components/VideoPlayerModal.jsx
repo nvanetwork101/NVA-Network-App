@@ -154,9 +154,10 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
     const collectionPath = useMemo(() => {
         if (!liveContentItem?.id) return null;
         const targetId = liveContentItem.originalContentId || liveContentItem.id;
-        return itemType === 'event' || liveContentItem.originalContentId
-            ? `events/${targetId}/comments`
-            : `artifacts/production-app-id/public/data/content_items/${targetId}/comments`;
+        // THE FIX: Reads live chatMessages for published VODs that originated from live events
+        return liveContentItem.originalContentId
+            ? `events/${targetId}/chatMessages`
+            : (itemType === 'event' ? `events/${targetId}/comments` : `artifacts/production-app-id/public/data/content_items/${targetId}/comments`);
     }, [liveContentItem, itemType]);
 
     // Real-time listener with Pagination (Limit 10)

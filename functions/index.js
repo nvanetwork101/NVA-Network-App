@@ -1,7 +1,7 @@
 // FORCED UPDATE: 2025-10-04 23:59
 // The Cloud Functions for Firebase SDK to create Cloud Functions and set up triggers.
 const functions = require("firebase-functions/v1");
-const {FieldValue} = require("firebase-admin/firestore"); // <-- ADD THIS LINE
+const {FieldValue, FieldPath} = require("firebase-admin/firestore");
 const {onValueWritten} = require("firebase-functions/v2/database");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentUpdated, onDocumentDeleted, onDocumentCreated} = require("firebase-functions/v2/firestore");
@@ -345,7 +345,7 @@ exports.cleanupGhostArtifacts = onCall(async (request) => {
 
     // =========== START: CORRECTED 'searchForUser' FUNCTION (HYBRID LOGIC) ===========
 exports.searchForUser = onCall(async (request) => {
-    if (!request.auth.uid) {
+    if (!request.auth?.uid) {
         throw new HttpsError("unauthenticated", "You must be logged in to search for users.");
     }
 
@@ -359,31 +359,25 @@ exports.searchForUser = onCall(async (request) => {
     const searchStr = searchTerm.trim().toLowerCase();
     
     try {
-        // Step 1: Fetch all users from the database.
-        // This mirrors the logic from the working DiscoverUsersScreen.
         const snapshot = await creatorsRef.get();
         
-        logger.info(`[Hybrid Search] Fetched ${snapshot.size} total users to filter in memory.`);
-
         if (snapshot.empty) {
             return { users: [] };
         }
 
-        // Step 2: Filter the results in the function's memory using .includes().
         const users = snapshot.docs
             .map(doc => ({ userId: doc.id, ...doc.data() }))
             .filter(user => 
                 user.creatorName && 
                 user.creatorName.toLowerCase().includes(searchStr)
             )
-            .slice(0, 10) // Limit the number of results returned.
-            .map(user => ({ // Return only public-safe data.
+            .slice(0, 10)
+            .map(user => ({
                 userId: user.userId,
                 creatorName: user.creatorName,
                 profilePictureUrl: user.profilePictureUrl || ""
             }));
 
-        logger.info(`[Hybrid Search] Found ${users.length} matches for "${searchStr}".`);
         return { users: users };
 
     } catch (error) {
@@ -2667,13 +2661,13 @@ exports.updateLikeCount = onCall(async (request) => {
 
                 transaction.set(likeRef, { likedAt: new Date().toISOString() });
                 transaction.update(itemRef, { 
-                    likeCount: admin.firestore.FieldValue.increment(increment),
-                    lastLikerProfileUrl: userProfileUrl || null // Add the new field
+                    likeCount: FieldValue.increment(increment),
+                    lastLikerProfileUrl: userProfileUrl || null
                 });
 
             } else {
                 transaction.delete(likeRef);
-                transaction.update(itemRef, { likeCount: admin.firestore.FieldValue.increment(increment) });
+                transaction.update(itemRef, { likeCount: FieldValue.increment(increment) });
             }
         });
 
@@ -2743,7 +2737,7 @@ exports.updateLikeCount = onCall(async (request) => {
 
         for (let i = 0; i < userIds.length; i += 10) {
             const batchIds = userIds.slice(i, i + 10);
-            const query = creatorRef.where(admin.firestore.FieldPath.documentId(), 'in', batchIds).get();
+            const query = creatorRef.where(FieldPath.documentId(), 'in', batchIds).get();
             userPromises.push(query);
         }
 
