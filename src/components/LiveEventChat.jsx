@@ -86,8 +86,8 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
     const [expandedReplies, setExpandedReplies] = useState(new Set());
     
     const messagesAreaRef = useRef(null);
-    const emojis = ['👍', '👎', '❤️', '😂', '🔥', '😢', '😡'];
-    const handleAddEmoji = (emoji) => setNewMessageText(prev => prev + emoji);
+        const emojis = Array.from(new Set(['👍','👎','❤️','😂','🔥','😢','😡','😀','😃','😄','😁','😆','😅','🤣','🥲','☺️','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🦷','🦴','👀','👁','👅','👄','💋','🩸','✨','🌟','💯','💦','💨','💫','💥','💢','🎉','🎊','🎈','🎂','🍿','🎬','🎵','🎶','🎸','🎹','🎺','🎻','🥁','📱','💻','🖥','🖨','🖱','🖲','🕹','🗜','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽','🎞','📞','☎️','📟','📠','📺','📻','🎙','🎚','🎛','🧭','⏱','⏲','⏰','🕰','⌛️','⏳','📡','🔋','🔌','💡','🔦','🕯','🪔','🧯','🛢','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒','🛠','⛏','🪚','🔩','⚙️','🪤','🧱','⛓','🧲','🔫','💣','🧨','🪓','🔪','🗡','⚔️','🛡','🚬','⚰️','🪦','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🕳','🩹','🩺','💊','💉','🧬','🦠','🧫','🧪','🌡','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🧽','🪒','🧴','🛎','🔑','🗝','🚪','🪑','🛋','🛏','🛌','🧸','🪆','🖼','🪞','🪟','🛍','🛒','🎁','🇬Y','🇺🇸','🇬🇧','🇨🇦','🇯🇲','🇹🇹','🇧🇧','🇧🇸','🇿🇦','🇳🇬','🇬🇭','🇯🇵','🇧🇷','🇫🇷','🇩🇪','🇮🇹','🇪🇸','🇲🇽','🇮🇳','🇳🇱']));
+        const handleAddEmoji = (emoji) => setNewMessageText(prev => prev + emoji);
 
     const { topLevelMessages, repliesMap } = useMemo(() => {
         const topLevel = [];
@@ -279,9 +279,9 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
                     </div> 
                 )}
                 {showEmojiPicker && (
-                    <div style={{ display: 'flex', gap: '10px', padding: '6px 5px', marginBottom: '6px', backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: '6px', justifyContent: 'center' }}>
-                        {emojis.map(e => (
-                            <button key={e} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer' }} onClick={() => { handleAddEmoji(e); setShowEmojiPicker(false); }}>{e}</button>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(32px, 1fr))', gap: '4px', padding: '8px', maxHeight: '180px', overflowY: 'auto', backgroundColor: '#1A1A1A', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', marginBottom: '6px' }}>
+                        {emojis.map((e, idx) => (
+                            <button key={`${e}-${idx}`} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '4px' }} onClick={() => { handleAddEmoji(e); setShowEmojiPicker(false); }}>{e}</button>
                         ))}
                     </div>
                 )}
@@ -333,6 +333,8 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
                     {topLevelMessages.map(msg => {
                         const messageReplies = repliesMap.get(msg.id) || [];
                         const isExpanded = expandedReplies.has(msg.id);
+                        const firstReply = messageReplies[0];
+                        const remainingReplies = messageReplies.slice(1);
 
                         return (
                             <div key={msg.id}>
@@ -345,7 +347,20 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
                                     onMuteToggle={handleMuteToggle}
                                     isMuted={mutedUsers.has(msg.userId)}
                                 />
-                                {isExpanded && messageReplies.map(reply => (
+                                {firstReply && (
+                                    <ChatMessage
+                                        key={firstReply.id}
+                                        message={firstReply}
+                                        currentUser={currentUser}
+                                        creatorProfile={creatorProfile}
+                                        onReply={setReplyingTo}
+                                        onDelete={handleDeleteMessage}
+                                        onMuteToggle={handleMuteToggle}
+                                        isMuted={mutedUsers.has(firstReply.userId)}
+                                        isReply={true}
+                                    />
+                                )}
+                                {isExpanded && remainingReplies.map(reply => (
                                     <ChatMessage
                                         key={reply.id}
                                         message={reply}
@@ -358,13 +373,13 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
                                         isReply={true}
                                     />
                                 ))}
-                                {messageReplies.length > 0 && (
+                                {remainingReplies.length > 0 && (
                                     <button
                                         className="replyButton"
                                         style={{ marginLeft: '45px', color: '#FFD700', fontSize: '11px', marginTop: '2px' }}
                                         onClick={() => toggleReplies(msg.id)}
                                     >
-                                        {isExpanded ? '— Hide replies' : `+ View ${messageReplies.length} replies`}
+                                        {isExpanded ? '— Hide replies' : `+ View ${remainingReplies.length} more replies`}
                                     </button>
                                 )}
                             </div>

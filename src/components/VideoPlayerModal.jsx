@@ -78,7 +78,10 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
 
     // Threading & Pagination State
     const [commentLimit, setCommentLimit] = useState(10);
-    const [expandedThreads, setExpandedThreads] = useState({});
+            const [expandedThreads, setExpandedThreads] = useState({});
+            const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+            
+            const EMOJI_LIST = Array.from(new Set(['😀','😃','😄','😁','😆','😅','😂','🤣','🥲','☺️','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🫀','🫁','🧠','🦷','🦴','👀','👁','舌','👄','💋','🩸','❤️','🔥','✨','🌟','💯','💦','💨','💫','💥','💢','🎉','🎊','🎈','🎂','🍿','🎬','🎵','🎶','🎸','🎹','🎺','🎻','🥁','📱','💻','🖥','🖨','🖱','🖲','🕹','🗜','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽','🎞','📞','☎️','📟','📠','📺','📻','🎙','🎚','🎛','🧭','⏱','⏲','⏰','🕰','⌛️','⏳','📡','🔋','🔌','💡','🔦','🕯','🪔','🧯','🛢','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒','🛠','⛏','🪚','🔩','⚙️','🪤','🧱','⛓','🧲','🔫','💣','🧨','🪓','🔪','🗡','⚔️','🛡','🚬','⚰️','🪦','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🕳','🩹','🩺','💊','💉','🧬','🦠','🧫','🧪','🌡','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🧽','🪒','🧴','🛎','🔑','🗝','🚪','🪑','🛋','🛏','🛌','🧸','🪆','🖼','🪞','🪟','🛍','🛒','🎁','🇬Y','🇺🇸','🇬🇧','🇨🇦','🇯🇲','🇹🇹','🇧🇧','🇧🇸','🇿🇦','🇳🇬','🇬🇭','🇯🇵','🇧🇷','🇫🇷','🇩🇪','🇮🇹','🇪🇸','🇲🇽','🇮🇳','🇳🇱']));
     
     const toggleThread = (id, e) => {
         if (e) e.stopPropagation();
@@ -363,6 +366,16 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
             <style>{`
                 .premium-glass-info { background: linear-gradient(to bottom, rgba(15,15,15,0.7), rgba(5,5,5,0.95)); backdrop-filter: blur(25px); border-top: 1px solid rgba(255,255,255,0.08); border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; box-shadow: inset 0 1px 1px rgba(255,255,255,0.05); }
                 
+                /* --- FLOATING LIKE ANIMATION --- */
+                @keyframes floatUpAndFade {
+                    0% { transform: translateY(0) scale(1); opacity: 1; }
+                    100% { transform: translateY(-100px) scale(1.5); opacity: 0; }
+                }
+                .floating-heart {
+                    position: absolute; bottom: 20px; right: 20px; font-size: 24px;
+                    animation: floatUpAndFade 1s ease-out forwards; pointer-events: none; z-index: 100;
+                }
+                
                 /* Clean Gifting Button with NO GLOW and WHITE TEXT */
                 .gift-btn-clean {
                     background: rgba(255, 255, 255, 0.05) !important;
@@ -443,7 +456,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
 .success-state { text-align: center; padding: 30px 20px; }
 .success-check { width: 64px; height: 64px; background: rgba(74, 222, 128, 0.1); border: 2px solid #4ADE80; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 28px; color: #4ADE80; box-shadow: 0 0 30px rgba(74,222,128,0.2); }
             `}</style>
-            <div className={`w-full h-full md:max-w-[1150px] md:max-h-[95vh] md:rounded-2xl overflow-hidden relative flex flex-col shadow-2xl`} style={{ border: '1px solid rgba(255,255,255,0.1)' }}>
+             <div className={`w-full md:max-w-[1150px] md:max-h-[95vh] md:rounded-2xl overflow-hidden relative flex flex-col shadow-2xl`} style={{ height: '100dvh', maxHeight: '100dvh', border: '1px solid rgba(255,255,255,0.1)' }}>
                 <button type="button" className="closeButton" onClick={(e) => { e.stopPropagation(); onClose(); }}>×</button>
                 
                 {/* The video section wraps your aspect ratio tightly at the top with NO vertical letterbox voids [1.1.2] */}
@@ -529,7 +542,15 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                                             <span>GIFT</span>
                                         </button>
                                     )}
-                                    <LikeButton contentItem={{ ...liveContentItem, id: liveContentItem.originalContentId || liveContentItem.id }} currentUser={currentUser} showMessage={showMessage} itemType={liveContentItem.originalContentId ? 'event' : itemType} />
+                                    <div style={{ position: 'relative' }} onClick={(e) => {
+                                        const heart = document.createElement('div');
+                                        heart.className = 'floating-heart';
+                                        heart.innerText = ['❤️', '🔥', '👍'][Math.floor(Math.random() * 3)];
+                                        e.currentTarget.appendChild(heart);
+                                        setTimeout(() => heart.remove(), 1000);
+                                    }}>
+                                        <LikeButton contentItem={{ ...liveContentItem, id: liveContentItem.originalContentId || liveContentItem.id }} currentUser={currentUser} showMessage={showMessage} itemType={liveContentItem.originalContentId ? 'event' : itemType} />
+                                    </div>
                                     <div className="bg-[#111] border border-solid border-white/10 rounded-full flex items-center text-white gap-1.5 px-3 h-9">
                                         <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"></path></svg>
                                         <span>{(liveContentItem?.commentCount || comments.length).toLocaleString()}</span>
@@ -665,19 +686,27 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                                             {/* Nested Dropdown Button for Replies */}
                                             {threadReplies.length > 0 && !isReply && (
                                                 <div style={{ marginLeft: '48px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                    <button 
-                                                        onClick={(e) => toggleThread(comment.id, e)}
-                                                        style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: '#3EA6FF', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', padding: '6px 12px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                                                        onMouseOver={(e) => e.target.style.background = 'rgba(62, 166, 255, 0.1)'}
-                                                        onMouseOut={(e) => e.target.style.background = 'none'}
-                                                    >
-                                                        {expandedThreads[comment.id] ? '▴ Hide replies' : `▾ ${threadReplies.length} replies`}
-                                                    </button>
+                                                    {/* Automatically show the very first reply */}
+                                                    {renderCommentUI(threadReplies[0], true)}
                                                     
-                                                    {expandedThreads[comment.id] && (
-                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                                            {threadReplies.map(reply => renderCommentUI(reply, true))}
-                                                        </div>
+                                                    {/* Toggle for the remaining replies */}
+                                                    {threadReplies.length > 1 && (
+                                                        <>
+                                                            <button 
+                                                                onClick={(e) => toggleThread(comment.id, e)}
+                                                                style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: '#3EA6FF', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', padding: '6px 12px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                                                onMouseOver={(e) => e.target.style.background = 'rgba(62, 166, 255, 0.1)'}
+                                                                onMouseOut={(e) => e.target.style.background = 'none'}
+                                                            >
+                                                                {expandedThreads[comment.id] ? '▴ Hide previous replies' : `▾ View ${threadReplies.length - 1} more replies`}
+                                                            </button>
+                                                            
+                                                            {expandedThreads[comment.id] && (
+                                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                                                    {threadReplies.slice(1).map(reply => renderCommentUI(reply, true))}
+                                                                </div>
+                                                            )}
+                                                        </>
                                                     )}
                                                 </div>
                                             )}
@@ -714,42 +743,59 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                                 <button type="button" onClick={() => setReplyingTo(null)} style={{ background: 'none', border: 'none', color: '#00FFFF', cursor: 'pointer', padding: 0, marginLeft: '6px' }}>✕</button>
                             </div>
                         )}
-                        <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                            {['👍', '👎', '❤️', '😂', '🔥', '😢', '😡'].map(emoji => (
-                                <button
-                                    key={emoji}
+                        {showEmojiPicker && (
+                            <div style={{ position: 'absolute', bottom: '70px', left: '16px', right: '16px', height: '250px', background: '#1F1F1F', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', zIndex: 100, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(36px, 1fr))', gap: '4px', padding: '10px', overflowY: 'auto', boxShadow: '0 -10px 30px rgba(0,0,0,0.5)' }}>
+                                {EMOJI_LIST.map((emoji, idx) => (
+                                    <button
+                                        key={`${emoji}-${idx}`}
+                                        type="button"
+                                        onClick={() => setNewCommentText(prev => prev + emoji)}
+                                        style={{ background: 'transparent', border: 'none', fontSize: '22px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px', borderRadius: '8px' }}
+                                        onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                                        onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        {emoji}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', position: 'relative' }}>
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#1F1F1F', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '0 10px' }}>
+                                <button 
                                     type="button"
-                                    onClick={() => setNewCommentText(prev => prev + emoji)}
-                                    style={{ background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer', padding: '2px 6px', display: 'inline-block', transition: 'transform 0.1s' }}
-                                    onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.2)'}
-                                    onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                    style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '8px 4px', color: '#888', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                 >
-                                    {emoji}
+                                    😀
                                 </button>
-                            ))}
-                        </div>
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                            <input 
-                                id="commentsInput"
-                                type="text" 
-                                placeholder="Add to the conversation..." 
-                                style={{ flex: 1, background: '#1F1F1F', border: '1px solid rgba(255,255,255,0.1)', color: '#FFF', borderRadius: '6px', padding: '10px 14px', fontSize: '14px', outline: 'none' }}
-                                value={newCommentText}
-                                onChange={(e) => setNewCommentText(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        handleSubmitComment();
-                                    }
-                                }}
-                            />
+                                <input 
+                                    id="commentsInput"
+                                    type="text" 
+                                    placeholder="Add to the conversation..." 
+                                    style={{ flex: 1, background: 'transparent', border: 'none', color: '#FFF', padding: '10px 8px', fontSize: '14px', outline: 'none' }}
+                                    value={newCommentText}
+                                    onChange={(e) => setNewCommentText(e.target.value)}
+                                    onFocus={() => setShowEmojiPicker(false)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleSubmitComment();
+                                            setShowEmojiPicker(false);
+                                        }
+                                    }}
+                                />
+                            </div>
                             <button 
                                 className="button" 
-                                style={{ margin: 0, padding: '0 18px', height: '40px', background: '#FFD700', color: '#000', fontWeight: 'bold', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
-                                onClick={handleSubmitComment}
+                                style={{ margin: 0, padding: '0', width: '40px', height: '40px', background: '#FFD700', color: '#000', borderRadius: '6px', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                onClick={() => { handleSubmitComment(); setShowEmojiPicker(false); }}
                                 disabled={isSubmitting || !newCommentText.trim()}
                             >
-                                {isSubmitting ? '...' : 'Send'}
+                                {isSubmitting ? '...' : (
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+                                    </svg>
+                                )}
                             </button>
                         </div>
                     </div>
