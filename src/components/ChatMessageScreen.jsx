@@ -107,7 +107,7 @@ const ChatMessageScreen = ({
     };
 
     const handleAddEmoji = (emoji) => setNewMessage(prev => prev + emoji);
-    const emojis = ['👍', '👎', '❤️', '😂', '🔥', '😢', '😡', '✅', '❌', '🙏'];
+    const emojis = Array.from(new Set(['👍','👎','❤️','😂','🔥','😢','😡','✅','❌','🙏','😀','😃','😄','😁','😆','😅','🤣','🥲','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','😣','😖','😫','😩','🥺','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👏','🙌','👐','🤲','🤝','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🦷','👀','👁','舌','👄','💋','🩸','✨','🌟','💯','💦','💨','💫','💥','💢','🎉','🎊','🎈','🎂','🍿','🎬','🎵','🎶','🎸','🎹','🎺','🎻','🥁','📱','💻','🖥','🖨','🖱','🖲','🕹','🗜','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽','🎞','📞','☎️','📟','📠','📺','📻','🎙','🎚','🎛','🧭','⏱','⏲','⏰','🕰','⌛️','⏳','📡','🔋','🔌','💡','🔦','🕯','🪔','🧯','🛢','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒','🛠','⛏','🪚','🔩','⚙️','🪤','🧱','⛓','🧲','🔫','💣','🧨','🪓','🔪','🗡','⚔️','🛡','🚬','⚰️','🪦','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🕳','🩹','🩺','💊','💉','🧬','🦠','🧫','🧪','🌡','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🧽','🪒','🧴','🛎','🔑','🗝','🚪','🪑','🛋','🛏','🛌','🧸','🪆','🖼','🪞','🪟','🛍','🛒','🎁','🇬🇾','🇺🇸','🇬🇧','🇨🇦','🇯🇲','🇹🇹','🇧🇧','🇧🇸','🇿🇦','🇳🇬','🇬🇭','🇯🇵','🇧🇷','🇫🇷','🇩🇪','🇮🇹','🇪🇸','🇲🇽','🇮🇳','🇳🇱']));
 
     const prevMessagesLength = useRef(0);
     const scrollContainerRef = useRef(null);
@@ -395,7 +395,7 @@ const ChatMessageScreen = ({
     const lastSeenTimestamp = chatDetails?.lastSeenBy?.[currentUser.uid];
 
     return (
-       <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0%', overflow: 'hidden' }}>
+       <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0%', height: '100%', maxHeight: '100dvh', overflow: 'hidden', position: 'relative' }}>
             {/* Header */}
             <div style={{ padding: '10px', backgroundColor: '#1A1A1A', display: 'flex', flexDirection: 'column', gap: '10px', borderBottom: '1px solid #3A3A3A', flexShrink: 0 }}>
                  <div style={{display: 'flex', alignItems: 'center', width: '100%'}}>
@@ -527,33 +527,25 @@ const ChatMessageScreen = ({
                 )}
                {showEmojiPicker && (
                     <div className="emojiPicker" style={{
-                        // --- Core UI from your example ---
-                        background: 'rgba(40, 40, 80, 0.3)',
-                        backdropFilter: 'blur(12px)',
-                        WebkitBackdropFilter: 'blur(12px)',
-                        borderRadius: '50px',
+                        background: '#1F1F1F',
+                        borderRadius: '12px',
                         border: '1px solid rgba(255, 255, 255, 0.15)',
-
-                        // --- Scrolling and Layout ---
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '20px', // Space between emojis
-                        padding: '8px 25px',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(36px, 1fr))',
+                        gap: '4px',
+                        padding: '10px',
                         margin: '0 10px 10px 10px',
-                        overflowX: 'auto', // CRITICAL: This enables side-scrolling
-                        whiteSpace: 'nowrap', // Prevents emojis from wrapping
-                        scrollbarWidth: 'none', // Hides the scrollbar for Firefox
-                        msOverflowStyle: 'none' // Hides the scrollbar for IE/Edge
-                        // Note: A CSS pseudo-selector is needed to hide the scrollbar on Webkit (Chrome/Safari)
-                        // but this inline style ensures functionality and a clean look for most users.
+                        maxHeight: '200px',
+                        overflowY: 'auto',
+                        boxShadow: '0 -4px 20px rgba(0,0,0,0.5)'
                     }}>
-                        {emojis.map(e => (
-                             <button key={e} className="button" onClick={() => handleAddEmoji(e)} style={{
-                                background: 'none', border: 'none', fontSize: '26px', cursor: 'pointer', padding: '0',
-                                transform: 'scale(1)', transition: 'transform 0.15s ease'
+                        {emojis.map((e, idx) => (
+                             <button key={`${e}-${idx}`} className="button" onClick={() => handleAddEmoji(e)} style={{
+                                background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
                             }}
-                            onMouseOver={e => e.currentTarget.style.transform = 'scale(1.2)'}
-                            onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
+                            onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                            onMouseOut={e => e.currentTarget.style.background = 'none'}
                             >
                                 {e}
                             </button>
@@ -562,9 +554,9 @@ const ChatMessageScreen = ({
                 )}
                 <form onSubmit={handleSendMessage} style={{ display: 'flex', alignItems: 'center', padding: '10px' }}>
                     <button type="button" className="button" style={{ marginRight: '10px', background: 'transparent', padding: '8px' }} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
-                        <svg fill="#FFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path></svg>
+                        <svg fill="#FFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5s.67 1.5 1.5 1.5zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path></svg>
                     </button>
-                   <input ref={inputRef} type="text" value={newMessage} onChange={handleTypingChange} placeholder="Type a message..." className="formInput" style={{ flex: 1, marginRight: '10px', borderRadius: '20px' }} onFocus={() => setShowEmojiPicker(false)} />
+                   <input ref={inputRef} type="text" value={newMessage} onChange={handleTypingChange} placeholder="Type a message..." className="formInput" style={{ flex: 1, marginRight: '10px', borderRadius: '20px' }} onFocus={() => { setShowEmojiPicker(false); window.scrollTo(0, 0); }} />
                     <button type="submit" className="button" style={{ borderRadius: '50%', width: '44px', height: '44px', padding: 0 }} disabled={!newMessage.trim() || isSending}>
                        <svg fill={isSending ? "#555" : "#0A0A0A"} viewBox="0 0 24 24" style={{ width: '24px', height: '24px', margin: 'auto' }}><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
                     </button>
