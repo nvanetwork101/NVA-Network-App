@@ -2664,15 +2664,14 @@ exports.updateLikeCount = onCall(async (request) => {
                 likerName = userDoc.exists ? (userDoc.data().creatorName || "Someone") : "Someone";
 
                 transaction.set(likeRef, { likedAt: new Date().toISOString() });
-                // THE FIX: Use set with merge:true to resurrect the ghost document shell so counts are preserved
-                transaction.set(itemRef, { 
+                transaction.update(itemRef, { 
                     likeCount: FieldValue.increment(increment),
                     lastLikerProfileUrl: userProfileUrl || null
-                }, { merge: true });
+                });
 
             } else {
                 transaction.delete(likeRef);
-                transaction.set(itemRef, { likeCount: FieldValue.increment(increment) }, { merge: true });
+                transaction.update(itemRef, { likeCount: FieldValue.increment(increment) });
             }
         });
 
@@ -4824,8 +4823,7 @@ exports.triggerManualAutomation = onCall(async (request) => {
         transaction.set(newCommentRef, newComment);
         transaction.update(creatorRef, { lastCommentTimestamp: FieldValue.serverTimestamp() });
         
-        // THE FIX: Always resurrect the parent shell for ghost events to preserve comment counts globally
-        transaction.set(itemRef, { commentCount: FieldValue.increment(1) }, { merge: true });
+        transaction.update(itemRef, { commentCount: FieldValue.increment(1) });
     });
 
     // Handle notifications AFTER the transaction

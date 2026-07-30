@@ -2352,7 +2352,7 @@ const CreatorDashboardScreen = ({
                                                                     }
                                                                 }
                                                                 await deleteDoc(doc(db, "movies", film.id));
-                                                                await deleteDoc(doc(db, "events", film.id));
+                                                                await updateDoc(doc(db, "events", film.id), { status: 'archived_vod', isActive: false });
                                                                 showMessage("Film taken down. Box Office remains locked for audit period.");
                                                             } catch (err) { showMessage("Failed to take down film: " + err.message); }
                                                         });
@@ -2521,7 +2521,7 @@ const CreatorDashboardScreen = ({
                                                             if (Date.now() < lockUntil.getTime()) await updateDoc(doc(db, "creators", currentUser.uid), { payoutLockUntil: lockUntil.toISOString() });
                                                         }
                                                         await deleteDoc(doc(db, "movies", film.id));
-                                                        await deleteDoc(doc(db, "events", film.id));
+                                                        await updateDoc(doc(db, "events", film.id), { status: 'archived_vod', isActive: false });
                                                         showMessage("Premiere taken down.");
                                                     } catch (err) { showMessage("Failed to take down: " + err.message); }
                                                 });
@@ -3398,9 +3398,9 @@ const CreatorDashboardScreen = ({
                                             showMessage("Saved securely to Private Content Library.");
                                         }
                                         
-                                        // 3. Remove live premiere document from BOTH /movies and /events to prevent Admin clutter
+                                        // 3. Remove live premiere document from /movies, but Soft-Delete /events to preserve VOD comments & likes
                                         await deleteDoc(doc(db, "movies", publishTargetItem.id));
-                                        await deleteDoc(doc(db, "events", publishTargetItem.id));
+                                        await updateDoc(doc(db, "events", publishTargetItem.id), { status: 'archived_vod', isActive: false });
                                         setShowPublishModal(false);
                                     } catch (err) {
                                         showMessage("Publishing failed: " + err.message);
