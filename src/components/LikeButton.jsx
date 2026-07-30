@@ -7,6 +7,7 @@ import { db, functions, httpsCallable, doc, onSnapshot } from '../firebase';
 function LikeButton({ contentItem, currentUser, showMessage, itemType }) {
     const [isLiked, setIsLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(contentItem.likeCount || 0);
+    const [lastLikerUrl, setLastLikerUrl] = useState(contentItem.lastLikerProfileUrl || null);
     const [isLoading, setIsLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
 
@@ -41,6 +42,7 @@ function LikeButton({ contentItem, currentUser, showMessage, itemType }) {
         const unsubscribeContent = onSnapshot(contentRef, (docSnap) => {
             if (docSnap.exists()) {
                 setLikeCount(docSnap.data().likeCount || 0);
+                setLastLikerUrl(docSnap.data().lastLikerProfileUrl || null);
             }
         });
 
@@ -124,9 +126,9 @@ function LikeButton({ contentItem, currentUser, showMessage, itemType }) {
                     cursor: likeCount > 0 ? 'pointer' : 'default' 
                 }}
             >
-                {contentItem.lastLikerProfileUrl && likeCount > 0 && (
+                {lastLikerUrl && likeCount > 0 && (
                     <img 
-                        src={contentItem.lastLikerProfileUrl} 
+                        src={lastLikerUrl} 
                         alt="Last liker"
                         style={{
                             width: '16px',
