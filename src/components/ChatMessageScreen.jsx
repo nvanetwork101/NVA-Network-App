@@ -143,12 +143,14 @@ const ChatMessageScreen = ({
 
         // Delay the scroll to ensure the UI has updated with the `unreadIndicatorRef`.
         const performInitialScroll = () => {
-            if (unreadId && unreadIndicatorRef.current) {
-                unreadIndicatorRef.current.scrollIntoView({ behavior: 'auto', block: 'center' });
-            } else {
-                messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+            if (scrollContainerRef.current) {
+                if (unreadId && unreadIndicatorRef.current) {
+                    const topPos = unreadIndicatorRef.current.offsetTop - (scrollContainerRef.current.clientHeight / 2);
+                    scrollContainerRef.current.scrollTop = Math.max(0, topPos);
+                } else {
+                    scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+                }
             }
-            // Lock this from ever running again, which passes control to the MutationObserver.
             initialScrollDoneRef.current = true;
         };
 
@@ -166,10 +168,8 @@ const ChatMessageScreen = ({
 
         // The callback function to execute when a mutation is observed.
         const observerCallback = () => {
-            // We only care if the initial scroll is done and the chat is "live".
-            // If so, we scroll to the bottom smoothly.
-            if (initialScrollDoneRef.current) {
-                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            if (initialScrollDoneRef.current && scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' });
             }
         };
 
@@ -395,7 +395,7 @@ const ChatMessageScreen = ({
     const lastSeenTimestamp = chatDetails?.lastSeenBy?.[currentUser.uid];
 
     return (
-       <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0%', height: '100%', maxHeight: '100dvh', overflow: 'hidden', position: 'relative' }}>
+       <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', position: 'relative' }}>
             {/* Header */}
             <div style={{ padding: '10px', backgroundColor: '#1A1A1A', display: 'flex', flexDirection: 'column', gap: '10px', borderBottom: '1px solid #3A3A3A', flexShrink: 0 }}>
                  <div style={{display: 'flex', alignItems: 'center', width: '100%'}}>
