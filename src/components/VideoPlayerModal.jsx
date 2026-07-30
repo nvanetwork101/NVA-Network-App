@@ -529,7 +529,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                                             <span>GIFT</span>
                                         </button>
                                     )}
-                                    <LikeButton contentItem={liveContentItem} currentUser={currentUser} showMessage={showMessage} itemType={itemType} />
+                                    <LikeButton contentItem={{ ...liveContentItem, id: liveContentItem.originalContentId || liveContentItem.id }} currentUser={currentUser} showMessage={showMessage} itemType={liveContentItem.originalContentId ? 'event' : itemType} />
                                     <div className="bg-[#111] border border-solid border-white/10 rounded-full flex items-center text-white gap-1.5 px-3 h-9">
                                         <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z"></path></svg>
                                         <span>{(liveContentItem?.commentCount || comments.length).toLocaleString()}</span>

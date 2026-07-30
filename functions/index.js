@@ -2678,7 +2678,7 @@ exports.updateLikeCount = onCall(async (request) => {
 
         // Silent in-app toast notification (stored temporarily for 2 hours)
         const contentOwnerId = itemData ? (itemData.creatorId || itemData.postedByUid) : null;
-        if (isLiking && contentOwnerId && contentOwnerId !== uid) {
+        if (isLiking && contentOwnerId && contentOwnerId !== uid && contentOwnerId !== "system") {
             const itemTitle = itemData ? (itemData.title || itemData.eventTitle || "your post") : "your post";
             const link = itemType === 'content' ? `/content/${itemId}` : `/premiere/${itemId}`;
 
@@ -2742,7 +2742,7 @@ exports.updateLikeCount = onCall(async (request) => {
 
         for (let i = 0; i < userIds.length; i += 10) {
             const batchIds = userIds.slice(i, i + 10);
-            const query = creatorRef.where(FieldPath.documentId(), 'in', batchIds).get();
+            const query = creatorRef.where(admin.firestore.FieldPath.documentId(), 'in', batchIds).get();
             userPromises.push(query);
         }
 
@@ -4833,7 +4833,7 @@ exports.triggerManualAutomation = onCall(async (request) => {
     const link = itemType === 'content' ? `/content/${itemId}` : `/premiere/${itemId}`;
 
     // Notify content owner
-    if (contentOwnerId && contentOwnerId !== uid) {
+    if (contentOwnerId && contentOwnerId !== uid && contentOwnerId !== "system") {
         await createNotification({
             userId: contentOwnerId,
             title: "New Comment",

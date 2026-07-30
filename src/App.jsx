@@ -133,6 +133,15 @@ function App() {
 
   // --- STATE MANAGEMENT ---
   const routingDoneRef = useRef(false);
+
+  // THE FIX: Clear search results on hard browser page reload
+  useEffect(() => {
+    sessionStorage.removeItem('nva_search_term');
+    sessionStorage.removeItem('nva_role_filter');
+    sessionStorage.removeItem('nva_sub_role_filter');
+    sessionStorage.removeItem('nva_has_searched');
+    sessionStorage.removeItem('nva_search_results');
+  }, []);
   
   const [currentUser, setCurrentUser] = useState(null);
   const [creatorProfile, setCreatorProfile] = useState(null);
