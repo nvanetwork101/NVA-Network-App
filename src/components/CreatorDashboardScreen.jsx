@@ -695,6 +695,12 @@ const CreatorDashboardScreen = ({
     const handleSaveProfile = async () => { 
         if (!editCreatorName.trim()) { showMessage("Artist/Stage Name cannot be empty."); return; } 
         
+        const isExempt = ['admin', 'super_admin', 'authority', 'moderator'].includes(creatorProfile?.role);
+        if (!isExempt && editCreatorField && !editCreatorSubField) {
+            showMessage("Mandatory: Please select a Specialization / Sub-Category for your creator role.");
+            return;
+        }
+
         const isUpgradingToCreator = !!editCreatorField;
         if (isUpgradingToCreator) {
             if (!editRealName.trim()) {
@@ -737,17 +743,26 @@ const CreatorDashboardScreen = ({
     };
     
     const handleCancelEdit = () => { 
+        const isExempt = ['admin', 'super_admin', 'authority', 'moderator'].includes(creatorProfile?.role);
+        if (!isExempt && creatorProfile?.creatorField && !creatorProfile?.creatorSubField) {
+            showMessage("Action Required: You must select a Specialization / Sub-Category and click Save to continue.");
+            return;
+        }
         if (creatorProfile) { 
             setEditCreatorName(creatorProfile.creatorName || ''); 
             setEditRealName(creatorProfile.realName || ''); // Resets Legal Real Name
             setEditBio(creatorProfile.bio || ''); 
             setEditCreatorField(creatorProfile.creatorField || ''); 
+            setEditCreatorSubField(creatorProfile.creatorSubField || '');
             setEditExistingWorkLink(creatorProfile.existingWorkLink || ''); 
         } 
         setIsEditingProfile(false); 
     };
     
-    const handleProfileFieldChange = (e) => { setEditCreatorField(e.target.value); };
+    const handleProfileFieldChange = (e) => { 
+        setEditCreatorField(e.target.value); 
+        setEditCreatorSubField('');
+    };
     
     const triggerProfilePictureUpload = (e) => { const file = e.target.files[0]; if (file) { setImageFileToAdjust(file); setShowImageAdjustModal(true); } };
     const handleSaveAdjustedProfilePicture = async (adjustedBlob) => { if (!currentUser || !adjustedBlob) return; setIsUploadingPFP(true); showMessage("Uploading..."); try { const filePath = `profile_pictures/${currentUser.uid}/profile_${Date.now()}.png`; const storageRefPath = ref(storage, filePath); const snapshot = await uploadBytes(storageRefPath, adjustedBlob); const downloadURL = await getDownloadURL(snapshot.ref); const creatorRef = doc(db, "creators", currentUser.uid); await updateDoc(creatorRef, { profilePictureUrl: downloadURL }); setCreatorProfile(prev => ({ ...prev, profilePictureUrl: downloadURL })); setShowImageAdjustModal(false); showMessage("Profile picture updated!"); } catch (error) { showMessage(`Failed to update profile picture: ${error.message}`); } finally { if (profilePictureInputRef.current) { profilePictureInputRef.current.value = null; } setIsUploadingPFP(false); } };

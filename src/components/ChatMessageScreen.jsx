@@ -113,6 +113,14 @@ const ChatMessageScreen = ({
     const scrollContainerRef = useRef(null);
     const initialScrollDoneRef = useRef(false); // Ref to track if the initial scroll has happened
 
+    // --- PARENT SCROLL RESET (FIX FOR MOBILE HEADER CUT-OFF) ---
+    useLayoutEffect(() => {
+        const parentContainer = document.querySelector('.container');
+        if (parentContainer) {
+            parentContainer.scrollTop = 0;
+        }
+    }, []);
+
     // --- SMART SCROLL ON INITIAL LOAD ---
     // This hook's ONLY responsibility is to perform the initial "smart scroll" to the
     // "Unread Messages" line when the chat is first opened. All subsequent scrolling is
