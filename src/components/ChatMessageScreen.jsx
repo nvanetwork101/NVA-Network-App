@@ -397,7 +397,7 @@ const ChatMessageScreen = ({
     return (
        <div className="screenContainer" style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', overflow: 'hidden', position: 'relative' }}>
             {/* Header */}
-            <div style={{ padding: '10px', backgroundColor: '#1A1A1A', display: 'flex', flexDirection: 'column', gap: '10px', borderBottom: '1px solid #3A3A3A', flexShrink: 0 }}>
+            <div style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 12px)', paddingBottom: '10px', paddingLeft: '10px', paddingRight: '10px', backgroundColor: '#1A1A1A', display: 'flex', flexDirection: 'column', gap: '10px', borderBottom: '1px solid #3A3A3A', flexShrink: 0 }}>
                  <div style={{display: 'flex', alignItems: 'center', width: '100%'}}>
                     <button onClick={() => setActiveScreen('ChatList')} className="button" style={{ margin: 0, padding: '8px', background: 'transparent', alignSelf: 'center' }}>
                         <svg fill="#FFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"></path></svg>
