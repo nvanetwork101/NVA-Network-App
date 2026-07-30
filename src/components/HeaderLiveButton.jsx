@@ -110,22 +110,23 @@ function HeaderLiveButton({ setActiveScreen, showMessage, isLive }) {
         return () => clearInterval(interval);
     }, [upcomingEvent, showMessage, isLive]);
 
+    // ABSOLUTE AUTHORITY: Render when an upcoming or live premiere exists
+    if (!upcomingEvent || !eventTimeLeft) return null; 
+
     const activeCountdown = isLive ? 'LIVE NOW!' : eventTimeLeft;
     const activeIsLive = isLive || eventIsLive || upcomingEvent?.status === 'live' || upcomingEvent?.isLiveNow;
-
-    // ABSOLUTE AUTHORITY: Render ONLY when a live premiere is actively in progress or global isLive is true
-    if (!activeIsLive) return null; 
-    if (!isLive && (!upcomingEvent || !eventTimeLeft)) return null;
 
     return (
         <div 
             onClick={() => {
-                sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
-                sessionStorage.setItem('nva_target_premiere_event_id', 'none'); 
-                window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' }));
-                window.dispatchEvent(new CustomEvent('setPremiereActiveEvent', { detail: { eventId: null } }));
-                setActiveScreen('Discover');
-            }}
+            sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
+            if (upcomingEvent?.id) {
+                sessionStorage.setItem('nva_target_premiere_event_id', upcomingEvent.id);
+                window.dispatchEvent(new CustomEvent('setPremiereActiveEvent', { detail: { eventId: upcomingEvent.id } }));
+            }
+            window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' }));
+            setActiveScreen('Discover');
+        }}
             style={{
                 background: activeIsLive ? 'linear-gradient(135deg, rgba(220,53,69,0.8), rgba(255,0,0,0.6))' : 'linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(4, 120, 87, 0.4))',
                 backdropFilter: 'blur(12px)',
