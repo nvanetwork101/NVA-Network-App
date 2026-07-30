@@ -1440,7 +1440,7 @@ return (
           />
         </div>
       ) : (
-        <>
+        <div className="app-layout">
           {/* Step 2: Once the video is done, show the rest of the app. */}
           {!['Suspended', 'Banned', 'SignUp', 'ChatMessageScreen', 'RoastRoom', 'LiveDirectory', 'FilmClubHub'].includes(activeScreen) && (
             <Header 
@@ -1502,7 +1502,8 @@ return (
           {/* Dynamic layout engine: Removes padding and locks viewport height on full-screen screens */}
           <div className="container" style={{ 
             paddingBottom: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? '0' : '100px', 
-            height: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? '100vh' : 'calc(100vh - 80px)', 
+            flex: '1 1 auto', 
+            minHeight: 0, 
             overflowY: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? 'hidden' : 'auto',
             WebkitOverflowScrolling: 'touch' // Ensures buttery-smooth elastic scrolling on mobile
           }}>
@@ -1622,7 +1623,7 @@ return (
         <IosInstallPrompt onClose={() => setShowIosInstallPrompt(false)} />
       )}
       {/* --- END OF FIX --- */}
-      </>
+      </div>
       )}
     </>
   );
