@@ -41,14 +41,8 @@ service cloud.firestore {
         isModerator() ||
         (
           request.auth.uid == userId &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            // Standard cosmetic fields allowed for client-side writes [1]
-            'creatorName', 'realName', 'dateOfBirth', 'age', 'bio', 'categories', 'creatorField', 'creatorSubField', 'spotifyEmbedUrl', 'soundcloudEmbedUrl', 'role', 'existingWorkLink', 'profilePictureUrl',
-            'featuredVideoLink', 'pinnedContent', 'updatedAt', 'lastLoginTimestamp', 'location', 'lastSubmissionTimestamp', 'lastCommentTimestamp',
-            'followingCount', 'blockedUsers', 'blockedBy', 'studioGallery',
-            'currentChallengeLink', 'currentChallengeThumbnail', 'teamTag',
-            'competitionStatus', 'isEliminated', 'isContestant',
-            'isLive', 'liveRoomType', 'latestNotification', 'heroProduct', 'arenaTokens', 'payoutLockUntil'
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'banned', 'suspendedUntil', 'totalEarnings', 'unreadNotificationCount', 'giftsReceived', 'competitionGifts'
           ]) &&
           (
             (request.resource.data.get('role', 'user') == resource.data.get('role', 'user')) ||
