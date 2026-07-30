@@ -1440,7 +1440,7 @@ return (
           />
         </div>
       ) : (
-        <div className="app-layout">
+        <div className="app-layout" style={{ position: 'fixed', top: 0, bottom: 0, left: 0, right: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', backgroundColor: '#0A0A0A' }}>
           {/* Step 2: Once the video is done, show the rest of the app. */}
           {!['Suspended', 'Banned', 'SignUp', 'ChatMessageScreen', 'RoastRoom', 'LiveDirectory', 'FilmClubHub'].includes(activeScreen) && (
             <Header 
@@ -1501,9 +1501,10 @@ return (
 
           {/* Dynamic layout engine: Removes padding and locks viewport height on full-screen screens */}
           <div className="container" style={{ 
-            paddingBottom: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? '0' : '100px', 
-            flex: '1 1 auto', 
+            flex: 1, 
             minHeight: 0, 
+            width: '100%',
+            paddingBottom: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? '0' : '100px', 
             overflowY: ['RoastRoom', 'LiveDirectory', 'FilmClubHub', 'ChatMessageScreen'].includes(activeScreen) ? 'hidden' : 'auto',
             WebkitOverflowScrolling: 'touch' // Ensures buttery-smooth elastic scrolling on mobile
           }}>
