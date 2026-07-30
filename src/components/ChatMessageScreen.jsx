@@ -113,11 +113,17 @@ const ChatMessageScreen = ({
     const scrollContainerRef = useRef(null);
     const initialScrollDoneRef = useRef(false); // Ref to track if the initial scroll has happened
 
-    // --- PARENT SCROLL RESET (FIX FOR MOBILE HEADER CUT-OFF) ---
+    // --- PARENT SCROLL LOCK (FIX FOR MOBILE HEADER CUT-OFF) ---
     useLayoutEffect(() => {
         const parentContainer = document.querySelector('.container');
         if (parentContainer) {
             parentContainer.scrollTop = 0;
+            window.scrollTo(0, 0);
+            const originalOverflow = parentContainer.style.overflow;
+            parentContainer.style.overflow = 'hidden';
+            return () => {
+                parentContainer.style.overflow = originalOverflow;
+            };
         }
     }, []);
 
