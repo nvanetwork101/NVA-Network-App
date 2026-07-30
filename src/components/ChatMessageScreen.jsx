@@ -113,7 +113,7 @@ const ChatMessageScreen = ({
     const scrollContainerRef = useRef(null);
     const initialScrollDoneRef = useRef(false); // Ref to track if the initial scroll has happened
 
-    // --- PARENT SCROLL LOCK (FIX FOR MOBILE HEADER CUT-OFF) ---
+    // --- PARENT SCROLL LOCK & MOBILE VIEWPORT HEIGHT FIX ---
     useLayoutEffect(() => {
         const parentContainer = document.querySelector('.container');
         if (parentContainer) {
@@ -121,7 +121,14 @@ const ChatMessageScreen = ({
             window.scrollTo(0, 0);
             const originalOverflow = parentContainer.style.overflow;
             parentContainer.style.overflow = 'hidden';
+
+            // Trigger micro-layout recalculation for mobile bottom bar
+            const resizeTimer = setTimeout(() => {
+                window.dispatchEvent(new Event('resize'));
+            }, 50);
+
             return () => {
+                clearTimeout(resizeTimer);
                 parentContainer.style.overflow = originalOverflow;
             };
         }
@@ -529,7 +536,7 @@ const ChatMessageScreen = ({
             )}
             
             {/* Input Form */}
-            <div style={{ borderTop: '1px solid #3A3A3A', flexShrink: 0, background: '#1A1A1A' }}>
+            <div style={{ borderTop: '1px solid #3A3A3A', flexShrink: 0, background: '#1A1A1A', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 6px)' }}>
                 {replyingToMessage && (
                     <div style={{padding: '8px 15px', backgroundColor: '#2A2A2A', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                         <div>
