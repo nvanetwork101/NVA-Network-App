@@ -155,10 +155,16 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
     // THE FIX: Enables smooth cinematic slide-up animation for new messages
     useEffect(() => {
         if (messagesAreaRef.current) {
-            messagesAreaRef.current.scrollTo({
-                top: messagesAreaRef.current.scrollHeight,
-                behavior: 'smooth'
-            });
+            const { scrollHeight, scrollTop, clientHeight } = messagesAreaRef.current;
+            // Only auto-scroll if the user is already near the bottom of the chat
+            const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+            
+            if (isNearBottom) {
+                messagesAreaRef.current.scrollTo({
+                    top: scrollHeight,
+                    behavior: 'smooth'
+                });
+            }
         }
     }, [messages]);
     
