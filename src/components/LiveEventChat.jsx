@@ -104,9 +104,11 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
             }
         });
         replies.forEach(replyList => {
-            if (replyList[0]?.createdAt?.toDate) {
-                replyList.sort((a, b) => a.createdAt.toDate() - b.createdAt.toDate());
-            }
+            replyList.sort((a, b) => {
+                const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : Date.now();
+                const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : Date.now();
+                return timeA - timeB;
+            });
         });
         return { topLevelMessages: topLevel, repliesMap: replies };
     }, [messages]);
