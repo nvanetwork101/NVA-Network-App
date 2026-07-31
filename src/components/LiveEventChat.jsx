@@ -28,7 +28,7 @@ const getUserColor = (userId) => {
 };
 
 const ChatMessage = ({ message, currentUser, creatorProfile, onReply, onDelete, onMuteToggle, isMuted, isReply = false }) => {
-    const isViewerModerator = creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';
+    const isViewerModerator = creatorProfile?.role === 'super_admin' || creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority';
     const isMessageAuthor = currentUser?.uid === message.userId;
     const canDelete = isViewerModerator || isMessageAuthor;
     const canMute = isViewerModerator && !isMessageAuthor;

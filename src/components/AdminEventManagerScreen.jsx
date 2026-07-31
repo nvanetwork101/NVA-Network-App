@@ -1,7 +1,8 @@
 // src/components/AdminEventManagerScreen.jsx
 
 import React, { useState, useEffect } from 'react';
-import { db, functions } from '../firebase'; 
+import { db, functions, storage } from '../firebase'; 
+import { ref, deleteObject } from 'firebase/storage';
 import { httpsCallable } from 'firebase/functions'; // Correct: httpsCallable is now imported
 import { collection, onSnapshot, doc, setDoc, addDoc, deleteDoc, updateDoc, query, orderBy, Timestamp, where, getDocs } from 'firebase/firestore';
 import { uploadManager } from '../utils/uploadManager';
@@ -239,10 +240,23 @@ function AdminEventManagerScreen({ showMessage, setActiveScreen, setShowConfirma
         setConfirmationMessage(`Are you sure you want to permanently delete the event: "${event.eventTitle || event.title}"? This cannot be undone.`);
         setOnConfirmationAction(() => async () => {
             try {
-                // Purge from both events and movies collections simultaneously to clear User Dashboard
+                // Purge associated Storage files (Thumbnail & Sponsor Banner) to prevent orphaned files
+                if (event.thumbnailUrl && event.thumbnailUrl.includes('firebasestorage')) {
+                    deleteObject(ref(storage, event.thumbnailUrl)).catch(e => console.warn("Failed to purge thumbnail:", e));
+                }
+                if (event.sponsorImageUrl && event.sponsorImageUrl.includes('firebasestorage')) {
+                    deleteObject(ref(storage, event.sponsorImageUrl)).catch(e => console.warn("Failed to purge sponsor banner:", e));
+                }
+
+                // Purge all pre-show chat messages first to clear database clutter
+                const chatRef = collection(db, `events/${event.id}/chatMessages`);
+                const chatSnap = await getDocs(chatRef);
+                await Promise.all(chatSnap.docs.map(d => deleteDoc(d.ref)));
+
+                // Purge from both events and movies collections simultaneously
                 await deleteDoc(doc(db, "events", event.id));
                 await deleteDoc(doc(db, "movies", event.id)).catch(() => {});
-                showMessage("Event deleted successfully from all systems.");
+                showMessage("Event and all associated data purged successfully.");
             } catch (error) {
                 showMessage(`Error: ${error.message}`);
             }

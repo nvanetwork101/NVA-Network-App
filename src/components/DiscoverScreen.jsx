@@ -1,7 +1,7 @@
 // src/components/DiscoverScreen.jsx
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc, getDocs, limit, startAfter } from "firebase/firestore";
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc, getDocs, limit, startAfter, deleteDoc } from "firebase/firestore";
 import { getDatabase, ref, set, onDisconnect, onValue, remove, serverTimestamp } from "firebase/database";
 import { db, functions, httpsCallable, extractVideoInfo } from '../firebase.js';
 import LiveEventChat from './LiveEventChat';
@@ -405,6 +405,12 @@ function DiscoverScreen({
                     // THE FIX: Instantly promotes state to live and triggers EVENT_LIVE broadcast notification
                     setMasterEventDetails(prev => {
                         if (prev && prev.status !== 'live') {
+                            // PURGE PRE-SHOW CHAT MESSAGES SO CHAT IS CLEAN FOR SHOWTIME
+                            const purgeRef = collection(db, `events/${prev.id}/chatMessages`);
+                            getDocs(purgeRef).then(snap => {
+                                Promise.all(snap.docs.map(d => deleteDoc(d.ref))).catch(() => {});
+                            }).catch(() => {});
+
                             httpsCallable(functions, 'triggerManualAutomation')().catch(() => {});
                             return { ...prev, status: 'live' };
                         }
@@ -912,10 +918,11 @@ function DiscoverScreen({
         <div className="screenContainer" ref={showcaseTopRef} style={{ 
             paddingBottom: masterEventDetails?.status === 'live' ? '0px' : '140px', 
             paddingTop: masterEventDetails?.status === 'live' ? '0px' : '5px',
-            display: activeTab === 'Premieres' ? 'flex' : 'block',
+            display: (activeTab === 'Premieres' && masterEventDetails?.status === 'live') ? 'flex' : 'block',
             flexDirection: 'column',
-            flex: activeTab === 'Premieres' ? 1 : 'none',
-            minHeight: 0
+            flex: (activeTab === 'Premieres' && masterEventDetails?.status === 'live') ? 1 : 'none',
+            minHeight: 0,
+            overflowY: (activeTab === 'Premieres' && masterEventDetails?.status !== 'live') ? 'auto' : 'hidden'
         }}>
             <style>{`
                 .showcase-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 40px; }
@@ -1187,16 +1194,24 @@ function DiscoverScreen({
 
             {/* ==================== TAB 3: PREMIERES (MULTIPLEX LOBBY & WAITING ROOM) ==================== */}
         <div className="tabContent" style={{ 
-            display: activeTab === 'Premieres' ? 'flex' : 'none',
+            display: activeTab === 'Premieres' ? ((masterEventDetails?.status === 'live') ? 'flex' : 'block') : 'none',
             flexDirection: 'column',
-            flex: activeTab === 'Premieres' ? 1 : 0,
+            flex: (activeTab === 'Premieres' && masterEventDetails?.status === 'live') ? 1 : 'none',
             minHeight: 0,
             animation: activeTab === 'Premieres' ? 'fadeIn 0.3s ease' : 'none'
         }}>
                 
                 {/* --- STATE 1: SPECIFIC EVENT SELECTED (WAITING ROOM OR LIVE PLAYER) --- */}
                 {masterEventDetails ? (
-                    <div style={{ marginBottom: masterEventDetails.status === 'live' ? '0px' : '30px', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                    <div style={{ 
+                        marginBottom: masterEventDetails.status === 'live' ? '0px' : '30px', 
+                        display: masterEventDetails.status === 'live' ? 'flex' : 'block', 
+                        flexDirection: 'column', 
+                        flex: masterEventDetails.status === 'live' ? 1 : 'none', 
+                        minHeight: 0,
+                        overflowY: masterEventDetails.status === 'live' ? 'hidden' : 'visible',
+                        WebkitOverflowScrolling: 'touch'
+                    }}>
                         {masterEventDetails.status === 'live' && (
                             <style>{`
                                 .container { padding-bottom: 0px !important; }
@@ -1211,13 +1226,13 @@ function DiscoverScreen({
                                     sessionStorage.setItem('nva_target_premiere_event_id', 'none');
                                     setSelectedEventId(null);
                                 }} 
-                                style={{ backgroundColor: '#3A3A3A', color: '#FFF', marginBottom: '20px', border: '1px solid #555', alignSelf: 'flex-start' }}>
+                                style={{ display: 'inline-block', backgroundColor: '#3A3A3A', color: '#FFF', marginBottom: '20px', border: '1px solid #555' }}>
                                 ← Back to Multiplex Lobby
                             </button>
                         )}
                         
                         {masterEventDetails.status === 'completed' ? (
-                            <div className="box-office-container" style={{ textAlign: 'center', padding: '50px 20px', backgroundColor: '#0A0A0A', borderRadius: '16px', maxWidth: '700px', margin: '0 auto', border: '1px solid #333' }}>
+                            <div className="box-office-container" style={{ flexShrink: 0, width: '100%', textAlign: 'center', padding: '50px 20px', backgroundColor: '#0A0A0A', borderRadius: '16px', maxWidth: '700px', margin: '0 auto', border: '1px solid #333' }}>
                                 <span style={{ fontSize: '48px', marginBottom: '10px', display: 'block' }}>🎬</span>
                                 <h3 style={{ color: '#FFD700', fontSize: '24px', fontWeight: '900', textTransform: 'uppercase', margin: '0 0 10px 0' }}>Broadcast Concluded</h3>
                                 <p style={{ color: '#FFF', fontSize: '16px', margin: '0 0 20px 0' }}>{masterEventDetails.eventTitle}</p>
@@ -1422,8 +1437,43 @@ function DiscoverScreen({
                             </div>
                             </>
                         ) : (
-                            <div className="box-office-container" style={{ textAlign: 'center', padding: '0 0 30px 0', backgroundColor: '#0A0A0A', borderRadius: '16px', maxWidth: '700px', margin: '0 auto', border: '1px solid #222' }}>
-                                <div style={{ background: '#111', padding: '15px 0', borderBottom: '1px solid #333', marginBottom: '20px', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px' }}>
+                            <div className="box-office-container" style={{ flexShrink: 0, width: '100%', textAlign: 'center', padding: '0 0 30px 0', backgroundColor: '#0A0A0A', borderRadius: '16px', maxWidth: '700px', margin: '0 auto', border: '1px solid #222', overflow: 'hidden' }}>
+                                
+                                {/* SPONSOR BANNER - HIGH-IMPACT BILLBOARD HEADER */}
+                                {(masterEventDetails.sponsorImageUrl || masterEventDetails.sponsorTitle) && (
+                                    <div 
+                                        onClick={() => masterEventDetails.sponsorClickUrl && window.open(masterEventDetails.sponsorClickUrl, '_blank')}
+                                        style={{
+                                            padding: '12px 20px',
+                                            background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(0,255,255,0.1) 100%)',
+                                            borderBottom: '1px solid rgba(255, 215, 0, 0.3)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '14px',
+                                            cursor: masterEventDetails.sponsorClickUrl ? 'pointer' : 'default',
+                                            boxShadow: 'inset 0 0 15px rgba(255, 215, 0, 0.1)'
+                                        }}
+                                    >
+                                        {masterEventDetails.sponsorImageUrl && (
+                                            <img 
+                                                src={masterEventDetails.sponsorImageUrl} 
+                                                alt="Sponsor" 
+                                                style={{ height: '90px', maxWidth: '300px', objectFit: 'contain', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)', background: '#000', padding: '4px' }} 
+                                            />
+                                        )}
+                                        <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+                                            <span style={{ fontSize: '10px', color: '#FFD700', fontWeight: '900', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                                                ★ SPONSORED BY
+                                            </span>
+                                            <span style={{ fontSize: '15px', color: '#FFFFFF', fontWeight: '800', letterSpacing: '0.5px' }}>
+                                                {masterEventDetails.sponsorTitle || 'Official Sponsor'} {masterEventDetails.sponsorClickUrl ? '↗' : ''}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div style={{ background: '#111', padding: '15px 0', borderBottom: '1px solid #333', marginBottom: '20px', borderRadius: (masterEventDetails.sponsorImageUrl || masterEventDetails.sponsorTitle) ? '0' : '16px 16px 0 0', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '15px' }}>
                                     <span style={{ fontSize: '28px' }}>⏳</span>
                                     <div>
                                         <h3 style={{ color: '#FFF', fontSize: '18px', fontWeight: '900', textTransform: 'uppercase', margin: 0 }}>WAITING ROOM</h3>
@@ -1441,6 +1491,35 @@ function DiscoverScreen({
                                         </p>
                                         <p className="paragraph" style={{ color: '#AAA', fontSize: '13px', maxWidth: '500px', margin: '0 auto 20px auto', lineHeight: '1.6' }}>{masterEventDetails.eventDescription}</p>
                                     </div>
+
+                                    {/* PRE-SHOW LIVE CHAT CONTAINER - PLACED BELOW SYNOPSIS & ABOVE COUNTDOWN */}
+                                    {masterEventDetails?.id && (
+                                        <div style={{ width: '100%', maxWidth: '550px', margin: '0 auto 20px auto', height: '280px', borderRadius: '12px', border: '1px solid #222', background: '#050505', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                                            <div style={{ padding: '6px 12px', background: '#111', borderBottom: '1px solid #222', color: '#FFD700', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span>💬 Pre-Show Live Chat</span>
+                                                {(creatorProfile?.role === 'super_admin' || creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority') && (
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            id="preShowModToggle"
+                                                            checked={masterEventDetails?.isChatEnabled !== false}
+                                                            onChange={async (e) => {
+                                                                const newStatus = e.target.checked;
+                                                                try {
+                                                                    const toggleFunc = httpsCallable(functions, 'toggleEventChat');
+                                                                    await toggleFunc({ eventId: masterEventDetails.id, isChatEnabled: newStatus });
+                                                                    showMessage(`Chat ${newStatus ? 'Enabled' : 'Disabled'}`);
+                                                                } catch (err) { showMessage("Toggle failed"); }
+                                                            }}
+                                                            style={{ width: '14px', height: '14px', accentColor: '#FFD700', cursor: 'pointer' }}
+                                                        />
+                                                        <label htmlFor="preShowModToggle" style={{ fontSize: '9px', color: '#888', cursor: 'pointer', whiteSpace: 'nowrap' }}>MOD CHAT</label>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <LiveEventChat eventId={masterEventDetails.id} eventDetails={masterEventDetails} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />
+                                        </div>
+                                    )}
                                     
                                     <div style={{ marginTop: '10px', padding: '15px 40px', borderRadius: '12px', border: '2px solid #FFD700', display: 'inline-block' }}>
                                         <p style={{ margin: '0 0 5px 0', fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '2px', fontWeight: 'bold' }}>DOORS OPEN IN</p>

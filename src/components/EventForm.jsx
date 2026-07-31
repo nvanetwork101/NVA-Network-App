@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { storage, ref, uploadBytes, getDownloadURL, extractVideoInfo } from '../firebase';
+import { deleteObject } from 'firebase/storage';
 import { Timestamp } from 'firebase/firestore';
 
 // A new, reusable component for both creating and editing events.
@@ -12,6 +13,9 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
     const [thumbnailFile, setThumbnailFile] = useState(null);
     const [thumbnailPreview, setThumbnailPreview] = useState('');
     const thumbFileInputRef = useRef(null);
+    const [sponsorFile, setSponsorFile] = useState(null);
+    const [sponsorPreview, setSponsorPreview] = useState('');
+    const sponsorFileInputRef = useRef(null);
     
     // --- WATCH PARTY / TMDB STATE ---
     const [activeMode, setActiveMode] = useState('manual'); 
@@ -85,12 +89,15 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
                 eventTitle: '',
                 eventDescription: '',
                 liveStreamUrl: '',
-                trailerUrl: '', // Added trailerUrl
+                trailerUrl: '',
                 isTicketed: false,
                 ticketPrice: 10,
                 scheduledStartTime: '',
                 scheduledEndTime: '',
-                thumbnailUrl: ''
+                thumbnailUrl: '',
+                sponsorTitle: '',
+                sponsorClickUrl: '',
+                sponsorImageUrl: ''
             });
         }
     }, [eventToEdit]); // Re-run this effect if the event to edit changes.
@@ -114,6 +121,24 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
             setThumbnailPreview('');
         }
     }, [thumbnailFile, eventData.liveStreamUrl, eventData.thumbnailUrl]);
+
+    useEffect(() => {
+        if (sponsorFile) {
+            const objectUrl = URL.createObjectURL(sponsorFile);
+            setSponsorPreview(objectUrl);
+            return () => URL.revokeObjectURL(objectUrl);
+        }
+        if (eventData.sponsorImageUrl) {
+            setSponsorPreview(eventData.sponsorImageUrl);
+            return;
+        }
+        if (eventData.sponsorClickUrl) {
+            const info = extractVideoInfo(eventData.sponsorClickUrl);
+            setSponsorPreview(info?.thumbnailUrl || '');
+        } else {
+            setSponsorPreview('');
+        }
+    }, [sponsorFile, eventData.sponsorClickUrl, eventData.sponsorImageUrl]);
 
     const handleThumbnailSelect = (e) => {
         const file = e.target.files[0];
@@ -139,7 +164,7 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
         showMessage("Validating and preparing event data...");
 
         try {
-            // STEP 2: Handle thumbnail upload FIRST to get the final URL.
+            // STEP 2: Handle thumbnail & sponsor banner uploads FIRST to get final URLs.
             let finalThumbnailUrl = eventData.thumbnailUrl || thumbnailPreview || '';
             if (thumbnailFile) {
                 showMessage("Uploading thumbnail...");
@@ -149,6 +174,27 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
                 finalThumbnailUrl = await getDownloadURL(snapshot.ref);
             }
 
+            let finalSponsorImageUrl = eventData.sponsorImageUrl || sponsorPreview || '';
+            if (sponsorFile) {
+                showMessage("Uploading sponsor banner...");
+                const filePath = `event_thumbnails/sponsor_${Date.now()}_${sponsorFile.name}`;
+                const storageRef = ref(storage, filePath);
+                const snapshot = await uploadBytes(storageRef, sponsorFile);
+                finalSponsorImageUrl = await getDownloadURL(snapshot.ref);
+            }
+
+            // Delete old files from Storage if they were replaced or cleared
+            if (eventToEdit) {
+                const oldThumb = eventToEdit.thumbnailUrl;
+                if (oldThumb && oldThumb !== finalThumbnailUrl && oldThumb.includes('firebasestorage')) {
+                    deleteObject(ref(storage, oldThumb)).catch(e => console.warn("Failed to delete old thumbnail:", e));
+                }
+                const oldSponsor = eventToEdit.sponsorImageUrl;
+                if (oldSponsor && oldSponsor !== finalSponsorImageUrl && oldSponsor.includes('firebasestorage')) {
+                    deleteObject(ref(storage, oldSponsor)).catch(e => console.warn("Failed to delete old sponsor banner:", e));
+                }
+            }
+
             // STEP 3: Build a new, perfectly clean data object from scratch.
             const cleanData = {
                 id: eventData.id,
@@ -156,11 +202,15 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
                 eventTitle: eventData.eventTitle || '',
                 eventDescription: eventData.eventDescription || '',
                 liveStreamUrl: eventData.liveStreamUrl || '',
-                trailerUrl: eventData.trailerUrl || '', // Added trailerUrl
+                trailerUrl: eventData.trailerUrl || '', 
                 isTicketed: eventData.isTicketed || false,
                 ticketPrice: Number(eventData.ticketPrice) || 0,
                 thumbnailUrl: finalThumbnailUrl,
                 room: eventData.room || 'Room 1', 
+
+                sponsorTitle: eventData.sponsorTitle || '',
+                sponsorClickUrl: eventData.sponsorClickUrl || '',
+                sponsorImageUrl: finalSponsorImageUrl,
 
                 scheduledStartTime: Timestamp.fromDate(new Date(eventData.scheduledStartTime)),
                 scheduledEndTime: Timestamp.fromDate(new Date(eventData.scheduledEndTime)),
@@ -264,6 +314,41 @@ function EventForm({ eventToEdit, onSave, onClose, showMessage }) {
                     {thumbnailPreview && (
                         <img src={thumbnailPreview} alt="Thumbnail Preview" style={{ maxWidth: '200px', borderRadius: '8px', marginTop: '10px' }} />
                     )}
+                </div>
+
+                {/* --- SPONSOR BANNER CONTROLS --- */}
+                <div style={{ background: '#0D0D0D', padding: '16px', borderRadius: '12px', border: '1px solid #00FFFF', marginTop: '20px' }}>
+                    <p style={{ color: '#00FFFF', fontWeight: '900', fontSize: '14px', margin: '0 0 10px 0', textTransform: 'uppercase' }}>⭐ Waiting Room Sponsor Banner (Optional)</p>
+                    <div className="formGroup">
+                        <label className="formLabel">Sponsor Name / Title:</label>
+                        <input type="text" name="sponsorTitle" className="formInput" value={eventData.sponsorTitle || ''} onChange={handleInputChange} placeholder="e.g., Sponsored by Pepsi" />
+                    </div>
+                    <div className="formGroup">
+                        <label className="formLabel">Sponsor Target URL (Makes Banner Clickable / Auto-Pull Preview):</label>
+                        <input type="url" name="sponsorClickUrl" className="formInput" value={eventData.sponsorClickUrl || ''} onChange={handleInputChange} placeholder="https://sponsorwebsite.com" />
+                    </div>
+                    <div className="formGroup">
+                        <label className="formLabel">Upload Custom Sponsor Banner Image:</label>
+                        <input type="file" accept="image/*" ref={sponsorFileInputRef} onChange={(e) => setSponsorFile(e.target.files[0])} style={{ display: 'none' }} />
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button type="button" className="button" style={{ backgroundColor: '#222', border: '1px solid #444', width: 'auto', margin: 0 }} onClick={() => sponsorFileInputRef.current.click()}>
+                                <span className="buttonText light">Choose Sponsor Banner</span>
+                            </button>
+                            {(sponsorPreview || eventData.sponsorTitle || eventData.sponsorClickUrl || eventData.sponsorImageUrl) && (
+                                <button type="button" className="button" style={{ backgroundColor: '#551111', border: '1px solid #DC3545', width: 'auto', margin: 0, padding: '8px 12px' }} onClick={() => {
+                                    setSponsorFile(null);
+                                    setSponsorPreview('');
+                                    setEventData(prev => ({ ...prev, sponsorTitle: '', sponsorClickUrl: '', sponsorImageUrl: '' }));
+                                    if (sponsorFileInputRef.current) sponsorFileInputRef.current.value = '';
+                                }}>
+                                    <span className="buttonText light" style={{ fontSize: '12px' }}>🗑️ Clear Sponsor Data</span>
+                                </button>
+                            )}
+                        </div>
+                        {sponsorPreview && (
+                            <img src={sponsorPreview} alt="Sponsor Banner Preview" style={{ maxWidth: '100%', maxHeight: '100px', objectFit: 'contain', borderRadius: '8px', marginTop: '10px', border: '1px solid #333' }} />
+                        )}
+                    </div>
                 </div>
                
                 <div className="flex gap-4 mt-4">
