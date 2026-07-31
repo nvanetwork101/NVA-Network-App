@@ -1494,7 +1494,7 @@ function DiscoverScreen({
 
                                     {/* PRE-SHOW LIVE CHAT CONTAINER - PLACED BELOW SYNOPSIS & ABOVE COUNTDOWN */}
                                     {masterEventDetails?.id && (
-                                        <div style={{ width: '100%', maxWidth: '550px', margin: '0 auto 20px auto', height: '280px', borderRadius: '12px', border: '1px solid #222', background: '#050505', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                                        <div style={{ width: '100%', maxWidth: '550px', margin: '0 auto 20px auto', height: '380px', borderRadius: '12px', border: '1px solid #222', background: '#050505', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                                             <div style={{ padding: '6px 12px', background: '#111', borderBottom: '1px solid #222', color: '#FFD700', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                                 <span>💬 Pre-Show Live Chat</span>
                                                 {(creatorProfile?.role === 'super_admin' || creatorProfile?.role === 'admin' || creatorProfile?.role === 'authority') && (
