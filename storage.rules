@@ -45,8 +45,15 @@ service firebase.storage {
     match /creator_uploads/{userId}/{allPaths=**} { allow write: if isAuthenticated() && request.auth.uid == userId; }
     match /enrollment_payments/{userId}/{allPaths=**} { allow write: if isAuthenticated() && request.auth.uid == userId; }
     match /competition_entries/{compId}/{userId}/{allPaths=**} { allow write: if isAuthenticated() && request.auth.uid == userId; }
+    
+    // --- LIVE ARENA & BID WARS (NEW) ---
+    match /hero_products/{userId}/{allPaths=**} { allow write: if isAuthenticated() && request.auth.uid == userId; }
+    match /bidwars_auctions/{userId}/{allPaths=**} { allow write: if isAuthenticated() && request.auth.uid == userId; }
+    match /bidwars_proofs/{userId}/{allPaths=**} { allow write: if isAuthenticated() && request.auth.uid == userId; }
+    match /carousel_galleries/{userId}/{allPaths=**} { allow write: if isAuthenticated() && request.auth.uid == userId; }
 
-    // --- FILM ARENA: SHOWCASE POSTER UPLOADS ---
+    // --- FILM ARENA & MUSIC STUDIO UPLOADS ---
     match /showcase_posters/{fileName} { allow write: if isAuthenticated(); }
+    match /song_posters/{fileName} { allow write: if isAuthenticated(); }
   }
 }

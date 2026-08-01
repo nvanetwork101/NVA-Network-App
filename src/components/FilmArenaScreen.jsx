@@ -1335,14 +1335,15 @@ const FilmArenaScreen = ({ setActiveScreen, currentUser, creatorProfile, showMes
                                     };
 
                                     // Strictly Pinned / Premium
-                                    const freeAdminMovies = movies.filter(m => m.isPinned && (!m.ticketPrice || m.ticketPrice === 0));
-                                    const premiumPinned = movies.filter(m => m.isPinned && m.ticketPrice > 0);
+                                    const freeAdminMovies = movies.filter(m => m.isPinned && (!m.ticketPrice || m.ticketPrice === 0) && m.type !== 'musicVideoPremiere');
+                                    const premiumPinned = movies.filter(m => m.isPinned && m.ticketPrice > 0 && m.type !== 'musicVideoPremiere');
                                     
                                     // Watch Parties / Premieres (Both pinned and unpinned are safely caught here)
-                                    const upcomingParties = liveEvents.filter(m => getMs(m.scheduledStartTime) > now - (4 * 3600 * 1000));
+                                    const upcomingParties = liveEvents.filter(m => m.type !== 'musicVideoPremiere' && getMs(m.scheduledStartTime) > now - (4 * 3600 * 1000));
                                     
                                     // Recent Replays (Last 7 Days)
                                     const pastReplays = liveEvents.filter(m => {
+                                        if (m.type === 'musicVideoPremiere') return false;
                                         const ms = getMs(m.scheduledStartTime);
                                         return ms < now - (4 * 3600 * 1000) && ms > now - (7 * 24 * 3600 * 1000);
                                     });

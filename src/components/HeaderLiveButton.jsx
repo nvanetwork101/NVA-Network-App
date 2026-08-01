@@ -19,6 +19,10 @@ function HeaderLiveButton({ setActiveScreen, showMessage, isLive }) {
                 masterUnsubscribe = onSnapshot(doc(db, "events", billboardData.eventId), (masterDoc) => {
                     if (masterDoc.exists()) {
                         const data = masterDoc.data();
+                        if (data.status === 'completed' || data.status === 'archived_vod') {
+                            setUpcomingEvent(null);
+                            return;
+                        }
                         const sTime = data.scheduledStartTime;
                         const startTimeMs = sTime?.toMillis ? sTime.toMillis() : (sTime?.seconds ? sTime.seconds * 1000 : new Date(sTime).getTime());
                         const validTime = isNaN(startTimeMs) ? 0 : startTimeMs;
@@ -74,6 +78,18 @@ function HeaderLiveButton({ setActiveScreen, showMessage, isLive }) {
         const updateTimer = () => {
             const now = Date.now();
 
+            // MUSIC PREMIERE DURATION AUTO-EXPIRE (Isolated 0-Risk Shield for Music Videos Only)
+            if (upcomingEvent.type === 'musicVideoPremiere') {
+                const durSecs = Number(upcomingEvent.durationTotalSec) || ((Number(upcomingEvent.durationMinutes) || 3) * 60 + (Number(upcomingEvent.durationSeconds) || 0));
+                const windowMs = durSecs > 0 ? (durSecs * 1000) : (15 * 60 * 1000);
+                
+                if (upcomingEvent.extractedTimeMs > 0 && now >= (upcomingEvent.extractedTimeMs + windowMs)) {
+                    setUpcomingEvent(null);
+                    setEventIsLive(false);
+                    return;
+                }
+            }
+
             // If the event is active live in the database, bypass the countdown comparison
             if (upcomingEvent.status === 'live' || upcomingEvent.isLiveNow) {
                 setEventTimeLeft('LIVE NOW!');
@@ -111,7 +127,7 @@ function HeaderLiveButton({ setActiveScreen, showMessage, isLive }) {
     }, [upcomingEvent, showMessage, isLive]);
 
     // ABSOLUTE AUTHORITY: Render when an upcoming or live premiere exists
-    if (!upcomingEvent || !eventTimeLeft) return null; 
+    if (!upcomingEvent || !eventTimeLeft || upcomingEvent.status === 'completed' || upcomingEvent.status === 'archived_vod') return null; 
 
     const activeCountdown = isLive ? 'LIVE NOW!' : eventTimeLeft;
     const activeIsLive = isLive || eventIsLive || upcomingEvent?.status === 'live' || upcomingEvent?.isLiveNow;

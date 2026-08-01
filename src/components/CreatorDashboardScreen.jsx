@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db, storage, functions, doc, collection, query, where, orderBy, limit, onSnapshot, updateDoc, getDoc, getDocs, addDoc, httpsCallable, ref, uploadBytes, getDownloadURL, deleteDoc, extractVideoInfo } from '../firebase'; // Consolidated imports
+import { deleteObject } from 'firebase/storage';
 
 // --- Child Component Imports ---
 import ProfilePictureAdjustModal from './ProfilePictureAdjustModal';
@@ -442,6 +443,13 @@ const CreatorDashboardScreen = ({
     const [showGalleryAdjustModal, setShowGalleryAdjustModal] = useState(false);
     const [galleryFileToAdjust, setGalleryFileToAdjust] = useState(null);
 
+    // --- CAROUSEL STATE ---
+    const [isUploadingCarousel, setIsUploadingCarousel] = useState(false);
+    const [uploadingCarouselSlot, setUploadingCarouselSlot] = useState(null);
+    const carouselInputRef = useRef(null);
+    const [showCarouselAdjustModal, setShowCarouselAdjustModal] = useState(false);
+    const [carouselFileToAdjust, setCarouselFileToAdjust] = useState(null);
+
     // --- HERO PRODUCT STATE ---
     const [isUploadingHero, setIsUploadingHero] = useState(false);
     const heroInputRef = useRef(null);
@@ -813,6 +821,10 @@ const CreatorDashboardScreen = ({
         setConfirmationMessage("Are you sure you want to permanently remove this hero product? This will clear the image, price, and contact info.");
         setOnConfirmationAction(() => async () => {
             try {
+                if (creatorProfile?.heroProduct?.imageUrl) {
+                    const filePath = `hero_products/${currentUser.uid}/hero.jpg`;
+                    deleteObject(ref(storage, filePath)).catch(e => console.warn("Storage deletion failed", e));
+                }
                 const creatorRef = doc(db, "creators", currentUser.uid);
                 await updateDoc(creatorRef, { heroProduct: null });
                 setCreatorProfile(prev => ({ ...prev, heroProduct: null }));
@@ -838,11 +850,9 @@ const CreatorDashboardScreen = ({
         setIsUploadingGallery(true);
         showMessage("Uploading to gallery...");
         try {
-            // THE FIX: Exact slot overwrite. No timestamps in path = zero dust/excess photos!
             const filePath = `studio_galleries/${currentUser.uid}/slot_${uploadingSlot}.jpg`;
             const storageRefPath = ref(storage, filePath);
             const snapshot = await uploadBytes(storageRefPath, adjustedBlob);
-            // Append timestamp to URL so the browser loads the fresh image instead of the cached old one
             const downloadURL = (await getDownloadURL(snapshot.ref)) + `?v=${Date.now()}`;
             
             const currentGallery = creatorProfile.studioGallery || {};
@@ -871,6 +881,50 @@ const CreatorDashboardScreen = ({
         if (galleryInputRef.current) galleryInputRef.current.value = null;
     };
 
+    const handleCarouselFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (file && uploadingCarouselSlot !== null) {
+            setCarouselFileToAdjust(file);
+            setShowCarouselAdjustModal(true);
+        }
+    };
+
+    const handleSaveAdjustedCarouselImage = async (adjustedBlob) => {
+        if (!currentUser || !adjustedBlob || uploadingCarouselSlot === null) return;
+        setIsUploadingCarousel(true);
+        showMessage("Uploading to carousel...");
+        try {
+            const filePath = `carousel_galleries/${currentUser.uid}/slot_${uploadingCarouselSlot}.jpg`;
+            const storageRefPath = ref(storage, filePath);
+            const snapshot = await uploadBytes(storageRefPath, adjustedBlob);
+            const downloadURL = (await getDownloadURL(snapshot.ref)) + `?v=${Date.now()}`;
+            
+            const currentCarousel = creatorProfile.carouselGallery || {};
+            currentCarousel[uploadingCarouselSlot] = downloadURL;
+
+            const creatorRef = doc(db, "creators", currentUser.uid);
+            await updateDoc(creatorRef, { carouselGallery: currentCarousel });
+            
+            setCreatorProfile(prev => ({ ...prev, carouselGallery: currentCarousel }));
+            showMessage("Carousel updated successfully!");
+            setShowCarouselAdjustModal(false);
+        } catch (error) {
+            showMessage(`Carousel upload failed: ${error.message}`);
+        } finally {
+            setIsUploadingCarousel(false);
+            setUploadingCarouselSlot(null);
+            setCarouselFileToAdjust(null);
+            if (carouselInputRef.current) carouselInputRef.current.value = null;
+        }
+    };
+
+    const handleCancelCarouselAdjust = () => {
+        setCarouselFileToAdjust(null);
+        setShowCarouselAdjustModal(false);
+        setUploadingCarouselSlot(null);
+        if (carouselInputRef.current) carouselInputRef.current.value = null;
+    };
+
     const handleShareGallery = (e) => {
         e.stopPropagation();
         if (!currentUser?.uid) return;
@@ -887,15 +941,39 @@ const CreatorDashboardScreen = ({
 
     const deleteGalleryImage = (slot) => {
         setConfirmationTitle("Remove Image?");
-        setConfirmationMessage("Remove this image from your exhibition? This action cannot be undone.");
+        setConfirmationMessage("Remove this image from your 20-slot exhibition? This action cannot be undone.");
         setOnConfirmationAction(() => async () => {
             try {
+                const filePath = `studio_galleries/${currentUser.uid}/slot_${slot}.jpg`;
+                deleteObject(ref(storage, filePath)).catch(e => console.warn("Storage deletion failed", e));
+
                 const currentGallery = { ...creatorProfile.studioGallery };
                 currentGallery[slot] = null; 
                 const creatorRef = doc(db, "creators", currentUser.uid);
                 await updateDoc(creatorRef, { studioGallery: currentGallery });
                 setCreatorProfile(prev => ({ ...prev, studioGallery: currentGallery }));
                 showMessage("Image removed.");
+            } catch (error) {
+                showMessage(`Removal failed: ${error.message}`);
+            }
+        });
+        setShowConfirmationModal(true);
+    };
+
+    const deleteCarouselImage = (slot) => {
+        setConfirmationTitle("Remove Carousel Image?");
+        setConfirmationMessage("Remove this image from your 10-slot carousel? This action cannot be undone.");
+        setOnConfirmationAction(() => async () => {
+            try {
+                const filePath = `carousel_galleries/${currentUser.uid}/slot_${slot}.jpg`;
+                deleteObject(ref(storage, filePath)).catch(e => console.warn("Storage deletion failed", e));
+
+                const currentCarousel = { ...creatorProfile.carouselGallery };
+                currentCarousel[slot] = null; 
+                const creatorRef = doc(db, "creators", currentUser.uid);
+                await updateDoc(creatorRef, { carouselGallery: currentCarousel });
+                setCreatorProfile(prev => ({ ...prev, carouselGallery: currentCarousel }));
+                showMessage("Carousel image removed.");
             } catch (error) {
                 showMessage(`Removal failed: ${error.message}`);
             }
@@ -2021,15 +2099,15 @@ const CreatorDashboardScreen = ({
                     </div>
                 </div>
 
-                {/* ====== HERO PRODUCT SLOT (Designers & Crafters Only) ====== */}
-                {['Craft', 'Designer', 'Crafter / Designer'].includes(creatorProfile?.creatorField) && (
+                {/* ====== HERO PRODUCT SLOT ====== */}
+                {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach', 'Craft & Services'].includes(creatorProfile?.creatorField) && (
                     <div className="glass-panel" style={{ padding: '24px', background: 'linear-gradient(135deg, rgba(20,20,20,0.9), rgba(0,0,0,0.95))', border: `1px solid ${roleColor}44`, marginBottom: '24px', position: 'relative', overflow: 'hidden' }}>
                         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '3px', background: `linear-gradient(90deg, ${roleColor}, transparent)` }}></div>
                         
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                             <div>
                                 <p style={{ margin: 0, color: '#FFF', fontSize: '18px', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase' }}>
-                                    🔥 <span style={{ color: roleColor }}>{creatorProfile.creatorField.includes('Design') ? "BUY MY FIT" : "BEST SELLER"}</span>
+                                    🔥 <span style={{ color: roleColor }}>{creatorProfile.creatorField?.includes('Design') ? "BUY MY FIT" : "BEST SELLER"}</span>
                                 </p>
                                 <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '12px' }}>Your premium hero item featured on your public content card.</p>
                             </div>
@@ -2050,7 +2128,7 @@ const CreatorDashboardScreen = ({
                                         <button 
                                             type="button"
                                             onClick={(e) => { e.stopPropagation(); handleDeleteHeroProduct(); }}
-                                            style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: 'rgba(220,53,69,0.9)', color: '#FFF', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, WebkitTransform: 'translateZ(0)', transform: 'translateZ(0)' }} // Stabilizes touch target boundaries on iOS using camelCase
+                                            style={{ position: 'absolute', top: '10px', right: '10px', backgroundColor: 'rgba(220,53,69,0.9)', color: '#FFF', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, WebkitTransform: 'translateZ(0)', transform: 'translateZ(0)' }}
                                         >✕</button>
                                     </>
                                 ) : (
@@ -2108,13 +2186,59 @@ const CreatorDashboardScreen = ({
                     </div>
                 )}
 
-                {/* ====== THE EXHIBITION ROOM (Craft/Design/Fitness Only) ====== */}
-                {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach'].includes(creatorProfile?.creatorField) && (
+                {/* ====== THE SHOWCASE CAROUSEL (10 Slots) ====== */}
+                {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach', 'Craft & Services'].includes(creatorProfile?.creatorField) && (
+                    <div className="glass-panel" style={{ background: `linear-gradient(180deg, ${roleColor}22 0%, #111111 100%)`, border: `1px solid ${roleColor}66`, marginBottom: '24px' }}>
+                        <div style={{ marginBottom: '15px' }}>
+                            <p style={{ margin: 0, color: '#00FFFF', fontSize: '18px', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase' }}>🔄 Auto-Scrolling Carousel</p>
+                            <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '12px' }}>Upload up to 10 wide-format photos. Automatically scrolls for visitors if you add 3 or more photos. Delete old photos to free up capped slots.</p>
+                        </div>
+                        
+                        <input type="file" ref={carouselInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleCarouselFileSelect} />
+
+                        <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '10px' }}>
+                            {Array.from({ length: 10 }).map((_, index) => {
+                                const imgUrl = creatorProfile?.carouselGallery?.[index];
+                                return (
+                                    <div 
+                                        key={index} 
+                                        onClick={() => {
+                                            setUploadingCarouselSlot(index);
+                                            carouselInputRef.current?.click();
+                                        }}
+                                        style={{ flexShrink: 0, width: '200px', height: '112px', background: '#0D0D0D', border: imgUrl ? '2px solid #FFF' : '2px dashed #444', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', boxShadow: imgUrl ? '0 4px 15px rgba(0,0,0,0.5)' : 'none', transition: 'transform 0.2s ease', overflow: 'visible' }}
+                                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
+                                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                    >
+                                        {isUploadingCarousel && uploadingCarouselSlot === index ? (
+                                            <span style={{ color: '#00FFFF', fontSize: '10px', fontWeight: 'bold' }}>Uploading...</span>
+                                        ) : imgUrl ? (
+                                            <>
+                                                <div style={{ width: '100%', height: '100%', overflow: 'hidden', borderRadius: '6px' }}>
+                                                    <img src={imgUrl} alt={`Carousel ${index}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                </div>
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); deleteCarouselImage(index); }}
+                                                    style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#EF4444', color: '#FFF', border: '2px solid #FFF', borderRadius: '50%', width: '22px', height: '22px', cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 12, boxShadow: '0 2px 5px rgba(0,0,0,0.4)' }}
+                                                >✕</button>
+                                            </>
+                                        ) : (
+                                            <span style={{ color: '#555', fontSize: '24px' }}>+</span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* ====== THE EXHIBITION ROOM (20 Slots) ====== */}
+                {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach', 'Craft & Services'].includes(creatorProfile?.creatorField) && (
                     <div className="glass-panel" style={{ background: `linear-gradient(180deg, ${roleColor}33 0%, #111111 100%)`, border: `1px solid ${roleColor}66`, marginBottom: '24px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '10px' }}>
                             <div>
                                 <p style={{ margin: 0, color: '#FFD700', fontSize: '18px', fontWeight: '900', letterSpacing: '2px', textTransform: 'uppercase' }}>🎨 The Exhibition Room</p>
-                                <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '12px' }}>Your creative portfolio. Tap any slot to upload a high-quality image.</p>
+                                <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '12px' }}>Your creative portfolio (Maximum 20 uploads). Tap any slot to add a high-quality image. If you reach the 20-slot limit, you must delete an old image to free up space for a new one.</p>
                             </div>
                             <button 
                                 onClick={handleShareGallery} 
@@ -2128,30 +2252,30 @@ const CreatorDashboardScreen = ({
                         
                         <input type="file" ref={galleryInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleGalleryFileSelect} />
 
-                        <div className="studio-gallery-collage">
-                            {[0, 1, 2, 3, 4].map((index) => {
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '12px', marginTop: '15px', maxHeight: '450px', overflowY: 'auto', paddingRight: '5px' }}>
+                            {Array.from({ length: 20 }).map((_, index) => {
                                 const imgUrl = creatorProfile?.studioGallery?.[index];
                                 return (
                                     <div 
                                         key={index} 
-                                        className={`gallery-slot slot-${index}`} 
                                         onClick={() => {
                                             setUploadingSlot(index);
                                             galleryInputRef.current?.click();
                                         }}
+                                        style={{ aspectRatio: '1/1', background: '#0D0D0D', border: imgUrl ? '2px solid #FFF' : '2px dashed #444', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', boxShadow: imgUrl ? '0 4px 15px rgba(0,0,0,0.5)' : 'none', transition: 'transform 0.2s ease', overflow: 'visible' }}
+                                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
+                                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                                     >
                                         {isUploadingGallery && uploadingSlot === index ? (
-                                            <span style={{ color: '#FFD700', fontSize: '12px', fontWeight: 'bold' }}>Uploading...</span>
+                                            <span style={{ color: '#FFD700', fontSize: '10px', fontWeight: 'bold' }}>Uploading...</span>
                                         ) : imgUrl ? (
                                             <>
-                                                {/* THE FIX: Inner container handles image cropping, freeing the main slot from 'overflow: hidden' */}
-                                                <div style={{ width: '100%', height: '100%', overflow: 'hidden', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                    <img key={imgUrl} src={imgUrl} alt={`Slot ${index}`} />
+                                                <div style={{ width: '100%', height: '100%', overflow: 'hidden', borderRadius: '6px' }}>
+                                                    <img src={imgUrl} alt={`Slot ${index}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                 </div>
-                                                {/* THE FIX: Button is placed outside the image mask, safely overlapping the white frame without being cut off on iOS */}
                                                 <button 
                                                     onClick={(e) => { e.stopPropagation(); deleteGalleryImage(index); }}
-                                                    style={{ position: 'absolute', top: '-10px', right: '-10px', background: '#EF4444', color: '#FFF', border: '2px solid #FFF', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 12, WebkitTransform: 'translateZ(0)', transform: 'translateZ(0)', boxShadow: '0 2px 5px rgba(0,0,0,0.4)' }}
+                                                    style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#EF4444', color: '#FFF', border: '2px solid #FFF', borderRadius: '50%', width: '22px', height: '22px', cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 12, boxShadow: '0 2px 5px rgba(0,0,0,0.4)' }}
                                                 >✕</button>
                                             </>
                                         ) : (
@@ -2649,7 +2773,17 @@ const CreatorDashboardScreen = ({
                     imageFile={galleryFileToAdjust} 
                     onSave={handleSaveAdjustedGalleryImage} 
                     onCancel={handleCancelGalleryAdjust} 
-                    aspectRatio={1} // THE FIX: Locks the crop utility to a perfect 1:1 square for all slots, aligning with the new Polaroid displays
+                    aspectRatio={1} 
+                />
+            )}
+
+            {showCarouselAdjustModal && carouselFileToAdjust && (
+                <GalleryImageAdjustModal 
+                    isUploading={isUploadingCarousel} 
+                    imageFile={carouselFileToAdjust} 
+                    onSave={handleSaveAdjustedCarouselImage} 
+                    onCancel={handleCancelCarouselAdjust} 
+                    aspectRatio={16/9} // Wide format for carousel
                 />
             )}
 

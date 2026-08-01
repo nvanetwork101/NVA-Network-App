@@ -19,9 +19,10 @@ import formatCurrency from '../utils/formatCurrency';
 
 // --- Shared Role Colors Map ---
 const ROLE_COLORS = {
-    'Comedian': '#FF4500', 'Craft': '#D2691E', 'Health & Fitness': '#20B2AA',
+    'Comedian': '#FF4500', 'Craft': '#D2691E', 'Craft & Services': '#D2691E', 'Health & Fitness': '#20B2AA',
     'Designer': '#FF1493', 'Influencer': '#00BFFF', 'Poet': '#9370DB',
-    'Musician': '#32CD32', 'Filmmaker': '#FFD700', 'Actor': '#DC143C'
+    'Musician': '#32CD32', 'Filmmaker': '#FFD700', 'Actor': '#DC143C',
+    'Crafter / Designer': '#D2691E', 'Wellness Coach': '#20B2AA'
 };
 
 // --- Reusable Child Component for Stats ---
@@ -669,6 +670,18 @@ const UserProfileScreen = ({
         .tier-price { font-size: 11px; color: #888; }
         .dot { width: 8px; height: 8px; border-radius: 50%; }
 
+        /* --- CINEMATIC MY HUB UI STYLES --- */
+        .glass-panel {
+            background: rgba(30, 30, 30, 0.5);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
         /* ====== UNIFIED ATELIER CSS ====== */
         .atelier-container {
             border-radius: 16px;
@@ -779,7 +792,21 @@ const UserProfileScreen = ({
 .breakdown-value.negative { color: #F87171; }
 .breakdown-value.positive { color: #4ADE80; font-size: 14px; text-shadow: 0 0 10px rgba(74,222,128,0.3); }
 
-/* Modern Instructions */
+        @keyframes infiniteScroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(calc(-50% - 6px)); }
+        }
+        .scrolling-carousel-track {
+            display: flex; gap: 12px; width: max-content; padding-bottom: 10px;
+        }
+        .scrolling-carousel-track.animated {
+            animation: infiniteScroll 20s linear infinite;
+        }
+        .scrolling-carousel-track.animated:hover {
+            animation-play-state: paused;
+        }
+
+        /* Modern Instructions */
 .mmg-instructions { background: rgba(0,255,255,0.03); border-left: 3px solid #00FFFF; border-radius: 0 12px 12px 0; padding: 16px; margin: 20px 0; font-size: 12px; text-align: left; line-height: 1.6; color: #CCC; }
 .mmg-instructions p { margin: 0 0 8px 0; }
 .mmg-instructions p:last-child { margin: 0; }
@@ -821,7 +848,7 @@ const UserProfileScreen = ({
         <>
             <style>{modernRewardsStyles}</style>
             <div className="screenContainer">
-                <div className="dashboardSection" style={{ border: 'none', background: 'transparent', padding: '10px 0' }}>
+                <div className="glass-panel" style={{ padding: '30px 20px', position: 'relative', background: `linear-gradient(180deg, ${roleColor}22 0%, #1A1A1A 100%)`, border: `1px solid ${roleColor}44`, marginTop: '15px' }}>
                     {/* --- MODERN CENTERED PROFILE HEADER --- */}
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
                         <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -1266,7 +1293,7 @@ const UserProfileScreen = ({
                 )}
                 
                 {/* ====== THE HERO PRODUCT SHOWCASE CARD (Symmetrical Centered Dialogue) ====== */}
-                {['Craft', 'Designer', 'Crafter / Designer'].includes(profile?.creatorField) && profile?.heroProduct?.imageUrl && (
+                {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach', 'Craft & Services'].includes(profile?.creatorField) && profile?.heroProduct?.imageUrl && (
                     <div className="atelier-container" style={{ 
                         padding: '28px', 
                         background: `linear-gradient(135deg, ${roleColor}1A 0%, rgba(10,10,10,0.98) 100%)`, 
@@ -1363,10 +1390,36 @@ const UserProfileScreen = ({
                     </div>
                 )}
 
-                {/* --- STUDIO GALLERY (Specific Roles Only) --- */}
-                {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach'].includes(profile?.creatorField) && profile?.studioGallery && Object.keys(profile.studioGallery).length > 0 && (
+                {/* ====== THE AUTO-SCROLLING CAROUSEL ====== */}
+                {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach', 'Craft & Services'].includes(profile?.creatorField) && profile?.carouselGallery && Object.keys(profile.carouselGallery).length > 0 && (() => {
+                    const activeCarouselItems = Array.from({ length: 10 }).map((_, i) => profile.carouselGallery[i]).filter(Boolean);
+                    if (activeCarouselItems.length === 0) return null;
+                    
+                    // If 3 or more photos, double the array so the CSS marquee animation loops seamlessly
+                    const isScrolling = activeCarouselItems.length >= 3;
+                    const displayItems = isScrolling ? [...activeCarouselItems, ...activeCarouselItems] : activeCarouselItems;
+
+                    return (
+                        <div className="atelier-container" style={{ background: `linear-gradient(180deg, ${roleColor}22 0%, #111111 100%)`, border: `1px solid ${roleColor}66`, marginTop: '30px', overflow: 'hidden' }}>
+                            <div className={isScrolling ? "scrolling-carousel-track animated" : "scrolling-carousel-track"}>
+                                {displayItems.map((imgUrl, i) => (
+                                    <div 
+                                        key={i} 
+                                        onClick={() => setSelectedExhibitionImage(imgUrl)}
+                                        style={{ flexShrink: 0, width: '220px', height: '124px', borderRadius: '8px', cursor: 'zoom-in', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden', position: 'relative', boxShadow: '0 4px 15px rgba(0,0,0,0.5)' }}
+                                    >
+                                        <img src={imgUrl} alt="Carousel item" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* --- THE EXHIBITION ROOM (20-Slot Pinterest-Style Masonry) --- */}
+                {['Craft', 'Designer', 'Health & Fitness', 'Crafter / Designer', 'Wellness Coach', 'Craft & Services'].includes(profile?.creatorField) && profile?.studioGallery && Object.keys(profile.studioGallery).length > 0 && (
                     <div className="atelier-container" style={{ background: `linear-gradient(180deg, ${roleColor}33 0%, #111111 100%)`, border: `1px solid ${roleColor}66`, marginTop: '30px' }} id="gallery">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                             <p className="sectionTitle" style={{ color: roleColor, margin: 0 }}>The Exhibition Room</p>
                             <button 
                                 onClick={handleShareGallery}
@@ -1376,25 +1429,24 @@ const UserProfileScreen = ({
                                 Share Gallery
                             </button>
                         </div>
-                        <div className="studio-gallery-collage">
-                            {[0, 1, 2, 3, 4].map((index) => {
+                        <div style={{ columnCount: 2, columnGap: '12px' }}>
+                            {Array.from({ length: 20 }).map((_, index) => {
                                 const imgUrl = profile.studioGallery[index];
+                                if (!imgUrl) return null; // Only render active slots in public view
                                 return (
                                     <div 
                                         key={index} 
-                                        className={`gallery-slot slot-${index}`} 
-                                        onClick={() => imgUrl && setSelectedExhibitionImage(imgUrl)} 
-                                        style={{ cursor: imgUrl ? 'zoom-in' : 'default' }}
+                                        onClick={() => setSelectedExhibitionImage(imgUrl)} 
+                                        style={{ breakInside: 'avoid', marginBottom: '12px', cursor: 'zoom-in', borderRadius: '12px', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', transition: 'transform 0.2s', position: 'relative' }}
+                                        onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
+                                        onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                                     >
-                                        {imgUrl ? (
-                                            <div style={{ width: '100%', height: '100%', overflow: 'hidden', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                <img src={imgUrl} alt={`Exhibition ${index}`} />
-                                            </div>
-                                        ) : (
-                                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.01)' }}>
-                                                <span style={{ color: '#222', fontSize: '18px' }}>🎨</span>
-                                            </div>
-                                        )}
+                                        <img src={imgUrl} alt={`Exhibition ${index}`} style={{ width: '100%', height: 'auto', display: 'block' }} />
+                                        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 40%)', opacity: 0, transition: 'opacity 0.2s', display: 'flex', alignItems: 'flex-end', padding: '10px' }} 
+                                             onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                                             onMouseLeave={e => e.currentTarget.style.opacity = 0}>
+                                            <span style={{ color: '#FFF', fontSize: '20px' }}>🔍</span>
+                                        </div>
                                     </div>
                                 );
                             })}
