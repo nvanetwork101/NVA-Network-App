@@ -36,6 +36,26 @@ const SignUpScreen = ({ showMessage, setActiveScreen }) => {
     const executeSignUpLogic = async (isGoogle = false) => {
         setIsLoading(true);
         try {
+            // --- RECAPTCHA V3 INVISIBLE BOT SHIELD ---
+            if (window.grecaptcha) {
+                const token = await new Promise((resolve) => {
+                    window.grecaptcha.ready(async () => {
+                        try {
+                            const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || '454846546416541844865';
+                            const t = await window.grecaptcha.execute(siteKey, { action: 'signup' });
+                            resolve(t);
+                        } catch (err) {
+                            resolve(null);
+                        }
+                    });
+                });
+                if (!token) {
+                    showMessage("Security check failed. Please refresh and try again.");
+                    setIsLoading(false);
+                    return;
+                }
+            }
+
             let user;
             setShowRoleWarningModal(false); // [1]
             if (isGoogle) {
