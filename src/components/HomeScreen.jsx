@@ -120,6 +120,7 @@ import RoastTokenVault from './RoastTokenVault';
     const storyVideoRefs = useRef({});
     const [isMuted, setIsMuted] = useState(true); // iOS Auto-Play Black Screen Shield
     const [isPreviewMuted, setIsPreviewMuted] = useState(true);
+    const [showVolumeControl, setShowVolumeControl] = useState(true);
 
     // Custom In-App Camera Logic (WhatsApp/IG Style)
     const openInAppCamera = async (mode = cameraFacingMode) => {
@@ -1037,10 +1038,23 @@ import RoastTokenVault from './RoastTokenVault';
                         ) : currentStory.mediaType === 'text' ? (
                             <div style={{ width: '100%', height: '100%', background: currentStory.storyBgColor || '#0D0D0D' }} />
                         ) : (
-                            <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                            <div 
+                                onClick={() => {
+                                    setShowVolumeControl(true);
+                                    if (window.volFadeTimer) clearTimeout(window.volFadeTimer);
+                                    window.volFadeTimer = setTimeout(() => setShowVolumeControl(false), 3000);
+                                }}
+                                style={{ width: '100%', height: '100%', position: 'relative' }}
+                            >
                                 <video 
                                     ref={fullScreenVideoRef} src={currentStory.videoUrl} autoPlay playsInline muted={isMuted}
-                                    onLoadedData={(e) => { e.target.currentTime = currentStory.trimStart || 0; setPlayProgress(0); }}
+                                    onLoadedData={(e) => { 
+                                        e.target.currentTime = currentStory.trimStart || 0; 
+                                        setPlayProgress(0); 
+                                        setShowVolumeControl(true);
+                                        if (window.volFadeTimer) clearTimeout(window.volFadeTimer);
+                                        window.volFadeTimer = setTimeout(() => setShowVolumeControl(false), 3000);
+                                    }}
                                     onTimeUpdate={(e) => {
                                         const start = currentStory.trimStart || 0; const end = currentStory.trimEnd || (start + 60);
                                         setPlayProgress(Math.min(100, Math.max(0, ((e.target.currentTime - start) / Math.max(1, end - start)) * 100)));
@@ -1049,8 +1063,25 @@ import RoastTokenVault from './RoastTokenVault';
                                     onEnded={handleNextStory} 
                                     style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${currentStory.videoPanX || 50}% 50%` }} 
                                 />
-                                {/* Overlay Volume Button */}
-                                <button onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }} style={{ position: 'absolute', top: '70px', right: '15px', background: 'rgba(0,0,0,0.6)', border: '1px solid #FFD700', borderRadius: '50%', color: '#FFF', width: '36px', height: '36px', zIndex: 30, cursor: 'pointer', fontSize: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.8)' }}>
+                                {/* Auto-Fading Overlay Volume Button (Hides after 3 seconds) */}
+                                <button 
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        setIsMuted(!isMuted); 
+                                        setShowVolumeControl(true);
+                                        if (window.volFadeTimer) clearTimeout(window.volFadeTimer);
+                                        window.volFadeTimer = setTimeout(() => setShowVolumeControl(false), 3000);
+                                    }} 
+                                    style={{ 
+                                        position: 'absolute', top: '70px', right: '15px', 
+                                        background: 'rgba(0,0,0,0.6)', border: '1px solid #FFD700', borderRadius: '50%', color: '#FFF', 
+                                        width: '36px', height: '36px', zIndex: 30, cursor: 'pointer', fontSize: '16px', 
+                                        boxShadow: '0 2px 8px rgba(0,0,0,0.8)',
+                                        opacity: showVolumeControl ? 1 : 0,
+                                        transition: 'opacity 0.5s ease',
+                                        pointerEvents: showVolumeControl ? 'auto' : 'none'
+                                    }}
+                                >
                                     {isMuted ? '🔇' : '🔊'}
                                 </button>
                             </div>
@@ -1087,7 +1118,7 @@ import RoastTokenVault from './RoastTokenVault';
                         <div style={{ position: 'absolute', top: '15px', left: '15px', right: '15px', zIndex: 10, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                             <div 
                                 onClick={() => {
-                                    setActiveStoryIndex(null);
+                                    setActiveUserIndex(null);
                                     window.dispatchEvent(new CustomEvent('navigateToUserProfile', { detail: { userId: currentStory.userId } }));
                                 }}
                                 style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)', padding: '6px 12px', borderRadius: '20px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.1)' }}
@@ -1098,14 +1129,13 @@ import RoastTokenVault from './RoastTokenVault';
                                         <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '13px', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{currentStory.userName}</p>
                                         {currentStory.creatorRole && <span style={{ fontSize: '9px', background: 'rgba(255,215,0,0.1)', color: '#FFD700', padding: '1px 5px', borderRadius: '4px', border: '1px solid rgba(255,215,0,0.3)', fontWeight: 'bold' }}>{currentStory.creatorRole}</span>}
                                     </div>
-                                    <p style={{ margin: 0, color: '#AAA', fontSize: '10px' }}>{isOwner ? 'Your Story' : '⏱️ Flash Story'}</p>
+                                    <p style={{ margin: 0, color: '#AAA', fontSize: '10px' }}>{isOwner ? 'Your Story' : '⏱️ Flash Story'} • {Math.max(1, Math.floor((currentStory.expiresAtMs - Date.now())/3600000))}h left</p>
                                 </div>
                             </div>
 
                             {/* Top-Right Close Button (Isolated at absolute top right) */}
-                            <button onClick={() => setActiveStoryIndex(null)} style={{ background: 'rgba(0,0,0,0.5)', color: '#FFF', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px', zIndex: 11 }}>✕</button>
+                            <button onClick={() => { setActiveUserIndex(null); setPlayProgress(0); setSlideshowIndex(0); }} style={{ background: 'rgba(0,0,0,0.5)', color: '#FFF', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px', zIndex: 11 }}>✕</button>
                         </div>
-
                         {/* Left/Right Tap Areas for Navigation */}
                         <div onClick={handlePrevStory} style={{ position: 'absolute', top: '100px', bottom: 0, left: 0, width: '35%', zIndex: 5 }} />
                         <div onClick={handleNextStory} style={{ position: 'absolute', top: '100px', bottom: 0, right: 0, width: '35%', zIndex: 5 }} />
@@ -1271,7 +1301,7 @@ import RoastTokenVault from './RoastTokenVault';
                                 <button 
                                     onClick={() => {
                                         setShowOptionsId(null);
-                                        setActiveStoryIndex(null);
+                                        setActiveUserIndex(null);
                                         setEditingStoryId(currentStory.id);
                                         setStoryCaption(currentStory.caption || '');
                                         setTextFont(currentStory.textFont || 'sans-serif');
@@ -1350,7 +1380,7 @@ import RoastTokenVault from './RoastTokenVault';
                                                 <button onClick={() => {
                                                     setShowOptionsId(null);
                                                     if(window.confirm("ADMIN: Permanently remove this user's story?")) {
-                                                        setActiveStoryIndex(null);
+                                                        setActiveUserIndex(null);
                                                         if (currentStory.videoUrl && currentStory.videoUrl.includes('firebasestorage')) {
                                                             const fileRef = ref(storage, currentStory.videoUrl);
                                                             import('firebase/storage').then(({ deleteObject }) => deleteObject(fileRef)).catch(() => {});
