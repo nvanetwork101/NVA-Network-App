@@ -622,7 +622,7 @@ import RoastTokenVault from './RoastTokenVault';
                 >
                     
                     {/* CARD 1: Dashed Create Story Tile (Image-2 Style) */}
-                    {currentUser && !creatorProfile?.hasActiveStory && !flashStories.some(s => s.userId === currentUser.uid) && (
+                    {currentUser && (
                         <div 
                             onClick={() => setShowUploaderModal(true)}
                             style={{ 
