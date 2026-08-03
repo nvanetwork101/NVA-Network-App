@@ -43,6 +43,7 @@ import RoastTokenVault from './RoastTokenVault';
     const [showCamera, setShowCamera] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [recordingProgress, setRecordingProgress] = useState(0);
+    const [cameraFacingMode, setCameraFacingMode] = useState('user'); // Camera Flip State
     const liveCameraRef = useRef(null);
     const mediaRecorderRef = useRef(null);
     const recordedChunksRef = useRef([]);
@@ -89,6 +90,7 @@ import RoastTokenVault from './RoastTokenVault';
     
     // Reward Claim & Analytics Overlay
     const [claimingRewardStory, setClaimingRewardStory] = useState(null);
+    const [deletingStory, setDeletingStory] = useState(null);
     const [claimedCode, setClaimedCode] = useState(null);
     const [isClaiming, setIsClaiming] = useState(false);
     const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
@@ -109,10 +111,14 @@ import RoastTokenVault from './RoastTokenVault';
     const storyVideoRefs = useRef({});
 
     // Custom In-App Camera Logic (WhatsApp/IG Style)
-    const openInAppCamera = async () => {
+    const openInAppCamera = async (mode = cameraFacingMode) => {
+        if (cameraStreamRef.current) {
+            cameraStreamRef.current.getTracks().forEach(track => track.stop());
+        }
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: mode }, audio: true });
             cameraStreamRef.current = stream;
+            setCameraFacingMode(mode);
             setShowCamera(true);
             setTimeout(() => {
                 if (liveCameraRef.current) liveCameraRef.current.srcObject = stream;
@@ -120,6 +126,11 @@ import RoastTokenVault from './RoastTokenVault';
         } catch (err) {
             showMessage("Camera/Microphone permission denied.");
         }
+    };
+
+    const flipCamera = () => {
+        const newMode = cameraFacingMode === 'user' ? 'environment' : 'user';
+        openInAppCamera(newMode);
     };
 
     const closeInAppCamera = () => {
@@ -1230,6 +1241,19 @@ import RoastTokenVault from './RoastTokenVault';
                                 </button>
                             )}
 
+                            {/* Trash Bin Delete Action (Owner, Admin, Super Admin, Moderator) */}
+                            {(isOwner || creatorProfile?.role === 'admin' || creatorProfile?.role === 'super_admin' || creatorProfile?.role === 'moderator') && (
+                                <button 
+                                    onClick={() => setDeletingStory(currentStory)}
+                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '4px', marginTop: '4px' }}
+                                    title="Delete Story"
+                                >
+                                    <svg viewBox="0 0 24 24" fill="#FF4500" width="28" height="28" style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.8))' }}>
+                                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                    </svg>
+                                </button>
+                            )}
+
                             {/* 3-Dots Menu (Strictly for Reports and Admin Deletion) */}
                             {(!isOwner || creatorProfile?.role === 'admin' || creatorProfile?.role === 'super_admin' || creatorProfile?.role === 'moderator') && (
                                 <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
@@ -1296,6 +1320,55 @@ import RoastTokenVault from './RoastTokenVault';
                 );
             })()}
 
+            {/* ====== IN-APP DELETE STORY CONFIRMATION MODAL ====== */}
+            {deletingStory && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 12000, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+                    <div style={{ background: '#111', border: '1px solid #FF4500', borderRadius: '20px', padding: '25px', maxWidth: '340px', width: '100%', textAlign: 'center', boxShadow: '0 0 30px rgba(255,69,0,0.4)' }}>
+                        <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: 'rgba(255,69,0,0.15)', border: '1px solid #FF4500', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 15px auto' }}>
+                            <svg viewBox="0 0 24 24" fill="#FF4500" width="26" height="26">
+                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                            </svg>
+                        </div>
+
+                        <p style={{ color: '#FFF', fontSize: '17px', fontWeight: '900', margin: '0 0 8px 0' }}>Delete Flash Story?</p>
+                        <p style={{ color: '#AAA', fontSize: '12px', margin: '0 0 20px 0', lineHeight: '1.4' }}>This video and its stats will be permanently removed from the network.</p>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <button 
+                                onClick={() => setDeletingStory(null)}
+                                style={{ background: '#222', color: '#FFF', border: '1px solid #333', padding: '12px', borderRadius: '12px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={async () => {
+                                    const storyToDelete = deletingStory;
+                                    setDeletingStory(null);
+                                    setActiveStoryIndex(null);
+                                    setFlashStories(prev => prev.filter(s => s.id !== storyToDelete.id));
+
+                                    try {
+                                        if (storyToDelete.videoUrl && storyToDelete.videoUrl.includes('firebasestorage')) {
+                                            const fileRef = ref(storage, storyToDelete.videoUrl);
+                                            const { deleteObject } = await import('firebase/storage');
+                                            deleteObject(fileRef).catch(() => {});
+                                        }
+                                        await deleteDoc(doc(db, "flash_stories", storyToDelete.id));
+                                        await updateDoc(doc(db, "creators", storyToDelete.userId), { hasActiveStory: false }).catch(() => {});
+                                        showMessage("Story deleted successfully.");
+                                    } catch (e) {
+                                        showMessage("Failed to delete story.");
+                                    }
+                                }}
+                                style={{ background: 'linear-gradient(90deg, #FF4500, #DC2626)', color: '#FFF', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: '900', fontSize: '13px', cursor: 'pointer', boxShadow: '0 0 15px rgba(255,69,0,0.4)' }}
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ====== IN-APP REWARD CLAIM MODAL ====== */}
             {claimingRewardStory && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -1359,6 +1432,9 @@ import RoastTokenVault from './RoastTokenVault';
                     <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <button onClick={closeInAppCamera} style={{ background: 'rgba(0,0,0,0.5)', color: '#FFF', border: 'none', width: '36px', height: '36px', borderRadius: '50%', fontSize: '18px', cursor: 'pointer' }}>✕</button>
                         {isRecording && <div style={{ background: 'rgba(255,0,0,0.8)', color: '#FFF', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold', animation: 'pulse 1s infinite' }}>REC</div>}
+                        <button onClick={flipCamera} disabled={isRecording} style={{ background: 'rgba(0,0,0,0.5)', color: '#FFF', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '18px', cursor: isRecording ? 'not-allowed' : 'pointer', opacity: isRecording ? 0.5 : 1 }}>
+                            🔄
+                        </button>
                     </div>
 
                     {/* Live Viewfinder */}
@@ -1472,7 +1548,6 @@ import RoastTokenVault from './RoastTokenVault';
                                         ref={previewVideoRef}
                                         src={storyPreviewUrl} 
                                         autoPlay 
-                                        muted 
                                         playsInline
                                         onLoadedMetadata={() => {
                                             if (previewVideoRef.current) {
@@ -1780,66 +1855,22 @@ import RoastTokenVault from './RoastTokenVault';
                                         let finalExpiresAtMs = Date.now() + (2 * 60 * 60 * 1000); // default
 
                                         if (storyFile) {
-                                            // 1. Client-Side Video Trimmer: Crops file to EXACT trim window before upload
-                                            let fileToUpload = storyFile;
-                                            try {
-                                                const videoEl = document.createElement('video');
-                                                videoEl.src = storyPreviewUrl;
-                                                videoEl.muted = false;
-                                                await new Promise(res => videoEl.onloadedmetadata = res);
-                                                
-                                                const stream = videoEl.captureStream ? videoEl.captureStream() : videoEl.mozCaptureStream();
-                                                const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-                                                const chunks = [];
-                                                mediaRecorder.ondataavailable = e => chunks.push(e.data);
-                                                
-                                                videoEl.currentTime = trimStart;
-                                                await videoEl.play();
-                                                mediaRecorder.start();
-
-                                                await new Promise(res => {
-                                                    const checkTime = setInterval(() => {
-                                                        if (videoEl.currentTime >= trimEnd || videoEl.ended) {
-                                                            clearInterval(checkTime);
-                                                            mediaRecorder.stop();
-                                                            videoEl.pause();
-                                                            res();
-                                                        }
-                                                    }, 100);
-                                                });
-
-                                                const trimmedBlob = new Blob(chunks, { type: 'video/mp4' });
-                                                fileToUpload = new File([trimmedBlob], `story_${Date.now()}.mp4`, { type: 'video/mp4' });
-                                            } catch (e) {
-                                                fileToUpload = storyFile; // Fallback if browser stream capture is unsupported
-                                            }
-
-                                            // 2. Upload ONLY the trimmed 1-minute clip
+                                            // Upload directly (relies on our 50MB shield and trim markers for fast, stable execution)
                                             const filePath = `carousel_galleries/${currentUser.uid}/story_${Date.now()}.mp4`;
                                             const storageRefPath = ref(storage, filePath);
                                             const { uploadBytesResumable } = await import('firebase/storage');
-                                            const uploadTask = uploadBytesResumable(storageRefPath, fileToUpload);
+                                            const uploadTask = uploadBytesResumable(storageRefPath, storyFile);
                                             
                                             finalVideoUrl = await new Promise((resolve, reject) => {
                                                 uploadTask.on('state_changed', 
-                                                    (snapshot) => setUploadProgress((snapshot.bytesTransferred / snapshot.totalBytes) * 100), 
+                                                    (snapshot) => {
+                                                        const progress = snapshot.totalBytes > 0 ? (snapshot.bytesTransferred / snapshot.totalBytes) * 100 : 0;
+                                                        setUploadProgress(progress);
+                                                    }, 
                                                     (error) => reject(error), 
                                                     async () => resolve(await getDownloadURL(uploadTask.snapshot.ref))
                                                 );
                                             });
-
-                                            if (!editingStoryId) {
-                                                const oldStoryQ = query(collection(db, "flash_stories"), where("userId", "==", currentUser.uid));
-                                                const oldStorySnap = await import('firebase/firestore').then(({ getDocs }) => getDocs(oldStoryQ));
-                                                oldStorySnap.forEach(d => {
-                                                    const oldData = d.data();
-                                                    if (oldData.videoUrl && oldData.videoUrl.includes('firebasestorage')) {
-                                                        const fileRef = ref(storage, oldData.videoUrl);
-                                                        import('firebase/storage').then(({ deleteObject }) => deleteObject(fileRef)).catch(() => {});
-                                                    }
-                                                    deleteDoc(d.ref);
-                                                });
-                                            }
                                         }
 
                                         const hrsMap = { '15m': 0.25, '2h': 2, '6h': 6 };
