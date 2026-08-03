@@ -1,12 +1,19 @@
 // src/components/ShareButton.jsx
 
-import React from 'react';
+import React, { useState } from 'react';
 
 const ShareButton = ({ title, text, url, showMessage }) => {
-  const handleShare = async () => {
+  const [isSharing, setIsSharing] = useState(false);
+
+  const handleShare = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isSharing) return;
+
     const shareUrl = url.startsWith('http') ? url : `${window.location.origin}${url}`;
 
     if (navigator.share) {
+      setIsSharing(true);
       try {
         await navigator.share({
           title: title,
@@ -15,16 +22,22 @@ const ShareButton = ({ title, text, url, showMessage }) => {
         });
       } catch (error) {
         if (error.name !== 'AbortError') {
-          console.error('Error using Web Share API:', error);
-          showMessage('Could not share at this time.');
+          // PC/InvalidState Fallback: Force copy to clipboard if native share crashes or locks
+          try {
+            await navigator.clipboard.writeText(shareUrl);
+            showMessage('Link Copied to Clipboard!');
+          } catch (err) {
+            showMessage('Could not share at this time.');
+          }
         }
+      } finally {
+        setTimeout(() => setIsSharing(false), 500); // 500ms debounce unlocks the button safely
       }
     } else {
       try {
         await navigator.clipboard.writeText(shareUrl);
         showMessage('Link Copied!');
       } catch (error) {
-        console.error('Error copying link to clipboard:', error);
         showMessage('Could not copy link.');
       }
     }

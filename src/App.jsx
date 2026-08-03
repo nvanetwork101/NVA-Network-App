@@ -440,7 +440,7 @@ function App() {
                 break;
               case 'content': 
                 if (id) { 
-                  (async () => { 
+                  await (async () => { // THE FIX: Awaiting this prevents authLoading from dismissing too early, curing the flash
                     try { 
                       const appId = import.meta.env.VITE_APP_ID || "production-app-id"; 
                       let docSnap = await getDoc(doc(db, "artifacts", appId, "public", "data", "content_items", id)); 
