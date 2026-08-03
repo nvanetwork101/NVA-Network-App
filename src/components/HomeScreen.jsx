@@ -39,6 +39,16 @@ import RoastTokenVault from './RoastTokenVault';
     const [showUploaderModal, setShowUploaderModal] = useState(false);
     const [isUploadingStory, setIsUploadingStory] = useState(false);
     
+    // Custom In-App Camera States & Refs
+    const [showCamera, setShowCamera] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingProgress, setRecordingProgress] = useState(0);
+    const liveCameraRef = useRef(null);
+    const mediaRecorderRef = useRef(null);
+    const recordedChunksRef = useRef([]);
+    const cameraStreamRef = useRef(null);
+    const recordingTimerRef = useRef(null);
+
     // High-Fidelity Creator Suite States
     const [storyFile, setStoryFile] = useState(null);
     const [videoPanX, setVideoPanX] = useState(50); // Controls left/right cropping
@@ -97,6 +107,74 @@ import RoastTokenVault from './RoastTokenVault';
     // Video Preview & Battery Refs
     const previewVideoRef = useRef(null);
     const storyVideoRefs = useRef({});
+
+    // Custom In-App Camera Logic (WhatsApp/IG Style)
+    const openInAppCamera = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
+            cameraStreamRef.current = stream;
+            setShowCamera(true);
+            setTimeout(() => {
+                if (liveCameraRef.current) liveCameraRef.current.srcObject = stream;
+            }, 100);
+        } catch (err) {
+            showMessage("Camera/Microphone permission denied.");
+        }
+    };
+
+    const closeInAppCamera = () => {
+        if (cameraStreamRef.current) {
+            cameraStreamRef.current.getTracks().forEach(track => track.stop()); // Releases the hardware camera light
+            cameraStreamRef.current = null;
+        }
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.stop();
+        }
+        clearInterval(recordingTimerRef.current);
+        setIsRecording(false);
+        setRecordingProgress(0);
+        setShowCamera(false);
+    };
+
+    const startRecording = () => {
+        if (!cameraStreamRef.current) return;
+        recordedChunksRef.current = [];
+        
+        // Let the browser automatically choose the best supported codec for mobile compatibility
+        const recorder = new MediaRecorder(cameraStreamRef.current);
+        mediaRecorderRef.current = recorder;
+        recorder.ondataavailable = e => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
+        
+        recorder.onstop = () => {
+            const blob = new Blob(recordedChunksRef.current, { type: 'video/mp4' });
+            const file = new File([blob], `story_${Date.now()}.mp4`, { type: 'video/mp4' });
+            setStoryFile(file);
+            setStoryPreviewUrl(URL.createObjectURL(file));
+            closeInAppCamera();
+        };
+        
+        recorder.start();
+        setIsRecording(true);
+        setRecordingProgress(0);
+
+        const startTime = Date.now();
+        recordingTimerRef.current = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            const progress = (elapsed / 60000) * 100; // 60 seconds exact cap
+            if (progress >= 100) {
+                stopRecording();
+            } else {
+                setRecordingProgress(progress);
+            }
+        }, 100);
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.stop();
+        }
+        clearInterval(recordingTimerRef.current);
+    };
 
     // Auto-Pause/Resume full-screen player when Token Vault or Prompts open
     useEffect(() => {
@@ -1274,6 +1352,40 @@ import RoastTokenVault from './RoastTokenVault';
                 </div>
             )}
 
+            {/* ====== IN-APP CUSTOM CAMERA OVERLAY (With Glowing Burnt Gold Ring) ====== */}
+            {showCamera && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 11000, background: '#000', display: 'flex', flexDirection: 'column' }}>
+                    {/* Top Bar */}
+                    <div style={{ position: 'absolute', top: '20px', left: '20px', right: '20px', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <button onClick={closeInAppCamera} style={{ background: 'rgba(0,0,0,0.5)', color: '#FFF', border: 'none', width: '36px', height: '36px', borderRadius: '50%', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+                        {isRecording && <div style={{ background: 'rgba(255,0,0,0.8)', color: '#FFF', padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold', animation: 'pulse 1s infinite' }}>REC</div>}
+                    </div>
+
+                    {/* Live Viewfinder */}
+                    <video ref={liveCameraRef} autoPlay playsInline muted style={{ flex: 1, width: '100%', objectFit: 'cover' }} />
+
+                    {/* Bottom Controls */}
+                    <div style={{ position: 'absolute', bottom: '40px', left: 0, right: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 10 }}>
+                        <div 
+                            style={{ position: 'relative', width: '80px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                            onMouseDown={!isRecording ? startRecording : stopRecording}
+                            onTouchStart={!isRecording ? startRecording : stopRecording}
+                        >
+                            {/* SVG Glowing Progress Ring */}
+                            <svg viewBox="0 0 100 100" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', transform: 'rotate(-90deg)', filter: isRecording ? 'drop-shadow(0 0 10px #FFD700)' : 'none' }}>
+                                <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="6" />
+                                <circle cx="50" cy="50" r="46" fill="none" stroke="#FFD700" strokeWidth="6" 
+                                    strokeDasharray="289" strokeDashoffset={289 - (289 * recordingProgress) / 100} 
+                                    style={{ transition: 'stroke-dashoffset 0.1s linear' }} 
+                                />
+                            </svg>
+                            {/* Inner Record Button */}
+                            <div style={{ width: isRecording ? '36px' : '56px', height: isRecording ? '36px' : '56px', backgroundColor: isRecording ? '#FF4500' : '#FFF', borderRadius: isRecording ? '8px' : '50%', transition: 'all 0.2s ease', zIndex: 2 }} />
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ====== REDESIGNED HIGH-FIDELITY FLASH STORY CREATOR SUITE ====== */}
             {showUploaderModal && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(15px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
@@ -1291,19 +1403,45 @@ import RoastTokenVault from './RoastTokenVault';
                         {/* File Select & Interactive Video Preview + Trim Handle */}
                         <div style={{ marginBottom: '15px' }}>
                             {!storyFile && !editingStoryId ? (
-                                <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '180px', border: '2px dashed #FFD700', borderRadius: '16px', background: 'rgba(255,215,0,0.03)', cursor: 'pointer' }}>
-                                    <span style={{ fontSize: '32px', marginBottom: '8px' }}>📁</span>
-                                    <span style={{ color: '#FFD700', fontSize: '13px', fontWeight: 'bold' }}>Choose Video Clip</span>
-                                    <span style={{ color: '#666', fontSize: '10px', marginTop: '4px' }}>MP4 or WebM (15s max)</span>
-                                    <input type="file" accept="video/mp4,video/webm" onChange={e => {
-                                        const file = e.target.files[0];
-                                        if (file) {
-                                            setStoryFile(file);
-                                            setStoryPreviewUrl(URL.createObjectURL(file));
-                                        }
-                                    }} style={{ display: 'none' }} />
-                                </label>
-                            ) : (
+                                <div>
+                                    {/* Prominent UX Notice Badge */}
+                                    <div style={{ background: 'rgba(255,215,0,0.1)', border: '1px solid #FFD700', borderRadius: '10px', padding: '8px 12px', textAlign: 'center', marginBottom: '12px' }}>
+                                        <p style={{ margin: 0, color: '#FFD700', fontSize: '11px', fontWeight: '900', letterSpacing: '0.5px' }}>
+                                            ⚡ FLASH STORIES ARE 1 MINUTE MAX
+                                        </p>
+                                        <p style={{ margin: '2px 0 0 0', color: '#AAA', fontSize: '9px' }}>
+                                            Longer recordings will be trimmed to your selected 1-minute segment.
+                                        </p>
+                                    </div>
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', height: '160px' }}>
+                                    {/* Gallery Picker */}
+                                    <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed #FFD700', borderRadius: '16px', background: 'rgba(255,215,0,0.03)', cursor: 'pointer', padding: '10px' }}>
+                                        <span style={{ fontSize: '28px', marginBottom: '6px' }}>📁</span>
+                                        <span style={{ color: '#FFD700', fontSize: '12px', fontWeight: 'bold' }}>Gallery</span>
+                                        <span style={{ color: '#666', fontSize: '9px', marginTop: '4px' }}>Upload File</span>
+                                        <input type="file" accept="video/mp4,video/webm,video/*" onChange={e => {
+                                            const file = e.target.files[0];
+                                            if (file) {
+                                                setStoryFile(file);
+                                                setStoryPreviewUrl(URL.createObjectURL(file));
+                                            }
+                                        }} style={{ display: 'none' }} />
+                                    </label>
+
+                                    {/* In-App Live Camera Recorder (WhatsApp/IG Style) */}
+                                    <button 
+                                        type="button"
+                                        onClick={openInAppCamera} 
+                                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed #FF4500', borderRadius: '16px', background: 'rgba(255,69,0,0.03)', cursor: 'pointer', padding: '10px' }}
+                                    >
+                                        <span style={{ fontSize: '28px', marginBottom: '6px' }}>📹</span>
+                                        <span style={{ color: '#FF4500', fontSize: '12px', fontWeight: 'bold' }}>Camera</span>
+                                        <span style={{ color: '#666', fontSize: '9px', marginTop: '4px' }}>Record Live</span>
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
                                 <div 
                                     style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', width: '100%', maxWidth: '300px', aspectRatio: '9/16', margin: '0 auto', background: '#000', border: '1px solid #333', touchAction: 'none' }}
                                     onMouseMove={(e) => {
@@ -1642,10 +1780,45 @@ import RoastTokenVault from './RoastTokenVault';
                                         let finalExpiresAtMs = Date.now() + (2 * 60 * 60 * 1000); // default
 
                                         if (storyFile) {
+                                            // 1. Client-Side Video Trimmer: Crops file to EXACT trim window before upload
+                                            let fileToUpload = storyFile;
+                                            try {
+                                                const videoEl = document.createElement('video');
+                                                videoEl.src = storyPreviewUrl;
+                                                videoEl.muted = false;
+                                                await new Promise(res => videoEl.onloadedmetadata = res);
+                                                
+                                                const stream = videoEl.captureStream ? videoEl.captureStream() : videoEl.mozCaptureStream();
+                                                const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                                                const chunks = [];
+                                                mediaRecorder.ondataavailable = e => chunks.push(e.data);
+                                                
+                                                videoEl.currentTime = trimStart;
+                                                await videoEl.play();
+                                                mediaRecorder.start();
+
+                                                await new Promise(res => {
+                                                    const checkTime = setInterval(() => {
+                                                        if (videoEl.currentTime >= trimEnd || videoEl.ended) {
+                                                            clearInterval(checkTime);
+                                                            mediaRecorder.stop();
+                                                            videoEl.pause();
+                                                            res();
+                                                        }
+                                                    }, 100);
+                                                });
+
+                                                const trimmedBlob = new Blob(chunks, { type: 'video/mp4' });
+                                                fileToUpload = new File([trimmedBlob], `story_${Date.now()}.mp4`, { type: 'video/mp4' });
+                                            } catch (e) {
+                                                fileToUpload = storyFile; // Fallback if browser stream capture is unsupported
+                                            }
+
+                                            // 2. Upload ONLY the trimmed 1-minute clip
                                             const filePath = `carousel_galleries/${currentUser.uid}/story_${Date.now()}.mp4`;
                                             const storageRefPath = ref(storage, filePath);
                                             const { uploadBytesResumable } = await import('firebase/storage');
-                                            const uploadTask = uploadBytesResumable(storageRefPath, storyFile);
+                                            const uploadTask = uploadBytesResumable(storageRefPath, fileToUpload);
                                             
                                             finalVideoUrl = await new Promise((resolve, reject) => {
                                                 uploadTask.on('state_changed', 
