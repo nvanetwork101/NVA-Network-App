@@ -118,6 +118,8 @@ import RoastTokenVault from './RoastTokenVault';
     // Video Preview & Battery Refs
     const previewVideoRef = useRef(null);
     const storyVideoRefs = useRef({});
+    const [isMuted, setIsMuted] = useState(true); // iOS Auto-Play Black Screen Shield
+    const [isPreviewMuted, setIsPreviewMuted] = useState(true);
 
     // Custom In-App Camera Logic (WhatsApp/IG Style)
     const openInAppCamera = async (mode = cameraFacingMode) => {
@@ -300,6 +302,52 @@ import RoastTokenVault from './RoastTokenVault';
         });
         return () => unsub();
     }, []);
+
+    // Mode B/C Static Engine Pacing (Safely at top level)
+    useEffect(() => {
+        if (activeUserIndex !== null && groupedStories[activeUserIndex]) {
+            const currentStory = groupedStories[activeUserIndex][activeSubStoryIndex];
+            if (currentStory && currentStory.mediaType !== 'video') {
+                let totalDur = 5000;
+                let slides = 1;
+                if (currentStory.mediaType === 'slideshow') {
+                    slides = currentStory.images?.length || 1;
+                    totalDur = slides === 1 ? 15000 : slides === 2 ? 7500 : slides === 3 ? 5000 : slides === 4 ? 3750 : 3000;
+                }
+                let start = Date.now();
+                const timer = setInterval(() => {
+                    const prog = ((Date.now() - start) / totalDur) * 100;
+                    if (prog >= 100) {
+                        if (currentStory.mediaType === 'slideshow' && slideshowIndex < slides - 1) {
+                            setSlideshowIndex(prev => prev + 1); start = Date.now(); setPlayProgress(0);
+                        } else {
+                            clearInterval(timer);
+                            setPlayProgress(0); setSlideshowIndex(0);
+                            if (activeSubStoryIndex < groupedStories[activeUserIndex].length - 1) {
+                                setActiveSubStoryIndex(prev => prev + 1);
+                            } else if (activeUserIndex < groupedStories.length - 1) {
+                                setActiveSubStoryIndex(0);
+                                setActiveUserIndex(prev => prev + 1);
+                            } else {
+                                setActiveUserIndex(null);
+                            }
+                        }
+                    } else setPlayProgress(prog);
+                }, 50);
+                return () => clearInterval(timer);
+            }
+        }
+    }, [activeUserIndex, activeSubStoryIndex, groupedStories, slideshowIndex]);
+
+    // Mode B Zero-Glitch Image Pre-caching Guard (Safely at top level)
+    useEffect(() => {
+        if (activeUserIndex !== null && groupedStories[activeUserIndex]) {
+            const currentStory = groupedStories[activeUserIndex][activeSubStoryIndex];
+            if (currentStory && currentStory.mediaType === 'slideshow' && currentStory.images) {
+                currentStory.images.forEach(src => { const img = new Image(); img.src = src; });
+            }
+        }
+    }, [activeUserIndex, activeSubStoryIndex, groupedStories]);
 
     useEffect(() => {
         const lastSeen = parseInt(localStorage.getItem('last_viewed_casting') || '0');
@@ -971,37 +1019,6 @@ import RoastTokenVault from './RoastTokenVault';
                     }
                 };
 
-                // Mode B/C Static Engine Pacing
-                useEffect(() => {
-                    if (currentStory.mediaType !== 'video') {
-                        let totalDur = 5000;
-                        let slides = 1;
-                        if (currentStory.mediaType === 'slideshow') {
-                            slides = currentStory.images?.length || 1;
-                            totalDur = slides === 1 ? 15000 : slides === 2 ? 7500 : slides === 3 ? 5000 : slides === 4 ? 3750 : 3000;
-                        }
-                        let start = Date.now();
-                        const timer = setInterval(() => {
-                            const prog = ((Date.now() - start) / totalDur) * 100;
-                            if (prog >= 100) {
-                                if (currentStory.mediaType === 'slideshow' && slideshowIndex < slides - 1) {
-                                    setSlideshowIndex(prev => prev + 1); start = Date.now(); setPlayProgress(0);
-                                } else {
-                                    clearInterval(timer); handleNextStory();
-                                }
-                            } else setPlayProgress(prog);
-                        }, 50);
-                        return () => clearInterval(timer);
-                    }
-                }, [currentStory, slideshowIndex]);
-
-                // Mode B Zero-Glitch Image Pre-caching Guard
-                useEffect(() => {
-                    if (currentStory.mediaType === 'slideshow' && currentStory.images) {
-                        currentStory.images.forEach(src => { const img = new Image(); img.src = src; });
-                    }
-                }, [currentStory]);
-
                 return (
                     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         
@@ -1020,17 +1037,23 @@ import RoastTokenVault from './RoastTokenVault';
                         ) : currentStory.mediaType === 'text' ? (
                             <div style={{ width: '100%', height: '100%', background: currentStory.storyBgColor || '#0D0D0D' }} />
                         ) : (
-                            <video 
-                                ref={fullScreenVideoRef} src={currentStory.videoUrl} autoPlay playsInline 
-                                onLoadedData={(e) => { e.target.currentTime = currentStory.trimStart || 0; setPlayProgress(0); }}
-                                onTimeUpdate={(e) => {
-                                    const start = currentStory.trimStart || 0; const end = currentStory.trimEnd || (start + 60);
-                                    setPlayProgress(Math.min(100, Math.max(0, ((e.target.currentTime - start) / Math.max(1, end - start)) * 100)));
-                                    if (e.target.currentTime >= end) handleNextStory();
-                                }}
-                                onEnded={handleNextStory} 
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${currentStory.videoPanX || 50}% 50%` }} 
-                            />
+                            <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                                <video 
+                                    ref={fullScreenVideoRef} src={currentStory.videoUrl} autoPlay playsInline muted={isMuted}
+                                    onLoadedData={(e) => { e.target.currentTime = currentStory.trimStart || 0; setPlayProgress(0); }}
+                                    onTimeUpdate={(e) => {
+                                        const start = currentStory.trimStart || 0; const end = currentStory.trimEnd || (start + 60);
+                                        setPlayProgress(Math.min(100, Math.max(0, ((e.target.currentTime - start) / Math.max(1, end - start)) * 100)));
+                                        if (e.target.currentTime >= end) handleNextStory();
+                                    }}
+                                    onEnded={handleNextStory} 
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${currentStory.videoPanX || 50}% 50%` }} 
+                                />
+                                {/* Overlay Volume Button */}
+                                <button onClick={(e) => { e.stopPropagation(); setIsMuted(!isMuted); }} style={{ position: 'absolute', top: '70px', right: '15px', background: 'rgba(0,0,0,0.6)', border: '1px solid #FFD700', borderRadius: '50%', color: '#FFF', width: '36px', height: '36px', zIndex: 30, cursor: 'pointer', fontSize: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.8)' }}>
+                                    {isMuted ? '🔇' : '🔊'}
+                                </button>
+                            </div>
                         )}
 
                         {/* Styled Text Overlay on Full-Screen Player */}
@@ -1605,13 +1628,22 @@ import RoastTokenVault from './RoastTokenVault';
                                     onTouchEnd={() => { setIsDraggingText(false); setIsResizingText(false); }}
                                 >
                                     {mediaType === 'video' ? (
-                                        <video ref={previewVideoRef} src={storyPreviewUrl} autoPlay playsInline muted onLoadedMetadata={() => { if (previewVideoRef.current) { const dur = previewVideoRef.current.duration || 60; setVideoDuration(dur); setTrimEnd(Math.min(dur, 60)); } }} onTimeUpdate={() => { if (previewVideoRef.current && previewVideoRef.current.currentTime >= trimEnd) previewVideoRef.current.currentTime = trimStart; }} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${videoPanX}% 50%` }} />
+                                        <video ref={previewVideoRef} src={storyPreviewUrl} autoPlay playsInline muted={isPreviewMuted} onLoadedMetadata={() => { if (previewVideoRef.current) { const dur = previewVideoRef.current.duration || 60; setVideoDuration(dur); setTrimEnd(Math.min(dur, 60)); } }} onTimeUpdate={() => { if (previewVideoRef.current && previewVideoRef.current.currentTime >= trimEnd) previewVideoRef.current.currentTime = trimStart; }} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${videoPanX}% 50%` }} />
                                     ) : mediaType === 'slideshow' ? (
                                         <img src={storyImages[0]?.url} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                     ) : null}
 
-                                    {/* Video Clear Button */}
-                                    {(storyFile || storyImages.length > 0) && <button onClick={() => { setStoryFile(null); setStoryImages([]); setStoryPreviewUrl(''); setEditingStoryId(null); }} style={{ position: 'absolute', top: '10px', left: '10px', background: 'rgba(220,53,69,0.9)', color: '#FFF', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', zIndex: 5 }}>✕</button>}
+                                    {/* Video Clear & Mute Buttons */}
+                                    {(storyFile || storyImages.length > 0) && (
+                                        <div style={{ position: 'absolute', top: '10px', left: '10px', display: 'flex', gap: '8px', zIndex: 5 }}>
+                                            <button onClick={() => { setStoryFile(null); setStoryImages([]); setStoryPreviewUrl(''); setEditingStoryId(null); }} style={{ background: 'rgba(220,53,69,0.9)', color: '#FFF', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer' }}>✕</button>
+                                            {mediaType === 'video' && (
+                                                <button onClick={() => setIsPreviewMuted(!isPreviewMuted)} style={{ background: 'rgba(0,0,0,0.7)', color: '#FFF', border: '1px solid #FFD700', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', fontSize: '12px' }}>
+                                                    {isPreviewMuted ? '🔇' : '🔊'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
 
                                     {/* Positioned & Styled Text Overlay Preview */}
                                     {storyCaption && (
@@ -1912,16 +1944,60 @@ import RoastTokenVault from './RoastTokenVault';
                                         let finalMediaUrls = [];
 
                                         if (mediaType === 'video' && storyFile) {
+                                            let fileToUpload = storyFile;
+                                            
+                                            // Client-Side Trimmer with 10KB Failure Shield
+                                            try {
+                                                const videoEl = document.createElement('video');
+                                                videoEl.src = storyPreviewUrl;
+                                                videoEl.muted = true; // Required for mobile processing
+                                                await new Promise(res => videoEl.onloadedmetadata = res);
+                                                
+                                                const stream = videoEl.captureStream ? videoEl.captureStream() : videoEl.mozCaptureStream();
+                                                if (stream) {
+                                                    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                                                    const chunks = [];
+                                                    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+                                                    
+                                                    videoEl.currentTime = trimStart;
+                                                    await videoEl.play();
+                                                    mediaRecorder.start();
+
+                                                    await new Promise(res => {
+                                                        const checkTime = setInterval(() => {
+                                                            if (videoEl.currentTime >= trimEnd || videoEl.ended) {
+                                                                clearInterval(checkTime);
+                                                                mediaRecorder.stop();
+                                                                videoEl.pause();
+                                                                setTimeout(res, 500); // Allow chunks to finalize
+                                                            }
+                                                        }, 100);
+                                                    });
+
+                                                    const trimmedBlob = new Blob(chunks, { type: 'video/mp4' });
+                                                    // SHIELD: If browser failed and produced a tiny/empty file, fallback to raw file
+                                                    if (trimmedBlob.size > 10000) { 
+                                                        fileToUpload = new File([trimmedBlob], `story_${Date.now()}.mp4`, { type: 'video/mp4' });
+                                                    }
+                                                }
+                                            } catch (e) {
+                                                console.warn("Trimmer bypassed or unsupported, uploading raw file.");
+                                            }
+
                                             const filePath = `carousel_galleries/${currentUser.uid}/story_${Date.now()}.mp4`;
                                             const storageRefPath = ref(storage, filePath);
                                             const { uploadBytesResumable } = await import('firebase/storage');
-                                            const uploadTask = uploadBytesResumable(storageRefPath, storyFile);
+                                            const uploadTask = uploadBytesResumable(storageRefPath, fileToUpload);
                                             
                                             finalMediaUrls[0] = await new Promise((resolve, reject) => {
+                                                let lastReported = 0;
                                                 uploadTask.on('state_changed', 
                                                     (snapshot) => {
-                                                        const progress = snapshot.totalBytes > 0 ? (snapshot.bytesTransferred / snapshot.totalBytes) * 100 : 0;
-                                                        if (progress % 5 === 0 || progress === 100) setUploadProgress(progress); // CPU Un-freeze
+                                                        const progress = snapshot.totalBytes > 0 ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) : 0;
+                                                        if (progress >= lastReported + 5 || progress === 100) {
+                                                            setUploadProgress(progress);
+                                                            lastReported = progress;
+                                                        }
                                                     }, 
                                                     (error) => reject(error), 
                                                     async () => resolve(await getDownloadURL(uploadTask.snapshot.ref))
