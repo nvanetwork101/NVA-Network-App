@@ -157,6 +157,70 @@ const StableIframePlayer = React.memo(({ eventId, streamUrl, schedTime, isModUse
     );
 }, (prev, next) => prev.eventId === next.eventId && prev.isModUser === next.isModUser && prev.isUnlocked === next.isUnlocked);
 
+// --- WAITING ROOM TRAILER PLAYER (AUTO-SWITCHES TO POSTER WHEN ENDED) ---
+const WaitingRoomTrailer = React.memo(({ trailerUrl, fallbackPoster }) => {
+    const [isEnded, setIsEnded] = useState(false);
+    const [isMuted, setIsMuted] = useState(true);
+    const iframeRef = useRef(null);
+
+    // Reset states if the trailer URL changes (e.g. user clicks another event)
+    useEffect(() => {
+        setIsEnded(false);
+        setIsMuted(true);
+    }, [trailerUrl]);
+
+    // Listen globally for YouTube IFrame 'ENDED' state (state code 0)
+    useEffect(() => {
+        const handleMessage = (e) => {
+            try {
+                const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+                if (data && data.event === 'onStateChange' && data.info === 0) {
+                    setIsEnded(true); // Signal caught: Video finished
+                }
+            } catch (err) {}
+        };
+        window.addEventListener('message', handleMessage);
+        return () => window.removeEventListener('message', handleMessage);
+    }, []);
+
+    const handleUnmute = (e) => {
+        e.stopPropagation();
+        setIsMuted(false);
+        if (iframeRef.current?.contentWindow) {
+            iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'unMute', args: [] }), '*');
+            iframeRef.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'setVolume', args: [100] }), '*');
+        }
+    };
+
+    if (isEnded || !trailerUrl) {
+        return fallbackPoster ? <img src={fallbackPoster} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxHeight: '350px', objectFit: 'contain', borderRadius: '12px', border: '1px solid #333', boxShadow: '0 10px 30px rgba(0,0,0,0.8)' }} /> : null;
+    }
+
+    const isFacebook = trailerUrl.includes('facebook.com') || trailerUrl.includes('fb.watch');
+    let finalUrl = trailerUrl;
+
+    if (isFacebook) {
+        finalUrl = `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(trailerUrl)}&show_text=false&autoplay=true&mute=1`;
+    } else {
+        const extracted = extractVideoInfo(trailerUrl);
+        const embedUrl = extracted ? extracted.embedUrl : trailerUrl;
+        const separator = embedUrl.includes('?') ? '&' : '?';
+        // Force autoplay, mute, and enable js API for tracking
+        finalUrl = `${embedUrl}${separator}autoplay=1&mute=1&controls=0&disablekb=1&modestbranding=1&rel=0&enablejsapi=1&playsinline=1`;
+    }
+
+    return (
+        <div style={{ position: 'relative', width: '100%', maxWidth: '622px', aspectRatio: '16/9', margin: '0 auto', borderRadius: '12px', overflow: 'hidden', border: '1px solid #333', boxShadow: '0 10px 30px rgba(0,0,0,0.8)' }}>
+            {isMuted && (
+                <button type="button" onClick={handleUnmute} style={{ position: 'absolute', top: '15px', right: '15px', zIndex: 20, backgroundColor: 'rgba(0, 0, 0, 0.85)', color: '#FFD700', border: '1px solid #FFD700', borderRadius: '20px', padding: '8px 16px', fontSize: '12px', fontWeight: '900', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 0 15px rgba(255, 215, 0, 0.3)', backdropFilter: 'blur(4px)' }}>
+                    🔇 TAP TO UNMUTE
+                </button>
+            )}
+            <iframe ref={iframeRef} src={finalUrl} className="w-full h-full border-0" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen title="Trailer" style={{ width: '100%', height: '100%', pointerEvents: 'auto' }}></iframe>
+        </div>
+    );
+});
+
 function DiscoverScreen({ 
     showMessage, 
     currentUser, 
@@ -1482,7 +1546,7 @@ function DiscoverScreen({
                                 </div>
                                 
                                 <div style={{ padding: '0 20px' }}>
-                                    {masterEventDetails.thumbnailUrl && <img src={masterEventDetails.thumbnailUrl} alt="Coming Soon" style={{ display: 'block', margin: '0 auto', width: '100%', maxHeight: '350px', objectFit: 'contain', borderRadius: '12px', border: '1px solid #333', boxShadow: '0 10px 30px rgba(0,0,0,0.8)' }} />}
+                                    <WaitingRoomTrailer trailerUrl={masterEventDetails.trailerUrl} fallbackPoster={masterEventDetails.thumbnailUrl} />
                                     
                                     <div style={{ marginTop: '20px', textAlign: 'center' }}>
                                         <p className="heading" style={{ color: '#FFD700', fontSize: '24px', margin: '0 0 5px 0' }}>{masterEventDetails.eventTitle}</p>
