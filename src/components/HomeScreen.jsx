@@ -34,10 +34,19 @@ import RoastTokenVault from './RoastTokenVault';
     const [algoTrending, setAlgoTrending] = useState([]); // NEW: Algorithmic Trending State
 
     // --- FLASH STORIES SYSTEM STATES & HOOKS ---
-    const [flashStories, setFlashStories] = useState([]);
-    const [activeStoryIndex, setActiveStoryIndex] = useState(null);
+    const [flashStories, setFlashStories] = useState([]); // Flat background data
+    const [groupedStories, setGroupedStories] = useState([]); // WhatsApp-style user groups
+    const [activeUserIndex, setActiveUserIndex] = useState(null); // Which user's stack is open
+    const [activeSubStoryIndex, setActiveSubStoryIndex] = useState(0); // Which story in the stack is playing
     const [showUploaderModal, setShowUploaderModal] = useState(false);
     const [isUploadingStory, setIsUploadingStory] = useState(false);
+
+    // Multi-Mode Media States (Video, Photo, Text)
+    const [mediaType, setMediaType] = useState('video'); // 'video' | 'slideshow' | 'text'
+    const [storyImages, setStoryImages] = useState([]); // Max 5 photos
+    const [slideshowIndex, setSlideshowIndex] = useState(0); // Auto-pacing
+    const [storyBgColor, setStoryBgColor] = useState('#0D0D0D'); // Text Mode Background
+    const [storyLink, setStoryLink] = useState(''); // Clickable overlay link
     
     // Custom In-App Camera States & Refs
     const [showCamera, setShowCamera] = useState(false);
@@ -236,25 +245,28 @@ import RoastTokenVault from './RoastTokenVault';
 
     // Zero-Explosion Passive View Recorder
     useEffect(() => {
-        if (activeStoryIndex !== null && flashStories[activeStoryIndex] && currentUser) {
-            const storyId = flashStories[activeStoryIndex].id;
-            const isOwner = currentUser.uid === flashStories[activeStoryIndex].userId;
+        if (activeUserIndex !== null && groupedStories[activeUserIndex]) {
+            const currentStory = groupedStories[activeUserIndex][activeSubStoryIndex];
+            if (currentStory && currentUser) {
+                const storyId = currentStory.id;
+                const isOwner = currentUser.uid === currentStory.userId;
 
-            if (!isOwner && !viewedStories.has(storyId)) {
-                setViewedStories(prev => new Set(prev).add(storyId));
-                setFlashStories(prev => prev.map(s => s.id === storyId ? { ...s, viewCount: (s.viewCount || 0) + 1 } : s));
-                updateDoc(doc(db, "flash_stories", storyId), { viewCount: increment(1) }).catch(() => {});
+                if (!isOwner && !viewedStories.has(storyId)) {
+                    setViewedStories(prev => new Set(prev).add(storyId));
+                    setFlashStories(prev => prev.map(s => s.id === storyId ? { ...s, viewCount: (s.viewCount || 0) + 1 } : s));
+                    updateDoc(doc(db, "flash_stories", storyId), { viewCount: increment(1) }).catch(() => {});
+                }
             }
         }
-    }, [activeStoryIndex]);
+    }, [activeUserIndex, activeSubStoryIndex, groupedStories, currentUser]);
 
-    // Zero-Cost Real-Time Listener (Instant Expiry Filter - No Storage API Spam)
+    // Zero-Cost Real-Time Listener & WhatsApp-Style Grouper
     useEffect(() => {
         const q = query(
             collection(db, "flash_stories"),
             where("expiresAt", ">", new Date()),
             orderBy("expiresAt", "asc"),
-            limit(20)
+            limit(50)
         );
         const unsub = onSnapshot(q, (snap) => {
             const valid = snap.docs.map(docSnap => {
@@ -263,6 +275,14 @@ import RoastTokenVault from './RoastTokenVault';
                 return { id: docSnap.id, ...data, expiresAtMs };
             });
             setFlashStories(valid);
+
+            // Group stories by userId mapping
+            const groupsMap = new Map();
+            valid.forEach(story => {
+                if (!groupsMap.has(story.userId)) groupsMap.set(story.userId, []);
+                groupsMap.get(story.userId).push(story);
+            });
+            setGroupedStories(Array.from(groupsMap.values()));
         });
         return () => unsub();
     }, []);
@@ -630,86 +650,64 @@ import RoastTokenVault from './RoastTokenVault';
                         </div>
                     )}
 
-                    {/* CARD 2+: 9:16 Portrait Motion Preview Tiles */}
-                    {flashStories.map((story, idx) => {
+                    {/* CARD 2+: WhatsApp-Style Grouped Preview Tiles */}
+                    {groupedStories.map((userStories, idx) => {
+                        const story = userStories[0]; // Preview first story in stack
                         const now = Date.now();
                         const diffSecs = Math.max(0, Math.floor((story.expiresAtMs - now) / 1000));
                         const minsLeft = Math.floor(diffSecs / 60);
                         const isExpiringSoon = minsLeft < 3;
                         const isLiveStreamer = liveRooms.some(r => r.id === story.userId);
+                        const allViewed = userStories.every(s => viewedStories.has(s.id)); // Grey out ring if all viewed
 
                         return (
                             <div 
-                                key={story.id}
+                                key={story.userId}
                                 onClick={() => {
                                     if (!currentUser) {
                                         showMessage("You must be logged in to view full Flash Stories.");
                                         return;
                                     }
-                                    setActiveStoryIndex(idx);
+                                    const firstUnreadIdx = userStories.findIndex(s => !viewedStories.has(s.id));
+                                    setActiveSubStoryIndex(firstUnreadIdx !== -1 ? firstUnreadIdx : 0);
+                                    setActiveUserIndex(idx);
                                 }}
                                 style={{ 
-                                    position: 'relative',
-                                    width: '125px', 
-                                    height: '195px', 
-                                    borderRadius: '16px', 
-                                    overflow: 'hidden', 
-                                    border: isExpiringSoon ? '2px solid #FF0000' : '1px solid rgba(255,255,255,0.15)',
-                                    boxShadow: isExpiringSoon ? '0 0 20px rgba(255,0,0,0.6)' : '0 6px 20px rgba(0,0,0,0.6)',
-                                    cursor: 'pointer', 
-                                    flexShrink: 0,
-                                    scrollSnapAlign: 'start',
-                                    background: '#0D0D0D',
-                                    transition: 'transform 0.2s ease'
+                                    position: 'relative', width: '125px', height: '195px', borderRadius: '16px', overflow: 'hidden', 
+                                    border: isExpiringSoon ? '2px solid #FF0000' : (allViewed ? '2px solid #555' : '2px solid #FFD700'),
+                                    boxShadow: isExpiringSoon ? '0 0 20px rgba(255,0,0,0.6)' : (allViewed ? 'none' : '0 6px 20px rgba(0,0,0,0.6)'),
+                                    cursor: 'pointer', flexShrink: 0, scrollSnapAlign: 'start', 
+                                    background: story.mediaType === 'text' ? story.storyBgColor || '#0D0D0D' : '#0D0D0D', transition: 'transform 0.2s ease'
                                 }}
                                 onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
                                 onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                             >
-                                {/* 3s Motion Loop Video Background */}
-                                <video 
-                                    ref={el => storyVideoRefs.current[story.id] = el}
-                                    src={story.videoUrl} 
-                                    autoPlay 
-                                    muted 
-                                    playsInline 
-                                    preload="metadata"
-                                    onTimeUpdate={(e) => {
-                                        if (e.target.currentTime >= 3) {
-                                            e.target.currentTime = 0;
-                                            e.target.play().catch(() => {});
-                                        }
-                                    }}
-                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                                />
+                                {/* Multi-Mode Background Renderer */}
+                                {story.mediaType === 'video' ? (
+                                    <video ref={el => storyVideoRefs.current[story.id] = el} src={story.videoUrl} autoPlay muted playsInline preload="metadata" onTimeUpdate={(e) => { if (e.target.currentTime >= 3) { e.target.currentTime = 0; e.target.play().catch(() => {}); } }} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : story.mediaType === 'slideshow' ? (
+                                    <img src={story.images?.[0]} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', textAlign: 'center' }}>
+                                        <p style={{ color: story.textColor || '#FFF', fontSize: '10px', fontWeight: 'bold', fontFamily: story.textFont, wordBreak: 'break-word', margin: 0 }}>{(story.caption || '').substring(0, 50)}...</p>
+                                    </div>
+                                )}
 
-                                {/* Dark Gradient Mask for Text Readability */}
                                 <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.5) 0%, transparent 40%, rgba(0,0,0,0.85) 100%)' }} />
 
-                                {/* Top-Left Avatar Badge */}
+                                {/* Segmented Group Count Badge */}
+                                {userStories.length > 1 && (
+                                    <div style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 2, display: 'flex', gap: '2px' }}>
+                                        {userStories.map((s, i) => (
+                                            <div key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: viewedStories.has(s.id) ? 'rgba(255,255,255,0.4)' : '#FFD700', boxShadow: '0 1px 2px rgba(0,0,0,0.8)' }} />
+                                        ))}
+                                    </div>
+                                )}
+
                                 <div style={{ position: 'absolute', top: '8px', left: '8px', zIndex: 2 }}>
-                                    <img 
-                                        src={story.userProfilePicture || 'https://placehold.co/40'} 
-                                        alt={story.userName} 
-                                        style={{ 
-                                            width: '32px', 
-                                            height: '32px', 
-                                            borderRadius: '50%', 
-                                            objectFit: 'cover', 
-                                            border: isLiveStreamer ? '2px solid #00FFFF' : '2px solid #FFD700',
-                                            boxShadow: '0 2px 8px rgba(0,0,0,0.8)'
-                                        }} 
-                                    />
+                                    <img src={story.userProfilePicture || 'https://placehold.co/40'} alt={story.userName} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: isLiveStreamer ? '2px solid #00FFFF' : (allViewed ? '2px solid #888' : '2px solid #FFD700'), boxShadow: '0 2px 8px rgba(0,0,0,0.8)' }} />
                                 </div>
-
-                                {/* Top-Right Scarcity Timer */}
-                                <span style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 2, background: 'rgba(0,0,0,0.65)', color: isExpiringSoon ? '#FF4500' : '#FFF', fontSize: '9px', fontWeight: '900', padding: '2px 6px', borderRadius: '10px', backdropFilter: 'blur(4px)' }}>
-                                    ⏱️ {minsLeft > 60 ? `${Math.floor(minsLeft/60)}h` : `${minsLeft}m`}
-                                </span>
-
-                                {/* Bottom-Left Creator Name */}
-                                <p style={{ position: 'absolute', bottom: '10px', left: '10px', right: '10px', margin: 0, color: '#FFF', fontSize: '11px', fontWeight: '900', zIndex: 2, textShadow: '0 1px 4px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {story.userId === currentUser?.uid ? 'Your story' : story.userName}
-                                </p>
+                                <p style={{ position: 'absolute', bottom: '10px', left: '10px', right: '10px', margin: 0, color: '#FFF', fontSize: '11px', fontWeight: '900', zIndex: 2, textShadow: '0 1px 4px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{story.userId === currentUser?.uid ? 'Your story' : story.userName}</p>
                             </div>
                         );
                     })}
@@ -943,59 +941,97 @@ import RoastTokenVault from './RoastTokenVault';
                 </div>
             )}
 
-            {/* ====== FULL-SCREEN AUTO-ADVANCING FLASH STORY PLAYER MODAL ====== */}
-            {activeStoryIndex !== null && flashStories[activeStoryIndex] && (() => {
-                const currentStory = flashStories[activeStoryIndex];
+            {/* ====== FULL-SCREEN SEGMENTED MULTI-MODE STORY PLAYER ====== */}
+            {activeUserIndex !== null && groupedStories[activeUserIndex] && (() => {
+                const userStories = groupedStories[activeUserIndex];
+                const currentStory = userStories[activeSubStoryIndex];
+                if (!currentStory) return null;
                 const isOwner = currentUser?.uid === currentStory.userId;
 
                 const handleNextStory = () => {
-                    if (activeStoryIndex < flashStories.length - 1) {
-                        setActiveStoryIndex(prev => prev + 1);
+                    setPlayProgress(0); setSlideshowIndex(0);
+                    if (activeSubStoryIndex < userStories.length - 1) {
+                        setActiveSubStoryIndex(prev => prev + 1);
+                    } else if (activeUserIndex < groupedStories.length - 1) {
+                        setActiveSubStoryIndex(0);
+                        setActiveUserIndex(prev => prev + 1);
                     } else {
-                        setActiveStoryIndex(null); // Close when finished all stories
+                        setActiveUserIndex(null);
                     }
                 };
 
                 const handlePrevStory = () => {
-                    if (activeStoryIndex > 0) {
-                        setActiveStoryIndex(prev => prev - 1);
+                    setPlayProgress(0); setSlideshowIndex(0);
+                    if (activeSubStoryIndex > 0) {
+                        setActiveSubStoryIndex(prev => prev - 1);
+                    } else if (activeUserIndex > 0) {
+                        const prevUserGroup = groupedStories[activeUserIndex - 1];
+                        setActiveSubStoryIndex(prevUserGroup.length - 1);
+                        setActiveUserIndex(prev => prev - 1);
                     }
                 };
 
+                // Mode B/C Static Engine Pacing
+                useEffect(() => {
+                    if (currentStory.mediaType !== 'video') {
+                        let totalDur = 5000;
+                        let slides = 1;
+                        if (currentStory.mediaType === 'slideshow') {
+                            slides = currentStory.images?.length || 1;
+                            totalDur = slides === 1 ? 15000 : slides === 2 ? 7500 : slides === 3 ? 5000 : slides === 4 ? 3750 : 3000;
+                        }
+                        let start = Date.now();
+                        const timer = setInterval(() => {
+                            const prog = ((Date.now() - start) / totalDur) * 100;
+                            if (prog >= 100) {
+                                if (currentStory.mediaType === 'slideshow' && slideshowIndex < slides - 1) {
+                                    setSlideshowIndex(prev => prev + 1); start = Date.now(); setPlayProgress(0);
+                                } else {
+                                    clearInterval(timer); handleNextStory();
+                                }
+                            } else setPlayProgress(prog);
+                        }, 50);
+                        return () => clearInterval(timer);
+                    }
+                }, [currentStory, slideshowIndex]);
+
+                // Mode B Zero-Glitch Image Pre-caching Guard
+                useEffect(() => {
+                    if (currentStory.mediaType === 'slideshow' && currentStory.images) {
+                        currentStory.images.forEach(src => { const img = new Image(); img.src = src; });
+                    }
+                }, [currentStory]);
+
                 return (
                     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {/* Top Progress Bar */}
-                        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'rgba(255,255,255,0.2)', zIndex: 20 }}>
-                            <div style={{ height: '100%', width: `${playProgress}%`, background: '#FFD700', transition: 'width 0.1s linear' }} />
+                        
+                        {/* WhatsApp-Style Segmented Top Progress Bar */}
+                        <div style={{ position: 'absolute', top: '4px', left: '4px', right: '4px', height: '3px', zIndex: 20, display: 'flex', gap: '4px' }}>
+                            {userStories.map((s, idx) => (
+                                <div key={s.id} style={{ flex: 1, height: '100%', background: 'rgba(255,255,255,0.3)', borderRadius: '2px', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', background: '#FFD700', transition: idx === activeSubStoryIndex ? 'width 0.1s linear' : 'none', width: idx < activeSubStoryIndex ? '100%' : idx === activeSubStoryIndex ? `${playProgress}%` : '0%' }} />
+                                </div>
+                            ))}
                         </div>
 
-                        {/* Auto-Advancing Trim-Enforced Video Player */}
-                        <video 
-                            ref={fullScreenVideoRef}
-                            src={currentStory.videoUrl} 
-                            autoPlay 
-                            playsInline 
-                            onLoadedData={(e) => {
-                                const start = currentStory.trimStart || 0;
-                                e.target.currentTime = start;
-                                setPlayProgress(0);
-                            }}
-                            onTimeUpdate={(e) => {
-                                const start = currentStory.trimStart || 0;
-                                const end = currentStory.trimEnd || (start + 60);
-                                const totalDur = Math.max(1, end - start);
-                                
-                                // Progress bar tracks current trim window
-                                setPlayProgress(Math.min(100, Math.max(0, ((e.target.currentTime - start) / totalDur) * 100)));
-                                
-                                // Auto-cut and advance to next story as soon as trimEnd is reached
-                                if (e.target.currentTime >= end) {
-                                    handleNextStory();
-                                }
-                            }}
-                            onEnded={handleNextStory} 
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${currentStory.videoPanX || 50}% 50%` }} 
-                        />
+                        {/* Multi-Mode Rendering Engine */}
+                        {currentStory.mediaType === 'slideshow' ? (
+                            <img src={currentStory.images?.[slideshowIndex]} alt="Slide" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : currentStory.mediaType === 'text' ? (
+                            <div style={{ width: '100%', height: '100%', background: currentStory.storyBgColor || '#0D0D0D' }} />
+                        ) : (
+                            <video 
+                                ref={fullScreenVideoRef} src={currentStory.videoUrl} autoPlay playsInline 
+                                onLoadedData={(e) => { e.target.currentTime = currentStory.trimStart || 0; setPlayProgress(0); }}
+                                onTimeUpdate={(e) => {
+                                    const start = currentStory.trimStart || 0; const end = currentStory.trimEnd || (start + 60);
+                                    setPlayProgress(Math.min(100, Math.max(0, ((e.target.currentTime - start) / Math.max(1, end - start)) * 100)));
+                                    if (e.target.currentTime >= end) handleNextStory();
+                                }}
+                                onEnded={handleNextStory} 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${currentStory.videoPanX || 50}% 50%` }} 
+                            />
+                        )}
 
                         {/* Styled Text Overlay on Full-Screen Player */}
                         {currentStory.caption && (
@@ -1050,6 +1086,18 @@ import RoastTokenVault from './RoastTokenVault';
                         {/* Left/Right Tap Areas for Navigation */}
                         <div onClick={handlePrevStory} style={{ position: 'absolute', top: '100px', bottom: 0, left: 0, width: '35%', zIndex: 5 }} />
                         <div onClick={handleNextStory} style={{ position: 'absolute', top: '100px', bottom: 0, right: 0, width: '35%', zIndex: 5 }} />
+
+                        {/* Centered Clickable Link Button */}
+                        {currentStory.storyLink && (
+                            <div style={{ position: 'absolute', bottom: '40px', left: '50%', transform: 'translateX(-50%)', zIndex: 20 }}>
+                                <button 
+                                    onClick={() => window.open(currentStory.storyLink, '_blank')}
+                                    style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', border: '1px solid #00FFFF', color: '#00FFFF', padding: '10px 20px', borderRadius: '20px', fontSize: '13px', fontWeight: '900', letterSpacing: '1px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 4px 15px rgba(0, 255, 255, 0.3)' }}
+                                >
+                                    🔗 Visit Link
+                                </button>
+                            </div>
+                        )}
 
                         {/* Middle-Right Vertical Stats Stack */}
                         <div style={{ position: 'absolute', top: '50%', transform: 'translateY(-50%)', right: '12px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
@@ -1467,107 +1515,103 @@ import RoastTokenVault from './RoastTokenVault';
                 <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(15px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
                     <div style={{ background: '#0F0F0F', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', padding: '20px', maxWidth: '440px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.9)' }}>
                         
-                        {/* Header */}
+                        {/* Header & Modes */}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                             <div>
                                 <p style={{ margin: 0, color: '#FFF', fontSize: '18px', fontWeight: '900', letterSpacing: '0.5px' }}>⚡ Post Flash Story</p>
-                                <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '11px' }}>15 seconds • Auto-destructs</p>
+                                <p style={{ margin: '2px 0 0 0', color: '#888', fontSize: '11px' }}>Auto-destructs when time runs out</p>
                             </div>
-                            <button onClick={() => setShowUploaderModal(false)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#FFF', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+                            <button onClick={() => { setShowUploaderModal(false); setMediaType('video'); setStoryImages([]); setStoryLink(''); setEditingStoryId(null); }} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#FFF', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer', fontSize: '16px' }}>✕</button>
                         </div>
 
-                        {/* File Select & Interactive Video Preview + Trim Handle */}
-                        <div style={{ marginBottom: '15px' }}>
-                            {!storyFile && !editingStoryId ? (
-                                <div>
-                                    {/* Prominent UX Notice Badge */}
-                                    <div style={{ background: 'rgba(255,215,0,0.1)', border: '1px solid #FFD700', borderRadius: '10px', padding: '8px 12px', textAlign: 'center', marginBottom: '12px' }}>
-                                        <p style={{ margin: 0, color: '#FFD700', fontSize: '11px', fontWeight: '900', letterSpacing: '0.5px' }}>
-                                            ⚡ FLASH STORIES ARE 1 MINUTE MAX
-                                        </p>
-                                        <p style={{ margin: '2px 0 0 0', color: '#AAA', fontSize: '9px' }}>
-                                            Longer recordings will be trimmed to your selected 1-minute segment.
-                                        </p>
-                                    </div>
-
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', height: '160px' }}>
-                                    {/* Gallery Picker */}
-                                    <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed #FFD700', borderRadius: '16px', background: 'rgba(255,215,0,0.03)', cursor: 'pointer', padding: '10px' }}>
-                                        <span style={{ fontSize: '28px', marginBottom: '6px' }}>📁</span>
-                                        <span style={{ color: '#FFD700', fontSize: '12px', fontWeight: 'bold' }}>Gallery</span>
-                                        <span style={{ color: '#666', fontSize: '9px', marginTop: '4px' }}>Upload File</span>
-                                        <input type="file" accept="video/mp4,video/webm,video/*" onChange={e => {
-                                            const file = e.target.files[0];
-                                            if (file) {
-                                                setStoryFile(file);
-                                                setStoryPreviewUrl(URL.createObjectURL(file));
-                                            }
-                                        }} style={{ display: 'none' }} />
-                                    </label>
-
-                                    {/* In-App Live Camera Recorder (WhatsApp/IG Style) */}
+                        {/* Media Mode Tabs */}
+                        {!storyFile && storyImages.length === 0 && !editingStoryId && (
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#1A1A1A', padding: '4px', borderRadius: '12px' }}>
+                                {['video', 'slideshow', 'text'].map(m => (
                                     <button 
-                                        type="button"
-                                        onClick={openInAppCamera} 
-                                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed #FF4500', borderRadius: '16px', background: 'rgba(255,69,0,0.03)', cursor: 'pointer', padding: '10px' }}
+                                        key={m} onClick={() => setMediaType(m)} 
+                                        style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', background: mediaType === m ? '#FFD700' : 'transparent', color: mediaType === m ? '#000' : '#888', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', textTransform: 'capitalize' }}
                                     >
-                                        <span style={{ fontSize: '28px', marginBottom: '6px' }}>📹</span>
-                                        <span style={{ color: '#FF4500', fontSize: '12px', fontWeight: 'bold' }}>Camera</span>
-                                        <span style={{ color: '#666', fontSize: '9px', marginTop: '4px' }}>Record Live</span>
+                                        {m}
                                     </button>
-                                </div>
+                                ))}
                             </div>
-                        ) : (
-                                <div 
-                                    style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', width: '100%', maxWidth: '300px', aspectRatio: '9/16', margin: '0 auto', background: '#000', border: '1px solid #333', touchAction: 'none' }}
+                        )}
+
+                        {/* URL Sanitizer Overlay Guard */}
+                        <div style={{ marginBottom: '15px' }}>
+                            <input 
+                                type="text" placeholder="🔗 Add a clickable link (e.g. yoursite.com)" value={storyLink} 
+                                onChange={e => setStoryLink(e.target.value)} 
+                                onBlur={() => { if (storyLink && !/^https?:\/\//i.test(storyLink)) setStoryLink(`https://${storyLink}`); }}
+                                style={{ width: '100%', background: '#111', border: '1px solid #333', color: '#00FFFF', padding: '10px', borderRadius: '8px', fontSize: '12px', outline: 'none' }} 
+                            />
+                        </div>
+
+                        <div style={{ marginBottom: '15px' }}>
+                            {mediaType === 'video' && !storyFile && !editingStoryId ? (
+                                <div>
+                                    <div style={{ background: 'rgba(255,215,0,0.1)', border: '1px solid #FFD700', borderRadius: '10px', padding: '8px 12px', textAlign: 'center', marginBottom: '12px' }}>
+                                        <p style={{ margin: 0, color: '#FFD700', fontSize: '11px', fontWeight: '900', letterSpacing: '0.5px' }}>⚡ FLASH STORIES ARE 1 MINUTE MAX</p>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', height: '160px' }}>
+                                        <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed #FFD700', borderRadius: '16px', background: 'rgba(255,215,0,0.03)', cursor: 'pointer', padding: '10px' }}>
+                                            <span style={{ fontSize: '28px', marginBottom: '6px' }}>📁</span><span style={{ color: '#FFD700', fontSize: '12px', fontWeight: 'bold' }}>Gallery</span>
+                                            <input type="file" accept="video/mp4,video/webm,video/*" onChange={e => {
+                                                const file = e.target.files[0];
+                                                if (file) { setStoryFile(file); setStoryPreviewUrl(URL.createObjectURL(file)); }
+                                            }} style={{ display: 'none' }} />
+                                        </label>
+                                        <button type="button" onClick={openInAppCamera} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '2px dashed #FF4500', borderRadius: '16px', background: 'rgba(255,69,0,0.03)', cursor: 'pointer', padding: '10px' }}>
+                                            <span style={{ fontSize: '28px', marginBottom: '6px' }}>📹</span><span style={{ color: '#FF4500', fontSize: '12px', fontWeight: 'bold' }}>Camera</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : mediaType === 'slideshow' && storyImages.length === 0 ? (
+                                <label style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '160px', border: '2px dashed #32CD32', borderRadius: '16px', background: 'rgba(50,205,50,0.03)', cursor: 'pointer' }}>
+                                    <span style={{ fontSize: '28px', marginBottom: '6px' }}>📸</span><span style={{ color: '#32CD32', fontSize: '12px', fontWeight: 'bold' }}>Select Up to 5 Photos</span>
+                                    <input type="file" accept="image/*" multiple onChange={e => {
+                                        const files = Array.from(e.target.files).slice(0, 5);
+                                        setStoryImages(files.map(f => ({ file: f, url: URL.createObjectURL(f) })));
+                                    }} style={{ display: 'none' }} />
+                                </label>
+                            ) : mediaType === 'text' ? (
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
+                                    {[
+                                        '#0D0D0D', // Midnight Black
+                                        'linear-gradient(45deg, #111111, #FFD700)', // Royal Gold
+                                        'linear-gradient(45deg, #FF007F, #4A00E0)', // Cyberpunk Neon
+                                        'linear-gradient(45deg, #FF4E50, #F9D423)', // Sunset Fire
+                                        'linear-gradient(45deg, #0f0c29, #302b63, #24243e)' // Deep Space
+                                    ].map((bg, i) => (
+                                        <button key={i} onClick={() => setStoryBgColor(bg)} style={{ width: '28px', height: '28px', borderRadius: '50%', background: bg, border: storyBgColor === bg ? '2px solid #FFD700' : '1px solid #444', cursor: 'pointer', boxShadow: storyBgColor === bg ? '0 0 10px rgba(255,215,0,0.5)' : 'none' }} />
+                                    ))}
+                                </div>
+                            ) : null}
+
+                            {(storyFile || storyImages.length > 0 || mediaType === 'text') && (
+                                <div style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', width: '100%', maxWidth: '300px', aspectRatio: '9/16', margin: '0 auto', background: mediaType === 'text' ? storyBgColor : '#000', border: '1px solid #333', touchAction: 'none' }}
                                     onMouseMove={(e) => {
                                         const rect = e.currentTarget.getBoundingClientRect();
-                                        if (isDraggingText) {
-                                            setTextCoords({ x: Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100)), y: Math.max(5, Math.min(95, ((e.clientY - rect.top) / rect.height) * 100)) });
-                                        } else if (isResizingText) {
-                                            const textCenterX = (textCoords.x / 100) * rect.width;
-                                            const dist = Math.abs((e.clientX - rect.left) - textCenterX);
-                                            setTextWidthPercent(Math.max(25, Math.min(90, (dist * 2 / rect.width) * 100)));
-                                        }
+                                        if (isDraggingText) setTextCoords({ x: Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100)), y: Math.max(5, Math.min(95, ((e.clientY - rect.top) / rect.height) * 100)) });
+                                        else if (isResizingText) setTextWidthPercent(Math.max(25, Math.min(90, (Math.abs((e.clientX - rect.left) - ((textCoords.x / 100) * rect.width)) * 2 / rect.width) * 100)));
                                     }}
-                                    onMouseUp={() => { setIsDraggingText(false); setIsResizingText(false); }}
-                                    onMouseLeave={() => { setIsDraggingText(false); setIsResizingText(false); }}
+                                    onMouseUp={() => { setIsDraggingText(false); setIsResizingText(false); }} onMouseLeave={() => { setIsDraggingText(false); setIsResizingText(false); }}
                                     onTouchMove={(e) => {
                                         const rect = e.currentTarget.getBoundingClientRect();
-                                        if (isDraggingText) {
-                                            setTextCoords({ x: Math.max(5, Math.min(95, ((e.touches[0].clientX - rect.left) / rect.width) * 100)), y: Math.max(5, Math.min(95, ((e.touches[0].clientY - rect.top) / rect.height) * 100)) });
-                                        } else if (isResizingText) {
-                                            const textCenterX = (textCoords.x / 100) * rect.width;
-                                            const dist = Math.abs((e.touches[0].clientX - rect.left) - textCenterX);
-                                            setTextWidthPercent(Math.max(25, Math.min(90, (dist * 2 / rect.width) * 100)));
-                                        }
+                                        if (isDraggingText) setTextCoords({ x: Math.max(5, Math.min(95, ((e.touches[0].clientX - rect.left) / rect.width) * 100)), y: Math.max(5, Math.min(95, ((e.touches[0].clientY - rect.top) / rect.height) * 100)) });
+                                        else if (isResizingText) setTextWidthPercent(Math.max(25, Math.min(90, (Math.abs((e.touches[0].clientX - rect.left) - ((textCoords.x / 100) * rect.width)) * 2 / rect.width) * 100)));
                                     }}
                                     onTouchEnd={() => { setIsDraggingText(false); setIsResizingText(false); }}
                                 >
-                                    <video 
-                                        ref={previewVideoRef}
-                                        src={storyPreviewUrl} 
-                                        autoPlay 
-                                        playsInline
-                                        onLoadedMetadata={() => {
-                                            if (previewVideoRef.current) {
-                                                const dur = previewVideoRef.current.duration || 60;
-                                                setVideoDuration(dur);
-                                                setTrimEnd(Math.min(dur, 60));
-                                            }
-                                        }}
-                                        onTimeUpdate={() => {
-                                            if (previewVideoRef.current && previewVideoRef.current.currentTime >= trimEnd) {
-                                                previewVideoRef.current.currentTime = trimStart;
-                                            }
-                                        }}
-                                        style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${videoPanX}% 50%` }} 
-                                    />
-                                    {/* Live Duration Badge (1-Minute Cap) */}
-                                    <span style={{ position: 'absolute', top: '10px', right: '10px', background: 'rgba(0,0,0,0.7)', color: '#FFD700', padding: '4px 8px', borderRadius: '8px', fontSize: '11px', fontWeight: '900', border: '1px solid #FFD700', zIndex: 5 }}>
-                                        {Math.round(trimEnd - trimStart)}s / 1:00
-                                    </span>
-                                    <button onClick={() => { setStoryFile(null); setStoryPreviewUrl(''); setEditingStoryId(null); }} style={{ position: 'absolute', top: '10px', left: '10px', background: 'rgba(220,53,69,0.9)', color: '#FFF', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', zIndex: 5 }}>✕</button>
+                                    {mediaType === 'video' ? (
+                                        <video ref={previewVideoRef} src={storyPreviewUrl} autoPlay playsInline muted onLoadedMetadata={() => { if (previewVideoRef.current) { const dur = previewVideoRef.current.duration || 60; setVideoDuration(dur); setTrimEnd(Math.min(dur, 60)); } }} onTimeUpdate={() => { if (previewVideoRef.current && previewVideoRef.current.currentTime >= trimEnd) previewVideoRef.current.currentTime = trimStart; }} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${videoPanX}% 50%` }} />
+                                    ) : mediaType === 'slideshow' ? (
+                                        <img src={storyImages[0]?.url} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    ) : null}
+
+                                    {/* Video Clear Button */}
+                                    {(storyFile || storyImages.length > 0) && <button onClick={() => { setStoryFile(null); setStoryImages([]); setStoryPreviewUrl(''); setEditingStoryId(null); }} style={{ position: 'absolute', top: '10px', left: '10px', background: 'rgba(220,53,69,0.9)', color: '#FFF', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', zIndex: 5 }}>✕</button>}
 
                                     {/* Positioned & Styled Text Overlay Preview */}
                                     {storyCaption && (
@@ -1701,16 +1745,20 @@ import RoastTokenVault from './RoastTokenVault';
                                         <span style={{ fontSize: '10px', color: '#00FFFF', fontWeight: 'bold', letterSpacing: '0.5px' }}>👆 Drag text to move • Pull handles to expand</span>
                                     </div>
                                     
-                                    {/* Font Family Selector */}
-                                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                    {/* Font Family Selector (Expanded) */}
+                                    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
                                         <span style={{ fontSize: '9px', color: '#888', fontWeight: 'bold', width: '45px' }}>FONT:</span>
                                         {[
-                                            { id: 'sans-serif', label: 'Bold' },
-                                            { id: 'serif', label: 'Serif' },
-                                            { id: 'monospace', label: 'Mono' },
+                                            { id: 'sans-serif', label: 'Classic' },
+                                            { id: 'Impact, sans-serif', label: 'Meme' },
+                                            { id: '"Arial Black", sans-serif', label: 'Heavy' },
+                                            { id: '"Comic Sans MS", cursive', label: 'Comic' },
+                                            { id: '"Trebuchet MS", sans-serif', label: 'Modern' },
+                                            { id: 'Georgia, serif', label: 'Story' },
+                                            { id: 'monospace', label: 'Type' },
                                             { id: 'cursive', label: 'Script' }
                                         ].map(f => (
-                                            <button key={f.id} type="button" onClick={() => setTextFont(f.id)} style={{ flex: 1, padding: '4px', borderRadius: '6px', border: textFont === f.id ? '1px solid #00FFFF' : '1px solid #333', background: textFont === f.id ? '#00FFFF' : '#111', color: textFont === f.id ? '#000' : '#888', fontSize: '10px', fontWeight: 'bold', fontFamily: f.id, cursor: 'pointer' }}>
+                                            <button key={f.id} type="button" onClick={() => setTextFont(f.id)} style={{ padding: '4px 8px', borderRadius: '6px', border: textFont === f.id ? '1px solid #00FFFF' : '1px solid #333', background: textFont === f.id ? '#00FFFF' : '#111', color: textFont === f.id ? '#000' : '#888', fontSize: '10px', fontWeight: 'bold', fontFamily: f.id, cursor: 'pointer' }}>
                                                 {f.label}
                                             </button>
                                         ))}
@@ -1787,11 +1835,18 @@ import RoastTokenVault from './RoastTokenVault';
                             </div>
                         </div>
 
-                        {/* Friend Tagging Slide-Up Bottom Sheet */}
+                        {/* Friend Tagging Slide-Up Bottom Sheet (Debounced CPU Fix) */}
                         {showFriendsSheet && (
-                            <div style={{ background: '#1A1A1A', border: '1px solid #333', borderRadius: '12px', padding: '12px', marginBottom: '15px', maxHeight: '160px', overflowY: 'auto' }}>
-                                <input type="text" placeholder="Search friends..." value={friendSearchQuery} onChange={e => setFriendSearchQuery(e.target.value)} style={{ width: '100%', background: '#000', border: '1px solid #333', color: '#FFF', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', marginBottom: '8px' }} />
-                                {myFriendsList.filter(f => (f.userName || '').toLowerCase().includes(friendSearchQuery.toLowerCase())).map(f => (
+                            <div style={{ background: '#1A1A1A', border: '1px solid #333', borderRadius: '12px', padding: '12px', marginBottom: '15px', maxHeight: '160px', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                                <input type="text" placeholder="Search friends..." 
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        if (window.friendSearchTimeout) clearTimeout(window.friendSearchTimeout);
+                                        window.friendSearchTimeout = setTimeout(() => setFriendSearchQuery(val), 300); // UI un-freeze
+                                    }} 
+                                    style={{ width: '100%', background: '#000', border: '1px solid #333', color: '#FFF', padding: '6px 10px', borderRadius: '6px', fontSize: '11px', marginBottom: '8px' }} 
+                                />
+                                {myFriendsList.filter(f => (f.userName || '').toLowerCase().includes(friendSearchQuery.toLowerCase())).slice(0, 15).map(f => (
                                     <div key={f.id} onClick={() => { if (!taggedFriends.some(t => t.id === f.id)) setTaggedFriends([...taggedFriends, f]); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px', cursor: 'pointer', borderBottom: '1px solid #222' }}>
                                         <img src={f.userProfilePicture || 'https://placehold.co/30'} alt="Avatar" style={{ width: '24px', height: '24px', borderRadius: '50%' }} />
                                         <span style={{ fontSize: '12px', color: '#FFF' }}>{f.userName || 'Friend'}</span>
@@ -1854,23 +1909,33 @@ import RoastTokenVault from './RoastTokenVault';
                                         let finalVideoUrl = storyPreviewUrl;
                                         let finalExpiresAtMs = Date.now() + (2 * 60 * 60 * 1000); // default
 
-                                        if (storyFile) {
-                                            // Upload directly (relies on our 50MB shield and trim markers for fast, stable execution)
+                                        let finalMediaUrls = [];
+
+                                        if (mediaType === 'video' && storyFile) {
                                             const filePath = `carousel_galleries/${currentUser.uid}/story_${Date.now()}.mp4`;
                                             const storageRefPath = ref(storage, filePath);
                                             const { uploadBytesResumable } = await import('firebase/storage');
                                             const uploadTask = uploadBytesResumable(storageRefPath, storyFile);
                                             
-                                            finalVideoUrl = await new Promise((resolve, reject) => {
+                                            finalMediaUrls[0] = await new Promise((resolve, reject) => {
                                                 uploadTask.on('state_changed', 
                                                     (snapshot) => {
                                                         const progress = snapshot.totalBytes > 0 ? (snapshot.bytesTransferred / snapshot.totalBytes) * 100 : 0;
-                                                        setUploadProgress(progress);
+                                                        if (progress % 5 === 0 || progress === 100) setUploadProgress(progress); // CPU Un-freeze
                                                     }, 
                                                     (error) => reject(error), 
                                                     async () => resolve(await getDownloadURL(uploadTask.snapshot.ref))
                                                 );
                                             });
+                                        } else if (mediaType === 'slideshow' && storyImages.length > 0) {
+                                            const promises = storyImages.map(async (imgObj, i) => {
+                                                const p = `carousel_galleries/${currentUser.uid}/photo_${Date.now()}_${i}.jpg`;
+                                                const r = ref(storage, p);
+                                                await uploadBytes(r, imgObj.file);
+                                                return await getDownloadURL(r);
+                                            });
+                                            finalMediaUrls = await Promise.all(promises);
+                                            setUploadProgress(100);
                                         }
 
                                         const hrsMap = { '15m': 0.25, '2h': 2, '6h': 6 };
@@ -1881,7 +1946,11 @@ import RoastTokenVault from './RoastTokenVault';
                                             userId: currentUser.uid,
                                             userName: creatorProfile?.creatorName || currentUser.displayName || 'Creator',
                                             userProfilePicture: creatorProfile?.profilePictureUrl || currentUser.photoURL || '',
-                                            videoUrl: finalVideoUrl,
+                                            mediaType: mediaType,
+                                            videoUrl: mediaType === 'video' ? finalMediaUrls[0] : null,
+                                            images: mediaType === 'slideshow' ? finalMediaUrls : null,
+                                            storyBgColor: mediaType === 'text' ? storyBgColor : null,
+                                            storyLink: storyLink.trim() || null,
                                             caption: storyCaption.trim() || null,
                                             textCoords: textCoords,
                                             textFont: textFont,
