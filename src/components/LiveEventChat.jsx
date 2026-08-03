@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db, functions, httpsCallable, collection, query, orderBy, onSnapshot } from '../firebase';
+import { getDatabase, ref, set, onDisconnect, onValue, remove } from "firebase/database";
 import { addDoc, serverTimestamp } from 'firebase/firestore';
 import ConfirmationModal from './ConfirmationModal';
 import RoleBadge from './RoleBadge';
@@ -85,6 +86,10 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
     const [modalConfig, setModalConfig] = useState(null);
     const [expandedReplies, setExpandedReplies] = useState(new Set());
     
+    // NEW: Real-time Typing Status States
+    const [activeTypers, setActiveTypers] = useState([]);
+    const typingTimeoutRef = useRef(null);
+    
     const messagesAreaRef = useRef(null);
         const emojis = Array.from(new Set(['👍','👎','❤️','😂','🔥','😢','😡','😀','😃','😄','😁','😆','😅','🤣','🥲','☺️','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🦷','🦴','👀','👁','👅','👄','💋','🩸','✨','🌟','💯','💦','💨','💫','💥','💢','🎉','🎊','🎈','🎂','🍿','🎬','🎵','🎶','🎸','🎹','🎺','🎻','🥁','📱','💻','🖥','🖨','🖱','🖲','🕹','🗜','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽','🎞','📞','☎️','📟','📠','📺','📻','🎙','🎚','🎛','🧭','⏱','⏲','⏰','🕰','⌛️','⏳','📡','🔋','🔌','💡','🔦','🕯','🪔','🧯','🛢','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒','🛠','⛏','🪚','🔩','⚙️','🪤','🧱','⛓','🧲','🔫','💣','🧨','🪓','🔪','🗡','⚔️','🛡','🚬','⚰️','🪦','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🕳','🩹','🩺','💊','💉','🧬','🦠','🧫','🧪','🌡','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🧽','🪒','🧴','🛎','🔑','🗝','🚪','🪑','🛋','🛏','🛌','🧸','🪆','🖼','🪞','🪟','🛍','🛒','🎁','🇬Y','🇺🇸','🇬🇧','🇨🇦','🇯🇲','🇹🇹','🇧🇧','🇧🇸','🇿🇦','🇳🇬','🇬🇭','🇯🇵','🇧🇷','🇫🇷','🇩🇪','🇮🇹','🇪🇸','🇲🇽','🇮🇳','🇳🇱']));
         const handleAddEmoji = (emoji) => setNewMessageText(prev => prev + emoji);
@@ -152,21 +157,53 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
         return () => unsubscribe();
     }, [eventId, currentUser]);
 
-    // THE FIX: Enables smooth cinematic slide-up animation for new messages
+    // THE FIX: Bulletproof Auto-Scroll (Initial load + active tracking)
     useEffect(() => {
         if (messagesAreaRef.current) {
             const { scrollHeight, scrollTop, clientHeight } = messagesAreaRef.current;
-            // Only auto-scroll if the user is already near the bottom of the chat
             const isNearBottom = scrollHeight - scrollTop - clientHeight < 150;
+            const isInitialLoad = messages.length > 0 && scrollTop === 0 && scrollHeight > clientHeight;
             
-            if (isNearBottom) {
-                messagesAreaRef.current.scrollTo({
-                    top: scrollHeight,
-                    behavior: 'smooth'
-                });
+            if (isNearBottom || isInitialLoad) {
+                messagesAreaRef.current.scrollTo({ top: scrollHeight, behavior: 'smooth' });
             }
         }
-    }, [messages]);
+    }, [messages, activeTypers]); // Scrolls down when typing indicators push UI
+
+    // RTDB: Live Typing Listener & Emitter
+    useEffect(() => {
+        if (!eventId) return;
+        const dbRT = getDatabase();
+        const typingRef = ref(dbRT, `live_sessions/${eventId}_typing`);
+        
+        const unsub = onValue(typingRef, (snapshot) => {
+            if (snapshot.exists()) {
+                const typers = Object.entries(snapshot.val())
+                    .filter(([uid, data]) => uid !== currentUser?.uid && data.isTyping)
+                    .map(([uid, data]) => data.name);
+                setActiveTypers(typers);
+            } else {
+                setActiveTypers([]);
+            }
+        });
+        return () => unsub();
+    }, [eventId, currentUser]);
+
+    // THE FIX: Decoupled from React State to prevent cursor reset on mobile keyboards
+    const emitTypingStatus = () => {
+        if (!eventId || !currentUser) return;
+        
+        const dbRT = getDatabase();
+        const myTypingRef = ref(dbRT, `live_sessions/${eventId}_typing/${currentUser.uid}`);
+        
+        set(myTypingRef, { name: currentUser.displayName || 'Someone', isTyping: true });
+        onDisconnect(myTypingRef).remove();
+        
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = setTimeout(() => {
+            remove(myTypingRef); // Auto-clear typing status if inactive for 2 seconds
+        }, 2000);
+    };
     
     const handleSubmitMessage = async () => {
         if (!newMessageText.trim()) return;
@@ -269,7 +306,21 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
             );
         }
 
-        // Condition C: Normal Active Chat input - Snapped to bottom navigation
+        // Condition C: Guest Mode (Read-Only)
+        if (!currentUser) {
+            return (
+                <div style={{ textAlign: 'center', padding: '15px', backgroundColor: '#050505', borderTop: '1px solid rgba(255,215,0,0.1)' }}>
+                    <button 
+                        onClick={() => window.dispatchEvent(new CustomEvent('requestLogin'))}
+                        style={{ backgroundColor: 'transparent', color: '#00FFFF', padding: '8px 24px', borderRadius: '25px', border: '2px solid #00FFFF', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
+                    >
+                        Login to Chat
+                    </button>
+                </div>
+            );
+        }
+
+        // Condition D: Normal Active Chat input - Snapped to bottom navigation
         return (
             <div className="commentInputContainer" style={{ 
                 flexShrink: 0, 
@@ -297,7 +348,14 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
                     <input 
                         type="text"
                         value={newMessageText} 
-                        onChange={(e) => setNewMessageText(e.target.value)} 
+                        onChange={(e) => {
+                            setNewMessageText(e.target.value); // Sync update preserves cursor
+                            emitTypingStatus(); // Async network call fired safely
+                        }} 
+                        onFocus={(e) => {
+                            // THE FIX: iOS Safari Viewport Lock. Forces input to stay in container without pushing video up
+                            setTimeout(() => { e.target.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, 300);
+                        }}
                         placeholder={replyingTo ? 'Write a reply...' : 'Type a message...'}
                         style={{ flex: 1, background: '#181818', border: '1px solid #222', color: '#FFF', borderRadius: '6px', padding: '6px 10px', fontSize: '13px', outline: 'none' }}
                         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSubmitMessage(); } }}
@@ -393,6 +451,22 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
                             </div>
                         );
                     })}
+                    
+                    {/* TYPING INDICATOR UI */}
+                    {activeTypers.length > 0 && (
+                        <div style={{ padding: '0 8px 4px 8px', fontSize: '11px', color: '#888', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div className="typing-dots"><span>.</span><span>.</span><span>.</span></div>
+                            {activeTypers.length === 1 ? `${activeTypers[0]} is typing...` : 
+                             activeTypers.length === 2 ? `${activeTypers[0]} and ${activeTypers[1]} are typing...` : 
+                             'Multiple people are typing...'}
+                            <style>{`
+                                .typing-dots span { animation: blink 1.4s infinite both; }
+                                .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+                                .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+                                @keyframes blink { 0% { opacity: .2; } 20% { opacity: 1; } 100% { opacity: .2; } }
+                            `}</style>
+                        </div>
+                    )}
                 </div>
 
                 {/* THE FIX: Decoupled Input Area Helper */}

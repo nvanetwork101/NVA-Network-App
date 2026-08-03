@@ -38,32 +38,9 @@ function HeaderLiveButton({ setActiveScreen, showMessage, isLive }) {
                     }
                 });
             } else {
-                // Priority scan for active live events first, then fall back to upcoming
-                const fallbackQuery = query(collection(db, "events"), where("status", "in", ["upcoming", "live"]), limit(10));
-                masterUnsubscribe = onSnapshot(fallbackQuery, (snap) => {
-                    if (!snap.empty) {
-                        const allEvents = snap.docs.map(d => {
-                            const data = d.data();
-                            const sTime = data.scheduledStartTime;
-                            const startTimeMs = sTime?.toMillis ? sTime.toMillis() : (sTime?.seconds ? sTime.seconds * 1000 : (typeof sTime === 'string' ? new Date(sTime).getTime() : 0));
-                            return {
-                                id: d.id,
-                                ...data,
-                                extractedTimeMs: isNaN(startTimeMs) ? Date.now() + 3600000 : startTimeMs,
-                                isLiveNow: data.status === 'live'
-                            };
-                        });
-                        const liveActive = allEvents.find(e => e.status === 'live');
-                        if (liveActive) {
-                            setUpcomingEvent(liveActive);
-                        } else {
-                            allEvents.sort((a, b) => a.extractedTimeMs - b.extractedTimeMs);
-                            setUpcomingEvent(allEvents[0] || null);
-                        }
-                    } else {
-                        setUpcomingEvent(null);
-                    }
-                });
+                // THE FIX: Strict compliance to the settings document. No rogue fallbacks. 
+                // If it's toggled off in Admin, it comes off the screen immediately.
+                setUpcomingEvent(null);
             }
         });
 

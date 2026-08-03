@@ -753,6 +753,11 @@ import RoastTokenVault from './RoastTokenVault';
                                     </div>
                                 )}
 
+                                {/* Top-Right Scarcity Timer Badge */}
+                                <span style={{ position: 'absolute', top: userStories.length > 1 ? '18px' : '8px', right: '8px', zIndex: 2, background: 'rgba(0,0,0,0.65)', color: isExpiringSoon ? '#FF4500' : '#FFF', fontSize: '9px', fontWeight: '900', padding: '2px 6px', borderRadius: '10px', backdropFilter: 'blur(4px)' }}>
+                                    ⏱️ {minsLeft > 60 ? `${Math.floor(minsLeft/60)}h` : `${minsLeft}m`}
+                                </span>
+
                                 <div style={{ position: 'absolute', top: '8px', left: '8px', zIndex: 2 }}>
                                     <img src={story.userProfilePicture || 'https://placehold.co/40'} alt={story.userName} style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: isLiveStreamer ? '2px solid #00FFFF' : (allViewed ? '2px solid #888' : '2px solid #FFD700'), boxShadow: '0 2px 8px rgba(0,0,0,0.8)' }} />
                                 </div>

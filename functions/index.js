@@ -4516,12 +4516,27 @@ async function runManageEventStatus() {
             batch.set(db.collection("broadcast_notifications").doc(), broadcast);
         });
 
-    // The logic for ending events remains the same, as it is not time-critical.
-    const eventsToEndQuery = db.collection("events").where("status", "==", "live").where("scheduledEndTime", "<=", now);
-    const toEndSnapshot = await eventsToEndQuery.get();
-    toEndSnapshot.forEach(doc => {
-        batch.update(doc.ref, { status: "completed" });
-        completedTransitions++;
+    // THE FIX: Fetch all live events and validate expiration client-side to account for dynamic Music Premiere durations
+    const allLiveEventsQuery = await db.collection("events").where("status", "==", "live").get();
+    allLiveEventsQuery.forEach(doc => {
+        const data = doc.data();
+        let shouldEnd = false;
+        
+        if (data.scheduledEndTime && data.scheduledEndTime.toMillis() <= now.toMillis()) {
+            shouldEnd = true;
+        } else if (data.type === 'musicVideoPremiere' && data.scheduledStartTime) {
+            const customSecs = Number(data.durationTotalSec) || 0;
+            const expireWindowMs = customSecs > 0 ? (customSecs * 1000) : (15 * 60 * 1000); // Defaults to 15 mins
+            if (now.toMillis() >= data.scheduledStartTime.toMillis() + expireWindowMs) shouldEnd = true;
+        } else if (data.scheduledStartTime) {
+            // Safety Catch-all: Films auto-complete 5 hours after start if no End Time was set
+            if (now.toMillis() >= data.scheduledStartTime.toMillis() + (5 * 60 * 60 * 1000)) shouldEnd = true;
+        }
+        
+        if (shouldEnd) {
+            batch.update(doc.ref, { status: "completed" });
+            completedTransitions++;
+        }
     });
 
     if (liveTransitions > 0 || completedTransitions > 0) {
@@ -4553,6 +4568,7 @@ async function runPromoteNextEvent() {
     const liveQuery = db.collection("events")
         .where("status", "==", "live")
         .where("isPublished", "==", true)
+        .where("isPromotedToBillboard", "==", true) // THE FIX: Live events must ALSO have the toggle explicitly switched ON
         .orderBy("scheduledStartTime", "desc")
         .limit(1);
     let promotionSnapshot = await liveQuery.get();
