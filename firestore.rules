@@ -92,6 +92,9 @@ service cloud.firestore {
       match /savedOpportunities/{opportunityId} {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
+      match /claimedRewards/{rewardId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      }
       match /feed/{feedItemId} {
         allow read: if isAuthenticated() && request.auth.uid == userId;
         allow delete: if isAuthenticated() && request.auth.uid == userId;
@@ -144,7 +147,7 @@ service cloud.firestore {
     match /notifications/{notificationId} {
       allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
       allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
-      allow create: if isAdmin();
+      allow create: if isAuthenticated();
       allow delete: if false;
     }
 
@@ -387,6 +390,18 @@ service cloud.firestore {
     match /financial_transactions/{txnId} {
       allow read: if isSuperAdmin() || (isAuthenticated() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid));
       allow write: if false; // Locked to Cloud Functions
+    }
+
+		match /flash_stories/{storyId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin() || isModerator());
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || 
+        isAdmin() || 
+        isModerator() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount', 'likeCount'])
+      );
     }
 
     // --- FILM CLUB REAL-TIME TYPING ---

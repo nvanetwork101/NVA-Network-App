@@ -9,8 +9,8 @@ import { uploadManager } from '../utils/uploadManager';
 import EventForm from './EventForm';
 import { uploadMovieToR2 } from '../utils/r2Uploader';
 
-// Centralized Media Server IP pointed to your Tokyo Oracle Instance
-const MEDIA_SERVER_URL = "http://158.179.184.80:5000";
+// Centralized Media Server Endpoint (HTTPS via Caddy SSL Reverse Proxy)
+const MEDIA_SERVER_URL = "https://engine.nvanetworkapp.com";
 
 // --- DEDICATED COMPONENT FOR THE LIVE DASHBOARD (CORRECTED LOGIC) ---
 const LiveDashboard = ({ showMessage }) => {

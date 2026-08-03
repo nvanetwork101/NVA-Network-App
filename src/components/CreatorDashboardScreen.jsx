@@ -1587,11 +1587,85 @@ const CreatorDashboardScreen = ({
                             <>
                                 {/* --- MODERN CENTERED HUB PROFILE --- */}
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-                                    <div style={{ position: 'relative', marginBottom: '15px' }}>
-                                        <img src={creatorProfile.profilePictureUrl || 'https://placehold.co/120x120/555/FFF?text=P'} alt="Profile" style={{ width: '110px', height: '110px', borderRadius: '50%', border: '3px solid #FFD700', objectFit: 'cover', boxShadow: '0 0 20px rgba(255,215,0,0.3)' }} />
+                                    <div style={{ position: 'relative', marginBottom: '12px' }}>
+                                        <img 
+                                            src={creatorProfile.profilePictureUrl || 'https://placehold.co/120x120/555/FFF?text=P'} 
+                                            alt="Profile" 
+                                            style={{ 
+                                                width: '110px', 
+                                                height: '110px', 
+                                                borderRadius: '50%', 
+                                                border: creatorProfile?.hasActiveStory ? '3px solid #FF4500' : '3px solid #FFD700', 
+                                                objectFit: 'cover', 
+                                                boxShadow: creatorProfile?.hasActiveStory ? '0 0 25px rgba(255, 69, 0, 0.8), inset 0 0 10px rgba(255, 69, 0, 0.4)' : '0 0 15px rgba(255, 215, 0, 0.3)', 
+                                                animation: creatorProfile?.hasActiveStory ? 'pulse 2.5s infinite' : 'none',
+                                                transition: 'all 0.3s ease' 
+                                            }} 
+                                        />
                                         <input type="file" ref={profilePictureInputRef} onChange={triggerProfilePictureUpload} accept="image/*" style={{ display: 'none' }} />
                                         <button onClick={() => profilePictureInputRef.current.click()} style={{backgroundColor: '#FFD700', color: '#0A0A0A', width: '32px', height: '32px', borderRadius: '50%', border: 'none', cursor: 'pointer', position: 'absolute', bottom: 0, right: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', boxShadow: '0 2px 5px rgba(0,0,0,0.5)'}}>✏️</button>
                                     </div>
+
+                                    {/* Multi-Color Gradient Camera Silhouette Flash Story Trigger */}
+                                    {hasCreatorAccess && (
+                                        <div 
+                                            onClick={() => {
+                                                sessionStorage.setItem('open_flash_uploader', 'true');
+                                                setActiveScreen('Home');
+                                            }}
+                                            style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                padding: '10px 20px',
+                                                borderRadius: '16px',
+                                                background: 'rgba(15, 15, 15, 0.7)',
+                                                backdropFilter: 'blur(12px)',
+                                                WebkitBackdropFilter: 'blur(12px)',
+                                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                                cursor: 'pointer',
+                                                marginBottom: '15px',
+                                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                                            }}
+                                            onMouseDown={e => {
+                                                e.currentTarget.style.transform = 'scale(0.96)';
+                                                e.currentTarget.style.boxShadow = '0 0 30px rgba(255, 69, 0, 0.7), inset 0 0 15px rgba(255, 215, 0, 0.3)';
+                                                e.currentTarget.style.borderColor = '#FF4500';
+                                            }}
+                                            onMouseUp={e => {
+                                                e.currentTarget.style.transform = 'scale(1)';
+                                                e.currentTarget.style.boxShadow = 'none';
+                                                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                                            }}
+                                        >
+                                            {/* Camera Silhouette with Image-2 Multi-Color Gradient Outline */}
+                                            <svg viewBox="0 0 100 70" width="46" height="32" style={{ filter: 'drop-shadow(0 0 6px rgba(255, 69, 0, 0.4))' }}>
+                                                <defs>
+                                                    <linearGradient id="neonCameraGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                        <stop offset="0%" stopColor="#EA4335" />
+                                                        <stop offset="30%" stopColor="#FBBC05" />
+                                                        <stop offset="60%" stopColor="#34A853" />
+                                                        <stop offset="85%" stopColor="#4285F4" />
+                                                        <stop offset="100%" stopColor="#FF007F" />
+                                                    </linearGradient>
+                                                </defs>
+                                                {/* Top Flash Lens */}
+                                                <path d="M35 15 L42 5 L58 5 L65 15 Z" fill="none" stroke="url(#neonCameraGrad)" strokeWidth="3.5" strokeLinejoin="round" />
+                                                {/* Main Camera Body */}
+                                                <rect x="5" y="15" width="90" height="50" rx="12" fill="none" stroke="url(#neonCameraGrad)" strokeWidth="3.5" />
+                                                {/* Center Lens Ring */}
+                                                <circle cx="50" cy="40" r="16" fill="none" stroke="url(#neonCameraGrad)" strokeWidth="3.5" />
+                                                {/* Inner Shutter Spot */}
+                                                <circle cx="50" cy="40" r="6" fill="url(#neonCameraGrad)" />
+                                                {/* Side Sensor LED */}
+                                                <circle cx="78" cy="26" r="3" fill="url(#neonCameraGrad)" />
+                                            </svg>
+                                            <span style={{ fontSize: '10px', fontWeight: '900', color: '#FFF', letterSpacing: '1.5px', textTransform: 'uppercase', marginTop: '4px', textShadow: '0 0 8px rgba(255,255,255,0.3)' }}>
+                                                FLASH STORY
+                                            </span>
+                                        </div>
+                                    )}
                                     
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap', margin: '0 0 5px 0', width: '100%' }}>
                                         <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#FFF' }}>

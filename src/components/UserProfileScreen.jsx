@@ -894,12 +894,49 @@ const UserProfileScreen = ({
                                 {profile.creatorName}
                             </span>
                             {renderPatronStripe(profile)}
+                            {(() => {
+                                const statusLower = enrollmentStatus?.status?.toLowerCase() || '';
+                                const isDocuSeries = statusLower !== '' && (() => {
+                                    if (!enrollmentStatus) return false;
+                                    const prog = (
+                                        enrollmentStatus.program || 
+                                        enrollmentStatus.type || 
+                                        enrollmentStatus.applicationType || 
+                                        enrollmentStatus.programType || 
+                                        enrollmentStatus.course || 
+                                        ''
+                                    ).toLowerCase();
+                                    const opts = enrollmentStatus.selectedOptions || [];
+                                    const hasDocuOpt = opts.some(o => typeof o === 'string' && o.toLowerCase().includes('docu'));
+                                    return prog.includes('docu') || prog.includes('series') || prog.includes('contestant') || prog.includes('competition') || hasDocuOpt;
+                                })();
+
+                                const isFilmClubUser = profile.isFilmClub || (!isDocuSeries && (
+                                    statusLower === 'enrolled' || statusLower === 'approved' || statusLower === 'paid' || statusLower === 'success'
+                                ));
+
+                                const isContestantUser = profile.isContestant || 
+                                                         (profile.badges && profile.badges.includes('Contestant')) ||
+                                                         (isDocuSeries && (
+                                                             statusLower === 'enrolled' || statusLower === 'approved' || statusLower === 'paid' || statusLower === 'success'
+                                                         ));
+
+                                return (
+                                    <RoleBadge profile={{
+                                        ...profile,
+                                        isFilmClub: isFilmClubUser,
+                                        isContestant: isContestantUser
+                                    }} />
+                                );
+                            })()}
                             {profile.creatorSubField && (
                                 <span style={{ fontSize: '11px', color: '#00FFFF', fontWeight: 'bold', background: 'rgba(0,255,255,0.08)', border: '1px solid rgba(0,255,255,0.2)', padding: '2px 8px', borderRadius: '12px' }}>
                                     • {profile.creatorSubField}
                                 </span>
                             )}
                         </div>
+                        {renderGlobalPatronGifts(profile)}
+
                         {/* 🛡️ ADMIN AUDIT PORTAL */}
                         {creatorProfile && (creatorProfile.role === 'admin' || creatorProfile.role === 'authority' || creatorProfile.role === 'super_admin') && profile.realName && (
                             <div style={{ background: 'rgba(255, 215, 0, 0.05)', border: '1px dashed rgba(255, 215, 0, 0.3)', padding: '12px 15px', borderRadius: '12px', margin: '-4px auto 15px auto', fontSize: '11px', color: '#AAA', maxWidth: '320px', textAlign: 'left', lineHeight: '1.4' }}>
@@ -969,45 +1006,6 @@ const UserProfileScreen = ({
                                 🧘 Book Consultation
                             </button>
                         )}
-                        {(() => {
-                            const statusLower = enrollmentStatus?.status?.toLowerCase() || '';
-                            
-                            const isDocuSeries = statusLower !== '' && (() => {
-                                if (!enrollmentStatus) return false;
-                                const prog = (
-                                    enrollmentStatus.program || 
-                                    enrollmentStatus.type || 
-                                    enrollmentStatus.applicationType || 
-                                    enrollmentStatus.programType || 
-                                    enrollmentStatus.course || 
-                                    ''
-                                ).toLowerCase();
-                                const opts = enrollmentStatus.selectedOptions || [];
-                                const hasDocuOpt = opts.some(o => typeof o === 'string' && o.toLowerCase().includes('docu'));
-                                return prog.includes('docu') || prog.includes('series') || prog.includes('contestant') || prog.includes('competition') || hasDocuOpt;
-                            })();
-
-                            const isFilmClubUser = profile.isFilmClub || (!isDocuSeries && (
-                                statusLower === 'enrolled' || statusLower === 'approved' || statusLower === 'paid' || statusLower === 'success'
-                            ));
-
-                            const isContestantUser = profile.isContestant || 
-                                                     (profile.badges && profile.badges.includes('Contestant')) ||
-                                                     (isDocuSeries && (
-                                                         statusLower === 'enrolled' || statusLower === 'approved' || statusLower === 'paid' || statusLower === 'success'
-                                                     ));
-
-                            return (
-                                <>
-                                    <RoleBadge profile={{
-                                        ...profile,
-                                        isFilmClub: isFilmClubUser,
-                                        isContestant: isContestantUser
-                                    }} />
-                                    {renderGlobalPatronGifts(profile)}
-                                </>
-                            );
-                        })()}
                     </div>
 
                     {/* --- REWARDS STATS BLOCK --- */}

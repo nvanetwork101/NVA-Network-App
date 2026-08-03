@@ -9176,4 +9176,113 @@ exports.onContentItemDeleted = functions.firestore
         return null;
     });
 
+// =====================================================================
+// ============ FLASH STORY TOKEN ENGINE (ATOMIC TRANSACTION) ==========
+// =====================================================================
+exports.tipStoryCreator = onCall({ enforceAppCheck: false }, async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+        throw new HttpsError("unauthenticated", "You must be logged in to send a Flame Tip.");
+    }
+
+    const { storyId, storyUserId } = request.data || {};
+    if (!storyId || !storyUserId) {
+        throw new HttpsError("invalid-argument", "Missing required parameters: storyId or storyUserId.");
+    }
+
+    if (uid === storyUserId) {
+        throw new HttpsError("failed-precondition", "You cannot tip your own story.");
+    }
+
+    const db = admin.firestore();
+    const tipperRef = db.collection("creators").doc(uid);
+    const creatorRef = db.collection("creators").doc(storyUserId);
+    const storyRef = db.collection("flash_stories").doc(storyId);
+
+    const grossAmount = 20; // 1 Token = 20 GYD
+    const platformFee = Math.round(grossAmount * PLATFORM_FEE_PERCENTAGE * 100) / 100; // 3 GYD
+    const netAmount = grossAmount - platformFee; // 17 GYD
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const [tipperDoc, creatorDoc, storyDoc] = await Promise.all([
+                transaction.get(tipperRef),
+                transaction.get(creatorRef),
+                transaction.get(storyRef)
+            ]);
+
+            if (!tipperDoc.exists) throw new HttpsError("not-found", "Tipper profile not found.");
+            if (!creatorDoc.exists) throw new HttpsError("not-found", "Creator profile not found.");
+            if (!storyDoc.exists) throw new HttpsError("not-found", "Story not found.");
+
+            const tipperTokens = tipperDoc.data().arenaTokens || 0;
+            if (tipperTokens < 1) {
+                throw new HttpsError("failed-precondition", "Insufficient Arena Tokens.");
+            }
+
+            // 1. Deduct 1 Token from Viewer
+            transaction.update(tipperRef, {
+                arenaTokens: FieldValue.increment(-1),
+                lifetimeSpent: FieldValue.increment(grossAmount)
+            });
+
+            // 2. Credit Net GYD to Creator Earnings
+            transaction.update(creatorRef, {
+                totalEarnings: FieldValue.increment(netAmount),
+                giftsReceived: FieldValue.increment(1),
+                unreadNotificationCount: FieldValue.increment(1)
+            });
+
+            // 3. Increment Story Tip Count
+            transaction.update(storyRef, {
+                tipCount: FieldValue.increment(1)
+            });
+
+            // 4. Write Financial Ledger Audit Receipt
+            const pledgeRef = db.collection("paymentPledges").doc();
+            const tipperName = tipperDoc.data().creatorName || "A fan";
+            const creatorName = creatorDoc.data().creatorName || "Creator";
+
+            transaction.set(pledgeRef, {
+                pledgeId: `STORY-TIP-${Date.now()}`,
+                senderId: uid,
+                senderName: tipperName,
+                targetUserId: storyUserId,
+                targetUserName: creatorName,
+                paymentType: "storyTokenTip",
+                tokenAmount: 1,
+                grossAmount: grossAmount,
+                netAmount: netAmount,
+                platformFee: platformFee,
+                storyId: storyId,
+                status: "approved",
+                createdAt: new Date().toISOString()
+            });
+
+            // 5. In-App Notification
+            const notifRef = db.collection("notifications").doc();
+            transaction.set(notifRef, {
+                userId: storyUserId,
+                title: "Flame Tip Received! 🔥",
+                body: `${tipperName} sent you a Flame Tip (+17 GYD) on your Flash Story!`,
+                link: "/CreatorDashboard",
+                deliveryType: ["inbox", "push"],
+                notificationType: "GIFT_RECEIVED",
+                isRead: false,
+                status: "pending",
+                sound: true,
+                timestamp: FieldValue.serverTimestamp()
+            });
+        });
+
+        logger.info(`User '${uid}' successfully tipped story '${storyId}' of creator '${storyUserId}'.`);
+        return { success: true, message: "Flame Tip delivered!" };
+
+    } catch (error) {
+        logger.error(`Error in tipStoryCreator transaction:`, error);
+        if (error instanceof HttpsError) throw error;
+        throw new HttpsError("internal", error.message || "An unexpected error occurred during tipping.");
+    }
+});
+
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---
