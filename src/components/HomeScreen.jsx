@@ -1983,84 +1983,50 @@ import RoastTokenVault from './RoastTokenVault';
                                         let finalExpiresAtMs = Date.now() + (2 * 60 * 60 * 1000); // default
 
                                         let finalMediaUrls = [];
+                                        const getR2Url = httpsCallable(functions, 'getR2UploadUrl');
 
                                         if (mediaType === 'video' && storyFile) {
-                                            let fileToUpload = storyFile;
-                                            
-                                            // 1. High-Bitrate 1080p Trimmer with Animated "Processing..." UI
-                                            try {
-                                                const videoEl = document.createElement('video');
-                                                videoEl.src = storyPreviewUrl;
-                                                videoEl.muted = true; // Required for background processing
-                                                await new Promise(res => videoEl.onloadedmetadata = res);
-                                                
-                                                const stream = videoEl.captureStream ? videoEl.captureStream() : videoEl.mozCaptureStream();
-                                                if (stream) {
-                                                    // 6 Mbps High-Bitrate 1080p HD Configuration
-                                                    const recorderOpts = { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 6000000 };
-                                                    const mediaRecorder = new MediaRecorder(
-                                                        stream, 
-                                                        MediaRecorder.isTypeSupported(recorderOpts.mimeType) ? recorderOpts : { videoBitsPerSecond: 6000000 }
-                                                    );
-                                                    const chunks = [];
-                                                    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-                                                    
-                                                    videoEl.currentTime = trimStart;
-                                                    await videoEl.play();
-                                                    mediaRecorder.start();
-
-                                                    // Animate Processing Dots (1 dot ➔ 2 dots ➔ 3 dots loop)
-                                                    let dotCount = 1;
-                                                    const dotInterval = setInterval(() => {
-                                                        dotCount = (dotCount % 3) + 1;
-                                                        setUploadProgress(-dotCount); // Negative numbers signal "Processing..." phase
-                                                    }, 400);
-
-                                                    await new Promise(res => {
-                                                        const checkTime = setInterval(() => {
-                                                            if (videoEl.currentTime >= trimEnd || videoEl.ended) {
-                                                                clearInterval(checkTime);
-                                                                clearInterval(dotInterval);
-                                                                mediaRecorder.stop();
-                                                                videoEl.pause();
-                                                                setTimeout(res, 300); // Allow chunks to finalize
-                                                            }
-                                                        }, 100);
-                                                    });
-
-                                                    const trimmedBlob = new Blob(chunks, { type: 'video/mp4' });
-                                                    if (trimmedBlob.size > 10000) { 
-                                                        fileToUpload = new File([trimmedBlob], `story_${Date.now()}.mp4`, { type: 'video/mp4' });
-                                                    }
-                                                }
-                                            } catch (e) {
-                                                console.warn("Trimmer bypassed, uploading raw file.");
-                                            }
-
-                                            // 2. Upload ONLY the trimmed 1080p clip
+                                            // 1. We upload the RAW file directly to R2 for 100% smooth playback (Trimmer removed)
                                             setUploadProgress(0);
                                             const filePath = `carousel_galleries/${currentUser.uid}/story_${Date.now()}.mp4`;
-                                            const storageRefPath = ref(storage, filePath);
-                                            const { uploadBytesResumable } = await import('firebase/storage');
-                                            const uploadTask = uploadBytesResumable(storageRefPath, fileToUpload);
                                             
-                                            finalMediaUrls[0] = await new Promise((resolve, reject) => {
-                                                uploadTask.on('state_changed', 
-                                                    (snapshot) => {
-                                                        const progress = snapshot.totalBytes > 0 ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) : 0;
-                                                        setUploadProgress(progress); // Switches button to "Uploading... X%"
-                                                    }, 
-                                                    (error) => reject(error), 
-                                                    async () => resolve(await getDownloadURL(uploadTask.snapshot.ref))
-                                                );
+                                            // Get Signed URL from Cloudflare R2
+                                            const { data: r2Data } = await getR2Url({ filePath, contentType: storyFile.type || 'video/mp4' });
+
+                                            // Upload using XMLHttpRequest to maintain live progress percentage
+                                            await new Promise((resolve, reject) => {
+                                                const xhr = new XMLHttpRequest();
+                                                xhr.open('PUT', r2Data.uploadUrl, true);
+                                                xhr.setRequestHeader('Content-Type', storyFile.type || 'video/mp4');
+                                                
+                                                xhr.upload.onprogress = (e) => {
+                                                    if (e.lengthComputable) {
+                                                        setUploadProgress(Math.round((e.loaded / e.total) * 100));
+                                                    }
+                                                };
+                                                
+                                                xhr.onload = () => {
+                                                    if (xhr.status >= 200 && xhr.status < 300) resolve();
+                                                    else reject(new Error('R2 Upload Failed'));
+                                                };
+                                                xhr.onerror = () => reject(new Error('Network Error'));
+                                                xhr.send(storyFile);
                                             });
+
+                                            finalMediaUrls[0] = r2Data.publicUrl;
+
                                         } else if (mediaType === 'slideshow' && storyImages.length > 0) {
-                                            const { uploadBytes } = await import('firebase/storage');
+                                            setUploadProgress(-1); // Show "Processing..."
                                             const promises = storyImages.map(async (imgObj, i) => {
-                                                const p = `carousel_galleries/${currentUser.uid}/photo_${Date.now()}_${i}.jpg`;
-                                                const r = ref(storage, p);
-                                                await uploadBytes(r, imgObj.file);
-                                                return await getDownloadURL(r);
+                                                const filePath = `carousel_galleries/${currentUser.uid}/photo_${Date.now()}_${i}.jpg`;
+                                                const { data: r2Data } = await getR2Url({ filePath, contentType: imgObj.file.type || 'image/jpeg' });
+                                                
+                                                await fetch(r2Data.uploadUrl, {
+                                                    method: 'PUT',
+                                                    body: imgObj.file,
+                                                    headers: { 'Content-Type': imgObj.file.type || 'image/jpeg' }
+                                                });
+                                                return r2Data.publicUrl;
                                             });
                                             finalMediaUrls = await Promise.all(promises);
                                             setUploadProgress(100);

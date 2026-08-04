@@ -8,46 +8,44 @@ function HeaderLiveButton({ setActiveScreen, showMessage, isLive }) {
     const [eventIsLive, setEventIsLive] = useState(false);
 
     useEffect(() => {
-        let masterUnsubscribe = () => {};
+        // THE FIX: Unified Smart Scanner with Override Priority. Bypasses the single-slot bottleneck.
+        const q = query(collection(db, "events"), where("status", "in", ["upcoming", "live"]));
+        const unsubscribe = onSnapshot(q, (snap) => {
+            if (!snap.empty) {
+                const nowMs = Date.now();
+                const allEvents = snap.docs.map(d => {
+                    const data = d.data();
+                    const sTime = data.scheduledStartTime;
+                    const startTimeMs = sTime?.toMillis ? sTime.toMillis() : (sTime?.seconds ? sTime.seconds * 1000 : (typeof sTime === 'string' ? new Date(sTime).getTime() : 0));
+                    return {
+                        id: d.id,
+                        ...data,
+                        extractedTimeMs: isNaN(startTimeMs) ? 0 : startTimeMs,
+                        isLiveNow: data.status === 'live',
+                        isPromoted: data.isPromotedToBillboard === true // Flag for manual override
+                    };
+                }).filter(e => e.isLiveNow || e.extractedTimeMs > nowMs); // Drop past events
 
-        const billboardUnsubscribe = onSnapshot(doc(db, "settings", "liveEvent"), (docSnap) => {
-            masterUnsubscribe(); // Clean up previous master listener
-            
-            if (docSnap.exists() && docSnap.data().status !== 'no_event_scheduled' && docSnap.data().eventId) {
-                const billboardData = docSnap.data();
-                
-                masterUnsubscribe = onSnapshot(doc(db, "events", billboardData.eventId), (masterDoc) => {
-                    if (masterDoc.exists()) {
-                        const data = masterDoc.data();
-                        if (data.status === 'completed' || data.status === 'archived_vod') {
-                            setUpcomingEvent(null);
-                            return;
-                        }
-                        const sTime = data.scheduledStartTime;
-                        const startTimeMs = sTime?.toMillis ? sTime.toMillis() : (sTime?.seconds ? sTime.seconds * 1000 : new Date(sTime).getTime());
-                        const validTime = isNaN(startTimeMs) ? 0 : startTimeMs;
-
-                        setUpcomingEvent({ 
-                            id: masterDoc.id, 
-                            ...data, 
-                            extractedTimeMs: validTime, 
-                            isLiveNow: data.status === 'live' 
-                        });
-                    } else {
-                        setUpcomingEvent(null);
-                    }
+                // Advanced Sorting Engine
+                allEvents.sort((a, b) => {
+                    if (a.isLiveNow && !b.isLiveNow) return -1;
+                    if (!a.isLiveNow && b.isLiveNow) return 1;
+                    if (a.isPromoted && !b.isPromoted) return -1;
+                    if (!a.isPromoted && b.isPromoted) return 1;
+                    return a.extractedTimeMs - b.extractedTimeMs; // Sort by closest date
                 });
+
+                if (allEvents.length > 0) {
+                    setUpcomingEvent(allEvents[0]);
+                } else {
+                    setUpcomingEvent(null);
+                }
             } else {
-                // THE FIX: Strict compliance to the settings document. No rogue fallbacks. 
-                // If it's toggled off in Admin, it comes off the screen immediately.
                 setUpcomingEvent(null);
             }
         });
 
-        return () => {
-            billboardUnsubscribe();
-            masterUnsubscribe();
-        };
+        return () => unsubscribe();
     }, []);
 
     useEffect(() => {
@@ -113,10 +111,9 @@ function HeaderLiveButton({ setActiveScreen, showMessage, isLive }) {
         <div 
             onClick={() => {
             sessionStorage.setItem('nva_target_discover_tab', 'Premieres');
-            if (upcomingEvent?.id) {
-                sessionStorage.setItem('nva_target_premiere_event_id', upcomingEvent.id);
-                window.dispatchEvent(new CustomEvent('setPremiereActiveEvent', { detail: { eventId: upcomingEvent.id } }));
-            }
+            // THE FIX: Forces routing into the Multiplex Lobby by clearing the targeted event ID
+            sessionStorage.setItem('nva_target_premiere_event_id', 'none');
+            window.dispatchEvent(new CustomEvent('setPremiereActiveEvent', { detail: { eventId: null } }));
             window.dispatchEvent(new CustomEvent('switchDiscoverTab', { detail: 'Premieres' }));
             setActiveScreen('Discover');
         }}
