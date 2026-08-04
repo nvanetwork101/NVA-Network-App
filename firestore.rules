@@ -106,7 +106,7 @@ service cloud.firestore {
     }
 
     match /{path=**}/chatMessages/{messageId} {
-       allow read: if isAuthenticated();
+       allow read: if true; // THE FIX: Allows public read access for guests
        allow create: if false;
        allow delete: if (isAuthenticated() && request.auth.uid == resource.data.userId) || isModerator();
     }
@@ -141,7 +141,8 @@ service cloud.firestore {
     }
 
     match /events/{eventId}/chatMessages/{messageId} {
-      allow read, write: if request.auth != null;
+      allow read: if true; // THE FIX: Allows guests to read live chat stream
+      allow write: if request.auth != null; // Only logged-in users can send messages
     }
     
     match /notifications/{notificationId} {

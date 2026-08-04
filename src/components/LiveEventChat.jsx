@@ -60,7 +60,14 @@ const ChatMessage = ({ message, currentUser, creatorProfile, onReply, onDelete, 
                         Replying to {message.replyTo.userName}
                     </p>
                 )}
-                <p style={{ margin: '2px 0 0 0', color: '#E0E0E0', wordBreak: 'break-word' }}>{message.text}</p>
+                {message.text && <p style={{ margin: '2px 0 0 0', color: '#E0E0E0', wordBreak: 'break-word' }}>{message.text}</p>}
+                {message.mediaUrl && (
+                    <img 
+                        src={message.mediaUrl} 
+                        alt="Sticker" 
+                        style={{ maxWidth: '160px', maxHeight: '160px', borderRadius: '8px', marginTop: '4px', display: 'block', objectFit: 'contain', background: 'transparent' }} 
+                    />
+                )}
                 <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
                     <button className="replyButton" style={{ fontSize: '11px', color: '#666', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }} onClick={() => onReply(message)}>Reply</button>
                     {canDelete && (
@@ -75,7 +82,7 @@ const ChatMessage = ({ message, currentUser, creatorProfile, onReply, onDelete, 
     );
 };
 
-function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, showMessage }) {
+function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, showMessage, setActiveScreen }) {
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [newMessageText, setNewMessageText] = useState('');
@@ -89,6 +96,64 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
     // NEW: Real-time Typing Status States
     const [activeTypers, setActiveTypers] = useState([]);
     const typingTimeoutRef = useRef(null);
+    
+    // GIPHY STICKER & GIF ENGINE
+    const GIPHY_API_KEY = 'jlgPTQhBduGhUfp6f61t7IjAdvxNhiC6';
+    const [pickerTab, setPickerTab] = useState('stickers'); // 'stickers' | 'gifs' | 'emojis'
+    const [giphySearch, setGiphySearch] = useState('');
+    const [giphyItems, setGiphyItems] = useState([]);
+    const [giphyLoading, setGiphyLoading] = useState(false);
+
+    // Pre-loads Trending Stickers or Search results automatically
+    useEffect(() => {
+        if (!showEmojiPicker || pickerTab === 'emojis') return;
+        
+        const fetchGiphy = async () => {
+            setGiphyLoading(true);
+            try {
+                const endpoint = giphySearch.trim() 
+                    ? `https://api.giphy.com/v1/${pickerTab}/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(giphySearch)}&limit=24&rating=g`
+                    : `https://api.giphy.com/v1/${pickerTab}/trending?api_key=${GIPHY_API_KEY}&limit=24&rating=g`;
+                
+                const res = await fetch(endpoint);
+                const data = await res.json();
+                if (data && data.data) {
+                    setGiphyItems(data.data);
+                }
+            } catch (err) {
+                console.error("Giphy fetch error:", err);
+            } finally {
+                setGiphyLoading(false);
+            }
+        };
+
+        const timer = setTimeout(fetchGiphy, 300); // 300ms debounce
+        return () => clearTimeout(timer);
+    }, [showEmojiPicker, pickerTab, giphySearch]);
+
+    const handleSendMediaMessage = async (mediaUrl) => {
+        if (!currentUser || isSubmitting) return;
+        setIsSubmitting(true);
+        try {
+            await addDoc(collection(db, `events/${eventId}/chatMessages`), {
+                userId: currentUser.uid,
+                userName: creatorProfile?.creatorName || creatorProfile?.displayName || currentUser.displayName || 'NVA User',
+                userProfilePicture: creatorProfile?.profilePictureUrl || currentUser.photoURL || '',
+                authorRole: creatorProfile?.role || 'user',
+                text: '',
+                mediaUrl: mediaUrl,
+                replyTo: replyingTo ? { id: replyingTo.id, userName: replyingTo.userName, userId: replyingTo.userId } : null,
+                createdAt: serverTimestamp()
+            });
+            setShowEmojiPicker(false);
+            setReplyingTo(null);
+        } catch (err) {
+            console.error("Media send failed:", err);
+            showMessage("Failed to send sticker.");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
     
     const messagesAreaRef = useRef(null);
         const emojis = Array.from(new Set(['👍','👎','❤️','😂','🔥','😢','😡','😀','😃','😄','😁','😆','😅','🤣','🥲','☺️','😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚','😋','😛','😝','😜','🤪','🤨','🧐','🤓','😎','🥸','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','☠️','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🦷','🦴','👀','👁','👅','👄','💋','🩸','✨','🌟','💯','💦','💨','💫','💥','💢','🎉','🎊','🎈','🎂','🍿','🎬','🎵','🎶','🎸','🎹','🎺','🎻','🥁','📱','💻','🖥','🖨','🖱','🖲','🕹','🗜','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽','🎞','📞','☎️','📟','📠','📺','📻','🎙','🎚','🎛','🧭','⏱','⏲','⏰','🕰','⌛️','⏳','📡','🔋','🔌','💡','🔦','🕯','🪔','🧯','🛢','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔨','⚒','🛠','⛏','🪚','🔩','⚙️','🪤','🧱','⛓','🧲','🔫','💣','🧨','🪓','🔪','🗡','⚔️','🛡','🚬','⚰️','🪦','🏺','🔮','📿','🧿','💈','⚗️','🔭','🔬','🕳','🩹','🩺','💊','💉','🧬','🦠','🧫','🧪','🌡','🧹','🪠','🧺','🧻','🚽','🚰','🚿','🛁','🛀','🧼','🧽','🪒','🧴','🛎','🔑','🗝','🚪','🪑','🛋','🛏','🛌','🧸','🪆','🖼','🪞','🪟','🛍','🛒','🎁','🇬Y','🇺🇸','🇬🇧','🇨🇦','🇯🇲','🇹🇹','🇧🇧','🇧🇸','🇿🇦','🇳🇬','🇬🇭','🇯🇵','🇧🇷','🇫🇷','🇩🇪','🇮🇹','🇪🇸','🇲🇽','🇮🇳','🇳🇱']));
@@ -127,7 +192,7 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
     };
 
     useEffect(() => {
-        if (!eventId || !currentUser) return;
+        if (!eventId) return; // THE FIX: Allows non-signed-in guests to fetch and read chat messages
         setLoading(true);
         const messagesRef = collection(db, `events/${eventId}/chatMessages`);
         const q = query(messagesRef, orderBy('createdAt', 'asc'));
@@ -143,7 +208,7 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
     }, [eventId, currentUser]);
 
     useEffect(() => {
-        // THE FIX: Allows all users to load the mute list so their input bars lock down when muted
+        // THE FIX: Gates mutedUsers listener so unauthenticated guests don't trigger Firestore permission errors
         if (!eventId || !currentUser) {
             setMutedUsers(new Set());
             return;
@@ -152,7 +217,7 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
         const unsubscribe = onSnapshot(mutedRef, (snapshot) => {
             setMutedUsers(new Set(snapshot.docs.map(doc => doc.id)));
         }, (error) => {
-            console.error("Mute listener error:", error);
+            console.warn("Mute listener skipped for guest.");
         });
         return () => unsubscribe();
     }, [eventId, currentUser]);
@@ -311,7 +376,12 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
             return (
                 <div style={{ textAlign: 'center', padding: '15px', backgroundColor: '#050505', borderTop: '1px solid rgba(255,215,0,0.1)' }}>
                     <button 
-                        onClick={() => window.dispatchEvent(new CustomEvent('requestLogin'))}
+                        type="button"
+                        onClick={() => {
+                            if (typeof setActiveScreen === 'function') {
+                                setActiveScreen('Login');
+                            }
+                        }}
                         style={{ backgroundColor: 'transparent', color: '#00FFFF', padding: '8px 24px', borderRadius: '25px', border: '2px solid #00FFFF', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}
                     >
                         Login to Chat
@@ -338,10 +408,62 @@ function LiveEventChat({ eventId, eventDetails, currentUser, creatorProfile, sho
                     </div> 
                 )}
                 {showEmojiPicker && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(32px, 1fr))', gap: '4px', padding: '8px', maxHeight: '180px', overflowY: 'auto', backgroundColor: '#1A1A1A', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', marginBottom: '6px' }}>
-                        {emojis.map((e, idx) => (
-                            <button key={`${e}-${idx}`} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '4px' }} onClick={() => { handleAddEmoji(e); setShowEmojiPicker(false); }}>{e}</button>
-                        ))}
+                    <div style={{ backgroundColor: '#141414', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '12px', padding: '10px', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px' }}>
+                        {/* Tab Switcher */}
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            {['stickers', 'gifs', 'emojis'].map(tab => (
+                                <button
+                                    key={tab}
+                                    type="button"
+                                    onClick={() => setPickerTab(tab)}
+                                    style={{
+                                        padding: '4px 10px', borderRadius: '15px', border: 'none', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', cursor: 'pointer',
+                                        backgroundColor: pickerTab === tab ? '#FFD700' : '#222', color: pickerTab === tab ? '#000' : '#888'
+                                    }}
+                                >
+                                    {tab === 'stickers' ? '✨ Stickers' : tab === 'gifs' ? '🎬 GIFs' : '😃 Emojis'}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Search Input for Giphy */}
+                        {pickerTab !== 'emojis' && (
+                            <input 
+                                type="text"
+                                value={giphySearch}
+                                onChange={(e) => setGiphySearch(e.target.value)}
+                                placeholder={`Search Giphy ${pickerTab}...`}
+                                style={{ background: '#222', border: '1px solid #333', color: '#FFF', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', outline: 'none' }}
+                            />
+                        )}
+
+                        {/* Content Scroll Grid */}
+                        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                            {pickerTab === 'emojis' ? (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(32px, 1fr))', gap: '4px' }}>
+                                    {emojis.map((e, idx) => (
+                                        <button key={`${e}-${idx}`} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', padding: '4px' }} onClick={() => { handleAddEmoji(e); setShowEmojiPicker(false); }}>{e}</button>
+                                    ))}
+                                </div>
+                            ) : giphyLoading ? (
+                                <p style={{ color: '#888', fontSize: '11px', textAlign: 'center', margin: '20px 0' }}>Loading Giphy...</p>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: pickerTab === 'stickers' ? 'repeat(auto-fill, minmax(65px, 1fr))' : 'repeat(auto-fill, minmax(100px, 1fr))', gap: '6px' }}>
+                                    {giphyItems.map(item => {
+                                        const imgUrl = item.images?.fixed_height_small?.url || item.images?.fixed_height?.url;
+                                        return (
+                                            <img
+                                                key={item.id}
+                                                src={imgUrl}
+                                                alt={item.title}
+                                                onClick={() => handleSendMediaMessage(imgUrl)}
+                                                style={{ width: '100%', height: '65px', objectFit: 'contain', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.02)' }}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>

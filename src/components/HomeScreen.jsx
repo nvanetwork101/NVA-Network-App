@@ -1984,16 +1984,15 @@ import RoastTokenVault from './RoastTokenVault';
 
                                         let finalMediaUrls = [];
                                         const getR2Url = httpsCallable(functions, 'getR2UploadUrl');
+                                        let rawFileKey = null;
 
                                         if (mediaType === 'video' && storyFile) {
-                                            // 1. We upload the RAW file directly to R2 for 100% smooth playback (Trimmer removed)
                                             setUploadProgress(0);
-                                            const filePath = `carousel_galleries/${currentUser.uid}/story_${Date.now()}.mp4`;
-                                            
-                                            // Get Signed URL from Cloudflare R2
-                                            const { data: r2Data } = await getR2Url({ filePath, contentType: storyFile.type || 'video/mp4' });
+                                            rawFileKey = `tmp-raw-uploads/${currentUser.uid}/raw_${Date.now()}.mp4`;
 
-                                            // Upload using XMLHttpRequest to maintain live progress percentage
+                                            // A. Upload raw file to R2 /tmp-raw-uploads/
+                                            const { data: r2Data } = await getR2Url({ filePath: rawFileKey, contentType: storyFile.type || 'video/mp4' });
+
                                             await new Promise((resolve, reject) => {
                                                 const xhr = new XMLHttpRequest();
                                                 xhr.open('PUT', r2Data.uploadUrl, true);
@@ -2007,18 +2006,19 @@ import RoastTokenVault from './RoastTokenVault';
                                                 
                                                 xhr.onload = () => {
                                                     if (xhr.status >= 200 && xhr.status < 300) resolve();
-                                                    else reject(new Error('R2 Upload Failed'));
+                                                    else reject(new Error('R2 Raw Upload Failed'));
                                                 };
                                                 xhr.onerror = () => reject(new Error('Network Error'));
                                                 xhr.send(storyFile);
                                             });
 
+                                            // Temporary video URL while Tokyo VPS processes 1080p watermark
                                             finalMediaUrls[0] = r2Data.publicUrl;
 
                                         } else if (mediaType === 'slideshow' && storyImages.length > 0) {
-                                            setUploadProgress(-1); // Show "Processing..."
+                                            setUploadProgress(-1);
                                             const promises = storyImages.map(async (imgObj, i) => {
-                                                const filePath = `carousel_galleries/${currentUser.uid}/photo_${Date.now()}_${i}.jpg`;
+                                                const filePath = `stories/${currentUser.uid}/photo_${Date.now()}_${i}.jpg`;
                                                 const { data: r2Data } = await getR2Url({ filePath, contentType: imgObj.file.type || 'image/jpeg' });
                                                 
                                                 await fetch(r2Data.uploadUrl, {
@@ -2057,6 +2057,7 @@ import RoastTokenVault from './RoastTokenVault';
                                             textSize: textSize,
                                             trimStart: trimStart,
                                             trimEnd: trimEnd,
+                                            processing: mediaType === 'video', // Flag for processing state
                                             rewardTitle: hasReward ? rewardValue : null,
                                             rewardType: hasReward ? rewardType : null,
                                             rewardCap: hasReward ? (Number(rewardCap) || 50) : 0,
@@ -2071,8 +2072,23 @@ import RoastTokenVault from './RoastTokenVault';
                                             payload.viewCount = 0;
                                             payload.tipCount = 0;
                                             payload.likeCount = 0;
-                                            await addDoc(collection(db, "flash_stories"), payload);
+                                            
+                                            const newDoc = await addDoc(collection(db, "flash_stories"), payload);
                                             await updateDoc(doc(db, "creators", currentUser.uid), { hasActiveStory: true });
+
+                                            // Ping Tokyo Oracle VPS Engine to Watermark, Cut & Purge Raw Upload
+                                            if (mediaType === 'video' && rawFileKey) {
+                                                fetch('https://engine.nvanetworkapp.com/api/process-story', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({
+                                                        rawFileKey: rawFileKey,
+                                                        storyId: newDoc.id,
+                                                        trimStart: Math.round(trimStart),
+                                                        trimDuration: Math.round(trimEnd - trimStart)
+                                                    })
+                                                }).catch(e => console.error("Tokyo Engine Ping Error:", e));
+                                            }
                                             
                                             taggedFriends.forEach(async (f) => {
                                                 await addDoc(collection(db, "notifications"), {
@@ -2081,7 +2097,7 @@ import RoastTokenVault from './RoastTokenVault';
                                                     type: "TAGGED_IN_STORY", createdAt: new Date(), read: false
                                                 }).catch(() => {});
                                             });
-                                            showMessage("⚡ Flash Story posted live!");
+                                            showMessage("⚡ Flash Story posted! Watermark & 1080p processing in progress...");
                                         }
 
                                         setShowUploaderModal(false);

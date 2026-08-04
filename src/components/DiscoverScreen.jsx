@@ -1581,7 +1581,7 @@ function DiscoverScreen({
                                                     </div>
                                                 )}
                                             </div>
-                                            <LiveEventChat eventId={masterEventDetails.id} eventDetails={masterEventDetails} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} />
+                                            <LiveEventChat eventId={masterEventDetails.id} eventDetails={masterEventDetails} currentUser={currentUser} creatorProfile={creatorProfile} showMessage={showMessage} setActiveScreen={setActiveScreen} />
                                         </div>
                                     )}
                                     
