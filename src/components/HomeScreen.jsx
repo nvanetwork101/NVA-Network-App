@@ -1312,14 +1312,14 @@ import RoastTokenVault from './RoastTokenVault';
                                         setTextFont(currentStory.textFont || 'sans-serif');
                                         setTextCoords(currentStory.textCoords || {x:50,y:50});
                                         setStoryAudience(currentStory.audience || 'public');
-                                                setStoryPreviewUrl(currentStory.videoUrl);
-                                                setVideoPanX(currentStory.videoPanX || 50);
-                                                setTextWidthPercent(currentStory.textWidthPercent || 70);
-                                                setTextColor(currentStory.textColor || '#FFFFFF');
-                                                setTextSize(currentStory.textSize || 14);
-                                                setTrimStart(currentStory.trimStart || 0);
-                                                setTrimEnd(currentStory.trimEnd || 60);
-                                                setHasReward(!!currentStory.rewardTitle);
+                                        setStoryPreviewUrl(currentStory.videoUrl);
+                                        setVideoPanX(currentStory.videoPanX || 50);
+                                        setTextWidthPercent(currentStory.textWidthPercent || 70);
+                                        setTextColor(currentStory.textColor || '#FFFFFF');
+                                        setTextSize(currentStory.textSize || 14);
+                                        setTrimStart(currentStory.trimStart || 0);
+                                        setTrimEnd(currentStory.trimEnd || 60);
+                                        setHasReward(!!currentStory.rewardTitle);
                                         if(currentStory.rewardTitle) {
                                             setRewardValue(currentStory.rewardTitle);
                                             setRewardType(currentStory.rewardType);
@@ -1450,7 +1450,7 @@ import RoastTokenVault from './RoastTokenVault';
                                 onClick={async () => {
                                     const storyToDelete = deletingStory;
                                     setDeletingStory(null);
-                                    setActiveStoryIndex(null);
+                                    setActiveUserIndex(null);
                                     setFlashStories(prev => prev.filter(s => s.id !== storyToDelete.id));
 
                                     try {
@@ -1776,7 +1776,10 @@ import RoastTokenVault from './RoastTokenVault';
                                                     if (val > trimEnd - 1) val = trimEnd - 1; 
                                                     if (trimEnd - val > 60) setTrimEnd(val + 60); // Cap at 60s
                                                     setTrimStart(val); 
-                                                    if (previewVideoRef.current) previewVideoRef.current.currentTime = val; 
+                                                    if (previewVideoRef.current) {
+                                                        previewVideoRef.current.currentTime = val;
+                                                        previewVideoRef.current.play().catch(() => {});
+                                                    }
                                                 }} 
                                             />
                                             {/* End Thumb */}
@@ -1792,7 +1795,10 @@ import RoastTokenVault from './RoastTokenVault';
                                                     if (val < trimStart + 1) val = trimStart + 1; 
                                                     if (val - trimStart > 60) setTrimStart(val - 60); // Cap at 60s
                                                     setTrimEnd(val); 
-                                                    if (previewVideoRef.current) previewVideoRef.current.currentTime = trimStart;
+                                                    if (previewVideoRef.current) {
+                                                        previewVideoRef.current.currentTime = val;
+                                                        previewVideoRef.current.play().catch(() => {});
+                                                    }
                                                 }} 
                                             />
                                         </div>
@@ -1981,16 +1987,21 @@ import RoastTokenVault from './RoastTokenVault';
                                         if (mediaType === 'video' && storyFile) {
                                             let fileToUpload = storyFile;
                                             
-                                            // Client-Side Trimmer with 10KB Failure Shield
+                                            // 1. High-Bitrate 1080p Trimmer with Animated "Processing..." UI
                                             try {
                                                 const videoEl = document.createElement('video');
                                                 videoEl.src = storyPreviewUrl;
-                                                videoEl.muted = true; // Required for mobile processing
+                                                videoEl.muted = true; // Required for background processing
                                                 await new Promise(res => videoEl.onloadedmetadata = res);
                                                 
                                                 const stream = videoEl.captureStream ? videoEl.captureStream() : videoEl.mozCaptureStream();
                                                 if (stream) {
-                                                    const mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                                                    // 6 Mbps High-Bitrate 1080p HD Configuration
+                                                    const recorderOpts = { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 6000000 };
+                                                    const mediaRecorder = new MediaRecorder(
+                                                        stream, 
+                                                        MediaRecorder.isTypeSupported(recorderOpts.mimeType) ? recorderOpts : { videoBitsPerSecond: 6000000 }
+                                                    );
                                                     const chunks = [];
                                                     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
                                                     
@@ -1998,47 +2009,53 @@ import RoastTokenVault from './RoastTokenVault';
                                                     await videoEl.play();
                                                     mediaRecorder.start();
 
+                                                    // Animate Processing Dots (1 dot ➔ 2 dots ➔ 3 dots loop)
+                                                    let dotCount = 1;
+                                                    const dotInterval = setInterval(() => {
+                                                        dotCount = (dotCount % 3) + 1;
+                                                        setUploadProgress(-dotCount); // Negative numbers signal "Processing..." phase
+                                                    }, 400);
+
                                                     await new Promise(res => {
                                                         const checkTime = setInterval(() => {
                                                             if (videoEl.currentTime >= trimEnd || videoEl.ended) {
                                                                 clearInterval(checkTime);
+                                                                clearInterval(dotInterval);
                                                                 mediaRecorder.stop();
                                                                 videoEl.pause();
-                                                                setTimeout(res, 500); // Allow chunks to finalize
+                                                                setTimeout(res, 300); // Allow chunks to finalize
                                                             }
                                                         }, 100);
                                                     });
 
                                                     const trimmedBlob = new Blob(chunks, { type: 'video/mp4' });
-                                                    // SHIELD: If browser failed and produced a tiny/empty file, fallback to raw file
                                                     if (trimmedBlob.size > 10000) { 
                                                         fileToUpload = new File([trimmedBlob], `story_${Date.now()}.mp4`, { type: 'video/mp4' });
                                                     }
                                                 }
                                             } catch (e) {
-                                                console.warn("Trimmer bypassed or unsupported, uploading raw file.");
+                                                console.warn("Trimmer bypassed, uploading raw file.");
                                             }
 
+                                            // 2. Upload ONLY the trimmed 1080p clip
+                                            setUploadProgress(0);
                                             const filePath = `carousel_galleries/${currentUser.uid}/story_${Date.now()}.mp4`;
                                             const storageRefPath = ref(storage, filePath);
                                             const { uploadBytesResumable } = await import('firebase/storage');
                                             const uploadTask = uploadBytesResumable(storageRefPath, fileToUpload);
                                             
                                             finalMediaUrls[0] = await new Promise((resolve, reject) => {
-                                                let lastReported = 0;
                                                 uploadTask.on('state_changed', 
                                                     (snapshot) => {
                                                         const progress = snapshot.totalBytes > 0 ? Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100) : 0;
-                                                        if (progress >= lastReported + 5 || progress === 100) {
-                                                            setUploadProgress(progress);
-                                                            lastReported = progress;
-                                                        }
+                                                        setUploadProgress(progress); // Switches button to "Uploading... X%"
                                                     }, 
                                                     (error) => reject(error), 
                                                     async () => resolve(await getDownloadURL(uploadTask.snapshot.ref))
                                                 );
                                             });
                                         } else if (mediaType === 'slideshow' && storyImages.length > 0) {
+                                            const { uploadBytes } = await import('firebase/storage');
                                             const promises = storyImages.map(async (imgObj, i) => {
                                                 const p = `carousel_galleries/${currentUser.uid}/photo_${Date.now()}_${i}.jpg`;
                                                 const r = ref(storage, p);
@@ -2107,12 +2124,20 @@ import RoastTokenVault from './RoastTokenVault';
                                         setStoryPreviewUrl('');
                                         setStoryCaption('');
                                         setTaggedFriends([]);
+                                        setStoryImages([]);
+                                        setStoryLink('');
+                                        setMediaType('video');
+                                        setUploadProgress(0);
                                     } catch (e) { showMessage("Upload failed: " + e.message); }
                                     finally { setIsUploadingStory(false); }
                                 }}
                                 style={{ flex: 1.5, background: 'linear-gradient(135deg, #FF4500 0%, #FF8C00 100%)', color: '#FFF', border: 'none', padding: '14px', borderRadius: '12px', fontWeight: '900', cursor: 'pointer', fontSize: '13px', textTransform: 'uppercase', boxShadow: '0 0 20px rgba(255,69,0,0.4)' }}
                             >
-                                {isUploadingStory ? `Processing... ${Math.round(uploadProgress)}%` : (editingStoryId ? "💾 Save Updates" : "⚡ Publish Flash Story")}
+                                {isUploadingStory ? (
+                                    uploadProgress < 0 
+                                        ? `Processing ${'.'.repeat(Math.abs(uploadProgress))}` 
+                                        : `Uploading... ${uploadProgress}%`
+                                ) : (editingStoryId ? "💾 Save Updates" : "⚡ Publish Flash Story")}
                             </button>
                         </div>
                     </div>
