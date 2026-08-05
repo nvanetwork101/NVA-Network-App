@@ -27,7 +27,12 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
         if (!currentUser) return;
         getDoc(doc(db, "enrollmentApplications", currentUser.uid)).then((docSnap) => {
             if (docSnap.exists()) {
-                setExistingApp(docSnap.data());
+                const data = docSnap.data();
+                setExistingApp(data);
+                // Auto-select invited options so the user just has to fill out the form
+                if (data.status === 'invited' && data.selectedOptions) {
+                    setSelectedOptions(data.selectedOptions);
+                }
             }
         });
     }, [currentUser]);
@@ -126,11 +131,8 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
     const calculateTotal = () => {
         if (!config) return 0;
         let total = 0;
-        if (selectedOptions.includes('filmClub')) total += config.filmClubFee || 2500;
-        if (selectedOptions.includes('docuSeries')) total += config.docuSeriesFee || 500;
-        if (selectedOptions.length === 2 && config.bothDiscount) {
-            total -= config.bothDiscount;
-        }
+        if (selectedOptions.includes('filmClub')) total += config.filmClubFee !== undefined ? config.filmClubFee : 2500;
+        if (selectedOptions.includes('docuSeries')) total += config.docuSeriesFee !== undefined ? config.docuSeriesFee : 500;
         return total;
     };
 
@@ -181,19 +183,20 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
         }
         try {
             const submitApplication = httpsCallable(functions, 'submitEnrollmentApplication');
-            const mergedOptions = Array.from(new Set([...existingOpts, ...selectedOptions]));
+            const appTotal = calculateTotal();
             
             await submitApplication({
-                selectedOptions: mergedOptions,
-                totalAmount: calculateTotal(),
+                selectedOptions: selectedOptions, // Fix: Submit exact selection only, prevents ghost badges
+                totalAmount: appTotal,
                 phoneNumber: phoneInput.trim() || "Not Provided",
                 age: ageInput.trim() || "N/A",
                 experience: experienceInput.trim() || "None provided"
             });
             
-            setExistingApp(prev => ({ ...prev, status: 'pending', selectedOptions: mergedOptions }));
+            setExistingApp(prev => ({ ...prev, status: 'pending', selectedOptions: selectedOptions }));
             setSelectedOptions([]);
             showMessage("Application submitted! Pending admin review.");
+            setTimeout(() => setActiveScreen('CreatorDashboard'), 1500);
         } catch (error) {
             console.error("Application error:", error);
             showMessage(error.message || "Failed to submit application. Please try again.");
@@ -209,8 +212,8 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
     }
 
     // DEFINITIVE FIX: Handle both boolean (true) and string ("true") to prevent the admin dashboard toggle bug
-    const isFilmClubOpen = config?.filmClubOpen === true || String(config?.filmClubOpen).toLowerCase() === "true";
-    const isDocuSeriesOpen = config?.docuSeriesOpen === true || String(config?.docuSeriesOpen).toLowerCase() === "true";
+    const isFilmClubOpen = config?.filmClubOpen === true || String(config?.filmClubOpen).toLowerCase() === "true" || existingApp?.selectedOptions?.includes('filmClub');
+    const isDocuSeriesOpen = config?.docuSeriesOpen === true || String(config?.docuSeriesOpen).toLowerCase() === "true" || existingApp?.selectedOptions?.includes('docuSeries');
 
     const profileCheck = checkProfileComplete();
     const total = calculateTotal();
@@ -275,21 +278,9 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                                 NVA Film Club Classes {isFilmClubLocked && <span style={{fontSize: '12px', color: '#888', fontWeight: 'normal'}}>(Locked)</span>}
                             </p>
                             <p style={{ margin: '4px 0 0', fontSize: '20px', fontWeight: 'bold', color: '#FFD700' }}>
-                                ${config.filmClubFee?.toLocaleString() || '2,500'} GYD
+                                ${config.filmClubFee !== undefined ? config.filmClubFee.toLocaleString() : '2,500'} GYD
                             </p>
                         </div>
-                        {selectedOptions.length === 2 && (
-                            <span style={{
-                                backgroundColor: '#FFD700',
-                                color: '#0A0A0A',
-                                padding: '4px 10px',
-                                borderRadius: '10px',
-                                fontSize: '11px',
-                                fontWeight: 'bold'
-                            }}>
-                                BUNDLE
-                            </span>
-                        )}
                     </div>
                     <p style={{ color: '#AAA', fontSize: '13px', lineHeight: 1.6, margin: 0 }}>
                         {config.filmClubInfo || "Professional acting classes, scene study, character development, and audition preparation with industry mentors."}
@@ -327,7 +318,7 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                                 Film Club Docu-Series Challenge {isDocuSeriesLocked && <span style={{fontSize: '12px', color: '#888', fontWeight: 'normal'}}>(Locked)</span>}
                             </p>
                             <p style={{ margin: '4px 0 0', fontSize: '20px', fontWeight: 'bold', color: '#FFD700' }}>
-                                ${config.docuSeriesFee?.toLocaleString() || '500'} GYD
+                                ${config.docuSeriesFee !== undefined ? config.docuSeriesFee.toLocaleString() : '500'} GYD
                             </p>
                         </div>
                     </div>
@@ -353,11 +344,6 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                             <p style={{ margin: 0, color: '#AAA', fontSize: '13px' }}>
                                 Selected: {selectedOptions.map(o => o === 'filmClub' ? 'Film Club' : 'Docu-Series').join(' + ')}
                             </p>
-                            {selectedOptions.length === 2 && config?.bothDiscount > 0 && (
-                                <p style={{ margin: '4px 0 0', color: '#00FF00', fontSize: '12px' }}>
-                                    Bundle discount applied: -${config.bothDiscount.toLocaleString()} GYD
-                                </p>
-                            )}
                         </div>
                         <p style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#FFD700' }}>
                             ${total.toLocaleString()} GYD
@@ -383,6 +369,14 @@ const EnrollmentHubScreen = ({ setActiveScreen, currentUser, creatorProfile, sho
                     <button className="button" onClick={() => setActiveScreen('EnrollmentPayment')} style={{ margin: 0 }}>
                         <span className="buttonText">Make Payment</span>
                     </button>
+                </div>
+            )}
+
+            {statusLower === 'invited' && (
+                <div style={{ backgroundColor: 'rgba(255, 215, 0, 0.1)', border: '1px solid #FFD700', borderRadius: '10px', padding: '15px', marginBottom: '15px', textAlign: 'center' }}>
+                    <p style={{ color: '#FFD700', fontWeight: 'bold', fontSize: '14px', margin: 0 }}>
+                        🌟 You've been invited! Please fill out your details below to finalize your registration.
+                    </p>
                 </div>
             )}
 

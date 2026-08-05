@@ -339,10 +339,7 @@ const CreatorDashboardScreen = ({
         return () => unsub();
     }, [currentUser]); 
     
-    // Clean, responsive dismiss tracker permanently mapped to browser cache and state-aware
-    const [dismissedStatus, setDismissedStatus] = useState(() => {
-        return localStorage.getItem(`nva_banner_dismissed_status_${currentUser?.uid}`) || null;
-    });
+    const dismissedStatus = creatorProfile?.dismissedEnrollmentStatus || null;
     
     const [editCreatorName, setEditCreatorName] = useState('');
     const [editRealName, setEditRealName] = useState(''); // Added Legal Real Name state
@@ -540,16 +537,21 @@ const CreatorDashboardScreen = ({
 
     const shouldShowEnrollmentBanner = useMemo(() => {
         if (isEnrollmentLoading || !enrollmentStatus) return false;
-        if (isPending || statusLower === 'approved') return true; 
+        if (isPending || statusLower === 'approved' || statusLower === 'invited') return true; 
         if (isSettled) {
             return !isBannerDismissed; 
         }
         return true; 
     }, [isEnrollmentLoading, enrollmentStatus, isPending, isSettled, isBannerDismissed, statusLower]);
 
-    const handleDismissBanner = () => {
-        setDismissedStatus(statusLower);
-        localStorage.setItem(`nva_banner_dismissed_status_${currentUser?.uid}`, statusLower);
+    const handleDismissBanner = async () => {
+        try {
+            await updateDoc(doc(db, "creators", currentUser.uid), {
+                dismissedEnrollmentStatus: statusLower
+            });
+        } catch (e) {
+            console.warn("Failed to save banner dismissal:", e);
+        }
     };
 
     // --- DATA FETCHING ---
@@ -1445,10 +1447,20 @@ const CreatorDashboardScreen = ({
                             </button>
                         )}
 
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '15px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '15px', flexWrap: 'wrap' }}>
                             <p className="dashboardItem" style={{ margin: 0 }}>
-                                Your {isDocuSeries ? "registration" : "enrollment"} status is: <strong style={{ textTransform: 'capitalize' }}>{enrollmentStatus.status}</strong>
+                                {statusLower === 'invited' 
+                                    ? `🌟 You have been specially invited to register for: ${hasDocuSeriesOption && hasFilmClubOption ? 'Film Club & Docu-Series' : hasDocuSeriesOption ? 'Docu-Series' : 'Film Club'}`
+                                    : `Your ${isDocuSeries ? "registration" : "enrollment"} status is: `}
+                                {statusLower !== 'invited' && <strong style={{ textTransform: 'capitalize' }}>{statusLower === 'enrolled' ? 'Enrolled / Active' : enrollmentStatus.status}</strong>}
                             </p>
+                            
+                            {statusLower === 'invited' && (
+                                <button className="dashboardButton" onClick={() => setActiveScreen('EnrollmentHub')} style={{ background: '#FFD700', color: '#000', fontWeight: 'bold', border: 'none' }}>
+                                    Accept Invite & Register
+                                </button>
+                            )}
+                            
                             {statusLower === 'approved' && (
                                 <button className="dashboardButton" onClick={() => setActiveScreen('EnrollmentPayment')}>
                                     Make {isDocuSeries ? "Registration" : "Enrollment"} Payment

@@ -167,10 +167,10 @@ const EnrollmentPaymentScreen = ({ currentUser, showMessage, setActiveScreen, cr
             .map(opt => ({
                 id: opt,
                 label: opt === 'filmClub' ? (isFilmClubRenewalWindow ? 'Film Club Renewal' : 'Film Club Classes') : 'Docu-Series Challenge',
-                amount: opt === 'filmClub' ? (config.filmClubFee || 2500) : (config.docuSeriesFee || 500)
+                amount: opt === 'filmClub' ? (config.filmClubFee !== undefined ? config.filmClubFee : 2500) : (config.docuSeriesFee !== undefined ? config.docuSeriesFee : 500)
             }));
         // RECALCULATE TOTAL: Prevents charging for blocked tracks
-        displayTotal = items.reduce((sum, item) => sum + item.amount, 0) - (items.length === 2 ? (config.bothDiscount || 0) : 0);
+        displayTotal = items.reduce((sum, item) => sum + item.amount, 0);
     }
 
     return (
@@ -196,13 +196,6 @@ const EnrollmentPaymentScreen = ({ currentUser, showMessage, setActiveScreen, cr
                         </div>
                     </div>
                 )) : <p style={{ color: '#888', fontSize: '13px' }}>No active payments required.</p>}
-
-                {!isTicketCheckout && items.length === 2 && config.bothDiscount > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '14px' }}>
-                        <span style={{ color: '#00FF00' }}>Bundle Discount</span>
-                        <span style={{ color: '#00FF00' }}>-${config.bothDiscount.toLocaleString()} GYD</span>
-                    </div>
-                )}
                 
                 <div style={{ borderTop: '1px solid #444', marginTop: '10px', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ color: '#FFF', fontWeight: 'bold' }}>Total Due Now</span>

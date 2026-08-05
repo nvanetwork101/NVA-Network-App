@@ -264,7 +264,7 @@ service cloud.firestore {
 
     match /enrollmentApplications/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isModerator());
-      allow write: if false;
+      allow write: if isModerator();
     }
 
     match /movies/{movieId} {

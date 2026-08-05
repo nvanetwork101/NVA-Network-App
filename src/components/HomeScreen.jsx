@@ -276,10 +276,10 @@ import RoastTokenVault from './RoastTokenVault';
             const valid = snap.docs.map(docSnap => {
                 const data = docSnap.data();
                 const expiresAtMs = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : new Date(data.expiresAt).getTime();
-                const createdAtMs = data.createdAt?.toMillis ? data.createdAt.toMillis() : (data.createdAt ? new Date(data.createdAt).getTime() : now);
+                // GOD-TIER FIX: Unresolved serverTimestamp() defaults to 'now' so new uploads aren't flagged as 56-year-old stuck stories
+                const createdAtMs = data.createdAt?.toMillis ? data.createdAt.toMillis() : now;
                 return { id: docSnap.id, ...data, expiresAtMs, createdAtMs };
             }).filter(story => {
-                // GOD-TIER SELF-HEALING: Drops processing tiles after 3 minutes if server hangs
                 const isStuck = story.processing && (now - story.createdAtMs > 180000);
                 if (isStuck) return false;
                 return story.processing !== true || story.userId === currentUser?.uid;
@@ -2105,9 +2105,9 @@ import RoastTokenVault from './RoastTokenVault';
                                             const newDoc = await addDoc(collection(db, "flash_stories"), payload);
                                             await updateDoc(doc(db, "creators", currentUser.uid), { hasActiveStory: true });
 
-                                            // Ping Tokyo Oracle VPS Engine via Direct IP to Watermark, Cut & Purge Raw Upload
+                                            // GOD-TIER FIX: Uses Caddy HTTPS reverse proxy to bypass mobile browser mixed-content security blocks
                                             if (mediaType === 'video' && rawFileKey) {
-                                                fetch('http://158.179.184.80:5000/api/process-story', {
+                                                fetch('https://engine.nvanetworkapp.com/api/process-story', {
                                                     method: 'POST',
                                                     headers: { 'Content-Type': 'application/json' },
                                                     body: JSON.stringify({

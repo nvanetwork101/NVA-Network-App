@@ -6520,6 +6520,8 @@ exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (
         const userAuthEmail = request.auth.token.email || userData.email || "";
         const fallbackName = userAuthEmail ? userAuthEmail.split('@')[0] : "Applicant";
 
+        const initialStatus = "pending"; // Fix: Strictly enforce Admin Review regardless of price
+
         const applicationData = {
             userId: uid,
             userName: userData.creatorName || fallbackName,
@@ -6530,12 +6532,12 @@ exports.submitEnrollmentApplication = onCall({ enforceAppCheck: false }, async (
             applicantRole: userData.role || "user",
             experience: submittedExperience,
             bio: userData.bio || "",
-            selectedOptions,
+            selectedOptions: selectedOptions, // Fix: Pure options, no merging
             totalAmount: totalAmount || 0,
-            status: "pending",
+            status: initialStatus,
             submittedAt: admin.firestore.FieldValue.serverTimestamp(),
             history: admin.firestore.FieldValue.arrayUnion({
-                status: "pending",
+                status: initialStatus,
                 timestamp: new Date().toISOString(),
                 actor: "user"
             })

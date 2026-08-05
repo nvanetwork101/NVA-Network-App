@@ -2363,6 +2363,45 @@ const AdminDashboardScreen = ({
                                                                         ))}
                                                                     </select>
                                                                 )}
+
+                                                                <span style={{ fontSize: '11px', color: '#666', marginLeft: '4px' }}>Target Track:</span>
+                                                                <select 
+                                                                    defaultValue=""
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                    onChange={async (e) => {
+                                                                        const val = e.target.value;
+                                                                        if (!val) return;
+                                                                        showMessage(`Updating silent track invite for ${user.creatorName}...`);
+                                                                        try {
+                                                                            const appRef = doc(db, "enrollmentApplications", user.id);
+                                                                            if (val === 'none') {
+                                                                                await deleteDoc(appRef);
+                                                                                showMessage("Track invite cleared.");
+                                                                            } else {
+                                                                                const opts = val === 'both' ? ['filmClub', 'docuSeries'] : [val];
+                                                                                await setDoc(appRef, {
+                                                                                    userId: user.id,
+                                                                                    userName: user.creatorName || "Member",
+                                                                                    userEmail: user.email || "",
+                                                                                    selectedOptions: opts,
+                                                                                    status: "invited",
+                                                                                    invitedAt: new Date().toISOString(),
+                                                                                    history: [{ status: "invited", timestamp: new Date().toISOString(), actor: "admin" }]
+                                                                                }, { merge: true });
+                                                                                showMessage(`Sent exclusive invite to ${user.creatorName} for ${val}!`);
+                                                                            }
+                                                                        } catch(err) {
+                                                                            showMessage(`Failed: ${err.message}`);
+                                                                        }
+                                                                    }}
+                                                                    style={{ background: '#1A1A1A', border: '1px solid #4ADE80', color: '#4ADE80', fontSize: '11px', padding: '2px 6px', borderRadius: '4px', cursor: 'pointer' }}
+                                                                >
+                                                                    <option value="">Invite Member...</option>
+                                                                    <option value="none">❌ Clear Invite / Application</option>
+                                                                    <option value="filmClub">🎬 Film Club ($0 Auto)</option>
+                                                                    <option value="docuSeries">🏆 Docu-Series ($0 Auto)</option>
+                                                                    <option value="both">🌟 Both Tracks ($0 Auto)</option>
+                                                                </select>
                                                             </div>
 
                                                             <p style={{ fontSize: '12px', color: primaryStatus.color, fontWeight: 'bold', margin: 0 }}>Status: {primaryStatus.text}</p>
