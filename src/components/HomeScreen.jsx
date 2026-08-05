@@ -276,7 +276,7 @@ import RoastTokenVault from './RoastTokenVault';
                 const data = docSnap.data();
                 const expiresAtMs = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : new Date(data.expiresAt).getTime();
                 return { id: docSnap.id, ...data, expiresAtMs };
-            }).filter(story => story.processing !== true); // GOD-TIER FIX: Eradicates ghost stories and UI blocking permanently
+            }).filter(story => story.processing !== true || story.userId === currentUser?.uid); // GOD-TIER FIX: Shows processing tile ONLY to creator
             setFlashStories(valid);
 
             // Group stories by userId mapping
@@ -722,14 +722,18 @@ import RoastTokenVault from './RoastTokenVault';
                                         showMessage("You must be logged in to view full Flash Stories.");
                                         return;
                                     }
+                                    if (story.processing) {
+                                        showMessage("⚙️ Story is optimizing...");
+                                        return;
+                                    }
                                     const firstUnreadIdx = userStories.findIndex(s => !viewedStories.has(s.id));
                                     setActiveSubStoryIndex(firstUnreadIdx !== -1 ? firstUnreadIdx : 0);
                                     setActiveUserIndex(idx);
                                 }}
                                 style={{ 
                                     position: 'relative', width: '125px', height: '195px', borderRadius: '16px', overflow: 'hidden', 
-                                    border: isExpiringSoon ? '2px solid #FF0000' : (allViewed ? '2px solid #555' : '2px solid #FFD700'),
-                                    boxShadow: isExpiringSoon ? '0 0 20px rgba(255,0,0,0.6)' : (allViewed ? 'none' : '0 6px 20px rgba(0,0,0,0.6)'),
+                                    border: story.processing ? '2px dashed #FFD700' : (isExpiringSoon ? '2px solid #FF0000' : (allViewed ? '2px solid #555' : '2px solid #FFD700')),
+                                    boxShadow: story.processing ? '0 0 15px rgba(255,215,0,0.4)' : (isExpiringSoon ? '0 0 20px rgba(255,0,0,0.6)' : (allViewed ? 'none' : '0 6px 20px rgba(0,0,0,0.6)')),
                                     cursor: 'pointer', flexShrink: 0, scrollSnapAlign: 'start', 
                                     background: story.mediaType === 'text' ? story.storyBgColor || '#0D0D0D' : '#0D0D0D', transition: 'transform 0.2s ease'
                                 }}
@@ -738,8 +742,9 @@ import RoastTokenVault from './RoastTokenVault';
                             >
                                 {/* Multi-Mode Background Renderer */}
                                 {story.processing && (!story.videoUrl || !story.videoUrl.includes('/stories/')) ? (
-                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111' }}>
-                                        <span style={{ fontSize: '24px' }}>⚙️</span>
+                                    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#111', padding: '10px', textAlign: 'center' }}>
+                                        <span style={{ fontSize: '28px', marginBottom: '8px' }}>⚙️</span>
+                                        <span style={{ color: '#FFD700', fontSize: '10px', fontWeight: '900', letterSpacing: '0.5px' }}>Processing...</span>
                                     </div>
                                 ) : story.mediaType === 'video' ? (
                                     <video ref={el => storyVideoRefs.current[story.id] = el} src={story.videoUrl} autoPlay muted playsInline preload="metadata" onTimeUpdate={(e) => { if (e.target.currentTime >= 3) { e.target.currentTime = 0; e.target.play().catch(() => {}); } }} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -1679,7 +1684,7 @@ import RoastTokenVault from './RoastTokenVault';
                                     onTouchEnd={() => { setIsDraggingText(false); setIsResizingText(false); }}
                                 >
                                     {mediaType === 'video' ? (
-                                        <video ref={previewVideoRef} src={storyPreviewUrl} autoPlay playsInline muted={isPreviewMuted} onLoadedMetadata={() => { if (previewVideoRef.current) { const dur = previewVideoRef.current.duration || 60; setVideoDuration(dur); setTrimEnd(Math.min(dur, 60)); } }} onTimeUpdate={() => { if (previewVideoRef.current && previewVideoRef.current.currentTime >= trimEnd) previewVideoRef.current.currentTime = trimStart; }} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${videoPanX}% 50%` }} />
+                                        <video ref={previewVideoRef} src={storyPreviewUrl ? (storyPreviewUrl.startsWith('http') ? `${storyPreviewUrl}?sw_bypass=${Date.now()}` : storyPreviewUrl) : ''} crossOrigin="anonymous" autoPlay playsInline muted={isPreviewMuted} onLoadedMetadata={() => { if (previewVideoRef.current) { const dur = previewVideoRef.current.duration || 60; setVideoDuration(dur); setTrimEnd(Math.min(dur, 60)); } }} onTimeUpdate={() => { if (previewVideoRef.current && previewVideoRef.current.currentTime >= trimEnd) previewVideoRef.current.currentTime = trimStart; }} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${videoPanX}% 50%` }} />
                                     ) : mediaType === 'slideshow' ? (
                                         <img src={storyImages[0]?.url} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                     ) : null}
