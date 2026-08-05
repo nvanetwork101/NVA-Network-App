@@ -272,11 +272,18 @@ import RoastTokenVault from './RoastTokenVault';
             limit(50)
         );
         const unsub = onSnapshot(q, (snap) => {
+            const now = Date.now();
             const valid = snap.docs.map(docSnap => {
                 const data = docSnap.data();
                 const expiresAtMs = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : new Date(data.expiresAt).getTime();
-                return { id: docSnap.id, ...data, expiresAtMs };
-            }).filter(story => story.processing !== true || story.userId === currentUser?.uid); // GOD-TIER FIX: Shows processing tile ONLY to creator
+                const createdAtMs = data.createdAt?.toMillis ? data.createdAt.toMillis() : (data.createdAt ? new Date(data.createdAt).getTime() : now);
+                return { id: docSnap.id, ...data, expiresAtMs, createdAtMs };
+            }).filter(story => {
+                // GOD-TIER SELF-HEALING: Drops processing tiles after 3 minutes if server hangs
+                const isStuck = story.processing && (now - story.createdAtMs > 180000);
+                if (isStuck) return false;
+                return story.processing !== true || story.userId === currentUser?.uid;
+            });
             setFlashStories(valid);
 
             // Group stories by userId mapping
