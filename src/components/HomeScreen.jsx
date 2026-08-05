@@ -276,7 +276,7 @@ import RoastTokenVault from './RoastTokenVault';
                 const data = docSnap.data();
                 const expiresAtMs = data.expiresAt?.toMillis ? data.expiresAt.toMillis() : new Date(data.expiresAt).getTime();
                 return { id: docSnap.id, ...data, expiresAtMs };
-            });
+            }).filter(story => story.processing !== true); // GOD-TIER FIX: Eradicates ghost stories and UI blocking permanently
             setFlashStories(valid);
 
             // Group stories by userId mapping
@@ -656,7 +656,12 @@ import RoastTokenVault from './RoastTokenVault';
                         if (storyTrayRef.current) {
                             const { scrollLeft, clientWidth } = storyTrayRef.current;
                             setStoryPage(Math.round(scrollLeft / (clientWidth * 0.75)));
+                            sessionStorage.setItem('story_tray_scroll_pos', scrollLeft); // Save scroll memory
                         }
+                    }}
+                    onAnimationEnd={() => {
+                        const saved = sessionStorage.getItem('story_tray_scroll_pos');
+                        if (saved && storyTrayRef.current) storyTrayRef.current.scrollLeft = parseInt(saved, 10);
                     }}
                     style={{ 
                         display: 'flex', 
@@ -732,7 +737,11 @@ import RoastTokenVault from './RoastTokenVault';
                                 onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
                             >
                                 {/* Multi-Mode Background Renderer */}
-                                {story.mediaType === 'video' ? (
+                                {story.processing && (!story.videoUrl || !story.videoUrl.includes('/stories/')) ? (
+                                    <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111' }}>
+                                        <span style={{ fontSize: '24px' }}>⚙️</span>
+                                    </div>
+                                ) : story.mediaType === 'video' ? (
                                     <video ref={el => storyVideoRefs.current[story.id] = el} src={story.videoUrl} autoPlay muted playsInline preload="metadata" onTimeUpdate={(e) => { if (e.target.currentTime >= 3) { e.target.currentTime = 0; e.target.play().catch(() => {}); } }} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 ) : story.mediaType === 'slideshow' ? (
                                     <img src={story.images?.[0]} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -1038,7 +1047,13 @@ import RoastTokenVault from './RoastTokenVault';
                         </div>
 
                         {/* Multi-Mode Rendering Engine */}
-                        {currentStory.mediaType === 'slideshow' ? (
+                        {currentStory.processing && (!currentStory.videoUrl || !currentStory.videoUrl.includes('/stories/')) ? (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0D0D0D' }}>
+                                <span style={{ fontSize: '40px', marginBottom: '10px' }}>⚙️</span>
+                                <p style={{ color: '#FFD700', fontWeight: '900', letterSpacing: '1px' }}>Processing 1080p Clip...</p>
+                                <p style={{ color: '#888', fontSize: '10px', marginTop: '10px' }}>(If stuck here for minutes, delete & retry)</p>
+                            </div>
+                        ) : currentStory.mediaType === 'slideshow' ? (
                             <img src={currentStory.images?.[slideshowIndex]} alt="Slide" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : currentStory.mediaType === 'text' ? (
                             <div style={{ width: '100%', height: '100%', background: currentStory.storyBgColor || '#0D0D0D' }} />
@@ -1287,9 +1302,10 @@ import RoastTokenVault from './RoastTokenVault';
                                         
                                         <button onClick={async () => {
                                             setShowOptionsId(null);
-                                            showMessage('Processing Watermark Download...');
+                                            showMessage('Downloading video...');
                                             try {
-                                                const res = await fetch(currentStory.videoUrl);
+                                                // GOD-TIER FIX: Fetches dedicated watermarked file for downloads
+                                                const res = await fetch(currentStory.downloadUrl || currentStory.videoUrl);
                                                 const blob = await res.blob();
                                                 const a = document.createElement('a');
                                                 a.href = URL.createObjectURL(blob);
@@ -1978,6 +1994,7 @@ import RoastTokenVault from './RoastTokenVault';
                                 disabled={(!storyFile && !editingStoryId) || isUploadingStory}
                                 onClick={async () => {
                                     setIsUploadingStory(true);
+                                    if (previewVideoRef.current) previewVideoRef.current.pause(); // FIX: Halts playback loop during upload
                                     try {
                                         let finalVideoUrl = storyPreviewUrl;
                                         let finalExpiresAtMs = Date.now() + (2 * 60 * 60 * 1000); // default
@@ -2041,7 +2058,7 @@ import RoastTokenVault from './RoastTokenVault';
                                             userName: creatorProfile?.creatorName || currentUser.displayName || 'Creator',
                                             userProfilePicture: creatorProfile?.profilePictureUrl || currentUser.photoURL || '',
                                             mediaType: mediaType,
-                                            videoUrl: mediaType === 'video' ? finalMediaUrls[0] : null,
+                                            videoUrl: mediaType === 'video' ? "" : finalMediaUrls[0], // FIX: Prevents raw 500MB file leak to UI
                                             images: mediaType === 'slideshow' ? finalMediaUrls : null,
                                             storyBgColor: mediaType === 'text' ? storyBgColor : null,
                                             storyLink: storyLink.trim() || null,
@@ -2076,9 +2093,9 @@ import RoastTokenVault from './RoastTokenVault';
                                             const newDoc = await addDoc(collection(db, "flash_stories"), payload);
                                             await updateDoc(doc(db, "creators", currentUser.uid), { hasActiveStory: true });
 
-                                            // Ping Tokyo Oracle VPS Engine to Watermark, Cut & Purge Raw Upload
+                                            // Ping Tokyo Oracle VPS Engine via Direct IP to Watermark, Cut & Purge Raw Upload
                                             if (mediaType === 'video' && rawFileKey) {
-                                                fetch('https://engine.nvanetworkapp.com/api/process-story', {
+                                                fetch('http://158.179.184.80:5000/api/process-story', {
                                                     method: 'POST',
                                                     headers: { 'Content-Type': 'application/json' },
                                                     body: JSON.stringify({
@@ -2097,7 +2114,7 @@ import RoastTokenVault from './RoastTokenVault';
                                                     type: "TAGGED_IN_STORY", createdAt: new Date(), read: false
                                                 }).catch(() => {});
                                             });
-                                            showMessage("⚡ Flash Story posted! Watermark & 1080p processing in progress...");
+                                            showMessage(mediaType === 'video' ? "⚡ Downloading video & processing 1080p watermark..." : "⚡ Flash Story posted!");
                                         }
 
                                         setShowUploaderModal(false);
@@ -2117,8 +2134,8 @@ import RoastTokenVault from './RoastTokenVault';
                             >
                                 {isUploadingStory ? (
                                     uploadProgress < 0 
-                                        ? `Processing ${'.'.repeat(Math.abs(uploadProgress))}` 
-                                        : `Uploading... ${uploadProgress}%`
+                                        ? `Finalizing ${'.'.repeat(Math.abs(uploadProgress))}` 
+                                        : `Uploading... [${uploadProgress}%]`
                                 ) : (editingStoryId ? "💾 Save Updates" : "⚡ Publish Flash Story")}
                             </button>
                         </div>
