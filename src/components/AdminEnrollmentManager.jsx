@@ -351,56 +351,45 @@ const AdminEnrollmentManager = ({ showMessage, setActiveScreen, setSelectedUserI
                 {app.status === 'pending' && (
                     <button className="adminActionButton approve" onClick={async () => {
                         try {
-                            if ((app.totalAmount || 0) === 0) {
+                            const isZeroFee = (app.totalAmount || 0) === 0;
+                            if (isZeroFee) {
                                 // Smart $0 Auto-Enroll Bypass
                                 await updateDoc(doc(db, "enrollmentApplications", app.userId), {
                                     status: 'enrolled',
                                     updatedAt: new Date().toISOString()
                                 });
-                                
-                                // Fire Inbox & Push Notification
-                                await addDoc(collection(db, "notifications"), {
-                                    userId: app.userId,
-                                    title: "Registration Approved! 🎉",
-                                    body: "Your application has been approved and you are now fully active!",
-                                    link: "/CreatorDashboard",
-                                    deliveryType: ["inbox", "push"],
-                                    notificationType: "ENROLLMENT_APPROVED",
-                                    isRead: false,
-                                    status: "pending",
-                                    timestamp: new Date()
-                                });
-
-                                // Trigger UI Toast & Force Banner to Reappear
-                                await updateDoc(doc(db, "creators", app.userId), { 
-                                    latestNotification: { message: "Your registration is now active!", timestamp: new Date().toISOString() },
-                                    dismissedEnrollmentStatus: null 
-                                });
-
-                                if (showMessageRef.current) showMessageRef.current("Approved & Auto-Enrolled ($0 Fee).");
-                                fetchApplicationsAndCounts(activeTab);
                             } else {
-                                // Standard Approval (Routes user to Payment screen)
+                                // Standard Approval
                                 await handleAction(approveEnrollmentApplication, app.userId, "Application Approved. Awaiting Payment.");
-                                
-                                // Fire Inbox & Push Notification for Payment
-                                await addDoc(collection(db, "notifications"), {
-                                    userId: app.userId,
-                                    title: "Application Approved! 💳",
-                                    body: "Your application is approved. Please complete your payment to activate your registration.",
-                                    link: "/CreatorDashboard",
-                                    deliveryType: ["inbox", "push"],
-                                    notificationType: "ENROLLMENT_PAYMENT_REQUIRED",
-                                    isRead: false,
-                                    status: "pending",
-                                    timestamp: new Date()
-                                });
+                            }
 
-                                // Trigger UI Toast & Force Banner to Reappear
-                                await updateDoc(doc(db, "creators", app.userId), { 
-                                    latestNotification: { message: "Application Approved! Payment required.", timestamp: new Date().toISOString() },
-                                    dismissedEnrollmentStatus: null 
-                                });
+                            // Fire Inbox & Push Notification with Deep Linking
+                            await addDoc(collection(db, "notifications"), {
+                                userId: app.userId,
+                                title: isZeroFee ? "Registration Approved! 🎉" : "Application Approved! 💳",
+                                body: isZeroFee 
+                                    ? "🎉 Registration Approved! Your access is now active. Tap here to view your dashboard."
+                                    : "💳 Application Approved! Tap here to complete your registration payment.",
+                                link: "/CreatorDashboard",
+                                deliveryType: ["inbox", "push"],
+                                notificationType: isZeroFee ? "ENROLLMENT_APPROVED" : "ENROLLMENT_PAYMENT_REQUIRED",
+                                isRead: false,
+                                status: "pending",
+                                timestamp: new Date()
+                            });
+
+                            // Trigger UI Toast & Reset Banner Dismissal State
+                            await updateDoc(doc(db, "creators", app.userId), { 
+                                latestNotification: { 
+                                    message: isZeroFee ? "Your registration is now active!" : "Application Approved! Payment required.", 
+                                    timestamp: new Date().toISOString() 
+                                },
+                                dismissedEnrollmentStatus: null 
+                            });
+
+                            if (isZeroFee) {
+                                if (showMessageRef.current) showMessageRef.current("Approved & Auto-Enrolled ($0 Fee). Notification sent.");
+                                fetchApplicationsAndCounts(activeTab);
                             }
                         } catch (err) {
                             if (showMessageRef.current) showMessageRef.current(`Error: ${err.message}`);
@@ -408,7 +397,32 @@ const AdminEnrollmentManager = ({ showMessage, setActiveScreen, setSelectedUserI
                     }}>Approve</button>
                 )}
                 {app.status === 'paymentPending' && (
-                    <button className="adminActionButton" style={{backgroundColor: '#00FF00', color: '#0A0A0A'}} onClick={() => handleAction(verifyEnrollmentPayment, app.userId, "Payment Verified & Enrolled.")}>Verify Payment</button>
+                    <button className="adminActionButton" style={{backgroundColor: '#00FF00', color: '#0A0A0A'}} onClick={async () => {
+                        try {
+                            await handleAction(verifyEnrollmentPayment, app.userId, "Payment Verified & Enrolled.");
+                            
+                            // Fire Deep-Linked Inbox Notification for Verified Payment
+                            await addDoc(collection(db, "notifications"), {
+                                userId: app.userId,
+                                title: "Payment Verified! 🎉",
+                                body: "🎉 Payment Verified! Your access is now fully active. Tap here to view your dashboard.",
+                                link: "/CreatorDashboard",
+                                deliveryType: ["inbox", "push"],
+                                notificationType: "PAYMENT_VERIFIED",
+                                isRead: false,
+                                status: "pending",
+                                timestamp: new Date()
+                            });
+
+                            // Trigger UI Toast & Reset Banner Dismissal State
+                            await updateDoc(doc(db, "creators", app.userId), { 
+                                latestNotification: { message: "Payment verified! Access active.", timestamp: new Date().toISOString() },
+                                dismissedEnrollmentStatus: null 
+                            });
+                        } catch (err) {
+                            if (showMessageRef.current) showMessageRef.current(`Error: ${err.message}`);
+                        }
+                    }}>Verify Payment</button>
                 )}
                 {(app.status === 'declined' || app.status === 'revoked') && (
                     <button className="adminActionButton" style={{backgroundColor: '#FF8C00', color: '#FFF'}} onClick={() => handleAction(clearEnrollmentHold, app.userId, "Enrollment hold cleared. User can now reapply.")}>Clear Hold</button>

@@ -95,6 +95,10 @@ service cloud.firestore {
       match /claimedRewards/{rewardId} {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
+      match /roundVotes/{path=**} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
       match /feed/{feedItemId} {
         allow read: if isAuthenticated() && request.auth.uid == userId;
         allow delete: if isAuthenticated() && request.auth.uid == userId;

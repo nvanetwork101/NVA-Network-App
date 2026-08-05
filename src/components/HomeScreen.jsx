@@ -729,7 +729,8 @@ import RoastTokenVault from './RoastTokenVault';
                                         showMessage("You must be logged in to view full Flash Stories.");
                                         return;
                                     }
-                                    if (story.processing) {
+                                    // FIX: Allow the owner to click into a processing story so they can access the delete button if it gets stuck
+                                    if (story.processing && story.userId !== currentUser?.uid) {
                                         showMessage("⚙️ Story is optimizing...");
                                         return;
                                     }
@@ -1691,7 +1692,7 @@ import RoastTokenVault from './RoastTokenVault';
                                     onTouchEnd={() => { setIsDraggingText(false); setIsResizingText(false); }}
                                 >
                                     {mediaType === 'video' ? (
-                                        <video ref={previewVideoRef} src={storyPreviewUrl ? (storyPreviewUrl.startsWith('http') ? `${storyPreviewUrl}?sw_bypass=${Date.now()}` : storyPreviewUrl) : ''} crossOrigin="anonymous" autoPlay playsInline muted={isPreviewMuted} onLoadedMetadata={() => { if (previewVideoRef.current) { const dur = previewVideoRef.current.duration || 60; setVideoDuration(dur); setTrimEnd(Math.min(dur, 60)); } }} onTimeUpdate={() => { if (previewVideoRef.current && previewVideoRef.current.currentTime >= trimEnd) previewVideoRef.current.currentTime = trimStart; }} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${videoPanX}% 50%` }} />
+                                        <video ref={previewVideoRef} src={storyPreviewUrl || ''} crossOrigin="anonymous" autoPlay playsInline muted={isPreviewMuted} onLoadedMetadata={() => { if (previewVideoRef.current) { const dur = previewVideoRef.current.duration || 60; setVideoDuration(dur); setTrimEnd(Math.min(dur, 60)); } }} onTimeUpdate={() => { if (previewVideoRef.current && previewVideoRef.current.currentTime >= trimEnd) previewVideoRef.current.currentTime = trimStart; }} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${videoPanX}% 50%` }} />
                                     ) : mediaType === 'slideshow' ? (
                                         <img src={storyImages[0]?.url} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                     ) : null}
@@ -2109,14 +2110,23 @@ import RoastTokenVault from './RoastTokenVault';
                                             if (mediaType === 'video' && rawFileKey) {
                                                 fetch('https://engine.nvanetworkapp.com/api/process-story', {
                                                     method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
+                                                    headers: { 
+                                                        'Content-Type': 'application/json',
+                                                        'Authorization': `Bearer ${import.meta.env.VITE_ENGINE_API_KEY}`
+                                                    },
                                                     body: JSON.stringify({
                                                         rawFileKey: rawFileKey,
                                                         storyId: newDoc.id,
                                                         trimStart: Math.round(trimStart),
                                                         trimDuration: Math.round(trimEnd - trimStart)
                                                     })
-                                                }).catch(e => console.error("Tokyo Engine Ping Error:", e));
+                                                }).then(res => {
+                                                    if (!res.ok) throw new Error("Server rejected API Key.");
+                                                }).catch(async (e) => {
+                                                    console.error("Tokyo Engine Ping Error:", e);
+                                                    await updateDoc(doc(db, "flash_stories", newDoc.id), { processing: false, error: true }).catch(()=>{});
+                                                    showMessage("Error: Server blocked request. Check API key.");
+                                                });
                                             }
                                             
                                             taggedFriends.forEach(async (f) => {
@@ -2126,7 +2136,7 @@ import RoastTokenVault from './RoastTokenVault';
                                                     type: "TAGGED_IN_STORY", createdAt: new Date(), read: false
                                                 }).catch(() => {});
                                             });
-                                            showMessage(mediaType === 'video' ? "⚡ Downloading video & processing 1080p watermark..." : "⚡ Flash Story posted!");
+                                            showMessage(mediaType === 'video' ? "Finishing up..." : "⚡ Flash Story posted!");
                                         }
 
                                         setShowUploaderModal(false);

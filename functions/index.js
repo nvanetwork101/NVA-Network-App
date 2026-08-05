@@ -8466,17 +8466,12 @@ exports.nukeCenterStageStorage = onCall(async (request) => {
         }
 
         // === 3. GLOBAL LEADERBOARD RESET FOR ALL CREATORS ===
-        // Instead of only clearing active contestants, we clear giftsReceived and giftInventory 
-        // across ALL creators so the board is cleanly wiped, while leaving "badges" completely untouched [1]
-        const creatorsRef = db.collection("creators");
-        const creatorsSnap = await creatorsRef.get();
-        
-        if (!creatorsSnap.empty) {
-            const batch = db.batch();
-            creatorsSnap.forEach(docSnap => {
-                const data = docSnap.data();
-                // Check if they accumulated any votes or gifts this season [1]
-                if (data.giftsReceived > 0 || data.voteCount > 0 || Object.keys(data.giftInventory || {}).length > 0) {
+            const creatorsRef = db.collection("creators");
+            const creatorsSnap = await creatorsRef.get();
+            
+            if (!creatorsSnap.empty) {
+                const batch = db.batch();
+                creatorsSnap.forEach(docSnap => {
                     batch.update(docSnap.ref, {
                         giftsReceived: 0,
                         voteCount: 0,
@@ -8487,17 +8482,31 @@ exports.nukeCenterStageStorage = onCall(async (request) => {
                         isEliminated: false,
                         eliminatedAtStageIndex: null,
                         teamTag: ""
-                        // Notice: "badges" is completely excluded, preserving their legacy status [1]
                     });
-                }
-            });
-            await batch.commit();
-        }
+                });
+                await batch.commit();
+            }
 
-        return { 
-            success: true, 
-            message: "Season storage folders, leaderboard collections, and creator statistics have been cleanly wiped." 
-        };
+            // === 4. RECURSIVE SUBCOLLECTION PURGE (Zero Orphans) ===
+            // Recursively deletes all roundVotes subcollections and nested voters subdocs across all creators
+            const roundVotesGroupSnap = await db.collectionGroup("roundVotes").get();
+            for (const docSnap of roundVotesGroupSnap.docs) {
+                await db.recursiveDelete(docSnap.ref);
+            }
+
+            // === 5. RESET DISPLAY STATE SETTINGS ===
+            await db.doc("settings/competitionDisplayState").set({
+                currentStageIndex: 0,
+                roundMedia: {},
+                roundSponsors: {},
+                championMediaUrl: "",
+                championMediaType: ""
+            }, { merge: true }).catch(() => {});
+
+            return { 
+                success: true, 
+                message: "Season storage folders, creator statistics, roundVotes subcollections, and settings have been 100% cleanly wiped." 
+            };
     } catch (err) {
         throw new HttpsError('internal', err.message);
     }

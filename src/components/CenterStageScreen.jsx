@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { db, functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
 import { 
-    collection, query, where, onSnapshot, doc, setDoc, updateDoc, increment, getDoc 
+    collection, query, where, onSnapshot, doc, setDoc, updateDoc, increment, getDoc, getDocs 
 } from 'firebase/firestore';
 import RoleBadge from './RoleBadge';
 
@@ -206,6 +206,12 @@ const CenterStageScreen = ({ setActiveScreen, currentUser, showMessage, targetCo
     const [giftTokens, setGiftTokens] = useState(GIFT_TOKENS);
     const [selectedToken, setSelectedToken] = useState(GIFT_TOKENS[0]);
 
+    // Public Voter Audit Modal State
+            const [isVotersModalOpen, setIsVotersModalOpen] = useState(false);
+            const [votersList, setVotersList] = useState([]);
+            const [voterModalActorName, setVoterModalActorName] = useState('');
+            const [isFetchingVoters, setIsFetchingVoters] = useState(false);
+
     // Dynamic database subscription
     useEffect(() => {
         const unsub = onSnapshot(doc(db, "settings", "tokenEconomics"), (snap) => {
@@ -266,6 +272,38 @@ const CenterStageScreen = ({ setActiveScreen, currentUser, showMessage, targetCo
         if (index > currentStageIndex) index = currentStageIndex; // Strict Time-Lock Security Fallback
         return stages[index] || 'Round 1';
     }, [viewingStageIndex, currentStageIndex, stages]);
+
+    const openVotersModal = useCallback(async (actor) => {
+        setVoterModalActorName(actor.creatorName || 'Contestant');
+        setIsVotersModalOpen(true);
+        setIsFetchingVoters(true);
+        try {
+            const votersRef = collection(db, "creators", actor.id, "roundVotes", activeViewingStageName, "voters");
+            const snap = await getDocs(votersRef);
+            
+            // Resolve live profile picture for past vote logs missing avatar data
+            const listPromises = snap.docs.map(async (d) => {
+                const data = d.data();
+                let photo = data.voterAvatar || '';
+                if (!photo && data.voterId) {
+                    try {
+                        const userSnap = await getDoc(doc(db, "creators", data.voterId));
+                        if (userSnap.exists()) photo = userSnap.data().profilePictureUrl || '';
+                    } catch (e) {}
+                }
+                return { id: d.id, ...data, voterAvatar: photo };
+            });
+
+            const list = await Promise.all(listPromises);
+            list.sort((a, b) => (b.voteCount || 0) - (a.voteCount || 0));
+            setVotersList(list);
+        } catch (err) {
+            console.error("Error fetching voters:", err);
+            setVotersList([]);
+        } finally {
+            setIsFetchingVoters(false);
+        }
+    }, [activeViewingStageName]);
 
     // --- DYNAMIC ARENA SORTING (Time Machine Enabled) ---
     const arenaData = useMemo(() => {
@@ -339,6 +377,17 @@ const CenterStageScreen = ({ setActiveScreen, currentUser, showMessage, targetCo
         try {
             const actorDocRef = doc(db, "creators", actorId);
             await updateDoc(actorDocRef, { voteCount: increment(1) });
+
+            // Record voter details per round for public audit
+            const voterDocRef = doc(db, "creators", actorId, "roundVotes", activeViewingStageName, "voters", currentUser.uid);
+            await setDoc(voterDocRef, {
+                voterId: currentUser.uid,
+                voterName: creatorProfile?.creatorName || currentUser.displayName || currentUser.email?.split('@')[0] || 'NVA Voter',
+                voterAvatar: creatorProfile?.profilePictureUrl || '',
+                voteCount: increment(1),
+                lastVotedAt: new Date().toISOString()
+            }, { merge: true });
+
             localStorage.setItem(lastVoteKey, Date.now().toString());
             showMessage("Vote cast! Talent recognized.");
         } catch (e) {
@@ -1097,12 +1146,35 @@ const CenterStageScreen = ({ setActiveScreen, currentUser, showMessage, targetCo
                                         
                                         {/* Vote Bar */}
                                         <div className="vote-bar-track"><div className="vote-bar-fill" style={{ width: `${pct}%` }} /></div>
-                                        <p className="vote-count">
-                                            {((viewingStageIndex === null || viewingStageIndex === currentStageIndex) 
-                                                ? (actor.voteCount || 0) 
-                                                : (actor.performances?.[activeViewingStageName]?.votes ?? actor.voteCount ?? 0)
-                                            )} <span style={{ fontSize: '12px', fontWeight: 400, color: '#737373' }}>votes</span>
-                                        </p>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                                            <p className="vote-count" style={{ margin: 0 }}>
+                                                {((viewingStageIndex === null || viewingStageIndex === currentStageIndex) 
+                                                    ? (actor.voteCount || 0) 
+                                                    : (actor.performances?.[activeViewingStageName]?.votes ?? actor.voteCount ?? 0)
+                                                )} <span style={{ fontSize: '12px', fontWeight: 400, color: '#737373' }}>votes</span>
+                                            </p>
+                                            <button 
+                                                onClick={() => openVotersModal(actor)}
+                                                style={{
+                                                    background: '#000000',
+                                                    border: '1px solid #00FFFF',
+                                                    color: '#00FFFF',
+                                                    fontSize: '10px',
+                                                    fontWeight: '800',
+                                                    padding: '4px 10px',
+                                                    borderRadius: '6px',
+                                                    cursor: 'pointer',
+                                                    letterSpacing: '1px',
+                                                    textTransform: 'uppercase',
+                                                    transition: 'all 0.2s ease',
+                                                    boxShadow: 'none'
+                                                }}
+                                                onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 0 12px rgba(0,255,255,0.6)'; e.currentTarget.style.background = 'rgba(0,255,255,0.15)'; }}
+                                                onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.background = '#000000'; }}
+                                            >
+                                                VIEW
+                                            </button>
+                                        </div>
                                         <p className="vote-pct">{pct.toFixed(1)}% of Headliner</p>
                                         
                                         {/* GIFT BADGE ROW — Strict Specific Emojis Only */}
@@ -1436,6 +1508,67 @@ const CenterStageScreen = ({ setActiveScreen, currentUser, showMessage, targetCo
                             </div>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* ====== PUBLIC VOTERS AUDIT MODAL ====== */}
+            {isVotersModalOpen && (
+                <div className="gift-modal-overlay" onClick={() => setIsVotersModalOpen(false)}>
+                    <div className="gift-modal" style={{ maxWidth: '420px', border: '1px solid #00FFFF', boxShadow: '0 0 30px rgba(0,255,255,0.2)' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header" style={{ marginBottom: '16px' }}>
+                            <div>
+                                <p style={{ color: '#00FFFF', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
+                                    🗳️ Public Vote Ledger — {activeViewingStageName}
+                                </p>
+                                <h2 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, margin: '4px 0 0 0' }}>
+                                    {voterModalActorName}
+                                </h2>
+                            </div>
+                            <button className="modal-close" onClick={() => setIsVotersModalOpen(false)}>✕</button>
+                        </div>
+
+                        <div style={{ maxHeight: '350px', overflowY: 'auto', paddingRight: '4px' }}>
+                            {isFetchingVoters ? (
+                                <p style={{ color: '#888', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>Fetching voters...</p>
+                            ) : votersList.length === 0 ? (
+                                <p style={{ color: '#888', textAlign: 'center', padding: '20px 0', fontSize: '13px' }}>No recorded votes yet for {activeViewingStageName}.</p>
+                            ) : (
+                                votersList.map((voter) => (
+                                    <div 
+                                        key={voter.id} 
+                                        onClick={() => {
+                                            if (voter.voterId) {
+                                                window.dispatchEvent(new CustomEvent('navigateToUserProfile', { detail: { userId: voter.voterId } }));
+                                                setIsVotersModalOpen(false);
+                                            }
+                                        }}
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'rgba(0, 255, 255, 0.03)', border: '1px solid rgba(0, 255, 255, 0.1)', borderRadius: '10px', marginBottom: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
+                                        onMouseEnter={e => e.currentTarget.style.borderColor = '#00FFFF'}
+                                        onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(0, 255, 255, 0.1)'}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <img 
+                                                src={voter.voterAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(voter.voterName || 'Voter')}&background=000&color=00FFFF`} 
+                                                alt={voter.voterName} 
+                                                style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '1px solid rgba(0,255,255,0.3)' }} 
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(voter.voterName || 'Voter')}&background=000&color=00FFFF`;
+                                                }}
+                                            />
+                                            <div>
+                                                <span style={{ color: '#FFF', fontWeight: 'bold', fontSize: '13px', display: 'block' }}>{voter.voterName}</span>
+                                                <span style={{ color: '#888', fontSize: '10px' }}>Tap to view profile</span>
+                                            </div>
+                                        </div>
+                                        <span style={{ color: '#00FFFF', fontWeight: '900', fontFamily: 'monospace', fontSize: '13px' }}>
+                                            {voter.voteCount} {voter.voteCount === 1 ? 'vote' : 'votes'}
+                                        </span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
                 </div>
             )}
 
