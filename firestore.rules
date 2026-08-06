@@ -405,7 +405,7 @@ service cloud.firestore {
         resource.data.userId == request.auth.uid || 
         isAdmin() || 
         isModerator() ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount', 'likeCount'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount', 'likeCount', 'likedUsers'])
       );
     }
 

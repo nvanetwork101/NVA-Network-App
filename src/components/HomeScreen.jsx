@@ -1063,7 +1063,7 @@ import RoastTokenVault from './RoastTokenVault';
                         {currentStory.processing && (!currentStory.videoUrl || !currentStory.videoUrl.includes('/stories/')) ? (
                             <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0D0D0D' }}>
                                 <span style={{ fontSize: '40px', marginBottom: '10px' }}>⚙️</span>
-                                <p style={{ color: '#FFD700', fontWeight: '900', letterSpacing: '1px' }}>Processing 1080p Clip...</p>
+                                <p style={{ color: '#FFD700', fontWeight: '900', letterSpacing: '1px' }}>Processing clip...</p>
                                 <p style={{ color: '#888', fontSize: '10px', marginTop: '10px' }}>(If stuck here for minutes, delete & retry)</p>
                             </div>
                         ) : currentStory.mediaType === 'slideshow' ? (
@@ -1094,7 +1094,7 @@ import RoastTokenVault from './RoastTokenVault';
                                         if (e.target.currentTime >= end) handleNextStory();
                                     }}
                                     onEnded={handleNextStory} 
-                                    style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${currentStory.videoPanX || 50}% 50%` }} 
+                                    style={{ position: 'absolute', inset: 0, width: '100vw', height: '100vh', objectFit: 'cover', objectPosition: `${currentStory.videoPanX || 50}% 50%` }} 
                                 />
                                 {/* Auto-Fading Overlay Volume Button (Hides after 3 seconds) */}
                                 <button 
@@ -1257,15 +1257,28 @@ import RoastTokenVault from './RoastTokenVault';
                                 </div>
                             )}
 
-                            {/* Like Button (Burnt Gold Light-Up & Immutable State Hold) */}
+                            {/* Like Button (Firestore-backed 1-Like-Per-User) */}
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
                                 <button 
                                     onClick={async () => {
-                                        if (isOwner || likedStories.has(currentStory.id)) return;
+                                        const isLiked = currentStory.likedUsers?.includes(currentUser?.uid) || likedStories.has(currentStory.id);
+                                        if (isOwner || isLiked || !currentUser) return;
+                                        
                                         setLikedStories(prev => new Set(prev).add(currentStory.id));
                                         setLikeAnimId(currentStory.id);
-                                        setFlashStories(prev => prev.map(s => s.id === currentStory.id ? { ...s, likeCount: (s.likeCount || 0) + 1 } : s));
-                                        try { await updateDoc(doc(db, "flash_stories", currentStory.id), { likeCount: increment(1) }); } catch (e) {}
+                                        setFlashStories(prev => prev.map(s => s.id === currentStory.id ? { 
+                                            ...s, 
+                                            likeCount: (s.likeCount || 0) + 1,
+                                            likedUsers: [...(s.likedUsers || []), currentUser.uid]
+                                        } : s));
+
+                                        try { 
+                                            const { arrayUnion } = await import('firebase/firestore');
+                                            await updateDoc(doc(db, "flash_stories", currentStory.id), { 
+                                                likeCount: increment(1),
+                                                likedUsers: arrayUnion(currentUser.uid)
+                                            }); 
+                                        } catch (e) { console.error("Like Error:", e); }
                                         setTimeout(() => setLikeAnimId(null), 400);
                                     }}
                                     style={{ background: 'transparent', border: 'none', cursor: isOwner ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -1273,15 +1286,15 @@ import RoastTokenVault from './RoastTokenVault';
                                     <svg 
                                         className={likeAnimId === currentStory.id ? "morph-anim" : ""} 
                                         viewBox="0 0 24 24" 
-                                        fill={likedStories.has(currentStory.id) ? "#FFD700" : "#FFF"} 
+                                        fill={(currentStory.likedUsers?.includes(currentUser?.uid) || likedStories.has(currentStory.id)) ? "#FFD700" : "#FFF"} 
                                         width="28" 
                                         height="28" 
-                                        style={{ filter: likedStories.has(currentStory.id) ? 'drop-shadow(0 0 12px #FFD700)' : 'drop-shadow(0 2px 4px rgba(0,0,0,0.8))', transition: 'all 0.2s ease' }}
+                                        style={{ filter: (currentStory.likedUsers?.includes(currentUser?.uid) || likedStories.has(currentStory.id)) ? 'drop-shadow(0 0 12px #FFD700)' : 'drop-shadow(0 2px 4px rgba(0,0,0,0.8))', transition: 'all 0.2s ease' }}
                                     >
                                         <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" />
                                     </svg>
                                 </button>
-                                <span style={{ color: likedStories.has(currentStory.id) ? '#FFD700' : '#FFF', fontSize: '11px', fontWeight: 'bold', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{currentStory.likeCount || 0}</span>
+                                <span style={{ color: (currentStory.likedUsers?.includes(currentUser?.uid) || likedStories.has(currentStory.id)) ? '#FFD700' : '#FFF', fontSize: '11px', fontWeight: 'bold', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{currentStory.likeCount || 0}</span>
                             </div>
 
                             {/* Views (Always visible) */}

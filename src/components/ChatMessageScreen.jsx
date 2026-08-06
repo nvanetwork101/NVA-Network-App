@@ -94,6 +94,15 @@ const ChatMessageScreen = ({
     const imageFileInputRef = useRef(null);
     const [isUploadingMedia, setIsUploadingMedia] = useState(false);
 
+    // CHAT VIDEO TRIMMING STATE
+    const [videoFile, setVideoFile] = useState(null);
+    const [videoPreviewUrl, setVideoPreviewUrl] = useState('');
+    const [showVideoTrimmer, setShowVideoTrimmer] = useState(false);
+    const [trimStart, setTrimStart] = useState(0);
+    const [trimEnd, setTrimEnd] = useState(60);
+    const [videoDuration, setVideoDuration] = useState(0);
+    const chatVideoRef = useRef(null);
+
     // Uncapped Voice Recording Handler
     const startRecording = async () => {
         try {
@@ -170,6 +179,16 @@ const ChatMessageScreen = ({
     const handleImageSelectAndSend = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
+        // --- CHAT VIDEO INTERCEPT ---
+        if (file.type.startsWith('video/')) {
+            setVideoFile(file);
+            setVideoPreviewUrl(URL.createObjectURL(file));
+            setShowVideoTrimmer(true);
+            if (imageFileInputRef.current) imageFileInputRef.current.value = '';
+            return;
+        }
+
         setIsUploadingMedia(true);
 
         try {
@@ -653,6 +672,90 @@ const ChatMessageScreen = ({
 
     const finalOtherUserDetails = { ...(chatDetails?.participantDetails?.[otherParticipantUid] || {}), ...(otherParticipantProfile || {}) };
 
+    // --- CHAT VIDEO UPLOAD & PING LOGIC ---
+    const handleSendVideo = async () => {
+        if (!videoFile || isSending) return;
+        setIsSending(true);
+        setShowVideoTrimmer(false);
+        setIsUploadingMedia(true);
+
+        try {
+            const getR2Url = httpsCallable(functions, 'getR2UploadUrl');
+            const rawFileKey = `tmp-raw-uploads/${currentUser.uid}/chat_raw_${Date.now()}.mp4`;
+            
+            // 1. Get Presigned URL
+            const { data: r2Data } = await getR2Url({ filePath: rawFileKey, contentType: videoFile.type || 'video/mp4' });
+            
+            // 2. Upload to R2 directly from browser
+            await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('PUT', r2Data.uploadUrl, true);
+                xhr.setRequestHeader('Content-Type', videoFile.type || 'video/mp4');
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) resolve();
+                    else reject(new Error('R2 Raw Upload Failed'));
+                };
+                xhr.onerror = () => reject(new Error('Network Error'));
+                xhr.send(videoFile);
+            });
+
+            // 3. Create Firestore Message (processing: true)
+            const sendChatMessageFunction = httpsCallable(functions, 'sendChatMessagePrivate');
+            const result = await sendChatMessageFunction({
+                chatId: chatId,
+                text: '🎥 Video Note',
+                mediaUrl: r2Data.publicUrl, // Temp fallback url
+                mediaType: 'video',
+                processing: true // Important for UI loader
+            });
+
+            // 4. Ping Tokyo VPS (Isolated to prevent UI crash)
+            try {
+                let messageId = null;
+                if (result && result.data) {
+                    messageId = result.data.messageId || result.data.id || (typeof result.data === 'string' ? result.data : null);
+                }
+                
+                if (!messageId) {
+                    const fs = await import('firebase/firestore');
+                    // GOD-TIER FIX: Fetches last 3 messages and filters in memory to completely bypass Firebase Index requirements
+                    const q = fs.query(fs.collection(db, "chats", chatId, "messages"), fs.orderBy("timestamp", "desc"), fs.limit(3));
+                    const snap = await fs.getDocs(q);
+                    const match = snap.docs.find(d => d.data().senderId === currentUser.uid && d.data().mediaType === 'video');
+                    if (match) messageId = match.id;
+                }
+
+                if (messageId) {
+                    fetch('https://engine.nvanetworkapp.com/api/process-chat-video', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${import.meta.env.VITE_ENGINE_API_KEY}`
+                        },
+                        body: JSON.stringify({
+                            rawFileKey: rawFileKey,
+                            chatId: chatId,
+                            messageId: messageId,
+                            trimStart: Math.round(trimStart),
+                            trimDuration: Math.round(trimEnd - trimStart)
+                        })
+                    }).catch(e => console.error("Tokyo Chat Ping Error:", e));
+                }
+            } catch (pingErr) {
+                console.error("Ping fallback failed:", pingErr);
+            }
+
+        } catch (e) {
+            console.error("Upload error:", e);
+            showMessage("Video upload failed.");
+        } finally {
+            setIsUploadingMedia(false);
+            setIsSending(false);
+            setVideoFile(null);
+            setVideoPreviewUrl('');
+        }
+    };
+
     // --- THIS IS THE FIX: The variables are now correctly placed before the return statement ---
     let unreadIndicatorRendered = false;
     const lastSeenTimestamp = chatDetails?.lastSeenBy?.[currentUser.uid];
@@ -732,16 +835,42 @@ const ChatMessageScreen = ({
                                                     );
                                                 }
 
-                                                // THE FIX: Borderless, clean image render for photos/stickers
+                                                // THE FIX: Borderless, clean image render for photos/stickers/videos
                                                 if (mediaSrc && !isVoice && !isExpired) {
+                                                    if (msg.processing) {
+                                                        return (
+                                                            <div style={{ width: '180px', height: '240px', borderRadius: '16px', backgroundColor: '#222', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.3)', border: '1px solid #FFD700' }}>
+                                                                <div style={{ width: '24px', height: '24px', border: '3px solid rgba(255,215,0,0.3)', borderTopColor: '#FFD700', borderRadius: '50%', animation: 'chatSpin 1s infinite linear', marginBottom: '8px' }}></div>
+                                                                <span style={{ color: '#FFD700', fontSize: '10px', fontWeight: 'bold' }}>Processing Video...</span>
+                                                            </div>
+                                                        );
+                                                    }
+                                                    
+                                                    const isVideo = msg.mediaType === 'video' || msg.type === 'video' || mediaSrc.includes('.mp4');
+
                                                     return (
                                                         <div style={{ position: 'relative', display: 'inline-block' }}>
-                                                            <img 
-                                                                src={mediaSrc} 
-                                                                alt="Photo" 
-                                                                onClick={() => setPreviewImageUrl(mediaSrc)}
-                                                                style={{ maxWidth: '220px', maxHeight: '240px', borderRadius: '16px', display: 'block', objectFit: 'cover', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.3)' }} 
-                                                            />
+                                                            {isVideo ? (
+                                                                <video 
+                                                                    src={mediaSrc} 
+                                                                    onClick={() => setPreviewImageUrl(mediaSrc)}
+                                                                    style={{ maxWidth: '220px', maxHeight: '300px', borderRadius: '16px', display: 'block', objectFit: 'cover', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.3)', backgroundColor: '#000' }} 
+                                                                />
+                                                            ) : (
+                                                                <img 
+                                                                    src={mediaSrc} 
+                                                                    alt="Photo" 
+                                                                    onClick={() => setPreviewImageUrl(mediaSrc)}
+                                                                    style={{ maxWidth: '220px', maxHeight: '240px', borderRadius: '16px', display: 'block', objectFit: 'cover', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.3)' }} 
+                                                                />
+                                                            )}
+                                                            
+                                                            {isVideo && (
+                                                                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                                                                    <svg fill="#FFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px', marginLeft: '4px' }}><path d="M8 5v14l11-7z"/></svg>
+                                                                </div>
+                                                            )}
+
                                                             {/* Floating 24h Countdown Badge */}
                                                             <span style={{ position: 'absolute', bottom: '8px', right: '8px', background: 'rgba(0,0,0,0.7)', color: '#FFD700', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold', backdropFilter: 'blur(4px)' }}>
                                                                 {getMediaTimeRemaining(msg.timestamp)}
@@ -830,27 +959,37 @@ const ChatMessageScreen = ({
                 )}
             </div>
             
-            {/* Fullscreen Photo Zoom Modal */}
+            {/* Fullscreen Photo/Video Zoom Modal */}
             {previewImageUrl && (
                 <div 
-                    onClick={() => setPreviewImageUrl(null)}
                     style={{
                         position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
-                        backgroundColor: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', cursor: 'pointer'
+                        backgroundColor: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'default'
                     }}
                 >
-                    <img 
-                        src={previewImageUrl} 
-                        alt="Zoom Preview" 
-                        style={{ maxWidth: '95%', maxHeight: '85vh', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 0 30px rgba(0,0,0,0.8)' }} 
-                    />
-                    <button 
-                        onClick={() => setPreviewImageUrl(null)}
-                        style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#FFF', borderRadius: '50%', width: '40px', height: '40px', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    >
-                        &times;
-                    </button>
+                    <div style={{ position: 'absolute', top: '20px', right: '20px', display: 'flex', gap: '15px', zIndex: 10001 }}>
+                        <button 
+                            onClick={() => setPreviewImageUrl(null)}
+                            style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#FFF', borderRadius: '50%', width: '40px', height: '40px', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                            &times;
+                        </button>
+                    </div>
+
+                    {previewImageUrl.includes('.mp4') ? (
+                        <video 
+                            src={previewImageUrl} 
+                            controls autoPlay playsInline
+                            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} 
+                        />
+                    ) : (
+                        <img 
+                            src={previewImageUrl} 
+                            alt="Zoom Preview" 
+                            style={{ maxWidth: '95%', maxHeight: '85vh', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 0 30px rgba(0,0,0,0.8)' }} 
+                        />
+                    )}
                 </div>
             )}
 
@@ -967,8 +1106,71 @@ const ChatMessageScreen = ({
                         </div>
                     </div>
                 )}
-                {/* Hidden Image Input */}
-                <input type="file" accept="image/*" ref={imageFileInputRef} onChange={handleImageSelectAndSend} style={{ display: 'none' }} />
+                {/* Hidden Media Input */}
+                <input type="file" accept="image/*,video/*" ref={imageFileInputRef} onChange={handleImageSelectAndSend} style={{ display: 'none' }} />
+
+                {/* Video Trimmer Modal */}
+                {showVideoTrimmer && (
+                    <div style={{ position: 'fixed', inset: 0, zIndex: 12000, background: 'rgba(0,0,0,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ position: 'relative', width: '100%', maxWidth: '400px', padding: '20px' }}>
+                            <h3 style={{ color: '#FFD700', textAlign: 'center', marginTop: 0 }}>Trim Video (Max 60s)</h3>
+                            
+                            <video 
+                                ref={chatVideoRef} src={videoPreviewUrl} autoPlay playsInline muted loop
+                                onLoadedMetadata={(e) => { 
+                                    const dur = e.target.duration || 60; 
+                                    setVideoDuration(dur); 
+                                    setTrimEnd(Math.min(dur, 60)); 
+                                }}
+                                onTimeUpdate={(e) => {
+                                    if (e.target.currentTime >= trimEnd) e.target.currentTime = trimStart;
+                                }}
+                                style={{ width: '100%', borderRadius: '12px', maxHeight: '50vh', objectFit: 'contain', backgroundColor: '#000' }}
+                            />
+
+                            <div style={{ marginTop: '20px', background: '#222', padding: '15px', borderRadius: '12px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#FFF', fontSize: '12px', fontWeight: 'bold', marginBottom: '10px' }}>
+                                    <span>Selected: {Math.round(trimEnd - trimStart)}s</span>
+                                    <span style={{ color: '#FFD700' }}>{trimStart.toFixed(1)}s - {trimEnd.toFixed(1)}s</span>
+                                </div>
+                                
+                                <div style={{ position: 'relative', width: '100%', height: '20px', display: 'flex', alignItems: 'center' }}>
+                                    <div style={{ position: 'absolute', width: '100%', height: '6px', background: '#444', borderRadius: '3px' }} />
+                                    <div style={{ position: 'absolute', height: '6px', background: '#FFD700', borderRadius: '3px', left: `${videoDuration ? (trimStart/videoDuration)*100 : 0}%`, width: `${videoDuration ? ((trimEnd-trimStart)/videoDuration)*100 : 100}%` }} />
+                                    
+                                    <input type="range" min="0" max={videoDuration || 60} step="0.1" value={trimStart}
+                                        onChange={e => { 
+                                            let val = Number(e.target.value); 
+                                            if (val > trimEnd - 1) val = trimEnd - 1; 
+                                            if (trimEnd - val > 60) setTrimEnd(val + 60);
+                                            setTrimStart(val); 
+                                            if (chatVideoRef.current) chatVideoRef.current.currentTime = val;
+                                        }} 
+                                        style={{ position: 'absolute', width: '100%', appearance: 'none', background: 'transparent', pointerEvents: 'none' }}
+                                        className="chat-thumb"
+                                    />
+                                    <input type="range" min="0" max={videoDuration || 60} step="0.1" value={trimEnd}
+                                        onChange={e => { 
+                                            let val = Number(e.target.value); 
+                                            if (val < trimStart + 1) val = trimStart + 1; 
+                                            if (val - trimStart > 60) setTrimStart(val - 60);
+                                            setTrimEnd(val); 
+                                            if (chatVideoRef.current) chatVideoRef.current.currentTime = val;
+                                        }} 
+                                        style={{ position: 'absolute', width: '100%', appearance: 'none', background: 'transparent', pointerEvents: 'none' }}
+                                        className="chat-thumb"
+                                    />
+                                    <style>{`.chat-thumb::-webkit-slider-thumb { pointer-events: auto; appearance: none; width: 20px; height: 20px; background: #FFD700; border-radius: 50%; }`}</style>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}>
+                                <button onClick={() => { setShowVideoTrimmer(false); setVideoFile(null); setVideoPreviewUrl(''); }} style={{ flex: 1, padding: '12px', background: '#444', color: '#FFF', border: 'none', borderRadius: '10px', fontWeight: 'bold' }}>Cancel</button>
+                                <button onClick={handleSendVideo} disabled={isSending} style={{ flex: 1, padding: '12px', background: '#FFD700', color: '#000', border: 'none', borderRadius: '10px', fontWeight: 'bold' }}>{isSending ? "Uploading..." : "Send Video"}</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {isRecording ? (
                     /* LIVE UNCAPPED RECORDING BAR */
