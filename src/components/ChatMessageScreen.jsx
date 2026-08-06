@@ -1,10 +1,50 @@
 // src/components/ChatMessageScreen.jsx
 
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
-import { db } from '../firebase';
+import { db, storage } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { functions } from '../firebase';
 import { httpsCallable } from 'firebase/functions';
+
+// Client-Side Canvas Image Compressor (~150 KB JPEG)
+const compressImage = (file) => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                const maxDim = 1200;
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height = Math.round((height * maxDim) / width);
+                        width = maxDim;
+                    } else {
+                        width = Math.round((width * maxDim) / height);
+                        height = maxDim;
+                    }
+                }
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.7);
+            };
+        };
+    });
+};
+
+// 24-Hour UI Expiration Filter Check
+const isMediaExpired24h = (timestamp) => {
+    if (!timestamp) return false;
+    const msgDate = timestamp.toDate ? timestamp.toDate().getTime() : new Date(timestamp).getTime();
+    return (Date.now() - msgDate) > (24 * 60 * 60 * 1000); // 24 hours in milliseconds
+};
 
 const ChatMessageScreen = ({
     chatId, currentUser, creatorProfile, setActiveScreen, showMessage, setSelectedUserId,
@@ -23,6 +63,210 @@ const ChatMessageScreen = ({
     const [newMessage, setNewMessage] = useState('');
     const [otherParticipantProfile, setOtherParticipantProfile] = useState(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    
+    // NEW: Fullscreen Image Zoom & Countdown States
+    const [previewImageUrl, setPreviewImageUrl] = useState(null);
+
+    // Dynamic 24-Hour Expiration Countdown Calculator
+    const getMediaTimeRemaining = (timestamp) => {
+        if (!timestamp) return '⏳ 24h left';
+        const msgDate = timestamp.toDate ? timestamp.toDate().getTime() : new Date(timestamp).getTime();
+        const remainingMs = (24 * 60 * 60 * 1000) - (Date.now() - msgDate);
+        if (remainingMs <= 0) return '⏳ Expired';
+        const hours = Math.floor(remainingMs / (1000 * 60 * 60));
+        const mins = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+        return `⏳ ${hours}h ${mins}m left`;
+    };
+
+    // GIPHY ENGINE STATE
+    const GIPHY_API_KEY = 'jlgPTQhBduGhUfp6f61t7IjAdvxNhiC6';
+    const [pickerTab, setPickerTab] = useState('stickers'); // 'stickers' | 'gifs' | 'emojis'
+    const [giphySearch, setGiphySearch] = useState('');
+    const [giphyItems, setGiphyItems] = useState([]);
+    const [giphyLoading, setGiphyLoading] = useState(false);
+
+    // VOICE NOTE & IMAGE STATE (UNCAPPED)
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    const recordingTimerRef = useRef(null);
+    const imageFileInputRef = useRef(null);
+    const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+
+    // Uncapped Voice Recording Handler
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunksRef.current = [];
+            const recorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = recorder;
+
+            recorder.ondataavailable = (e) => {
+                if (e.data.size > 0) audioChunksRef.current.push(e.data);
+            };
+
+            recorder.start(200);
+            setIsRecording(true);
+            setRecordingTime(0);
+
+            recordingTimerRef.current = setInterval(() => {
+                setRecordingTime(prev => prev + 1); // Uncapped ticking timer
+            }, 1000);
+        } catch (err) {
+            console.error("Microphone access error:", err);
+            showMessage("Microphone permission denied.");
+        }
+    };
+
+    const stopAndSendRecording = async () => {
+        if (!mediaRecorderRef.current || !isRecording) return;
+        clearInterval(recordingTimerRef.current);
+        setIsRecording(false);
+        setIsUploadingMedia(true);
+
+        mediaRecorderRef.current.onstop = async () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+            if (mediaRecorderRef.current.stream) {
+                mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            }
+
+            try {
+                const filePath = `chat_media/vn_${Date.now()}_${currentUser.uid}.webm`;
+                const storageRef = ref(storage, filePath);
+                const snapshot = await uploadBytes(storageRef, audioBlob);
+                const downloadUrl = await getDownloadURL(snapshot.ref);
+
+                const sendChatMessageFunction = httpsCallable(functions, 'sendChatMessagePrivate');
+                await sendChatMessageFunction({
+                    chatId: chatId,
+                    text: '🎙️ Voice Note', // THE FIX: Provides non-empty notification label for Cloud Function
+                    mediaUrl: downloadUrl,
+                    mediaType: 'voice'
+                });
+            } catch (err) {
+                console.error("Voice note upload failed:", err);
+                showMessage("Failed to send voice note.");
+            } finally {
+                setIsUploadingMedia(false);
+                setRecordingTime(0);
+            }
+        };
+        mediaRecorderRef.current.stop();
+    };
+
+    const cancelRecording = () => {
+        if (mediaRecorderRef.current) {
+            clearInterval(recordingTimerRef.current);
+            mediaRecorderRef.current.stop();
+            if (mediaRecorderRef.current.stream) {
+                mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            }
+        }
+        setIsRecording(false);
+        setRecordingTime(0);
+    };
+
+    const handleImageSelectAndSend = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setIsUploadingMedia(true);
+
+        try {
+            const compressedBlob = await compressImage(file);
+            const filePath = `chat_media/img_${Date.now()}_${currentUser.uid}.jpg`;
+            const storageRef = ref(storage, filePath);
+            const snapshot = await uploadBytes(storageRef, compressedBlob);
+            const downloadUrl = await getDownloadURL(snapshot.ref);
+
+            const sendChatMessageFunction = httpsCallable(functions, 'sendChatMessagePrivate');
+            await sendChatMessageFunction({
+                chatId: chatId,
+                text: '📷 Photo', // THE FIX: Provides non-empty notification label for Cloud Function
+                mediaUrl: downloadUrl,
+                mediaType: 'image'
+            });
+        } catch (err) {
+            console.error("Image upload failed:", err);
+            showMessage("Failed to send image.");
+        } finally {
+            setIsUploadingMedia(false);
+            if (imageFileInputRef.current) imageFileInputRef.current.value = '';
+        }
+    };
+
+    // Auto-Format Plaintext URLs & Raw Domains with Dynamic Bubble Contrast
+    const renderFormattedText = (text, isMyMessage = false) => {
+        if (!text) return null;
+        const urlRegex = /((?:https?:\/\/|www\.)[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)/gi;
+        const parts = text.split(urlRegex);
+        // THE FIX: Navy Blue on yellow bubbles, Electric Cyan on dark bubbles
+        const linkColor = isMyMessage ? '#002288' : '#00FFFF';
+
+        return parts.map((part, i) => {
+            if (part.match(/^((?:https?:\/\/|www\.)[^\s]+|[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)$/i)) {
+                const href = (part.startsWith('http://') || part.startsWith('https://')) 
+                    ? part 
+                    : `https://${part}`;
+                return (
+                    <a key={i} href={href} target="_blank" rel="noopener noreferrer" style={{ color: linkColor, fontWeight: 'bold', textDecoration: 'underline', wordBreak: 'break-all' }} onClick={(e) => e.stopPropagation()}>
+                        {part}
+                    </a>
+                );
+            }
+            return part;
+        });
+    };
+
+    // Pre-loads Trending Stickers or Search Results
+    useEffect(() => {
+        if (!showEmojiPicker || pickerTab === 'emojis') return;
+        const fetchGiphy = async () => {
+            setGiphyLoading(true);
+            try {
+                const endpoint = giphySearch.trim() 
+                    ? `https://api.giphy.com/v1/${pickerTab}/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(giphySearch)}&limit=24&rating=g`
+                    : `https://api.giphy.com/v1/${pickerTab}/trending?api_key=${GIPHY_API_KEY}&limit=24&rating=g`;
+                const res = await fetch(endpoint);
+                const data = await res.json();
+                if (data && data.data) setGiphyItems(data.data);
+            } catch (err) {
+                console.error("Giphy fetch error:", err);
+            } finally {
+                setGiphyLoading(false);
+            }
+        };
+        const timer = setTimeout(fetchGiphy, 300);
+        return () => clearTimeout(timer);
+    }, [showEmojiPicker, pickerTab, giphySearch]);
+
+    const handleSendMediaPrivate = async (mediaUrl) => {
+        if (!chatId || isSending) return;
+        setIsSending(true);
+        try {
+            const sendChatMessageFunction = httpsCallable(functions, 'sendChatMessagePrivate');
+            await sendChatMessageFunction({
+                chatId: chatId,
+                text: '✨ Sticker', // THE FIX: Provides non-empty notification label for Cloud Function
+                mediaUrl: mediaUrl,
+                ...(replyingToMessage && {
+                    replyTo: {
+                        id: replyingToMessage.id,
+                        text: replyingToMessage.text,
+                        senderId: replyingToMessage.senderId,
+                        senderName: replyingToMessage.senderName
+                    }
+                })
+            });
+            setShowEmojiPicker(false);
+            setReplyingToMessage(null);
+        } catch (err) {
+            console.error("Media send error:", err);
+            showMessage("Failed to send sticker.");
+        } finally {
+            setIsSending(false);
+        }
+    };
     
     const [isSearchVisible, setIsSearchVisible] = useState(false);
     const [searchText, setSearchText] = useState('');
@@ -475,16 +719,67 @@ const ChatMessageScreen = ({
                                             </div>
                                         )}
                                         <div onTouchStart={(e) => !msg.isDeleted && handleTouchStart(e, msg)} onTouchEnd={handleTouchEnd} onContextMenu={(e) => !msg.isDeleted && handleContextMenu(e, msg)} >
-                                            <div style={{
-                                                maxWidth: '100%', padding: '10px 15px',
-                                                borderRadius: msg.replyTo ? (isMyMessage ? '18px 4px 18px 18px' : '4px 18px 18px 18px') : '18px',
-                                                backgroundColor: menuState.message?.id === msg.id ? '#5A5A5A' : (isMyMessage ? (msg.isDeleted ? '#555' : '#FFB41C') : '#3A3A3A'),
-                                                color: isMyMessage ? '#0A0A0A' : '#FFF', fontStyle: msg.isDeleted ? 'italic' : 'normal',
-                                                opacity: msg.isDeleted ? 0.7 : 1, transition: 'background-color 0.2s',
-                                                textShadow: 'none'
-                                            }}>
-                                                {msg.isDeleted ? "This message was deleted" : msg.text}
-                                            </div>
+                                            {(() => {
+                                                const mediaSrc = msg.mediaUrl || msg.imageUrl || msg.photoUrl;
+                                                const isVoice = msg.mediaType === 'voice' || msg.type === 'voice' || (mediaSrc && (mediaSrc.includes('.webm') || mediaSrc.includes('.m4a')));
+                                                const isExpired = isMediaExpired24h(msg.timestamp);
+
+                                                if (msg.isDeleted) {
+                                                    return (
+                                                        <div style={{ padding: '10px 15px', borderRadius: '18px', backgroundColor: '#555', color: '#FFF', fontStyle: 'italic' }}>
+                                                            This message was deleted
+                                                        </div>
+                                                    );
+                                                }
+
+                                                // THE FIX: Borderless, clean image render for photos/stickers
+                                                if (mediaSrc && !isVoice && !isExpired) {
+                                                    return (
+                                                        <div style={{ position: 'relative', display: 'inline-block' }}>
+                                                            <img 
+                                                                src={mediaSrc} 
+                                                                alt="Photo" 
+                                                                onClick={() => setPreviewImageUrl(mediaSrc)}
+                                                                style={{ maxWidth: '220px', maxHeight: '240px', borderRadius: '16px', display: 'block', objectFit: 'cover', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.3)' }} 
+                                                            />
+                                                            {/* Floating 24h Countdown Badge */}
+                                                            <span style={{ position: 'absolute', bottom: '8px', right: '8px', background: 'rgba(0,0,0,0.7)', color: '#FFD700', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold', backdropFilter: 'blur(4px)' }}>
+                                                                {getMediaTimeRemaining(msg.timestamp)}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                }
+
+                                                // Standard Bubble for Text, Voice Notes, or Expired Media
+                                                return (
+                                                    <div style={{
+                                                        maxWidth: '100%', padding: '10px 15px',
+                                                        borderRadius: msg.replyTo ? (isMyMessage ? '18px 4px 18px 18px' : '4px 18px 18px 18px') : '18px',
+                                                        backgroundColor: menuState.message?.id === msg.id ? '#5A5A5A' : (isMyMessage ? '#FFB41C' : '#3A3A3A'),
+                                                        color: isMyMessage ? '#0A0A0A' : '#FFF',
+                                                        textShadow: 'none'
+                                                    }}>
+                                                        {!mediaSrc && renderFormattedText(msg.text, isMyMessage)}
+                                                        {/* THE FIX: Expiration badge ONLY renders if the message actually contained MEDIA */}
+                                                        {mediaSrc && isExpired && (
+                                                            <div style={{ padding: '4px 8px', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', fontSize: '11px', color: isMyMessage ? '#000' : '#AAA', fontStyle: 'italic', marginTop: '2px' }}>
+                                                                ⏳ Media expired (24h)
+                                                            </div>
+                                                        )}
+                                                        {mediaSrc && isVoice && !isExpired && (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(0,0,0,0.2)', padding: '4px 8px', borderRadius: '20px' }}>
+                                                                    <span style={{ fontSize: '14px' }}>🎙️</span>
+                                                                    <audio src={mediaSrc} controls style={{ height: '28px', maxWidth: '180px' }} />
+                                                                </div>
+                                                                <span style={{ fontSize: '10px', color: isMyMessage ? '#333' : '#AAA', fontStyle: 'italic', alignSelf: 'flex-end' }}>
+                                                                    {getMediaTimeRemaining(msg.timestamp)}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                         
                                         <p style={{
@@ -501,11 +796,64 @@ const ChatMessageScreen = ({
                                 </React.Fragment>
                             );
                         })}
+
+                        {/* SLEEK GLASSMORPHIC SPINNER BUBBLE FOR MEDIA UPLOADS */}
+                        {isUploadingMedia && (
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '15px', width: '100%' }}>
+                                <div style={{
+                                    padding: '10px 16px',
+                                    borderRadius: '18px 18px 4px 18px',
+                                    backgroundColor: 'rgba(255, 215, 0, 0.12)',
+                                    backdropFilter: 'blur(10px)',
+                                    WebkitBackdropFilter: 'blur(10px)',
+                                    border: '1px solid rgba(255, 215, 0, 0.3)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px'
+                                }}>
+                                    <div style={{
+                                        width: '16px',
+                                        height: '16px',
+                                        border: '2px solid rgba(255, 215, 0, 0.2)',
+                                        borderTop: '2px solid #FFD700',
+                                        borderRadius: '50%',
+                                        animation: 'chatSpin 0.8s linear infinite'
+                                    }} />
+                                    <span style={{ color: '#FFD700', fontSize: '12px', fontWeight: 'bold' }}>Sending media...</span>
+                                    <style>{`@keyframes chatSpin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                                </div>
+                            </div>
+                        )}
+
                         <div ref={messagesEndRef} />
                     </>
                 )}
             </div>
             
+            {/* Fullscreen Photo Zoom Modal */}
+            {previewImageUrl && (
+                <div 
+                    onClick={() => setPreviewImageUrl(null)}
+                    style={{
+                        position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000,
+                        backgroundColor: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', cursor: 'pointer'
+                    }}
+                >
+                    <img 
+                        src={previewImageUrl} 
+                        alt="Zoom Preview" 
+                        style={{ maxWidth: '95%', maxHeight: '85vh', objectFit: 'contain', borderRadius: '12px', boxShadow: '0 0 30px rgba(0,0,0,0.8)' }} 
+                    />
+                    <button 
+                        onClick={() => setPreviewImageUrl(null)}
+                        style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(255,255,255,0.1)', border: 'none', color: '#FFF', borderRadius: '50%', width: '40px', height: '40px', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                        &times;
+                    </button>
+                </div>
+            )}
+
             {/* Context Menu */}
             {menuState.visible && (
                 <div style={{
@@ -549,37 +897,179 @@ const ChatMessageScreen = ({
                         background: '#1F1F1F',
                         borderRadius: '12px',
                         border: '1px solid rgba(255, 255, 255, 0.15)',
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(36px, 1fr))',
-                        gap: '4px',
                         padding: '10px',
                         margin: '0 10px 10px 10px',
-                        maxHeight: '200px',
-                        overflowY: 'auto',
+                        maxHeight: '240px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
                         boxShadow: '0 -4px 20px rgba(0,0,0,0.5)'
                     }}>
-                        {emojis.map((e, idx) => (
-                             <button key={`${e}-${idx}`} className="button" onClick={() => handleAddEmoji(e)} style={{
-                                background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center'
-                            }}
-                            onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                            onMouseOut={e => e.currentTarget.style.background = 'none'}
-                            >
-                                {e}
-                            </button>
-                        ))}
+                        {/* Tab Selector */}
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                            {['stickers', 'gifs', 'emojis'].map(tab => (
+                                <button
+                                    key={tab}
+                                    type="button"
+                                    onClick={() => setPickerTab(tab)}
+                                    style={{
+                                        padding: '4px 10px', borderRadius: '15px', border: 'none', fontSize: '11px', fontWeight: '900', textTransform: 'uppercase', cursor: 'pointer',
+                                        backgroundColor: pickerTab === tab ? '#FFD700' : '#222', color: pickerTab === tab ? '#000' : '#888'
+                                    }}
+                                >
+                                    {tab === 'stickers' ? '✨ Stickers' : tab === 'gifs' ? '🎬 GIFs' : '😃 Emojis'}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Search Bar */}
+                        {pickerTab !== 'emojis' && (
+                            <input 
+                                type="text"
+                                value={giphySearch}
+                                onChange={(e) => setGiphySearch(e.target.value)}
+                                placeholder={`Search Giphy ${pickerTab}...`}
+                                style={{ background: '#222', border: '1px solid #333', color: '#FFF', borderRadius: '6px', padding: '6px 10px', fontSize: '12px', outline: 'none' }}
+                            />
+                        )}
+
+                        {/* Content Grid */}
+                        <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                            {pickerTab === 'emojis' ? (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(36px, 1fr))', gap: '4px' }}>
+                                    {emojis.map((e, idx) => (
+                                         <button key={`${e}-${idx}`} className="button" onClick={() => handleAddEmoji(e)} style={{
+                                            background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                        }}>
+                                            {e}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : giphyLoading ? (
+                                <p style={{ color: '#888', fontSize: '11px', textAlign: 'center', margin: '20px 0' }}>Loading Giphy...</p>
+                            ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: pickerTab === 'stickers' ? 'repeat(auto-fill, minmax(65px, 1fr))' : 'repeat(auto-fill, minmax(100px, 1fr))', gap: '6px' }}>
+                                    {giphyItems.map(item => {
+                                        const imgUrl = item.images?.fixed_height_small?.url || item.images?.fixed_height?.url;
+                                        return (
+                                            <img
+                                                key={item.id}
+                                                src={imgUrl}
+                                                alt={item.title}
+                                                onClick={() => handleSendMediaPrivate(imgUrl)}
+                                                style={{ width: '100%', height: '65px', objectFit: 'contain', borderRadius: '6px', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.02)' }}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
-                <form onSubmit={handleSendMessage} style={{ display: 'flex', alignItems: 'center', padding: '10px' }}>
-                    <button type="button" className="button" style={{ marginRight: '10px', background: 'transparent', padding: '8px' }} onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
-                        <svg fill="#FFF" viewBox="0 0 24 24" style={{ width: '24px', height: '24px' }}><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5s.67 1.5 1.5 1.5zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"></path></svg>
-                    </button>
-                   <input ref={inputRef} type="text" value={newMessage} onChange={handleTypingChange} placeholder="Type a message..." className="formInput" style={{ flex: 1, marginRight: '10px', borderRadius: '20px' }} onFocus={() => { setShowEmojiPicker(false); window.scrollTo(0, 0); }} />
-                    <button type="submit" className="button" style={{ borderRadius: '50%', width: '44px', height: '44px', padding: 0 }} disabled={!newMessage.trim() || isSending} onMouseDown={(e) => e.preventDefault()} onTouchStart={(e) => e.preventDefault()}>
-                       <svg fill={isSending ? "#555" : "#0A0A0A"} viewBox="0 0 24 24" style={{ width: '24px', height: '24px', margin: 'auto' }}><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
-                    </button>
+                {/* Hidden Image Input */}
+                <input type="file" accept="image/*" ref={imageFileInputRef} onChange={handleImageSelectAndSend} style={{ display: 'none' }} />
+
+                {isRecording ? (
+                    /* LIVE UNCAPPED RECORDING BAR */
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 15px', backgroundColor: '#222', borderRadius: '20px', margin: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ color: '#FF4444', fontSize: '18px', animation: 'blink 1s infinite' }}>🔴</span>
+                            <span style={{ color: '#FFF', fontWeight: 'bold', fontSize: '14px', fontVariantNumeric: 'tabular-nums' }}>
+                                {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                            <button type="button" onClick={cancelRecording} style={{ background: '#444', color: '#FFF', border: 'none', borderRadius: '15px', padding: '6px 14px', fontSize: '12px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
+                            <button type="button" onClick={stopAndSendRecording} style={{ background: '#00FFFF', color: '#000', border: 'none', borderRadius: '15px', padding: '6px 14px', fontSize: '12px', cursor: 'pointer', fontWeight: '900' }}>Send VN</button>
+                        </div>
+                    </div>
+                ) : (
+                    <form onSubmit={handleSendMessage} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', width: '100%', boxSizing: 'border-box' }}>
+                    {/* Dark Glassmorphic Pill Container */}
+                    <div style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        backgroundColor: 'rgba(30, 30, 30, 0.85)',
+                        backdropFilter: 'blur(10px)',
+                        WebkitBackdropFilter: 'blur(10px)',
+                        borderRadius: '25px',
+                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        padding: '4px 12px',
+                        gap: '8px',
+                        boxShadow: '0 4px 15px rgba(0,0,0,0.3)'
+                    }}>
+                        {/* Left Inside Pill: Neon Giphy/Emoji Button */}
+                        <button 
+                            type="button" 
+                            onClick={() => setShowEmojiPicker(!showEmojiPicker)} 
+                            style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                        >
+                            <svg fill="#00FFFF" viewBox="0 0 24 24" style={{ width: '22px', height: '22px', filter: 'drop-shadow(0 0 4px rgba(0, 255, 255, 0.4))' }}>
+                                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5s.67 1.5 1.5 1.5zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
+                            </svg>
+                        </button>
+
+                        {/* Middle Inside Pill: Text Input */}
+                        <input 
+                            ref={inputRef} 
+                            type="text" 
+                            value={newMessage} 
+                            onChange={handleTypingChange} 
+                            placeholder="Type a message..." 
+                            style={{ flex: 1, background: 'transparent', border: 'none', color: '#FFF', fontSize: '14px', outline: 'none', padding: '6px 0' }} 
+                            onFocus={() => { setShowEmojiPicker(false); window.scrollTo(0, 0); }} 
+                        />
+
+                        {/* Right Inside Pill: Neon Photo Attachment Button */}
+                        <button 
+                            type="button" 
+                            onClick={() => imageFileInputRef.current?.click()} 
+                            disabled={isUploadingMedia}
+                            style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', opacity: isUploadingMedia ? 0.5 : 1 }}
+                        >
+                            <svg fill="#00FFFF" viewBox="0 0 24 24" style={{ width: '22px', height: '22px', filter: 'drop-shadow(0 0 4px rgba(0, 255, 255, 0.4))' }}>
+                                <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    {/* Far Right Outside Pill: Separate Burnt Yellow Mic / Send Circle */}
+                    {newMessage.trim() !== '' ? (
+                        <button 
+                            type="submit" 
+                            disabled={isSending || isUploadingMedia} 
+                            style={{ 
+                                width: '42px', height: '42px', borderRadius: '50%', backgroundColor: '#FFD700', border: 'none',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
+                                boxShadow: '0 0 12px rgba(255, 215, 0, 0.4)'
+                            }}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onTouchStart={(e) => e.preventDefault()}
+                        >
+                            <svg fill="#0A0A0A" viewBox="0 0 24 24" style={{ width: '18px', height: '18px', margin: 'auto' }}>
+                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                            </svg>
+                        </button>
+                    ) : (
+                        <button 
+                            type="button" 
+                            onClick={startRecording} 
+                            disabled={isUploadingMedia} 
+                            style={{ 
+                                width: '42px', height: '42px', borderRadius: '50%', backgroundColor: '#FFD700', border: 'none',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
+                                boxShadow: '0 0 12px rgba(255, 215, 0, 0.4)'
+                            }}
+                        >
+                            <svg fill="#0A0A0A" viewBox="0 0 24 24" style={{ width: '20px', height: '20px' }}>
+                                <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+                            </svg>
+                        </button>
+                    )}
                 </form>
+                )}
             </div>
         </div>
     );

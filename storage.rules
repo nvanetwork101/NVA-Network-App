@@ -55,5 +55,8 @@ service firebase.storage {
     // --- FILM ARENA & MUSIC STUDIO UPLOADS ---
     match /showcase_posters/{fileName} { allow write: if isAuthenticated(); }
     match /song_posters/{fileName} { allow write: if isAuthenticated(); }
+
+    // --- PRIVATE CHAT MEDIA (PHOTOS & VOICE NOTES) ---
+    match /chat_media/{allPaths=**} { allow write: if isAuthenticated(); }
   }
 }

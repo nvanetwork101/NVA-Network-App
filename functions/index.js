@@ -2137,10 +2137,14 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
         throw new HttpsError("unauthenticated", "You must be logged in to send a message.");
     }
 
-    const { chatId, text, replyTo } = request.data;
-    if (!chatId || !text || !text.trim()) {
-        throw new HttpsError("invalid-argument", "Missing chatId or message text.");
+    const { chatId, text, replyTo, mediaUrl, mediaType } = request.data;
+    
+    // THE FIX: Allows message if EITHER text OR mediaUrl is present
+    if (!chatId || ((!text || !text.trim()) && !mediaUrl)) {
+        throw new HttpsError("invalid-argument", "Missing chatId, message text, or media content.");
     }
+
+    const messageText = (text && text.trim()) ? text.trim() : (mediaType === 'voice' ? '🎙️ Voice Note' : (mediaType === 'image' ? '📷 Photo' : '✨ Sticker'));
 
     const db = admin.firestore();
     const chatRef = db.collection("chats").doc(chatId);
@@ -2148,7 +2152,9 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
 
     const newMessage = {
         senderId: uid,
-        text: text.trim(),
+        text: messageText,
+        mediaUrl: mediaUrl || null,
+        mediaType: mediaType || null,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         replyTo: replyTo || null,
     };
@@ -2169,11 +2175,11 @@ exports.sendChatMessagePrivate = onCall(async (request) => {
             transaction.update(chatRef, {
                 lastMessage: {
                     senderId: uid,
-                    text: text.trim()
+                    text: messageText
                 },
                 lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
                 unreadBy: admin.firestore.FieldValue.arrayUnion(otherParticipantId),
-                hiddenFor: admin.firestore.FieldValue.arrayRemove(otherParticipantId) // <-- SURGICAL FIX: Unhides the chat instantly when a new message arrives
+                hiddenFor: admin.firestore.FieldValue.arrayRemove(otherParticipantId)
             });
         });
 
@@ -8763,17 +8769,50 @@ exports.onEventDeleted = onDocumentDeleted("events/{eventId}", async (event) => 
     const db = admin.firestore();
     const bucket = admin.storage().bucket();
     const eventId = event.params.eventId;
+    const slotNum = deletedEvent.cinemaSlot || "1";
     
-    logger.info(`[Audit] Running recursive cleanup for deleted event: ${eventId}`);
+    logger.info(`[Audit] Running recursive R2 & Firestore cleanup for deleted event: ${eventId} (Slot ${slotNum})`);
 
     try {
-        // 1. Purge Cloud Storage Files (Thumbnails/Posters)
+        // 1. PURGE CLOUDFLARE R2 VAULTS (`raw-vault` & `stream-delivery`)
+        const r2Client = new S3Client({
+            region: "auto",
+            endpoint: `https://${process.env.R2_ACCOUNT_ID || "fbe1faad8ca929a47c3cce338399f497"}.r2.cloudflarestorage.com`,
+            credentials: {
+                accessKeyId: process.env.R2_ACCESS_KEY_ID,
+                secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+            },
+        });
+
+        // Wipe heavy raw mp4 file from raw-vault
+        await r2Client.send(new DeleteObjectCommand({
+            Bucket: "raw-vault",
+            Key: `live-slot/movie_${slotNum}.mp4`
+        })).catch(e => logger.warn(`R2 raw-vault delete non-fatal: ${e.message}`));
+
+        // Wipe all 2,000+ HLS segment pieces from stream-delivery
+        const listSegmentsCommand = new ListObjectsV2Command({
+            Bucket: "stream-delivery",
+            Prefix: "live-slot/"
+        });
+        const listedSegments = await r2Client.send(listSegmentsCommand).catch(() => null);
+        
+        if (listedSegments && listedSegments.Contents && listedSegments.Contents.length > 0) {
+            const deleteSegmentsParams = {
+                Bucket: "stream-delivery",
+                Delete: { Objects: listedSegments.Contents.map(({ Key }) => ({ Key })) }
+            };
+            await r2Client.send(new DeleteObjectsCommand(deleteSegmentsParams)).catch(e => logger.warn(`R2 stream-delivery delete non-fatal: ${e.message}`));
+            logger.info(`✅ Wiped ${listedSegments.Contents.length} segment files from R2 stream-delivery!`);
+        }
+
+        // 2. Purge Firebase Storage Files (Thumbnails/Posters)
         const posterPath = getPathFromUrl(deletedEvent.thumbnailUrl || deletedEvent.posterUrl);
         if (posterPath) {
             await bucket.file(posterPath).delete().catch(e => logger.warn(`Non-fatal: Failed to delete event poster: ${posterPath}`, e));
         }
 
-        // 2. Erase all orphaned subcollections
+        // 3. Erase all orphaned subcollections (likes, comments, mutedUsers, chatMessages)
         const subcollections = ["likes", "comments", "mutedUsers", "chatMessages"];
         for (const sub of subcollections) {
             const snap = await db.collection(`events/${eventId}/${sub}`).get();
