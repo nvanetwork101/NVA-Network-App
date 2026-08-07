@@ -266,8 +266,9 @@ const ChatMessageScreen = ({
             const sendChatMessageFunction = httpsCallable(functions, 'sendChatMessagePrivate');
             await sendChatMessageFunction({
                 chatId: chatId,
-                text: '✨ Sticker', // THE FIX: Provides non-empty notification label for Cloud Function
+                text: pickerTab === 'gifs' ? '🎬 GIF' : '✨ Sticker',
                 mediaUrl: mediaUrl,
+                mediaType: pickerTab === 'gifs' ? 'gif' : 'sticker', // THE FIX: Explicitly tags Giphy media
                 ...(replyingToMessage && {
                     replyTo: {
                         id: replyingToMessage.id,
@@ -825,7 +826,11 @@ const ChatMessageScreen = ({
                                             {(() => {
                                                 const mediaSrc = msg.mediaUrl || msg.imageUrl || msg.photoUrl;
                                                 const isVoice = msg.mediaType === 'voice' || msg.type === 'voice' || (mediaSrc && (mediaSrc.includes('.webm') || mediaSrc.includes('.m4a')));
-                                                const isExpired = isMediaExpired24h(msg.timestamp);
+                                                
+                                                // THE BULLETPROOF FIX: Hard-locks Giphy URLs to NEVER expire under any circumstance
+                                                const isGiphy = mediaSrc && (mediaSrc.includes('giphy.com') || mediaSrc.includes('giphy'));
+                                                const isUploadedMedia = !isGiphy && (msg.mediaType === 'image' || msg.mediaType === 'voice' || msg.mediaType === 'video' || (!msg.mediaType && mediaSrc));
+                                                const isExpired = isUploadedMedia && isMediaExpired24h(msg.timestamp);
 
                                                 if (msg.isDeleted) {
                                                     return (
@@ -871,10 +876,12 @@ const ChatMessageScreen = ({
                                                                 </div>
                                                             )}
 
-                                                            {/* Floating 24h Countdown Badge */}
-                                                            <span style={{ position: 'absolute', bottom: '8px', right: '8px', background: 'rgba(0,0,0,0.7)', color: '#FFD700', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold', backdropFilter: 'blur(4px)' }}>
-                                                                {getMediaTimeRemaining(msg.timestamp)}
-                                                            </span>
+                                                            {/* THE FIX: Floating 24h Countdown Badge ONLY for uploaded media, NEVER for Giphy */}
+                                                            {isUploadedMedia && (
+                                                                <span style={{ position: 'absolute', bottom: '8px', right: '8px', background: 'rgba(0,0,0,0.7)', color: '#FFD700', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 'bold', backdropFilter: 'blur(4px)' }}>
+                                                                    {getMediaTimeRemaining(msg.timestamp)}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     );
                                                 }

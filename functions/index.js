@@ -9351,4 +9351,27 @@ exports.tipStoryCreator = onCall({ enforceAppCheck: false }, async (request) => 
     }
 });
 
+// --- AUTOMATED CHAT PURGE TRIGGER ---
+exports.onChatDeleted = onDocumentDeleted("chats/{chatId}", async (event) => {
+    const chatId = event.params.chatId;
+    const db = admin.firestore();
+    
+    logger.info(`[Audit] Purging all messages and history for deleted chat: ${chatId}`);
+
+    try {
+        const messagesRef = db.collection(`chats/${chatId}/messages`);
+        const snapshot = await messagesRef.get();
+        
+        if (!snapshot.empty) {
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+            logger.info(`✅ Wiped ${snapshot.size} messages/stickers/GIFs from deleted chat '${chatId}'!`);
+        }
+    } catch (error) {
+        logger.error(`Error purging deleted chat '${chatId}':`, error);
+    }
+    return null;
+});
+
 // --- END: Robust, Multi-Screen Social Share Renderer (SSR) v3 ---
