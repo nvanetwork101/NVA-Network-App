@@ -280,6 +280,8 @@ import RoastTokenVault from './RoastTokenVault';
                 const createdAtMs = data.createdAt?.toMillis ? data.createdAt.toMillis() : now;
                 return { id: docSnap.id, ...data, expiresAtMs, createdAtMs };
             }).filter(story => {
+                // INSTANT CACHE SHIELD: Purges stale cached expired stories on frame 1
+                if (story.expiresAtMs <= now) return false;
                 const isStuck = story.processing && (now - story.createdAtMs > 180000);
                 if (isStuck) return false;
                 return story.processing !== true || story.userId === currentUser?.uid;
