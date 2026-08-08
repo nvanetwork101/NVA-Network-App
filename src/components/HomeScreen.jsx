@@ -55,55 +55,43 @@ import RoastTokenVault from './RoastTokenVault';
 
     const showcaseVideoRefs = useRef({});
 
-    // STABLE SCROLL OBSERVER: Comparative Ratio Algorithm (Guarantees 1 Video Plays)
+    // STABLE SCROLL OBSERVER: Highlander Rule (Only 1 plays, pauses all others immediately)
     useEffect(() => {
         const scrollContainer = document.querySelector('.container');
-        const visibleVideos = new Map();
-
+        
         const observer = new IntersectionObserver((entries) => {
-            // 1. Track visibility ratio for all videos currently on screen
             entries.forEach((entry) => {
-                if (entry.isIntersecting) {
-                    visibleVideos.set(entry.target, entry.intersectionRatio);
-                } else {
-                    visibleVideos.delete(entry.target);
-                    if (typeof entry.target.pause === 'function') entry.target.pause();
-                }
-            });
-
-            // 2. Mathematically identify the single most visible video
-            let mostVisibleEl = null;
-            let highestRatio = 0;
-
-            visibleVideos.forEach((ratio, el) => {
-                if (ratio > highestRatio) {
-                    highestRatio = ratio;
-                    mostVisibleEl = el;
-                }
-            });
-
-            // 3. Play ONLY the winner, explicitly pause all others
-            Object.values(showcaseVideoRefs.current || {}).forEach((el) => {
-                if (!el) return;
+                const el = entry.target;
                 
-                if (el === mostVisibleEl && highestRatio > 0.1 && !showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
-                    const playPromise = el.play();
-                    if (playPromise !== undefined) playPromise.catch(() => {});
+                if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+                    // 1. Play this video
+                    if (!showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
+                        const playPromise = el.play();
+                        if (playPromise !== undefined) playPromise.catch(() => {});
+                    }
+                    
+                    // 2. Highlander Rule: Force-pause ALL OTHER videos instantly
+                    Object.values(showcaseVideoRefs.current || {}).forEach((otherEl) => {
+                        if (otherEl && otherEl !== el && typeof otherEl.pause === 'function') {
+                            otherEl.pause();
+                        }
+                    });
                 } else {
+                    // Out of view, pause it
                     if (typeof el.pause === 'function') el.pause();
                 }
             });
         }, {
             root: scrollContainer || null,
-            threshold: [0, 0.1, 0.25, 0.5, 0.75, 1.0] // Granular tracking for perfect accuracy
+            threshold: [0, 0.5]
         });
 
-        // 300ms delay ensures React paints DOM nodes before observer attaches
+        // Delay guarantees React DOM refs are fully painted before observing
         const timeoutId = setTimeout(() => {
             Object.values(showcaseVideoRefs.current || {}).forEach(el => {
                 if (el) observer.observe(el);
             });
-        }, 300);
+        }, 150);
 
         return () => {
             clearTimeout(timeoutId);
