@@ -52,6 +52,31 @@ import RoastTokenVault from './RoastTokenVault';
         window.addEventListener('nva_modal_toggled', toggleBlock);
         return () => window.removeEventListener('nva_modal_toggled', toggleBlock);
     }, []);
+
+    // STABLE SCROLL OBSERVER: Bound strictly to the App.jsx (.container) scroll box
+    useEffect(() => {
+        const scrollContainer = document.querySelector('.container');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                const el = entry.target;
+                if (entry.isIntersecting && entry.intersectionRatio >= 0.6 && !showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
+                    const playPromise = el.play();
+                    if (playPromise !== undefined) playPromise.catch(() => {});
+                } else {
+                    if (typeof el.pause === 'function') el.pause();
+                }
+            });
+        }, {
+            root: scrollContainer || null, // Measures strictly inside App.jsx scroll box
+            threshold: 0.6
+        });
+
+        Object.values(showcaseVideoRefs.current || {}).forEach(el => {
+            if (el) observer.observe(el);
+        });
+
+        return () => observer.disconnect();
+    }, [showcaseFeed, loadingShowcase]);
     const showcaseVideoRefs = useRef({});
 
     // --- FLASH STORIES SYSTEM STATES & HOOKS ---
@@ -1060,8 +1085,8 @@ import RoastTokenVault from './RoastTokenVault';
                                                     <video 
                                                         src={url} 
                                                         poster={item.customThumbnailUrl || item.imageUrl}
-                                                        autoPlay defaultMuted muted={isGlobalMuted} playsInline 
-                                                        style={{ width: '100%', maxHeight: '600px', objectFit: 'contain', display: 'block' }} 
+                                                        defaultMuted muted={isGlobalMuted} playsInline 
+                                                        style={{ width: '100%', aspectRatio: '16/9', maxHeight: '600px', objectFit: 'contain', display: 'block' }} 
                                                         onTimeUpdate={(e) => {
                                                             if (e.target.currentTime >= 15) {
                                                                 e.target.pause(); 
@@ -1076,17 +1101,6 @@ import RoastTokenVault from './RoastTokenVault';
                                                             el.defaultMuted = true;
                                                             el.muted = isGlobalMuted;
                                                             el.setAttribute('playsinline', '');
-                                                            if (el._nvaObserver) el._nvaObserver.disconnect();
-                                                            const observer = new IntersectionObserver(([entry]) => {
-                                                                if (entry.isIntersecting && !showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
-                                                                    const playPromise = el.play();
-                                                                    if (playPromise !== undefined) playPromise.catch(() => {});
-                                                                } else {
-                                                                    el.pause();
-                                                                }
-                                                            }, { threshold: 0.4 }); 
-                                                            observer.observe(el);
-                                                            el._nvaObserver = observer;
                                                         }}
                                                     />
                                                     <button 
@@ -1162,15 +1176,41 @@ import RoastTokenVault from './RoastTokenVault';
                             </div>
                         ))}
                         
-                        {/* Pagination: Load More Button */}
-                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px' }}>
+                        {/* Pagination: Load More Button (Modern VIP Glassmorphic Pill) */}
+                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '25px', marginBottom: '10px' }}>
                             <button 
                                 onClick={() => setShowcaseLimit(prev => prev + 15)}
-                                style={{ background: 'rgba(255,215,0,0.1)', color: '#FFD700', border: '1px solid #FFD700', padding: '12px 24px', borderRadius: '24px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s ease' }}
-                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,215,0,0.2)'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,215,0,0.1)'}
+                                style={{ 
+                                    background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.12) 0%, rgba(15, 15, 15, 0.8) 100%)', 
+                                    color: '#FFD700', 
+                                    border: '1px solid rgba(255, 215, 0, 0.35)', 
+                                    padding: '14px 32px', 
+                                    borderRadius: '30px', 
+                                    fontSize: '13px',
+                                    fontWeight: '900', 
+                                    letterSpacing: '1.5px',
+                                    textTransform: 'uppercase',
+                                    cursor: 'pointer', 
+                                    backdropFilter: 'blur(12px)',
+                                    WebkitBackdropFilter: 'blur(12px)',
+                                    boxShadow: '0 8px 25px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 215, 0, 0.2)',
+                                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                }}
+                                onMouseEnter={e => {
+                                    e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';
+                                    e.currentTarget.style.borderColor = '#FFD700';
+                                    e.currentTarget.style.boxShadow = '0 12px 30px rgba(255, 215, 0, 0.25)';
+                                }}
+                                onMouseLeave={e => {
+                                    e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                                    e.currentTarget.style.borderColor = 'rgba(255, 215, 0, 0.35)';
+                                    e.currentTarget.style.boxShadow = '0 8px 25px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 215, 0, 0.2)';
+                                }}
                             >
-                                Load More Videos
+                                <span>⚡ Load More Videos</span>
                             </button>
                         </div>
                     </div>
