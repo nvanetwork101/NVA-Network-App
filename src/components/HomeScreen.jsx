@@ -55,29 +55,38 @@ import RoastTokenVault from './RoastTokenVault';
 
     const showcaseVideoRefs = useRef({});
 
-    // STABLE SCROLL OBSERVER: Strictly plays the single most visible video in view
+    // STABLE SCROLL OBSERVER: Comparative Ratio Algorithm (Guarantees 1 Video Plays)
     useEffect(() => {
         const scrollContainer = document.querySelector('.container');
-        const entriesMap = new Map();
+        const visibleVideos = new Map();
 
         const observer = new IntersectionObserver((entries) => {
+            // 1. Track visibility ratio for all videos currently on screen
             entries.forEach((entry) => {
-                entriesMap.set(entry.target, entry);
+                if (entry.isIntersecting) {
+                    visibleVideos.set(entry.target, entry.intersectionRatio);
+                } else {
+                    visibleVideos.delete(entry.target);
+                    if (typeof entry.target.pause === 'function') entry.target.pause();
+                }
             });
 
+            // 2. Mathematically identify the single most visible video
             let mostVisibleEl = null;
             let highestRatio = 0;
 
-            entriesMap.forEach((entry, el) => {
-                if (entry.isIntersecting && entry.intersectionRatio > highestRatio) {
-                    highestRatio = entry.intersectionRatio;
+            visibleVideos.forEach((ratio, el) => {
+                if (ratio > highestRatio) {
+                    highestRatio = ratio;
                     mostVisibleEl = el;
                 }
             });
 
+            // 3. Play ONLY the winner, explicitly pause all others
             Object.values(showcaseVideoRefs.current || {}).forEach((el) => {
                 if (!el) return;
-                if (el === mostVisibleEl && highestRatio >= 0.5 && !showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
+                
+                if (el === mostVisibleEl && highestRatio > 0.1 && !showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
                     const playPromise = el.play();
                     if (playPromise !== undefined) playPromise.catch(() => {});
                 } else {
@@ -86,14 +95,20 @@ import RoastTokenVault from './RoastTokenVault';
             });
         }, {
             root: scrollContainer || null,
-            threshold: [0, 0.25, 0.5, 0.75, 1.0]
+            threshold: [0, 0.1, 0.25, 0.5, 0.75, 1.0] // Granular tracking for perfect accuracy
         });
 
-        Object.values(showcaseVideoRefs.current || {}).forEach(el => {
-            if (el) observer.observe(el);
-        });
+        // 300ms delay ensures React paints DOM nodes before observer attaches
+        const timeoutId = setTimeout(() => {
+            Object.values(showcaseVideoRefs.current || {}).forEach(el => {
+                if (el) observer.observe(el);
+            });
+        }, 300);
 
-        return () => observer.disconnect();
+        return () => {
+            clearTimeout(timeoutId);
+            observer.disconnect();
+        };
     }, [showcaseFeed, loadingShowcase]);
 
     // --- FLASH STORIES SYSTEM STATES & HOOKS ---
