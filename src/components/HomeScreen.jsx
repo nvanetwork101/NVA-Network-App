@@ -53,13 +53,31 @@ import RoastTokenVault from './RoastTokenVault';
         return () => window.removeEventListener('nva_modal_toggled', toggleBlock);
     }, []);
 
-    // STABLE SCROLL OBSERVER: Bound strictly to the App.jsx (.container) scroll box
+    const showcaseVideoRefs = useRef({});
+
+    // STABLE SCROLL OBSERVER: Strictly plays the single most visible video in view
     useEffect(() => {
         const scrollContainer = document.querySelector('.container');
+        const entriesMap = new Map();
+
         const observer = new IntersectionObserver((entries) => {
             entries.forEach((entry) => {
-                const el = entry.target;
-                if (entry.isIntersecting && entry.intersectionRatio >= 0.6 && !showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
+                entriesMap.set(entry.target, entry);
+            });
+
+            let mostVisibleEl = null;
+            let highestRatio = 0;
+
+            entriesMap.forEach((entry, el) => {
+                if (entry.isIntersecting && entry.intersectionRatio > highestRatio) {
+                    highestRatio = entry.intersectionRatio;
+                    mostVisibleEl = el;
+                }
+            });
+
+            Object.values(showcaseVideoRefs.current || {}).forEach((el) => {
+                if (!el) return;
+                if (el === mostVisibleEl && highestRatio >= 0.5 && !showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
                     const playPromise = el.play();
                     if (playPromise !== undefined) playPromise.catch(() => {});
                 } else {
@@ -67,8 +85,8 @@ import RoastTokenVault from './RoastTokenVault';
                 }
             });
         }, {
-            root: scrollContainer || null, // Measures strictly inside App.jsx scroll box
-            threshold: 0.6
+            root: scrollContainer || null,
+            threshold: [0, 0.25, 0.5, 0.75, 1.0]
         });
 
         Object.values(showcaseVideoRefs.current || {}).forEach(el => {
@@ -77,7 +95,6 @@ import RoastTokenVault from './RoastTokenVault';
 
         return () => observer.disconnect();
     }, [showcaseFeed, loadingShowcase]);
-    const showcaseVideoRefs = useRef({});
 
     // --- FLASH STORIES SYSTEM STATES & HOOKS ---
     const [flashStories, setFlashStories] = useState([]); // Flat background data
@@ -1121,21 +1138,6 @@ import RoastTokenVault from './RoastTokenVault';
 
                                         const extracted = typeof extractVideoInfo === 'function' ? extractVideoInfo(url) : null;
                                         const embedUrl = extracted?.embedUrl || item.embedUrl;
-
-                                        if (embedUrl) {
-                                            const separator = embedUrl.includes('?') ? '&' : '?';
-                                            const finalEmbedUrl = `${embedUrl}${separator}autoplay=1&mute=1&controls=0&disablekb=1&modestbranding=1&rel=0&enablejsapi=1&playsinline=1&end=15`;
-                                            return (
-                                                <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', overflow: 'hidden', background: '#000' }}>
-                                                    <iframe 
-                                                        src={finalEmbedUrl} 
-                                                        title={item.title || "Showcase Content"} 
-                                                        style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }} 
-                                                        allow="autoplay; encrypted-media; picture-in-picture"
-                                                    />
-                                                </div>
-                                            );
-                                        }
 
                                         return (
                                             <>

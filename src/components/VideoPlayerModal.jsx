@@ -350,11 +350,19 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
             );
         }
 
-        const secureUrl = embedUrl ? `${embedUrl}${embedUrl.includes('?') ? '&' : '?'}controls=${isAdminOrCreator ? '1' : '0'}&disablekb=${isAdminOrCreator ? '0' : '1'}` : embedUrl;
+        const separator = embedUrl && embedUrl.includes('?') ? '&' : '?';
+        const secureUrl = embedUrl ? `${embedUrl}${separator}autoplay=1&controls=${isAdminOrCreator ? '1' : '0'}&disablekb=${isAdminOrCreator ? '0' : '1'}` : embedUrl;
 
         if (platform === 'native') {
             return (
                 <video
+                    ref={(el) => {
+                        if (el) {
+                            el.currentTime = 0;
+                            const playPromise = el.play();
+                            if (playPromise !== undefined) playPromise.catch(() => {});
+                        }
+                    }}
                     src={embedUrl}
                     className="w-full h-full border-none"
                     style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
