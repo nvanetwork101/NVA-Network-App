@@ -12,6 +12,166 @@ import CompetitionHomeScreenBanner from './CompetitionHomeScreenBanner';
 import RoastTokenVault from './RoastTokenVault';
 // Legacy PromotedSlot and Campaigns removed for CenterStage Engine
 
+// --- Extracted Showcase Video Card (Highlander Auto-Play) ---
+const ShowcaseVideoCard = ({ item, isGlobalMuted, setIsGlobalMuted, handleItemClick, currentUser, showMessage, setActiveScreen }) => {
+    const videoRef = useRef(null);
+    const cardRef = useRef(null);
+    const isModalOpenRef = useRef(false);
+    const [shouldAutoPlayEmbed, setShouldAutoPlayEmbed] = useState(false);
+
+    const url = item.embedUrl || item.mainUrl || item.videoUrl || '';
+    const isNative = /\.(mp4|webm|ogg|mov|m3u8)($|\?)/i.test(url) || url.includes('firebasestorage') || url.includes('r2.dev') || url.includes('amazonaws.com');
+    
+    // Extract YouTube ID for inline autoplay iframe
+    const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/);
+    const ytId = ytMatch ? ytMatch[1] : null;
+
+    useEffect(() => {
+        const cardEl = cardRef.current;
+        if (!cardEl) return;
+
+        const videoEl = videoRef.current;
+        if (videoEl) {
+            videoEl.defaultMuted = true;
+            videoEl.muted = isGlobalMuted;
+        }
+
+        const scrollRoot = document.querySelector('.container');
+
+        const observer = new IntersectionObserver(([entry]) => {
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
+                if (!isModalOpenRef.current) {
+                    if (isNative && videoEl && videoEl.currentTime < 15 && !videoEl.ended) {
+                        const playPromise = videoEl.play();
+                        if (playPromise !== undefined) playPromise.catch(() => {});
+                    } else if (ytId) {
+                        setShouldAutoPlayEmbed(true);
+                    }
+                    window.dispatchEvent(new CustomEvent('highlander_playback', { detail: item.id }));
+                }
+            } else {
+                if (videoEl && typeof videoEl.pause === 'function') videoEl.pause();
+                setShouldAutoPlayEmbed(false);
+            }
+        }, { 
+            root: scrollRoot || null,
+            threshold: [0, 0.4] 
+        });
+
+        observer.observe(cardEl);
+
+        const globalPauseHandler = (e) => {
+            if (e.detail !== item.id) {
+                if (videoEl && typeof videoEl.pause === 'function') videoEl.pause();
+                setShouldAutoPlayEmbed(false);
+            }
+        };
+
+        const toggleModalBlock = (e) => {
+            isModalOpenRef.current = e.detail;
+            if (e.detail) {
+                if (videoEl && typeof videoEl.pause === 'function') videoEl.pause();
+                setShouldAutoPlayEmbed(false);
+            }
+        };
+
+        window.addEventListener('highlander_playback', globalPauseHandler);
+        window.addEventListener('nva_modal_toggled', toggleModalBlock);
+
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('highlander_playback', globalPauseHandler);
+            window.removeEventListener('nva_modal_toggled', toggleModalBlock);
+        };
+    }, [item.id, isGlobalMuted, isNative, ytId, url]);
+
+    return (
+        <div ref={cardRef} style={{ background: '#080808', border: '1px solid #1A1A1A', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
+            <div 
+                onClick={() => {
+                    if (item.creatorId || item.userId) {
+                        window.dispatchEvent(new CustomEvent('navigateToUserProfile', { detail: { userId: item.creatorId || item.userId } }));
+                    }
+                }}
+                style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: '12px', cursor: 'pointer', borderBottom: '1px solid #111' }}
+            >
+                <img src={item.creatorProfilePictureUrl || 'https://placehold.co/40'} style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #333' }} />
+                <div style={{ flex: 1 }}>
+                    <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>{item.creatorName || 'NVA Creator'}</p>
+                    <p style={{ margin: 0, color: '#888', fontSize: '11px', marginTop: '2px' }}>{item.creatorRole || 'Artist'} • {item.createdAt ? new Date(item.createdAt?.toMillis ? item.createdAt.toMillis() : Date.now()).toLocaleDateString() : 'Recent'}</p>
+                </div>
+                {item.monetizationStatus === 'approved' && (
+                    <span style={{ background: 'linear-gradient(to right, #BF953F, #FCF6BA, #B38728)', color: '#000', fontSize: '9px', fontWeight: '900', padding: '4px 8px', borderRadius: '12px', boxShadow: '0 0 10px rgba(191, 149, 63, 0.3)' }}>🎁 MONETIZED</span>
+                )}
+            </div>
+            
+            <div style={{ width: '100%', position: 'relative', background: '#000', minHeight: '220px', cursor: 'pointer', overflow: 'hidden' }} onClick={() => handleItemClick(item)}>
+                {isNative ? (
+                    <>
+                        <video 
+                            ref={videoRef}
+                            src={url} 
+                            poster={item.customThumbnailUrl || item.imageUrl}
+                            playsInline 
+                            style={{ width: '100%', aspectRatio: '16/9', maxHeight: '600px', objectFit: 'contain', display: 'block' }} 
+                            onTimeUpdate={(e) => { if (e.target.currentTime >= 15) e.target.pause(); }}
+                            onEnded={(e) => e.target.pause()}
+                        />
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setIsGlobalMuted(!isGlobalMuted); }}
+                            style={{ position: 'absolute', bottom: '15px', right: '15px', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: '0 4px 15px rgba(0,0,0,0.4)', zIndex: 10 }}
+                        >
+                            {isGlobalMuted ? (
+                                <svg viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '18px', height: '18px' }}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                            ) : (
+                                <svg viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '18px', height: '18px' }}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                            )}
+                        </button>
+                    </>
+                ) : ytId && shouldAutoPlayEmbed ? (
+                    <iframe 
+                        src={`https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&controls=0&loop=1&playlist=${ytId}&playsinline=1&enablejsapi=1`}
+                        style={{ width: '100%', aspectRatio: '16/9', maxHeight: '600px', border: 'none', display: 'block', pointerEvents: 'none' }}
+                        allow="autoplay; encrypted-media; picture-in-picture"
+                        title={item.title || "YouTube Preview"}
+                    />
+                ) : (
+                    <>
+                        <img src={item.customThumbnailUrl || item.imageUrl || 'https://placehold.co/800x450/111/333'} style={{ width: '100%', maxHeight: '600px', objectFit: 'contain', display: 'block' }} alt={item.title || "Thumbnail"} />
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
+                            <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: '2px solid #FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+                                <svg viewBox="0 0 24 24" fill="#FFF" style={{ width: '30px', height: '30px', marginLeft: '4px' }}><path d="M8 5v14l11-7z"/></svg>
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
+            
+            <div style={{ padding: '16px', cursor: 'pointer' }} onClick={() => handleItemClick(item)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                        {currentUser && (
+                            <div onClick={(e) => e.stopPropagation()}>
+                                <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} itemType={'content'} />
+                            </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#AAA', fontSize: '13px', fontWeight: 'bold' }}>
+                            <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: '18px', height: '18px' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                            {(item.viewCount || 0).toLocaleString()}
+                        </div>
+                    </div>
+                </div>
+                <p style={{ color: '#FFF', fontSize: '15px', fontWeight: 'bold', margin: '0 0 6px 0' }}>{item.title}</p>
+                {item.description && (
+                    <p style={{ color: '#888', fontSize: '13px', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.4' }}>
+                        {item.description}
+                    </p>
+                )}
+            </div>
+        </div>
+    );
+};
+
 // --- Main HomeScreen Component ---
     const HomeScreen = ({ currentUser, creatorProfile, showMessage, handleVideoPress, handleLogout, setActiveScreen, activeCompetition, setSelectedUserId }) => {
     
@@ -37,67 +197,6 @@ import RoastTokenVault from './RoastTokenVault';
     const [showcaseFeed, setShowcaseFeed] = useState([]);
     const [loadingShowcase, setLoadingShowcase] = useState(true);
     const [showcaseLimit, setShowcaseLimit] = useState(15); // Added for Pagination
-    const showcaseModalBlockRef = useRef(false);
-
-    // Global Pause Hook: Freezes background videos when any modal opens
-    useEffect(() => {
-        const toggleBlock = (e) => {
-            showcaseModalBlockRef.current = e.detail;
-            if (e.detail) {
-                Object.values(showcaseVideoRefs.current || {}).forEach(el => {
-                    if (el && typeof el.pause === 'function') el.pause();
-                });
-            }
-        };
-        window.addEventListener('nva_modal_toggled', toggleBlock);
-        return () => window.removeEventListener('nva_modal_toggled', toggleBlock);
-    }, []);
-
-    const showcaseVideoRefs = useRef({});
-
-    // STABLE SCROLL OBSERVER: Highlander Rule (Only 1 plays, pauses all others immediately)
-    useEffect(() => {
-        const scrollContainer = document.querySelector('.container');
-        
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach((entry) => {
-                const el = entry.target;
-                
-                if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-                    // 1. Play this video
-                    if (!showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
-                        const playPromise = el.play();
-                        if (playPromise !== undefined) playPromise.catch(() => {});
-                    }
-                    
-                    // 2. Highlander Rule: Force-pause ALL OTHER videos instantly
-                    Object.values(showcaseVideoRefs.current || {}).forEach((otherEl) => {
-                        if (otherEl && otherEl !== el && typeof otherEl.pause === 'function') {
-                            otherEl.pause();
-                        }
-                    });
-                } else {
-                    // Out of view, pause it
-                    if (typeof el.pause === 'function') el.pause();
-                }
-            });
-        }, {
-            root: scrollContainer || null,
-            threshold: [0, 0.5]
-        });
-
-        // Delay guarantees React DOM refs are fully painted before observing
-        const timeoutId = setTimeout(() => {
-            Object.values(showcaseVideoRefs.current || {}).forEach(el => {
-                if (el) observer.observe(el);
-            });
-        }, 150);
-
-        return () => {
-            clearTimeout(timeoutId);
-            observer.disconnect();
-        };
-    }, [showcaseFeed, loadingShowcase]);
 
     // --- FLASH STORIES SYSTEM STATES & HOOKS ---
     const [flashStories, setFlashStories] = useState([]); // Flat background data
@@ -366,13 +465,6 @@ import RoastTokenVault from './RoastTokenVault';
     }, []);
 
     const [isGlobalMuted, setIsGlobalMuted] = useState(true); // Modern Mute State
-
-    // Force strict mute policy down to DOM nodes dynamically to appease WebKit
-    useEffect(() => {
-        Object.values(showcaseVideoRefs.current).forEach(el => {
-            if (el) el.muted = isGlobalMuted;
-        });
-    }, [isGlobalMuted]);
 
     // NEW: Real-time intelligent algorithmic trending listener (Cost: capped at max 10 reads)
     useEffect(() => {
@@ -680,8 +772,7 @@ import RoastTokenVault from './RoastTokenVault';
         }
         const urlToPlay = item.embedUrl || item.mainUrl;
         if (urlToPlay) {
-            const videoEl = showcaseVideoRefs.current[item.id];
-            if (videoEl && typeof videoEl.pause === 'function') videoEl.pause(); // Keeps Ghost Audio fix
+            window.dispatchEvent(new CustomEvent('highlander_playback', { detail: 'force_pause_all' }));
             handleVideoPress(urlToPlay, item);
         } else {
             showMessage("This item has no valid link to play.");
@@ -1070,115 +1161,16 @@ import RoastTokenVault from './RoastTokenVault';
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '40px', paddingBottom: '60px' }}>
                         {showcaseFeed.map(item => (
-                            <div 
+                            <ShowcaseVideoCard 
                                 key={item.id} 
-                                style={{ background: '#080808', border: '1px solid #1A1A1A', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}
-                            >
-                                {/* Creator Header */}
-                                <div 
-                                    onClick={() => {
-                                        if (item.creatorId || item.userId) {
-                                            window.dispatchEvent(new CustomEvent('navigateToUserProfile', { detail: { userId: item.creatorId || item.userId } }));
-                                        }
-                                    }}
-                                    style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: '12px', cursor: 'pointer', borderBottom: '1px solid #111' }}
-                                >
-                                    <img src={item.creatorProfilePictureUrl || 'https://placehold.co/40'} style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #333' }} />
-                                    <div style={{ flex: 1 }}>
-                                        <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>{item.creatorName || 'NVA Creator'}</p>
-                                        <p style={{ margin: 0, color: '#888', fontSize: '11px', marginTop: '2px' }}>{item.creatorRole || 'Artist'} • {item.createdAt ? new Date(item.createdAt?.toMillis ? item.createdAt.toMillis() : Date.now()).toLocaleDateString() : 'Recent'}</p>
-                                    </div>
-                                    {item.monetizationStatus === 'approved' && (
-                                        <span style={{ background: 'linear-gradient(to right, #BF953F, #FCF6BA, #B38728)', color: '#000', fontSize: '9px', fontWeight: '900', padding: '4px 8px', borderRadius: '12px', boxShadow: '0 0 10px rgba(191, 149, 63, 0.3)' }}>🎁 MONETIZED</span>
-                                    )}
-                                </div>
-                                
-                                {/* Auto-Playing Video Player (Native MP4 + Embedded YouTube/FB Support) */}
-                                <div style={{ width: '100%', position: 'relative', background: '#000', minHeight: '220px', cursor: 'pointer', overflow: 'hidden' }} onClick={() => handleItemClick(item)}>
-                                    {(() => {
-                                        const url = item.embedUrl || item.mainUrl || item.videoUrl || '';
-                                        const isNative = /\.(mp4|webm|ogg|mov)$/i.test(url) || url.includes('firebasestorage') || url.includes('r2.dev');
-                                        
-                                        if (isNative) {
-                                            return (
-                                                <>
-                                                    <video 
-                                                        src={url} 
-                                                        poster={item.customThumbnailUrl || item.imageUrl}
-                                                        defaultMuted muted={isGlobalMuted} playsInline 
-                                                        style={{ width: '100%', aspectRatio: '16/9', maxHeight: '600px', objectFit: 'contain', display: 'block' }} 
-                                                        onTimeUpdate={(e) => {
-                                                            if (e.target.currentTime >= 15) {
-                                                                e.target.pause(); 
-                                                            }
-                                                        }}
-                                                        onEnded={(e) => {
-                                                            e.target.pause();
-                                                        }}
-                                                        ref={(el) => {
-                                                            if (!el) return;
-                                                            showcaseVideoRefs.current[item.id] = el;
-                                                            el.defaultMuted = true;
-                                                            el.muted = isGlobalMuted;
-                                                            el.setAttribute('playsinline', '');
-                                                        }}
-                                                    />
-                                                    <button 
-                                                        onClick={(e) => { e.stopPropagation(); setIsGlobalMuted(!isGlobalMuted); }}
-                                                        style={{ position: 'absolute', bottom: '15px', right: '15px', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: '0 4px 15px rgba(0,0,0,0.4)', zIndex: 10 }}
-                                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.8)'}
-                                                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.5)'}
-                                                    >
-                                                        {isGlobalMuted ? (
-                                                            <svg viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '18px', height: '18px' }}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
-                                                        ) : (
-                                                            <svg viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '18px', height: '18px' }}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-                                                        )}
-                                                    </button>
-                                                </>
-                                            );
-                                        }
-
-                                        const extracted = typeof extractVideoInfo === 'function' ? extractVideoInfo(url) : null;
-                                        const embedUrl = extracted?.embedUrl || item.embedUrl;
-
-                                        return (
-                                            <>
-                                                <img src={item.customThumbnailUrl || item.imageUrl || 'https://placehold.co/800x450/111/333'} style={{ width: '100%', maxHeight: '600px', objectFit: 'contain', display: 'block' }} alt={item.title || "Thumbnail"} />
-                                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
-                                                    <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: '2px solid #FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-                                                        <svg viewBox="0 0 24 24" fill="#FFF" style={{ width: '30px', height: '30px', marginLeft: '4px' }}><path d="M8 5v14l11-7z"/></svg>
-                                                    </div>
-                                                </div>
-                                            </>
-                                        );
-                                    })()}
-                                </div>
-                                
-                                {/* Interaction Bar & Meta */}
-                                <div style={{ padding: '16px', cursor: 'pointer' }} onClick={() => handleItemClick(item)}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                                            {currentUser && (
-                                                <div onClick={(e) => e.stopPropagation()}>
-                                                    <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} itemType={'content'} />
-                                                </div>
-                                            )}
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#AAA', fontSize: '13px', fontWeight: 'bold' }}>
-                                                <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: '18px', height: '18px' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
-                                                {(item.viewCount || 0).toLocaleString()}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <p style={{ color: '#FFF', fontSize: '15px', fontWeight: 'bold', margin: '0 0 6px 0' }}>{item.title}</p>
-                                    {item.description && (
-                                        <p style={{ color: '#888', fontSize: '13px', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.4' }}>
-                                            {item.description}
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
+                                item={item} 
+                                isGlobalMuted={isGlobalMuted} 
+                                setIsGlobalMuted={setIsGlobalMuted} 
+                                handleItemClick={handleItemClick} 
+                                currentUser={currentUser} 
+                                showMessage={showMessage} 
+                                setActiveScreen={setActiveScreen} 
+                            />
                         ))}
                         
                         {/* Pagination: Load More Button (Modern VIP Glassmorphic Pill) */}
