@@ -272,9 +272,9 @@ function DiscoverScreen({
             const savedTab = sessionStorage.getItem('nva_target_discover_tab');
             if (savedTab) {
                 sessionStorage.removeItem('nva_target_discover_tab');
-                return savedTab;
+                return savedTab === 'Showcase' ? 'Feed' : savedTab;
             }
-            return 'Showcase';
+            return 'Feed';
         }); 
         const [localCountdown, setLocalCountdown] = useState('SYNCING...');
 
@@ -827,7 +827,7 @@ function DiscoverScreen({
             sessionStorage.removeItem('nva_target_community_subtab');
             return savedSub;
         }
-        return 'Feed';
+        return 'Discover Creators';
     });
     const [leaderboard, setLeaderboard] = useState([]);
     const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
@@ -843,9 +843,9 @@ function DiscoverScreen({
         }
     }, [deepLinkedReplayId]);
 
-    // Lazy load following timeline strictly when Community -> Feed is active
+    // Lazy load following timeline strictly when Main Feed Tab (Tab 1) is active
     useEffect(() => {
-        if (activeTab === 'Community' && communitySubTab === 'Feed' && currentUser) {
+        if (activeTab === 'Feed' && currentUser) {
             setLoadingFollowing(true);
             const fetchFollowingFeed = async () => {
                 try {
@@ -862,10 +862,11 @@ function DiscoverScreen({
                     const itemsRef = collection(db, 'artifacts/production-app-id/public/data/content_items');
                     const q = query(
                         itemsRef, 
-                        where('userId', 'in', followedIds.slice(0, 10)),
+                        // GOD-TIER FIX: Database uses 'creatorId', not 'userId'. This is why the feed was empty!
+                        where('creatorId', 'in', followedIds.slice(0, 10)),
                         where('isActive', '==', true),
                         orderBy('createdAt', 'desc'),
-                        limit(15)
+                        limit(30)
                     );
                     const feedSnap = await getDocs(q);
                     setFollowingFeed(feedSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -1042,11 +1043,11 @@ function DiscoverScreen({
                         scrollbarWidth: 'none',
                         WebkitOverflowScrolling: 'touch'
                     }}>
-                        {['Showcase', 'Premieres', 'Casting', 'Community'].map((tab) => (
+                        {['Feed', 'Premieres', 'Casting', 'Community'].map((tab) => (
                             <button 
                                 key={tab} 
                                 onClick={() => {
-                                    if (!currentUser && tab !== 'Showcase' && tab !== 'Premieres') {
+                                    if (!currentUser && tab !== 'Feed' && tab !== 'Premieres') {
                                         showMessage("Please log in to access this tab.");
                                         return;
                                     }
@@ -1085,176 +1086,48 @@ function DiscoverScreen({
                     </div>
                 </div>
             ) : null}
-
-            {/* ==================== TAB 1: GLOBAL SHOWCASE (MEDIA LIBRARY) ==================== */}
+            
+            {/* ==================== TAB 1: FOLLOWING FEED ==================== */}
             <div className="tabContent" style={{ 
-                display: activeTab === 'Showcase' ? 'block' : 'none', 
-                animation: activeTab === 'Showcase' ? 'fadeIn 0.3s ease' : 'none' 
+                display: activeTab === 'Feed' ? 'block' : 'none', 
+                animation: activeTab === 'Feed' ? 'fadeIn 0.3s ease' : 'none' 
             }}>
-                    {/* Subtle, high-contrast sub-label for Showcase */}
-                    <p style={{ color: '#888', fontSize: '12px', margin: '-10px 0 20px 0', lineHeight: '1.4' }}>
-                        🍿 Welcome to the VOD Library. Stream original indie productions and send direct financial <strong>Donations</strong> to support monetized creators.
-                    </p>
-                    
-                    {/* THE FIX: Unified Dropdown + Search Bar for Showcase */}
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap' }}>
-                        {/* NEW: Text Search Bar */}
-                        <div style={{ position: 'relative', flex: 1, minWidth: '180px', maxWidth: '300px' }}>
-                            <input 
-                                type="text"
-                                placeholder="Search titles or creators..."
-                                value={showcaseSearch}
-                                onChange={(e) => setShowcaseSearch(e.target.value)}
-                                style={{
-                                    width: '100%', padding: '8px 15px', borderRadius: '20px',
-                                    backgroundColor: '#1A1A1A', color: '#FFF',
-                                    border: '1px solid #333', fontWeight: 'normal', fontSize: '14px', outline: 'none'
-                                }}
-                            />
-                        </div>
+                <div style={{ padding: '0 10px', marginBottom: '30px' }}>
+                    <p style={{ color: '#00FFFF', fontWeight: '900', fontSize: '20px', margin: '0 0 5px 0' }}>👥 Following Feed</p>
+                    <p style={{ color: '#888', fontSize: '13px', marginBottom: '25px' }}>Latest content from creators you follow.</p>
 
-                        <div style={{ position: 'relative', flex: 1, minWidth: '160px', maxWidth: '220px' }}>
-                            <select 
-                                value={showcaseFilter}
-                                onChange={(e) => setShowcaseFilter(e.target.value)}
-                                style={{
-                                    width: '100%', padding: '8px 35px 8px 15px', borderRadius: '20px',
-                                    backgroundColor: showcaseFilter !== 'All' ? 'rgba(255, 215, 0, 0.1)' : '#1A1A1A',
-                                    color: showcaseFilter !== 'All' ? '#FFD700' : '#FFF',
-                                    border: '1px solid', borderColor: showcaseFilter !== 'All' ? '#FFD700' : '#333',
-                                    fontWeight: 'bold', fontSize: '14px', cursor: 'pointer',
-                                    appearance: 'none', outline: 'none'
-                                }}
-                            >
-                                <option value="All">All Categories</option>
-                                {/* THE FIX: Dynamically maps database categories while excluding system-level Live categories to match Admin/Library 1:1 */}
-                                {categories
-                                    .filter(cat => cat.name !== 'Live Premieres' && cat.name !== 'Live Feed')
-                                    .map(cat => (
-                                        <option key={cat.id} value={cat.name} style={{ backgroundColor: '#111', color: '#FFF' }}>
-                                            {cat.name}
-                                        </option>
-                                    ))
-                                }
-                            </select>
-                            <svg viewBox="0 0 24 24" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', fill: showcaseFilter !== 'All' ? '#FFD700' : '#888', pointerEvents: 'none' }}>
-                                <path d="M7 10l5 5 5-5z" />
-                            </svg>
-                        </div>
-                    </div>
-
-                    {/* THE FIX: Combined Content Genre Search Pipeline with 1-ITEM PER CREATOR ENFORCEMENT & ZERO-COST AFFINITY ALGORITHM */}
-                    {(() => {
-                        const search = showcaseSearch.toLowerCase();
-                        const term = showcaseFilter.toLowerCase();
-                        
-                        // 1. Enforce 1 item per creator (keeps newest active item) + standard filters
-                        const seenCreators = new Set();
-                        const filtered = showcaseItems.filter(item => {
-                            const matchesSearch = search === '' || (item.title || '').toLowerCase().includes(search) || (item.creatorName || '').toLowerCase().includes(search);
-                            const matchesDropdown = showcaseFilter === 'All' || (item.category || item.contentType || '').toLowerCase().includes(term) || (item.creatorRole || '').toLowerCase().includes(term) || (Array.isArray(item.tags) ? item.tags.some(t => (t || '').toLowerCase().includes(term)) : false);
-                            const isMatch = matchesSearch && matchesDropdown;
-
-                            if (!isMatch) return false;
-
-                            const creatorKey = item.creatorId || item.userId || item.creatorName;
-                            if (creatorKey) {
-                                if (seenCreators.has(creatorKey)) return false; // Drops older duplicate items for this creator
-                                seenCreators.add(creatorKey);
-                            }
-                            return true;
-                        });
-
-                        // 2. Retrieve local affinity scores for $0 AI
-                        let scores = {};
-                        try {
-                            const affinityKey = `nva_affinity_${currentUser?.uid || 'guest'}`;
-                            scores = JSON.parse(localStorage.getItem(affinityKey) || '{}');
-                        } catch (e) {}
-
-                        // 3. Separate top 3 affinity items if no search is active
-                        let forYouItems = [];
-                        let standardItems = filtered;
-
-                        if (search === '' && showcaseFilter === 'All' && Object.keys(scores).length > 0) {
-                            const sortedByAffinity = [...filtered].sort((a, b) => (scores[b.contentType] || 0) - (scores[a.contentType] || 0));
-                            // REVERTED AGGRESSION: Now requires at least 5 organic views of a category before suggesting it
-                            forYouItems = sortedByAffinity.filter(item => (scores[item.contentType] || 0) >= 5).slice(0, 3);
-                            
-                            const forYouIds = new Set(forYouItems.map(i => i.id));
-                            standardItems = filtered.filter(item => !forYouIds.has(item.id));
-                        }
-
-                        // Reusable Card Renderer
-                        const renderCard = (item, isForYou = false) => (
-                            <div key={item.id} className="showcase-card" onClick={() => handleContentItemClick(item)} style={isForYou ? { border: '1px solid #00FFFF', boxShadow: '0 0 15px rgba(0,255,255,0.1)' } : {}}>
-                                <div className="showcase-media">
-                                    <img src={item.customThumbnailUrl || item.imageUrl || 'https://placehold.co/400x225/0a0a0a/333?text=NVA'} alt={item.title} />
-                                    <div className="showcase-play-overlay">
-                                        <svg width="40" height="40" viewBox="0 0 24 24" fill="#FFF"><path d="M8 5v14l11-7z"/></svg>
-                                    </div>
-                                    {isForYou && <div style={{ position: 'absolute', top: '8px', left: '8px', background: '#00FFFF', color: '#000', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', boxShadow: '0 0 10px rgba(0,255,255,0.5)' }}>✨ For You</div>}
-                                </div>
-                                <div className="showcase-info">
-                                    <p className="showcase-title">{item.title}</p>
-                                    <div className="showcase-creator" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                                        by {item.creatorName || 'NVA Artist'}
-                                        {item.creatorRole && <span className="showcase-badge" style={{ background: '#333', color: '#FFF' }}>{item.creatorRole}</span>}
-                                        {item.monetizationStatus === 'approved' && <span className="showcase-badge" style={{ background: 'linear-gradient(to right, #BF953F, #FCF6BA, #B38728)', color: '#000', fontSize: '9px', fontWeight: '900', boxShadow: '0 0 8px rgba(191, 149, 63, 0.4)' }}>🎁 Monetized</span>}
-                                    </div>
-                                    <div className="showcase-metrics">
-                                        <div className="metric-node">
-                                            <svg viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
-                                            {item.viewCount || 0}
-                                        </div>
-                                        <div className="metric-node">
-                                            <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                                            {item.likeCount || 0}
-                                        </div>
-                                    </div>
-                                </div>
+                    {loadingFollowing ? (
+                        <p style={{ textAlign: 'center', color: '#FFD700', padding: '40px 0' }}>Loading your feed...</p>
+                    ) : followingFeed.length === 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', padding: '40px 20px', textAlign: 'center', gap: '12px' }}>
+                            <span style={{ fontSize: '40px' }}>👀</span>
+                            <div>
+                                <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '16px' }}>Nothing here yet!</p>
+                                <p style={{ margin: '6px 0 0 0', color: '#888', fontSize: '13px', lineHeight: '1.4' }}>Follow your favorite creators and their new videos will appear right here.</p>
                             </div>
-                        );
-
-                        return (
-                            <>
-                                {forYouItems.length > 0 && (
-                                    <>
-                                        <p style={{ color: '#00FFFF', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 15px 0', fontSize: '13px' }}>✨ Recommended For You</p>
-                                        <div className="showcase-grid" style={{ marginBottom: '20px' }}>
-                                            {forYouItems.map(item => renderCard(item, true))}
-                                        </div>
-                                        <hr style={{ border: 'none', borderTop: '1px dashed #333', margin: '0 0 30px 0' }} />
-                                    </>
-                                )}
-                                <div className="showcase-grid">
-                                    {standardItems.map(item => renderCard(item, false))}
+                            <button 
+                                className="modern-button" 
+                                onClick={() => { setActiveTab('Community'); setCommunitySubTab('Discover Creators'); }}
+                                style={{ background: 'rgba(0, 255, 255, 0.1)', color: '#00FFFF', border: '1px solid rgba(0, 255, 255, 0.3)', padding: '10px 20px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', textTransform: 'uppercase', marginTop: '10px' }}
+                            >
+                                Find Creators to Follow
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="contentGrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '15px' }}>
+                            {followingFeed.map((item) => (
+                                <div key={item.id} className="contentCard" onClick={() => handleContentItemClick(item)} style={{ cursor: 'pointer', background: '#0A0A0A', border: '1px solid #1A1A1A', borderRadius: '12px', overflow: 'hidden' }}>
+                                    <DynamicThumbnail item={item} />
+                                    <div style={{ padding: '10px' }}>
+                                        <p className="contentTitle" style={{ color: '#FFF', margin: '0 0 4px 0', fontSize: '13px', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</p>
+                                        <p style={{ margin: 0, color: '#888', fontSize: '10px' }}>by {item.creatorName}</p>
+                                    </div>
                                 </div>
-                            </>
-                        );
-                    })()}
-
-                    {loadingShowcase && <p style={{ textAlign: 'center', color: '#FFD700' }}>Loading more inspiration...</p>}
-
-                    {!loadingShowcase && hasMoreShowcase && (
-                        <button 
-                            className="button" 
-                            style={{ margin: '0 auto 40px auto', display: 'block', backgroundColor: '#1A1A1A', border: '1px solid #333' }}
-                            onClick={() => fetchShowcase(true)}
-                        >
-                            Load More
-                        </button>
-                    )}
-
-                    {!hasMoreShowcase && showcaseItems.length > 0 && (
-                        <div className="caught-up-anchor">
-                            <p style={{ color: '#666', margin: '0 0 10px 0' }}>✨ You're all caught up!</p>
-                            <span className="back-to-top" onClick={() => showcaseTopRef.current?.scrollIntoView({ behavior: 'smooth' })}>
-                                [ ⬆️ Back to Top ]
-                            </span>
+                            ))}
                         </div>
                     )}
                 </div>
+            </div>
 
             {/* ==================== TAB 3: PREMIERES (MULTIPLEX LOBBY & WAITING ROOM) ==================== */}
         <div className="tabContent" style={{ 
@@ -1761,7 +1634,7 @@ function DiscoverScreen({
                 
                 {/* Smart Sub-Navigation */}
                 <div style={{ display: 'flex', gap: '20px', marginBottom: '25px', borderBottom: '1px solid #222', overflowX: 'auto', scrollbarWidth: 'none' }}>
-                    {['Feed', 'Discover Creators', 'Leaderboard'].map(sub => (
+                    {['Discover Creators', 'Leaderboard'].map(sub => (
                         <div 
                             key={sub}
                             onClick={() => setCommunitySubTab(sub)} 
@@ -1781,38 +1654,7 @@ function DiscoverScreen({
                     ))}
                 </div>
 
-                {/* SUB-TAB 1: FOLLOWING (LAZY FEED) */}
-                {communitySubTab === 'Feed' && (
-                    <div>
-                        {loadingFollowing ? (
-                            <p style={{ textAlign: 'center', color: '#FFD700' }}>Loading Feed...</p>
-                        ) : followingFeed.length === 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: '16px', padding: '30px 15px', textAlign: 'center', gap: '12px' }}>
-                                <span style={{ fontSize: '32px' }}>👥</span>
-                                <div>
-                                    <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>Your Feed is Empty</p>
-                                    <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '12px', lineHeight: '1.4' }}>Follow your favorite local actors, musicians, and filmmakers to build your custom timeline.</p>
-                                </div>
-                                <button 
-                                    className="modern-button" 
-                                    onClick={() => setCommunitySubTab('Discover Creators')}
-                                    style={{ background: 'rgba(0, 255, 255, 0.1)', color: '#00FFFF', border: '1px solid rgba(0, 255, 255, 0.3)', padding: '8px 16px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textTransform: 'uppercase' }}
-                                >
-                                    Find Creators
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="contentGrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '15px' }}>
-                                {followingFeed.map((item) => (
-                                    <div key={item.id} className="contentCard" onClick={() => handleContentItemClick(item)} style={{ cursor: 'pointer' }}>
-                                        <DynamicThumbnail item={item} />
-                                        <p className="contentTitle" style={{ color: '#FFF', marginTop: '10px', fontWeight: 'bold' }}>{item.title}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
+                {/* SUB-TAB 1: MOVED TO MAIN TAB 1 */}
 
                 {/* SUB-TAB 2: TALENT (FIND CREATORS) */}
                 {communitySubTab === 'Discover Creators' && (

@@ -57,7 +57,8 @@ const extractVideoInfo = (url) => {
     if (tiktokMatch) {
         return { embedUrl: `https://www.tiktok.com/embed/v2/${tiktokMatch[1]}`, isVertical: true, platform: 'tiktok' };
     }
-    return { embedUrl: url, isVertical: false, platform: 'unknown' };
+    const isNativeMedia = /\.(mp4|webm|ogg|mov)$/i.test(url) || url.includes('firebasestorage.googleapis.com') || url.includes('r2.dev');
+    return { embedUrl: url, isVertical: false, platform: isNativeMedia ? 'native' : 'unknown' };
 };
 
 const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerProfile, showMessage, openCommentsProp }) => {
@@ -253,7 +254,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
         const unsubContent = onSnapshot(doc(db, docPath), (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                setLiveContentItem({ id: docSnap.id, ...data });
+                setLiveContentItem(prev => ({ ...prev, id: docSnap.id, ...data }));
                 if (data.creatorId) {
                     getDoc(doc(db, "creators", data.creatorId)).then(creatorSnap => {
                         if (creatorSnap.exists()) setCreatorProfile({ id: creatorSnap.id, ...creatorSnap.data() });
@@ -263,6 +264,12 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
         });
         return () => unsubContent();
     }, [contentItem?.id, contentItem?.originalContentId, contentItem?.eventTitle]);
+
+    // Broadcast Modal State to freeze Home Screen background videos
+    useEffect(() => {
+        window.dispatchEvent(new CustomEvent('nva_modal_toggled', { detail: true }));
+        return () => window.dispatchEvent(new CustomEvent('nva_modal_toggled', { detail: false }));
+    }, []);
 
     useEffect(() => {
         if (!liveContentItem || !liveContentItem.id || !currentUser || viewCountedRef.current || currentUser.uid === liveContentItem.creatorId) return;
@@ -345,6 +352,19 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
 
         const secureUrl = embedUrl ? `${embedUrl}${embedUrl.includes('?') ? '&' : '?'}controls=${isAdminOrCreator ? '1' : '0'}&disablekb=${isAdminOrCreator ? '0' : '1'}` : embedUrl;
 
+        if (platform === 'native') {
+            return (
+                <video
+                    src={embedUrl}
+                    className="w-full h-full border-none"
+                    style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
+                    controls={true}
+                    autoPlay
+                    playsInline
+                />
+            );
+        }
+
         return (
             <iframe
                 src={secureUrl}
@@ -359,7 +379,7 @@ const VideoPlayerModal = ({ videoUrl, onClose, contentItem, currentUser, viewerP
                 title="Embedded Video Content"
             />
         );
-    }, [embedUrl, isVertical, isLocked, liveContentItem?.thumbnailUrl, liveContentItem?.ticketPrice, liveContentItem?.id, isLive, itemType, isAdminOrCreator]);
+    }, [embedUrl, platform, isVertical, isLocked, liveContentItem?.thumbnailUrl, liveContentItem?.ticketPrice, liveContentItem?.id, liveContentItem?.startTime, isLive, itemType, isAdminOrCreator]);
 
     return (
         <div className="videoModalOverlay flex justify-center items-center" style={{ backdropFilter: 'blur(10px)', backgroundColor: 'rgba(0,0,0,0.8)' }}>

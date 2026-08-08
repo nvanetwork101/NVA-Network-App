@@ -591,6 +591,27 @@ const CreatorDashboardScreen = ({
         return () => { unsubEnrollment(); unsubConfig(); unsubHistory(); unsubSweep(); };
     }, [currentUser]);
 
+    // --- LATEST USER CONTENT PREVIEW LISTENER ---
+    const [latestUserContent, setLatestUserContent] = useState(null);
+
+    useEffect(() => {
+        if (!currentUser) return;
+        const contentRef = collection(db, `artifacts/production-app-id/public/data/content_items`);
+        const q = query(contentRef, where('creatorId', '==', currentUser.uid));
+        const unsub = onSnapshot(q, (snap) => {
+            if (!snap.empty) {
+                const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                // FIX: Fallback to Date.now() if serverTimestamp is pending so new uploads sort to #1 instantly
+                const getTime = (item) => item.createdAt?.toMillis ? item.createdAt.toMillis() : (item.createdAt?.seconds ? item.createdAt.seconds * 1000 : Date.now());
+                items.sort((a, b) => getTime(b) - getTime(a));
+                setLatestUserContent(items[0]);
+            } else {
+                setLatestUserContent(null);
+            }
+        });
+        return () => unsub();
+    }, [currentUser]);
+
     // --- LIVE BOUND FEATURED VIDEO STATUS LISTENER ---
     const [liveFeaturedItem, setLiveFeaturedItem] = useState(null);
 
@@ -2078,61 +2099,46 @@ const CreatorDashboardScreen = ({
                             <p style={{textAlign: 'center', fontSize: '10px', color: '#888', marginTop: '15px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px'}}>Top performers qualify for the <strong>100K GYD</strong> bi-weekly prize</p>
                         </div>
 
-                        {/* === CONTENT LIBRARY & FEATURED LINK SECTION === */}
+                        {/* === CONTENT LIBRARY ACCESS SECTION === */}
                         <div className="dashboardSection" style={{ paddingBottom: '10px' }}>
-                            <p className="dashboardSectionTitle">My Showcase Feature</p>
-                            <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>Pinned to your public profile and showcased globally. If pending monetization, it remains private until approved.</p>
+                            <p className="dashboardSectionTitle">📁 My Content Library</p>
+                            <p className="dashboardItem" style={{color: '#AAA', lineHeight: 1.4, marginBottom: '15px'}}>Upload, manage, and submit videos for monetization. All active uploads appear on your profile and in the Showcase Feed.</p>
                             
-                            {(creatorProfile.featuredVideoLink && liveFeaturedItem) ? (
-                                (() => {
-                                    // Live-bound checks protect the UI from stale embedded fields
-                                    const monetizationStatus = liveFeaturedItem.monetizationStatus;
-                                    const isActive = liveFeaturedItem.isActive;
-                                    const isFeaturedPending = monetizationStatus === 'pending' || isActive === false;
-                                    
-                                    return (
-                                        <div className="vertical-carousel-item" style={{ backgroundColor: '#1A1A1A', border: isFeaturedPending ? '1px dashed #FFD700' : 'none', borderRadius: '12px', padding: '10px', opacity: isFeaturedPending ? 0.7 : 1 }}>
-                                            <div style={{ width: '140px', height: '80px', flexShrink: 0, marginRight: '15px', position: 'relative', overflow: 'hidden', borderRadius: '6px' }}>
-                                                <DynamicThumbnail 
-                                                    item={{ imageUrl: creatorProfile.featuredVideoLink.customThumbnailUrl }} 
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        if (isFeaturedPending) {
-                                                            showMessage("This video is pending admin approval.");
-                                                        } else {
-                                                            handleVideoPress(creatorProfile.featuredVideoLink.embedUrl || creatorProfile.featuredVideoLink.mainUrl, creatorProfile.featuredVideoLink);
-                                                        }
-                                                    }} 
-                                                />
-                                                {isFeaturedPending && (
-                                                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>🔒</div>
-                                                )}
-                                            </div>
-                                            <div className="liveFeedContent">
-                                                <p className="liveFeedTitle" style={{ fontWeight: 'bold', margin: 0 }}>{`Currently Featuring: ${creatorProfile.featuredVideoLink.title}`}</p>
-                                                {isFeaturedPending ? (
-                                                    <p className="liveFeedCreator" style={{ color: '#FFA500', fontWeight: 'bold', margin: '4px 0 0 0', fontSize: '12px' }}>⚠️ Awaiting Monetization Approval</p>
-                                                ) : (
-                                                    <p className="liveFeedCreator" style={{ color: '#00FF00', fontWeight: 'bold', margin: '4px 0 0 0', fontSize: '12px' }}>✓ Visible in public showcase</p>
-                                                )}
-                                            </div>
+                            {latestUserContent ? (
+                                <div style={{ background: '#111', border: '1px solid #333', borderRadius: '16px', padding: '15px', marginTop: '10px', display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <div style={{ width: '120px', aspectRatio: '16/9', borderRadius: '8px', overflow: 'hidden', background: '#000', position: 'relative', flexShrink: 0 }}>
+                                        <img src={latestUserContent.customThumbnailUrl || latestUserContent.imageUrl || 'https://placehold.co/120x68/222/FFF?text=NVA'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: '160px' }}>
+                                        <span style={{ fontSize: '9px', fontWeight: '900', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>LATEST UPLOAD PREVIEW</span>
+                                        <p style={{ margin: '2px 0 4px 0', color: '#FFF', fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{latestUserContent.title}</p>
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: '10px', color: (latestUserContent.monetizationStatus === 'pending' || !latestUserContent.isActive) ? '#FFD700' : '#4ADE80', fontWeight: 'bold', background: (latestUserContent.monetizationStatus === 'pending' || !latestUserContent.isActive) ? 'rgba(255,215,0,0.1)' : 'rgba(74,222,128,0.1)', padding: '2px 8px', borderRadius: '4px', border: (latestUserContent.monetizationStatus === 'pending' || !latestUserContent.isActive) ? '1px solid rgba(255,215,0,0.3)' : '1px solid rgba(74,222,128,0.3)' }}>
+                                                {latestUserContent.monetizationStatus === 'pending' ? '⏱️ Pending Monetization Review' : (latestUserContent.isActive ? '✓ Active in Showcase' : '📁 Saved in Library')}
+                                            </span>
                                         </div>
-                                    );
-                                })()
-                            ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255, 215, 0, 0.02)', border: '1px dashed rgba(255, 215, 0, 0.15)', borderRadius: '16px', padding: '24px', textAlign: 'center', gap: '12px', marginTop: '10px' }}>
-                                    <span style={{ fontSize: '32px' }}>🌟</span>
-                                    <div>
-                                        <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>No Featured Video Yet</p>
-                                        <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '11px', lineHeight: '1.4' }}>Feature a video from your library to display on your public profile card.</p>
                                     </div>
                                     <button 
                                         className="modern-button" 
                                         onClick={() => { setActiveScreen('MyContentLibrary'); window.scrollTo(0, 0); }}
-                                        style={{ background: 'rgba(255, 215, 0, 0.1)', color: '#FFD700', border: '1px solid rgba(255, 215, 0, 0.3)', padding: '8px 16px', borderRadius: '20px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textTransform: 'uppercase' }}
+                                        style={{ background: 'rgba(255, 215, 0, 0.1)', color: '#FFD700', border: '1px solid rgba(255, 215, 0, 0.3)', padding: '10px 20px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', textTransform: 'uppercase', width: '100%' }}
                                     >
-                                        Feature a Video
+                                        Open Full Library
+                                    </button>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'rgba(255, 215, 0, 0.02)', border: '1px dashed rgba(255, 215, 0, 0.15)', borderRadius: '16px', padding: '24px', textAlign: 'center', gap: '12px', marginTop: '10px' }}>
+                                    <span style={{ fontSize: '32px' }}>🎬</span>
+                                    <div>
+                                        <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>Manage Portfolio & Monetization</p>
+                                        <p style={{ margin: '4px 0 0 0', color: '#888', fontSize: '11px', lineHeight: '1.4' }}>View your view counts, delete old uploads, or request monetization for your videos.</p>
+                                    </div>
+                                    <button 
+                                        className="modern-button" 
+                                        onClick={() => { setActiveScreen('MyContentLibrary'); window.scrollTo(0, 0); }}
+                                        style={{ background: 'rgba(255, 215, 0, 0.1)', color: '#FFD700', border: '1px solid rgba(255, 215, 0, 0.3)', padding: '10px 20px', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', textTransform: 'uppercase' }}
+                                    >
+                                        Open Content Library
                                     </button>
                                 </div>
                             )}

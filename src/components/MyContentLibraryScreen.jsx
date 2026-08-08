@@ -543,7 +543,7 @@ function MyContentLibraryScreen({
             <div className="screenContainer" style={{ paddingBottom: '40px' }}>
                 <p className="heading">My Content Library</p>
                 <p className="subHeading" style={{ marginBottom: '24px', color: '#FFF' }}>
-                    <span style={{ color: '#FFD700' }}>💡:</span> You can store multiple videos in your library, users who follow you or visit your profile can see all your uploads, but only one can be featured Globally in Explore showcase at a time using <strong style={{ color: '#00FFFF' }}>Set as Featured</strong>.
+                    <span style={{ color: '#FFD700' }}>💡:</span> You can store multiple videos in your library. All of your public and monetized uploads will automatically appear in the main Showcase feed and on your profile.
                 </p>
                 
                 {/* GLASS-PANEL ADD CONTENT FORM */}
@@ -756,7 +756,6 @@ function MyContentLibraryScreen({
                                                     </button>
                                                     
                                                     {isPending && <span style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(255, 215, 0, 0.2)', border: '1px solid rgba(255, 215, 0, 0.4)', color: '#FFD700', fontSize: '8px', fontWeight: 900, padding: '3px 8px', borderRadius: '4px', textTransform: 'uppercase', zIndex: 5 }}>Pending</span>}
-                                                    {isFeatured && <span style={{ position: 'absolute', top: '8px', left: isPending ? '65px' : '8px', background: 'rgba(0,255,0,0.2)', border: '1px solid rgba(0,255,0,0.4)', color: '#4ADE80', fontSize: '8px', fontWeight: 900, padding: '3px 8px', borderRadius: '4px', textTransform: 'uppercase', zIndex: 5 }}>Showcase</span>}
 
                                                     <img 
                                                         src={item.customThumbnailUrl || 'https://placehold.co/400x225/111/333?text=NVA'} 
@@ -781,17 +780,13 @@ function MyContentLibraryScreen({
 
                                                     {/* Actions - New Layout */}
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                        {isPending ? (
-                                                            <button className="btn-pills btn-featured-active" style={{ background: 'rgba(255, 215, 0, 0.05)', borderColor: 'rgba(255, 215, 0, 0.2)', color: '#FFD700', cursor: 'not-allowed', width: '100%' }} disabled>⏱️ Reviewing</button>
-                                                        ) : isFeatured ? (
-                                                            <button className="btn-pills btn-featured-active" onClick={handleRemoveFeatured} disabled={isUpdatingFeature === item.id} style={{ width: '100%', padding: '10px' }}>{isUpdatingFeature === item.id ? '...' : 'Remove Showcase'}</button>
-                                                        ) : (
-                                                            <button className="btn-pills btn-featured-set" onClick={() => handleSetFeatured(item)} disabled={isUpdatingFeature === item.id} style={{ width: '100%', padding: '10px' }}>{isUpdatingFeature === item.id ? '...' : 'Set Showcase'}</button>
-                                                        )}
                                                         <div style={{ display: 'flex', gap: '8px' }}>
-                                                            <button className="btn-pills btn-manage" style={{ flex: 1, padding: '10px' }} onClick={() => handleOpenManageModal(item)} disabled={isPending}>Manage</button>
+                                                            <button className="btn-pills btn-manage" style={{ flex: 1, padding: '10px' }} onClick={() => handleOpenManageModal(item)}>Manage</button>
                                                             <button className="btn-pills btn-delete" style={{ flex: 1, padding: '10px' }} onClick={() => handleDelete(item)}>Delete</button>
                                                         </div>
+                                                        {isPending && (
+                                                            <button className="btn-pills btn-featured-active" style={{ background: 'rgba(255, 215, 0, 0.05)', borderColor: 'rgba(255, 215, 0, 0.2)', color: '#FFD700', cursor: 'not-allowed', width: '100%', marginTop: '4px' }} disabled>⏱️ Monetization Under Review</button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>

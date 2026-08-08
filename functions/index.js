@@ -7391,9 +7391,6 @@ exports.enforceSingleShowcaseItem = functions.firestore
                     const data = docSnap.data();
                     let updates = {};
 
-                    if (becameActive && data.isActive === true) {
-                        updates.isActive = false;
-                    }
                     if (becameMonetized && data.monetizationStatus === 'approved') {
                         updates.monetizationStatus = 'none';
                         updates.isMonetizationRequest = false;

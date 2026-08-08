@@ -1,7 +1,7 @@
 // src/components/HomeScreen.jsx
 
 import { useState, useEffect, useRef } from 'react';
-import { db, storage, ref, uploadBytes, getDownloadURL, functions } from '../firebase';
+import { db, storage, ref, uploadBytes, getDownloadURL, functions, extractVideoInfo } from '../firebase';
 import { doc, getDoc, collection, query, where, orderBy, onSnapshot, limit, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, increment } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 
@@ -32,6 +32,27 @@ import RoastTokenVault from './RoastTokenVault';
     const [realtimeContent, setRealtimeContent] = useState(new Map());
     const [newCastingCount, setNewCastingCount] = useState(0);
     const [algoTrending, setAlgoTrending] = useState([]); // NEW: Algorithmic Trending State
+
+    // --- NEW SHOWCASE FEED STATES ---
+    const [showcaseFeed, setShowcaseFeed] = useState([]);
+    const [loadingShowcase, setLoadingShowcase] = useState(true);
+    const [showcaseLimit, setShowcaseLimit] = useState(15); // Added for Pagination
+    const showcaseModalBlockRef = useRef(false);
+
+    // Global Pause Hook: Freezes background videos when any modal opens
+    useEffect(() => {
+        const toggleBlock = (e) => {
+            showcaseModalBlockRef.current = e.detail;
+            if (e.detail) {
+                Object.values(showcaseVideoRefs.current || {}).forEach(el => {
+                    if (el && typeof el.pause === 'function') el.pause();
+                });
+            }
+        };
+        window.addEventListener('nva_modal_toggled', toggleBlock);
+        return () => window.removeEventListener('nva_modal_toggled', toggleBlock);
+    }, []);
+    const showcaseVideoRefs = useRef({});
 
     // --- FLASH STORIES SYSTEM STATES & HOOKS ---
     const [flashStories, setFlashStories] = useState([]); // Flat background data
@@ -299,6 +320,15 @@ import RoastTokenVault from './RoastTokenVault';
         return () => unsub();
     }, []);
 
+    const [isGlobalMuted, setIsGlobalMuted] = useState(true); // Modern Mute State
+
+    // Force strict mute policy down to DOM nodes dynamically to appease WebKit
+    useEffect(() => {
+        Object.values(showcaseVideoRefs.current).forEach(el => {
+            if (el) el.muted = isGlobalMuted;
+        });
+    }, [isGlobalMuted]);
+
     // NEW: Real-time intelligent algorithmic trending listener (Cost: capped at max 10 reads)
     useEffect(() => {
         const q = query(
@@ -312,6 +342,35 @@ import RoastTokenVault from './RoastTokenVault';
         });
         return () => unsub();
     }, []);
+
+    // NEW: Smart Showcase Feed (Shuffled & Fresh)
+    useEffect(() => {
+        setLoadingShowcase(true);
+        const q = query(
+            collection(db, "artifacts/production-app-id/public/data/content_items"),
+            where("isActive", "==", true),
+            orderBy("createdAt", "desc"),
+            limit(showcaseLimit)
+        );
+        const unsub = onSnapshot(q, (snap) => {
+            let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // 1. Seen Memory filter
+            let seenIds = new Set();
+            try { seenIds = new Set(JSON.parse(localStorage.getItem('nva_seen_feed') || '[]')); } catch(e) {}
+            
+            let unseen = items.filter(item => !seenIds.has(item.id));
+            let seen = items.filter(item => seenIds.has(item.id));
+
+            // 2. Shuffle unseen items so every app boot feels completely different
+            unseen = unseen.sort(() => Math.random() - 0.5);
+            
+            // 3. Combine: Fresh content first, then older seen content. (No creator limits!)
+            setShowcaseFeed([...unseen, ...seen]);
+            setLoadingShowcase(false);
+        });
+        return () => unsub();
+    }, [showcaseLimit]);
 
     // Mode B/C Static Engine Pacing (Safely at top level)
     useEffect(() => {
@@ -506,18 +565,14 @@ import RoastTokenVault from './RoastTokenVault';
         const enrichedSlots = enrich(slotItems);
         const combinedTrending = [...enrichedSlots, ...uniqueAlgoItems];
         
-        // FLAWLESS DEDUPLICATION: Final shield against duplicate IDs and duplicate Creators
+        // FLAWLESS DEDUPLICATION: Final shield against duplicate IDs
         const seenIds = new Set();
-        const seenCreators = new Set();
         const enrichedTrending = combinedTrending.filter(item => {
             const idToCheck = item.id || item.contentId;
-            const creatorKey = item.creatorId || item.userId || item.creatorName;
 
             if (seenIds.has(idToCheck)) return false;
-            if (creatorKey && seenCreators.has(creatorKey)) return false; // Enforces 1 item per creator
 
             seenIds.add(idToCheck);
-            if (creatorKey) seenCreators.add(creatorKey);
             return true;
         });
 
@@ -580,6 +635,8 @@ import RoastTokenVault from './RoastTokenVault';
         }
         const urlToPlay = item.embedUrl || item.mainUrl;
         if (urlToPlay) {
+            const videoEl = showcaseVideoRefs.current[item.id];
+            if (videoEl && typeof videoEl.pause === 'function') videoEl.pause(); // Keeps Ghost Audio fix
             handleVideoPress(urlToPlay, item);
         } else {
             showMessage("This item has no valid link to play.");
@@ -902,73 +959,223 @@ import RoastTokenVault from './RoastTokenVault';
                 </div>
             </div>
 
-            <div className="carousel-wrapper">
-                {displayFeatured.length > 3 && (
-                    <>
-                        <button className="carousel-nav-btn prev-horizontal" onClick={() => handleHorizontalScroll('prev')}>◀</button>
-                        <button className="carousel-nav-btn next-horizontal" onClick={() => handleHorizontalScroll('next')}>▶</button>
-                    </>
-                )}
-                <div className="horizontal-carousel-container" ref={horizontalCarouselRef}>
-                    {isLayoutLoading ? (
-                        Array.from({ length: 5 }).map((_, i) => <div key={i} className="horizontal-carousel-item" style={{ backgroundColor: '#2A2A2A' }}></div>)
-                    ) : (
-                        displayFeatured.map((item, index) => (
-                            <div key={`${item.id || item.title}-${index}`} className="horizontal-carousel-item" onClick={() => handleItemClick(item)} style={{ cursor: 'pointer' }}>
-                                <img src={item.customThumbnailUrl || item.imageUrl} alt={item.title} className="carousel-image" />
-                                {currentUser && item.type === 'internal' && item.id && <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} itemType={'content'} />}
-                            </div>
-                        ))
-                    )}
+            {/* ====== NEW 10-CUBE TRENDING TRAY ====== */}
+            <div style={{ marginTop: '24px', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <div>
+                    <p className="sectionTitle" style={{ margin: 0 }}>🔥 Top 10 Trending</p>
+                    <p style={{ color: '#888', fontSize: '11px', margin: '4px 0 0 0' }}>Most viewed & featured network content</p>
                 </div>
-            </div>
-
-            {/* --- TRENDING HEADER WITH CTA BUTTONS --- */}
-            <div className="sectionHeaderWithButton" style={{ flexWrap: 'wrap', gap: '12px', marginBottom: '16px', marginTop: '24px' }}>
-                <p className="sectionTitle">Trending</p>
-                {!currentUser ? (
-                    <button className="sectionHeaderButton" onClick={() => setActiveScreen('SignUp')}>Join NVA Network</button>
-                ) : (
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', opacity: isLayoutLoading ? 0 : 1, transition: 'opacity 0.3s ease', pointerEvents: isLayoutLoading ? 'none' : 'auto' }}>
+                {currentUser && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
                         {rawLayout && rawLayout.showMusicCharts !== false && (
-                            <button 
-                                className="btn-glass music-charts-btn" 
-                                style={{ position: 'relative' }}
-                                onClick={() => setActiveScreen('MusicCharts')}
-                            >
-                                <span style={{ fontSize: '1.08em' }}>NVA Billboard</span> 
-                                <span style={{ filter: 'grayscale(100%) contrast(200%) brightness(0)', marginLeft: '6px' }}>🎵</span>
+                            <button className="btn-glass music-charts-btn" onClick={() => setActiveScreen('MusicCharts')} style={{ minHeight: '30px !important', padding: '4px 10px !important', fontSize: '11px !important' }}>
+                                NVA Billboard 🎵
                             </button>
                         )}
-                        <button 
-                            className="btn-glass discover-btn" 
-                            onClick={() => setActiveScreen('Discover')}
-                        >
-                            Explore Hub
+                        <button className="btn-glass discover-btn" onClick={() => setActiveScreen('Discover')} style={{ minHeight: '30px !important', padding: '4px 10px !important', fontSize: '11px !important' }}>
+                            Explore
                         </button>
                     </div>
                 )}
             </div>
 
-            {/* ====== RESTORED DYNAMIC TRENDING GRID ====== */}
-            {isLayoutLoading ? (
-                <p style={{ color: 'white', padding: '10px' }}>Loading trending...</p>
-            ) : (
-                <div className="contentGrid" style={{ marginBottom: '30px' }}>
-                    {enrichedLayout.trending.map((item, index) => (
-                        <div key={`${item.id || item.title}-${index}`} className="contentCard">
-                            <DynamicThumbnail item={item} onClick={() => handleItemClick(item)} />
-                            <p className="contentTitle">{item.title}</p>
-                            {item.type === 'internal' && (
-                                <div style={{ padding: '0 10px 10px 10px', display: 'flex', alignItems: 'center', gap: '5px', color: '#AAA', fontSize: '12px' }}>
-                                    <svg viewBox="0 0 24 24" style={{ width: '16px', height: '16px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path></svg>
-                                    <span>{(item.viewCount || 0).toLocaleString()} views</span>
-                                </div>
-                            )}
+            <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '15px', scrollSnapType: 'x mandatory', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+                {isLayoutLoading ? (
+                    <p style={{ color: '#AAA', fontSize: '12px' }}>Loading charts...</p>
+                ) : (
+                    enrichedLayout.trending.slice(0, 10).map((item, index) => (
+                        <div 
+                            key={item.id || index} 
+                            onClick={() => handleItemClick(item)}
+                            style={{ width: '130px', height: '130px', flexShrink: 0, scrollSnapAlign: 'start', borderRadius: '14px', overflow: 'hidden', position: 'relative', cursor: 'pointer', border: '1px solid #222', background: '#0A0A0A', boxShadow: '0 4px 10px rgba(0,0,0,0.5)', transition: 'transform 0.2s ease' }}
+                            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.03)'; e.currentTarget.style.borderColor = '#FFD700'; }}
+                            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = '#222'; }}
+                        >
+                            <img src={item.customThumbnailUrl || item.imageUrl || 'https://placehold.co/130x130/111/333'} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: 0.8 }} />
+                            
+                            {/* Gold Rank Ribbon */}
+                            <div style={{ position: 'absolute', top: 0, left: 0, background: 'linear-gradient(135deg, #FFD700, #FF8C00)', color: '#000', fontSize: '13px', fontWeight: '900', padding: '4px 10px', borderBottomRightRadius: '10px', zIndex: 2, boxShadow: '2px 2px 10px rgba(0,0,0,0.5)' }}>
+                                #{index + 1}
+                            </div>
+                            
+                            {/* Title Gradient Guard */}
+                            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'linear-gradient(0deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.6) 60%, transparent 100%)', padding: '25px 10px 10px 10px', zIndex: 2 }}>
+                                <p style={{ margin: 0, color: '#FFF', fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.title}</p>
+                                <p style={{ margin: '2px 0 0 0', color: '#AAA', fontSize: '9px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <svg viewBox="0 0 24 24" style={{ width: '10px', height: '10px', fill: 'currentColor' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/></svg>
+                                    {(item.viewCount || 0).toLocaleString()}
+                                </p>
+                            </div>
                         </div>
-                    ))}
-                </div>
-            )}
+                    ))
+                )}
+            </div>
+
+           {/* ====== THE SHOWCASE FEED (FACEBOOK-STYLE CONTINUOUS SCROLL) ====== */}
+            <div style={{ marginTop: '20px', borderTop: '1px solid #222', paddingTop: '20px' }}>
+                <p style={{ color: '#FFF', fontSize: '20px', fontWeight: '900', marginBottom: '5px' }}>📺 Showcase Feed</p>
+                <p style={{ color: '#AAA', fontSize: '13px', marginBottom: '25px' }}>Original films, music videos, and creator content.</p>
+                
+                {loadingShowcase ? (
+                    <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                        <div style={{ width: '30px', height: '30px', border: '3px solid rgba(0,255,255,0.2)', borderTopColor: '#00FFFF', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 10px auto' }}></div>
+                        <p style={{ color: '#00FFFF', fontSize: '12px', fontWeight: 'bold' }}>Loading your feed...</p>
+                        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '40px', paddingBottom: '60px' }}>
+                        {showcaseFeed.map(item => (
+                            <div 
+                                key={item.id} 
+                                style={{ background: '#080808', border: '1px solid #1A1A1A', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}
+                            >
+                                {/* Creator Header */}
+                                <div 
+                                    onClick={() => {
+                                        if (item.creatorId || item.userId) {
+                                            window.dispatchEvent(new CustomEvent('navigateToUserProfile', { detail: { userId: item.creatorId || item.userId } }));
+                                        }
+                                    }}
+                                    style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: '12px', cursor: 'pointer', borderBottom: '1px solid #111' }}
+                                >
+                                    <img src={item.creatorProfilePictureUrl || 'https://placehold.co/40'} style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #333' }} />
+                                    <div style={{ flex: 1 }}>
+                                        <p style={{ margin: 0, color: '#FFF', fontWeight: 'bold', fontSize: '14px' }}>{item.creatorName || 'NVA Creator'}</p>
+                                        <p style={{ margin: 0, color: '#888', fontSize: '11px', marginTop: '2px' }}>{item.creatorRole || 'Artist'} • {item.createdAt ? new Date(item.createdAt?.toMillis ? item.createdAt.toMillis() : Date.now()).toLocaleDateString() : 'Recent'}</p>
+                                    </div>
+                                    {item.monetizationStatus === 'approved' && (
+                                        <span style={{ background: 'linear-gradient(to right, #BF953F, #FCF6BA, #B38728)', color: '#000', fontSize: '9px', fontWeight: '900', padding: '4px 8px', borderRadius: '12px', boxShadow: '0 0 10px rgba(191, 149, 63, 0.3)' }}>🎁 MONETIZED</span>
+                                    )}
+                                </div>
+                                
+                                {/* Auto-Playing Video Player (Native MP4 + Embedded YouTube/FB Support) */}
+                                <div style={{ width: '100%', position: 'relative', background: '#000', minHeight: '220px', cursor: 'pointer', overflow: 'hidden' }} onClick={() => handleItemClick(item)}>
+                                    {(() => {
+                                        const url = item.embedUrl || item.mainUrl || item.videoUrl || '';
+                                        const isNative = /\.(mp4|webm|ogg|mov)$/i.test(url) || url.includes('firebasestorage') || url.includes('r2.dev');
+                                        
+                                        if (isNative) {
+                                            return (
+                                                <>
+                                                    <video 
+                                                        src={url} 
+                                                        poster={item.customThumbnailUrl || item.imageUrl}
+                                                        autoPlay defaultMuted muted={isGlobalMuted} playsInline 
+                                                        style={{ width: '100%', maxHeight: '600px', objectFit: 'contain', display: 'block' }} 
+                                                        onTimeUpdate={(e) => {
+                                                            if (e.target.currentTime >= 15) {
+                                                                e.target.pause(); 
+                                                            }
+                                                        }}
+                                                        onEnded={(e) => {
+                                                            e.target.pause();
+                                                        }}
+                                                        ref={(el) => {
+                                                            if (!el) return;
+                                                            showcaseVideoRefs.current[item.id] = el;
+                                                            el.defaultMuted = true;
+                                                            el.muted = isGlobalMuted;
+                                                            el.setAttribute('playsinline', '');
+                                                            if (el._nvaObserver) el._nvaObserver.disconnect();
+                                                            const observer = new IntersectionObserver(([entry]) => {
+                                                                if (entry.isIntersecting && !showcaseModalBlockRef.current && el.currentTime < 15 && !el.ended) {
+                                                                    const playPromise = el.play();
+                                                                    if (playPromise !== undefined) playPromise.catch(() => {});
+                                                                } else {
+                                                                    el.pause();
+                                                                }
+                                                            }, { threshold: 0.4 }); 
+                                                            observer.observe(el);
+                                                            el._nvaObserver = observer;
+                                                        }}
+                                                    />
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); setIsGlobalMuted(!isGlobalMuted); }}
+                                                        style={{ position: 'absolute', bottom: '15px', right: '15px', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: '0 4px 15px rgba(0,0,0,0.4)', zIndex: 10 }}
+                                                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.8)'}
+                                                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(0,0,0,0.5)'}
+                                                    >
+                                                        {isGlobalMuted ? (
+                                                            <svg viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '18px', height: '18px' }}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                                                        ) : (
+                                                            <svg viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '18px', height: '18px' }}><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                                                        )}
+                                                    </button>
+                                                </>
+                                            );
+                                        }
+
+                                        const extracted = typeof extractVideoInfo === 'function' ? extractVideoInfo(url) : null;
+                                        const embedUrl = extracted?.embedUrl || item.embedUrl;
+
+                                        if (embedUrl) {
+                                            const separator = embedUrl.includes('?') ? '&' : '?';
+                                            const finalEmbedUrl = `${embedUrl}${separator}autoplay=1&mute=1&controls=0&disablekb=1&modestbranding=1&rel=0&enablejsapi=1&playsinline=1&end=15`;
+                                            return (
+                                                <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', overflow: 'hidden', background: '#000' }}>
+                                                    <iframe 
+                                                        src={finalEmbedUrl} 
+                                                        title={item.title || "Showcase Content"} 
+                                                        style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }} 
+                                                        allow="autoplay; encrypted-media; picture-in-picture"
+                                                    />
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <>
+                                                <img src={item.customThumbnailUrl || item.imageUrl || 'https://placehold.co/800x450/111/333'} style={{ width: '100%', maxHeight: '600px', objectFit: 'contain', display: 'block' }} alt={item.title || "Thumbnail"} />
+                                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
+                                                    <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: '2px solid #FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+                                                        <svg viewBox="0 0 24 24" fill="#FFF" style={{ width: '30px', height: '30px', marginLeft: '4px' }}><path d="M8 5v14l11-7z"/></svg>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
+                                </div>
+                                
+                                {/* Interaction Bar & Meta */}
+                                <div style={{ padding: '16px', cursor: 'pointer' }} onClick={() => handleItemClick(item)}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                            {currentUser && (
+                                                <div onClick={(e) => e.stopPropagation()}>
+                                                    <LikeButton contentItem={item} currentUser={currentUser} showMessage={showMessage} itemType={'content'} />
+                                                </div>
+                                            )}
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#AAA', fontSize: '13px', fontWeight: 'bold' }}>
+                                                <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: '18px', height: '18px' }}><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 10c-2.48 0-4.5-2.02-4.5-4.5S9.52 5.5 12 5.5s4.5 2.02 4.5 4.5-2.02 4.5-4.5 4.5zM12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+                                                {(item.viewCount || 0).toLocaleString()}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <p style={{ color: '#FFF', fontSize: '15px', fontWeight: 'bold', margin: '0 0 6px 0' }}>{item.title}</p>
+                                    {item.description && (
+                                        <p style={{ color: '#888', fontSize: '13px', margin: 0, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: '1.4' }}>
+                                            {item.description}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        
+                        {/* Pagination: Load More Button */}
+                        <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px' }}>
+                            <button 
+                                onClick={() => setShowcaseLimit(prev => prev + 15)}
+                                style={{ background: 'rgba(255,215,0,0.1)', color: '#FFD700', border: '1px solid #FFD700', padding: '12px 24px', borderRadius: '24px', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s ease' }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,215,0,0.2)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,215,0,0.1)'}
+                            >
+                                Load More Videos
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
 
             {/* ====== LIVE ARENAS TRAY (EMBER THEME - Wrapped in Global Admin Kill-Switch) ====== */}
             {enrollmentConfig?.isLiveArenaEnabled === true && (

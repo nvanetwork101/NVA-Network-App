@@ -194,9 +194,13 @@ function AdminContentManagerScreen({ showMessage, setActiveScreen, featuredConte
     useEffect(() => {
         setLoadingContent(true);
         const contentRef = collection(db, `artifacts/production-app-id/public/data/content_items`);
-        const q = query(contentRef, orderBy('createdAt', 'desc'));
+        // GOD-TIER FIX: Removed orderBy('createdAt') to stop Firebase from silently dropping missing-timestamp docs
+        const q = query(contentRef);
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            setContentItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // Sort locally in memory so Admin sees EVERYTHING including Pending
+            items.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+            setContentItems(items);
             setLoadingContent(false);
         }, (error) => {
             console.error("Error fetching content items:", error);

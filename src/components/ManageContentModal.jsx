@@ -147,8 +147,27 @@ function ManageContentModal({ item, onSave, onClose, showMessage }) {
                         <textarea className="formTextarea" value={description} onChange={(e) => setDescription(e.target.value)} rows="4"></textarea>
                     </div>
 
-                    {item.monetizationStatus !== 'approved' && item.monetizationStatus !== 'pending' && (
-                        <div style={{ background: 'rgba(255, 215, 0, 0.05)', border: '1px solid rgba(255, 215, 0, 0.2)', padding: '12px 16px', borderRadius: '12px', marginBottom: '15px' }}>
+                    {/* MONETIZATION GATE UI */}
+                    {item.monetizationStatus === 'approved' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(0,255,0,0.05)', border: '1px solid rgba(0,255,0,0.2)', padding: '12px 16px', borderRadius: '12px', marginBottom: '15px' }}>
+                            <span style={{ fontSize: '18px' }}>💰</span>
+                            <div>
+                                <p style={{ margin: 0, color: '#00FF00', fontWeight: 'bold', fontSize: '13px' }}>Monetization Active</p>
+                                <p style={{ margin: 0, color: '#AAA', fontSize: '11px' }}>This video is currently earning revenue.</p>
+                            </div>
+                        </div>
+                    ) : item.monetizationStatus === 'pending' ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.2)', padding: '12px 16px', borderRadius: '12px', marginBottom: '15px' }}>
+                            <span style={{ fontSize: '18px' }}>⏳</span>
+                            <div>
+                                <p style={{ margin: 0, color: '#FFD700', fontWeight: 'bold', fontSize: '13px' }}>Monetization Pending Review</p>
+                                <p style={{ margin: 0, color: '#AAA', fontSize: '11px' }}>Our admins are verifying this content.</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div style={{ background: 'rgba(255,215,0,0.05)', border: '1px solid rgba(255,215,0,0.2)', padding: '16px', borderRadius: '12px', marginBottom: '15px' }}>
+                            <p style={{ margin: '0 0 10px 0', color: '#FFD700', fontWeight: '900', fontSize: '14px', textTransform: 'uppercase' }}>💰 Enable Monetization</p>
+                            <p style={{ margin: '0 0 15px 0', color: '#AAA', fontSize: '12px', lineHeight: '1.4' }}>By submitting this video for monetization, you agree to the NVA Network <a href="/terms" target="_blank" style={{ color: '#00FFFF', textDecoration: 'underline' }}>Terms of Service</a>. You confirm that you own the rights to this content and that it complies with our community guidelines. Violations may result in account termination.</p>
                             <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', margin: 0 }}>
                                 <input 
                                     type="checkbox" 
@@ -156,7 +175,7 @@ function ManageContentModal({ item, onSave, onClose, showMessage }) {
                                     onChange={(e) => setApplyMonetization(e.target.checked)}
                                     style={{ width: '18px', height: '18px', accentColor: '#FFD700', cursor: 'pointer', margin: 0 }}
                                 />
-                                <span style={{ color: '#FFF', fontSize: '14px', fontWeight: 'bold' }}>Submit for monetization</span>
+                                <span style={{ color: '#FFF', fontSize: '13px', fontWeight: 'bold' }}>I agree. Submit for review.</span>
                             </label>
                         </div>
                     )}

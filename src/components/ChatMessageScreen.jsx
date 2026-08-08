@@ -644,6 +644,10 @@ const ChatMessageScreen = ({
             setReplyingToMessage(messageToActOn);
         } else if (action === 'react') {
             handleReaction(messageToActOn, emoji);
+        } else if (action === 'copy') {
+            // THE FIX: Copies message text to phone clipboard
+            navigator.clipboard.writeText(messageToActOn.text || '');
+            showMessage("Copied to clipboard!");
         }
     };
     
@@ -822,7 +826,8 @@ const ChatMessageScreen = ({
                                                 <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#FFFFFF', fontStyle: 'italic', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg.replyTo.text}</p>
                                             </div>
                                         )}
-                                        <div onTouchStart={(e) => !msg.isDeleted && handleTouchStart(e, msg)} onTouchEnd={handleTouchEnd} onContextMenu={(e) => !msg.isDeleted && handleContextMenu(e, msg)} >
+                                        {/* THE FIX: WebkitTouchCallout & userSelect 'none' prevents the native phone keyboard/magnifier from popping up */}
+                                        <div onTouchStart={(e) => !msg.isDeleted && handleTouchStart(e, msg)} onTouchEnd={handleTouchEnd} onContextMenu={(e) => !msg.isDeleted && handleContextMenu(e, msg)} style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}>
                                             {(() => {
                                                 const mediaSrc = msg.mediaUrl || msg.imageUrl || msg.photoUrl;
                                                 const isVoice = msg.mediaType === 'voice' || msg.type === 'voice' || (mediaSrc && (mediaSrc.includes('.webm') || mediaSrc.includes('.m4a')));
@@ -1013,15 +1018,27 @@ const ChatMessageScreen = ({
                     boxShadow: '0 4px 30px rgba(0,0,0,0.1), 0 0 20px 2px rgba(138, 43, 226, 0.3)'
                 }}>
                     {['👍', '❤️', '😂', '💯', '🙏'].map(emoji => (
-                         <button key={emoji} className="button" onClick={() => handleMenuAction('react', emoji)} style={{background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '6px'}}>{emoji}</button>
+                         <button key={emoji} type="button" onClick={() => handleMenuAction('react', emoji)} style={{background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '6px', transition: 'transform 0.1s'}} onTouchStart={e => e.currentTarget.style.transform='scale(1.2)'} onTouchEnd={e => e.currentTarget.style.transform='scale(1)'}>{emoji}</button>
                     ))}
                     <div style={{borderLeft: '1px solid rgba(255, 255, 255, 0.2)', height: '25px', margin: '0 5px'}}></div>
-                    <button title="Reply" className="button" onClick={() => handleMenuAction('reply')} style={{background: 'none', border: 'none', cursor: 'pointer', padding: '8px'}}>
-                        <svg fill="#FFF" viewBox="0 0 24 24" style={{width: '20px', height: '20px'}}><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"></path></svg>
+                    
+                    <button title="Reply" type="button" onClick={() => handleMenuAction('reply')} style={{background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'}}>
+                        <svg fill="#FFF" viewBox="0 0 24 24" style={{width: '18px', height: '18px'}}><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"></path></svg>
+                        <span style={{fontSize: '9px', color: '#FFF', fontWeight: 'bold'}}>Reply</span>
                     </button>
+
+                    {/* THE FIX: Sleek Copy Button (Hidden if message is just a photo/sticker) */}
+                    {!menuState.message.mediaUrl && (
+                        <button title="Copy" type="button" onClick={() => handleMenuAction('copy')} style={{background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'}}>
+                            <svg fill="#00FFFF" viewBox="0 0 24 24" style={{width: '18px', height: '18px'}}><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"></path></svg>
+                            <span style={{fontSize: '9px', color: '#00FFFF', fontWeight: 'bold'}}>Copy</span>
+                        </button>
+                    )}
+
                     {menuState.message.senderId === currentUser.uid && (
-                        <button title="Delete Message" className="button" onClick={() => handleMenuAction('delete')} style={{background: 'none', border: 'none', cursor: 'pointer', padding: '8px'}}>
-                            <svg fill="#FF5C5C" viewBox="0 0 24 24" style={{width: '20px', height: '20px'}}><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path></svg>
+                        <button title="Delete" type="button" onClick={() => handleMenuAction('delete')} style={{background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px'}}>
+                            <svg fill="#FF5C5C" viewBox="0 0 24 24" style={{width: '18px', height: '18px'}}><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path></svg>
+                            <span style={{fontSize: '9px', color: '#FF5C5C', fontWeight: 'bold'}}>Delete</span>
                         </button>
                     )}
                 </div>
